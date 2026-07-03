@@ -1,38 +1,13 @@
 from __future__ import annotations
-from enum import Enum
-from typing import Annotated, Literal, Union
-from pydantic import BaseModel, Field
+from typing import Literal
+from pydantic import BaseModel
 
 
-class SourceType(str, Enum):
-    JSON_FILE = "json_file"
-    CSV_FILE = "csv_file"
-    POSTGRES = "postgres"
-
-
-class JsonFileSource(BaseModel):
+class DltSource(BaseModel):
     id: str
-    type: Literal["json_file"]
-    path: str
-
-
-class CsvFileSource(BaseModel):
-    id: str
-    type: Literal["csv_file"]
-    path: str
-
-
-class PostgresSource(BaseModel):
-    id: str
-    type: Literal["postgres"]
-    connection_string: str
+    source_type: str
+    config: dict
     table: str
-
-
-Source = Annotated[
-    Union[JsonFileSource, CsvFileSource, PostgresSource],
-    Field(discriminator="type")
-]
 
 
 class FilterStep(BaseModel):
@@ -98,6 +73,6 @@ class JsonFileOutput(BaseModel):
 class Pipeline(BaseModel):
     id: str
     name: str
-    sources: list[Source]
+    sources: list[DltSource]
     steps: list[dict]
     output: JsonFileOutput

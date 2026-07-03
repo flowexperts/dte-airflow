@@ -4,7 +4,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.compiler.ibis_compiler import compile_pipeline
-from dte.models.pipeline import Pipeline
+from dte.models.pipeline import Pipeline, DltSource
+from dte.sources.dlt_loader import load_source
 
 
 def make_pipeline_dict(sources, steps, output_path, output_fields=None):
@@ -19,18 +20,27 @@ def make_pipeline_dict(sources, steps, output_path, output_fields=None):
     }
 
 
+def _dlt_source(src_id: str, tmp_path: Path, file_glob: str, table: str) -> dict:
+    return {
+        "id": src_id,
+        "source_type": "filesystem",
+        "config": {"bucket_url": str(tmp_path), "file_glob": file_glob},
+        "table": table,
+    }
+
+
 def test_end_to_end_filter_rename(tmp_path):
     data = [
         {"first_name": "alice", "age": 30},
         {"first_name": "bob", "age": 16},
         {"first_name": "carol", "age": 22},
     ]
-    src = tmp_path / "input.json"
-    src.write_text(json.dumps(data))
+    src_file = tmp_path / "input.json"
+    src_file.write_text(json.dumps(data))
     out = tmp_path / "output.json"
 
     pipeline_dict = make_pipeline_dict(
-        sources=[{"id": "src", "type": "json_file", "path": str(src)}],
+        sources=[_dlt_source("src", tmp_path, "input.json", "input")],
         steps=[
             {"op": "filter", "expr": "age >= 18"},
             {"op": "rename", "mappings": {"first_name": "name"}},
@@ -39,7 +49,8 @@ def test_end_to_end_filter_rename(tmp_path):
     )
     pipeline = Pipeline(**pipeline_dict)
     engine = DuckDBEngine()
-    tables = {"src": engine.load_json("src", str(src))}
+    src = DltSource(**pipeline_dict["sources"][0])
+    tables = {"src": load_source(src, engine.con)}
     compiled = compile_pipeline(pipeline, tables)
     rows = engine.execute_to_json(compiled, str(out))
 
@@ -57,12 +68,12 @@ def test_end_to_end_nested_json_flatten_aggregate(tmp_path):
         {"order": {"category": "electronics", "amount": 200}},
         {"order": {"category": "clothing", "amount": 50}},
     ]
-    src = tmp_path / "orders.json"
-    src.write_text(json.dumps(data))
+    src_file = tmp_path / "orders.json"
+    src_file.write_text(json.dumps(data))
     out = tmp_path / "agg_output.json"
 
     pipeline_dict = make_pipeline_dict(
-        sources=[{"id": "src", "type": "json_file", "path": str(src)}],
+        sources=[_dlt_source("src", tmp_path, "orders.json", "orders")],
         steps=[{
             "op": "aggregate",
             "group_by": ["order.category"],
@@ -72,13 +83,16 @@ def test_end_to_end_nested_json_flatten_aggregate(tmp_path):
     )
     pipeline = Pipeline(**pipeline_dict)
     engine = DuckDBEngine()
-    tables = {"src": engine.load_json("src", str(src))}
+    src = DltSource(**pipeline_dict["sources"][0])
+    tables = {"src": load_source(src, engine.con)}
     compiled = compile_pipeline(pipeline, tables)
     rows = engine.execute_to_json(compiled, str(out))
 
     assert rows == 2
     result = json.loads(out.read_text())
-    categories = {r["order.category"]: r["total"] for r in result}
+    # dlt normalizes nested keys with __ separator
+    key = "order__category" if "order__category" in result[0] else "order.category"
+    categories = {r[key]: r["total"] for r in result}
     assert categories["electronics"] == 300
     assert categories["clothing"] == 50
 
@@ -93,14 +107,14 @@ def test_api_trigger_and_poll(tmp_path):
         {"name": "alice", "score": 90},
         {"name": "bob", "score": 45},
     ]
-    src = tmp_path / "scores.json"
-    src.write_text(json.dumps(data))
+    src_file = tmp_path / "scores.json"
+    src_file.write_text(json.dumps(data))
     out = tmp_path / "api_out.json"
 
     pipeline_payload = {
         "id": "api-p1",
         "name": "api_test",
-        "sources": [{"id": "src", "type": "json_file", "path": str(src)}],
+        "sources": [_dlt_source("src", tmp_path, "scores.json", "scores")],
         "steps": [{"op": "filter", "expr": "score > 50"}],
         "output": {"type": "json_file", "path": str(out)},
     }

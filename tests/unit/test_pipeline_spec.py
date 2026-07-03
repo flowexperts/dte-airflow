@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 from dte.models.pipeline import (
-    JsonFileSource, CsvFileSource, PostgresSource,
+    DltSource,
     FilterStep, RenameStep, RetypeStep,
     LookupMapStep, ExpressionMapStep,
     SortStep, AggSpec, AggregateStep,
@@ -9,31 +9,48 @@ from dte.models.pipeline import (
 )
 
 
-def test_json_source_parses():
-    s = JsonFileSource(id="s1", type="json_file", path="/data/foo.json")
-    assert s.id == "s1"
-    assert s.type == "json_file"
-    assert s.path == "/data/foo.json"
-
-
-def test_postgres_source_parses():
-    s = PostgresSource(
-        id="s2", type="postgres",
-        connection_string="postgresql://localhost/db",
-        table="orders"
+def test_dlt_source_parses():
+    s = DltSource(
+        id="s1",
+        source_type="filesystem",
+        config={"bucket_url": "/tmp/data", "file_glob": "*.json"},
+        table="data",
     )
-    assert s.table == "orders"
+    assert s.id == "s1"
+    assert s.source_type == "filesystem"
+    assert s.config["bucket_url"] == "/tmp/data"
+    assert s.table == "data"
 
 
-def test_invalid_source_type_raises():
+def test_pipeline_with_dlt_source():
+    p = Pipeline(
+        id="p1", name="test",
+        sources=[{
+            "id": "s1",
+            "source_type": "filesystem",
+            "config": {"bucket_url": "s3://my-bucket/", "file_glob": "*.json"},
+            "table": "records",
+        }],
+        steps=[{"op": "filter", "expr": "age > 18"}],
+        output={"type": "json_file", "path": "/out.json"},
+    )
+    assert len(p.sources) == 1
+    assert p.sources[0].id == "s1"
+    assert p.sources[0].table == "records"
+
+
+def test_invalid_source_missing_table_raises():
     with pytest.raises(ValidationError):
-        JsonFileSource(id="s1", type="invalid", path="/foo")
+        DltSource(id="s1", source_type="filesystem", config={})
 
 
 def test_filter_step_in_pipeline():
     p = Pipeline(
         id="p1", name="test",
-        sources=[{"id": "s1", "type": "json_file", "path": "/foo.json"}],
+        sources=[{
+            "id": "s1", "source_type": "filesystem",
+            "config": {"bucket_url": "/tmp"}, "table": "t",
+        }],
         steps=[{"op": "filter", "expr": "age > 18"}],
         output={"type": "json_file", "path": "/out.json"},
     )
@@ -45,7 +62,10 @@ def test_filter_step_in_pipeline():
 def test_rename_step_in_pipeline():
     p = Pipeline(
         id="p1", name="test",
-        sources=[{"id": "s1", "type": "json_file", "path": "/foo.json"}],
+        sources=[{
+            "id": "s1", "source_type": "filesystem",
+            "config": {"bucket_url": "/tmp"}, "table": "t",
+        }],
         steps=[{"op": "rename", "mappings": {"old_name": "new_name"}}],
         output={"type": "json_file", "path": "/out.json"},
     )
@@ -56,7 +76,10 @@ def test_rename_step_in_pipeline():
 def test_retype_step_in_pipeline():
     p = Pipeline(
         id="p1", name="test",
-        sources=[{"id": "s1", "type": "json_file", "path": "/foo.json"}],
+        sources=[{
+            "id": "s1", "source_type": "filesystem",
+            "config": {"bucket_url": "/tmp"}, "table": "t",
+        }],
         steps=[{"op": "retype", "field": "age", "to_type": "string"}],
         output={"type": "json_file", "path": "/out.json"},
     )
@@ -68,7 +91,10 @@ def test_retype_step_in_pipeline():
 def test_lookup_map_step_in_pipeline():
     p = Pipeline(
         id="p1", name="test",
-        sources=[{"id": "s1", "type": "json_file", "path": "/foo.json"}],
+        sources=[{
+            "id": "s1", "source_type": "filesystem",
+            "config": {"bucket_url": "/tmp"}, "table": "t",
+        }],
         steps=[{
             "op": "map", "mode": "lookup", "field": "country_code",
             "table": {"US": "United States", "CA": "Canada"},
@@ -84,7 +110,10 @@ def test_lookup_map_step_in_pipeline():
 def test_expression_map_step_in_pipeline():
     p = Pipeline(
         id="p1", name="test",
-        sources=[{"id": "s1", "type": "json_file", "path": "/foo.json"}],
+        sources=[{
+            "id": "s1", "source_type": "filesystem",
+            "config": {"bucket_url": "/tmp"}, "table": "t",
+        }],
         steps=[{
             "op": "map", "mode": "expression",
             "output_field": "total", "expr": "price * quantity"
@@ -99,7 +128,10 @@ def test_expression_map_step_in_pipeline():
 def test_sort_step_in_pipeline():
     p = Pipeline(
         id="p1", name="test",
-        sources=[{"id": "s1", "type": "json_file", "path": "/foo.json"}],
+        sources=[{
+            "id": "s1", "source_type": "filesystem",
+            "config": {"bucket_url": "/tmp"}, "table": "t",
+        }],
         steps=[{"op": "sort", "by": ["age", "name"], "ascending": [True, False]}],
         output={"type": "json_file", "path": "/out.json"},
     )
@@ -111,7 +143,10 @@ def test_sort_step_in_pipeline():
 def test_aggregate_step_in_pipeline():
     p = Pipeline(
         id="p1", name="test",
-        sources=[{"id": "s1", "type": "json_file", "path": "/foo.json"}],
+        sources=[{
+            "id": "s1", "source_type": "filesystem",
+            "config": {"bucket_url": "/tmp"}, "table": "t",
+        }],
         steps=[{
             "op": "aggregate",
             "group_by": ["category"],
@@ -127,7 +162,10 @@ def test_aggregate_step_in_pipeline():
 def test_pipeline_output_fields():
     p = Pipeline(
         id="p1", name="test",
-        sources=[{"id": "s1", "type": "json_file", "path": "/foo.json"}],
+        sources=[{
+            "id": "s1", "source_type": "filesystem",
+            "config": {"bucket_url": "/tmp"}, "table": "t",
+        }],
         steps=[],
         output={
             "type": "json_file", "path": "/out.json",

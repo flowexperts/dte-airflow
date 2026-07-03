@@ -7,13 +7,11 @@ from dte.engine.base import BaseEngine
 
 class DuckDBEngine(BaseEngine):
     def __init__(self):
-        self.con = ibis.duckdb.connect()
+        self._con = ibis.duckdb.connect()
 
-    def load_json(self, source_id: str, path: str) -> ibis.Table:
-        return self.con.read_json(path)
-
-    def load_csv(self, source_id: str, path: str) -> ibis.Table:
-        return self.con.read_csv(path)
+    @property
+    def con(self) -> ibis.BaseBackend:
+        return self._con
 
     def execute_to_json(self, table: ibis.Table, output_path: str) -> int:
         df = table.execute()
@@ -22,9 +20,9 @@ class DuckDBEngine(BaseEngine):
         return len(records)
 
     def apply_filter_sql(self, table: ibis.Table, expr: str) -> ibis.Table:
-        self.con.create_view("_filter_input", table, overwrite=True)
-        return self.con.sql(f"SELECT * FROM _filter_input WHERE {expr}")
+        self._con.create_view("_filter_input", table, overwrite=True)
+        return self._con.sql(f"SELECT * FROM _filter_input WHERE {expr}")
 
     def apply_expression_sql(self, table: ibis.Table, output_field: str, expr: str) -> ibis.Table:
-        self.con.create_view("_expr_input", table, overwrite=True)
-        return self.con.sql(f"SELECT *, ({expr}) AS {output_field} FROM _expr_input")
+        self._con.create_view("_expr_input", table, overwrite=True)
+        return self._con.sql(f"SELECT *, ({expr}) AS {output_field} FROM _expr_input")

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from dte.models.pipeline import Pipeline
 from dte.compiler.ibis_compiler import compile_pipeline
 from dte.engine.duckdb_engine import DuckDBEngine
+from dte.sources.dlt_loader import load_source
 
 router = APIRouter()
 
@@ -50,10 +51,7 @@ async def _execute_pipeline(pipeline_id: str, run_id: str):
         engine = DuckDBEngine()
         tables = {}
         for source in pipeline.sources:
-            if source.type == "json_file":
-                tables[source.id] = engine.load_json(source.id, source.path)
-            elif source.type == "csv_file":
-                tables[source.id] = engine.load_csv(source.id, source.path)
+            tables[source.id] = load_source(source, engine.con)
 
         compiled = compile_pipeline(pipeline, tables)
         rows = engine.execute_to_json(compiled, pipeline.output.path)

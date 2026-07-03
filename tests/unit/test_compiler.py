@@ -11,7 +11,12 @@ def make_pipeline(steps, output_fields=None):
         output["fields"] = output_fields
     return Pipeline(
         id="p1", name="test",
-        sources=[{"id": "src", "type": "json_file", "path": "/dummy.json"}],
+        sources=[{
+            "id": "src",
+            "source_type": "filesystem",
+            "config": {"bucket_url": "/tmp"},
+            "table": "dummy",
+        }],
         steps=steps,
         output=output,
     )
