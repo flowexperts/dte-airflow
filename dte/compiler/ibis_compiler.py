@@ -19,15 +19,17 @@ _TYPE_MAP: dict[str, dt.DataType] = {
 
 
 def _resolve_field(table: ibis.Table, field_path: str) -> ibis.Expr:
-    """Resolve a dot-notation field path, traversing struct columns as needed."""
     parts = field_path.split(".")
-    # Check if the first part is directly a column; if so, iterate struct fields
+    # Try struct traversal first
     if parts[0] in table.columns:
         col = table[parts[0]]
         for part in parts[1:]:
             col = col[part]
         return col
-    # Fallback: return as-is (may raise if field doesn't exist)
+    # Fall back to dlt-normalized double-underscore column name
+    dlt_name = "__".join(parts)
+    if dlt_name in table.columns:
+        return table[dlt_name]
     return table[field_path]
 
 
