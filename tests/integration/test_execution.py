@@ -1,0 +1,135 @@
+import pytest
+import json
+from pathlib import Path
+from fastapi.testclient import TestClient
+from dte.engine.duckdb_engine import DuckDBEngine
+from dte.compiler.ibis_compiler import compile_pipeline
+from dte.models.pipeline import Pipeline
+
+
+def make_pipeline_dict(sources, steps, output_path, output_fields=None):
+    out = {"type": "json_file", "path": output_path}
+    if output_fields:
+        out["fields"] = output_fields
+    return {
+        "id": "p1", "name": "integration_test",
+        "sources": sources,
+        "steps": steps,
+        "output": out,
+    }
+
+
+def test_end_to_end_filter_rename(tmp_path):
+    data = [
+        {"first_name": "alice", "age": 30},
+        {"first_name": "bob", "age": 16},
+        {"first_name": "carol", "age": 22},
+    ]
+    src = tmp_path / "input.json"
+    src.write_text(json.dumps(data))
+    out = tmp_path / "output.json"
+
+    pipeline_dict = make_pipeline_dict(
+        sources=[{"id": "src", "type": "json_file", "path": str(src)}],
+        steps=[
+            {"op": "filter", "expr": "age >= 18"},
+            {"op": "rename", "mappings": {"first_name": "name"}},
+        ],
+        output_path=str(out),
+    )
+    pipeline = Pipeline(**pipeline_dict)
+    engine = DuckDBEngine()
+    tables = {"src": engine.load_json("src", str(src))}
+    compiled = compile_pipeline(pipeline, tables)
+    rows = engine.execute_to_json(compiled, str(out))
+
+    assert rows == 2
+    result = json.loads(out.read_text())
+    names = [r["name"] for r in result]
+    assert "alice" in names
+    assert "carol" in names
+    assert "bob" not in names
+
+
+def test_end_to_end_nested_json_flatten_aggregate(tmp_path):
+    data = [
+        {"order": {"category": "electronics", "amount": 100}},
+        {"order": {"category": "electronics", "amount": 200}},
+        {"order": {"category": "clothing", "amount": 50}},
+    ]
+    src = tmp_path / "orders.json"
+    src.write_text(json.dumps(data))
+    out = tmp_path / "agg_output.json"
+
+    pipeline_dict = make_pipeline_dict(
+        sources=[{"id": "src", "type": "json_file", "path": str(src)}],
+        steps=[{
+            "op": "aggregate",
+            "group_by": ["order.category"],
+            "aggregations": [{"field": "order.amount", "func": "sum", "alias": "total"}]
+        }],
+        output_path=str(out),
+    )
+    pipeline = Pipeline(**pipeline_dict)
+    engine = DuckDBEngine()
+    tables = {"src": engine.load_json("src", str(src))}
+    compiled = compile_pipeline(pipeline, tables)
+    rows = engine.execute_to_json(compiled, str(out))
+
+    assert rows == 2
+    result = json.loads(out.read_text())
+    categories = {r["order.category"]: r["total"] for r in result}
+    assert categories["electronics"] == 300
+    assert categories["clothing"] == 50
+
+
+def test_api_trigger_and_poll(tmp_path):
+    from dte.api.main import app, _pipelines, _runs
+
+    _pipelines.clear()
+    _runs.clear()
+
+    data = [
+        {"name": "alice", "score": 90},
+        {"name": "bob", "score": 45},
+    ]
+    src = tmp_path / "scores.json"
+    src.write_text(json.dumps(data))
+    out = tmp_path / "api_out.json"
+
+    pipeline_payload = {
+        "id": "api-p1",
+        "name": "api_test",
+        "sources": [{"id": "src", "type": "json_file", "path": str(src)}],
+        "steps": [{"op": "filter", "expr": "score > 50"}],
+        "output": {"type": "json_file", "path": str(out)},
+    }
+
+    client = TestClient(app)
+
+    r = client.post("/api/pipelines", json=pipeline_payload)
+    assert r.status_code == 200
+    pid = r.json()["id"]
+    assert pid == "api-p1"
+
+    r = client.get(f"/api/pipelines/{pid}")
+    assert r.status_code == 200
+    assert r.json()["name"] == "api_test"
+
+    r = client.post(f"/api/pipelines/{pid}/trigger")
+    assert r.status_code == 200
+    run_id = r.json()["run_id"]
+
+    import time
+    for _ in range(20):
+        r = client.get(f"/api/runs/{run_id}")
+        assert r.status_code == 200
+        status = r.json()["status"]
+        if status in ("completed", "failed"):
+            break
+        time.sleep(0.1)
+
+    assert r.json()["status"] == "completed"
+    assert r.json()["rows_written"] == 1
+    result = json.loads(out.read_text())
+    assert result[0]["name"] == "alice"
