@@ -6,6 +6,7 @@ from dte.models.pipeline import (
     LookupMapStep, ExpressionMapStep,
     SortStep, AggSpec, AggregateStep,
     OutputField, JsonFileOutput, Pipeline,
+    JoinStep, PivotStep,
 )
 
 
@@ -174,3 +175,43 @@ def test_pipeline_output_fields():
     )
     assert p.output.fields[0].alias == "full_name"
     assert p.output.fields[1].alias is None
+
+
+def test_join_step_parses():
+    step = JoinStep(
+        op="join",
+        left="users",
+        right="orders",
+        on="id",
+        how="inner",
+        output_id="joined",
+    )
+    assert step.left == "users"
+    assert step.right == "orders"
+    assert step.on == "id"
+    assert step.how == "inner"
+    assert step.output_id == "joined"
+
+
+def test_join_step_defaults_inner():
+    step = JoinStep(op="join", left="a", right="b", on="id", output_id="ab")
+    assert step.how == "inner"
+
+
+def test_pivot_step_parses():
+    step = PivotStep(
+        op="pivot",
+        index="region",
+        columns="product",
+        values="sales",
+        agg="sum",
+    )
+    assert step.index == "region"
+    assert step.columns == "product"
+    assert step.values == "sales"
+    assert step.agg == "sum"
+
+
+def test_pivot_step_default_agg_is_sum():
+    step = PivotStep(op="pivot", index="region", columns="product", values="sales")
+    assert step.agg == "sum"

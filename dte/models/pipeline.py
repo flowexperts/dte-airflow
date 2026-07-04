@@ -59,6 +59,23 @@ class AggregateStep(BaseModel):
     aggregations: list[AggSpec]
 
 
+class JoinStep(BaseModel):
+    op: Literal["join"]
+    left: str
+    right: str
+    on: str | list[str]
+    how: Literal["inner", "left", "right", "outer"] = "inner"
+    output_id: str
+
+
+class PivotStep(BaseModel):
+    op: Literal["pivot"]
+    index: str | list[str]
+    columns: str
+    values: str
+    agg: Literal["sum", "count", "avg", "min", "max"] = "sum"
+
+
 class OutputField(BaseModel):
     field: str
     alias: str | None = None

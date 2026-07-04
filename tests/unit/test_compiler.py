@@ -2,7 +2,7 @@ import pytest
 import ibis
 import pandas as pd
 from dte.compiler.ibis_compiler import compile_pipeline
-from dte.models.pipeline import Pipeline
+from dte.models.pipeline import Pipeline, JoinStep, PivotStep
 
 
 def make_pipeline(steps, output_fields=None):
@@ -166,3 +166,189 @@ def test_output_field_alias(people_table):
     df = result.execute()
     assert "full_name" in df.columns
     assert "name" not in df.columns
+
+
+def make_join_pipeline(steps, sources, output_fields=None):
+    output = {"type": "json_file", "path": "/tmp/out.json"}
+    if output_fields:
+        output["fields"] = output_fields
+    return Pipeline(
+        id="p1", name="test",
+        sources=sources,
+        steps=steps,
+        output=output,
+    )
+
+
+@pytest.fixture
+def users_table(con):
+    df = pd.DataFrame([
+        {"id": 1, "name": "alice"},
+        {"id": 2, "name": "bob"},
+        {"id": 3, "name": "carol"},
+    ])
+    return con.create_table("users", df, overwrite=True)
+
+
+@pytest.fixture
+def orders_table(con):
+    df = pd.DataFrame([
+        {"id": 1, "amount": 100},
+        {"id": 2, "amount": 200},
+        {"id": 4, "amount": 50},
+    ])
+    return con.create_table("orders", df, overwrite=True)
+
+
+@pytest.fixture
+def regional_orders_table(con):
+    df = pd.DataFrame([
+        {"id": 1, "region": "east", "amount": 100},
+        {"id": 2, "region": "west", "amount": 200},
+    ])
+    return con.create_table("regional_orders", df, overwrite=True)
+
+
+@pytest.fixture
+def regional_users_table(con):
+    df = pd.DataFrame([
+        {"id": 1, "region": "east", "name": "alice"},
+        {"id": 2, "region": "west", "name": "bob"},
+        {"id": 3, "region": "east", "name": "carol"},
+    ])
+    return con.create_table("regional_users", df, overwrite=True)
+
+
+def _src(src_id):
+    return {
+        "id": src_id,
+        "source_type": "filesystem",
+        "config": {"bucket_url": "/tmp"},
+        "table": "dummy",
+    }
+
+
+def test_join_inner(users_table, orders_table):
+    pipeline = make_join_pipeline(
+        sources=[_src("users"), _src("orders")],
+        steps=[{
+            "op": "join",
+            "left": "users",
+            "right": "orders",
+            "on": "id",
+            "how": "inner",
+            "output_id": "joined",
+        }],
+    )
+    result = compile_pipeline(pipeline, {"users": users_table, "orders": orders_table})
+    df = result.execute()
+    assert len(df) == 2
+    assert "name" in df.columns
+    assert "amount" in df.columns
+
+
+def test_join_left(users_table, orders_table):
+    pipeline = make_join_pipeline(
+        sources=[_src("users"), _src("orders")],
+        steps=[{
+            "op": "join",
+            "left": "users",
+            "right": "orders",
+            "on": "id",
+            "how": "left",
+            "output_id": "joined",
+        }],
+    )
+    result = compile_pipeline(pipeline, {"users": users_table, "orders": orders_table})
+    df = result.execute()
+    assert len(df) == 3
+    carol_row = df[df["name"] == "carol"]
+    assert carol_row["amount"].isna().all()
+
+
+def test_join_on_multiple_columns(regional_users_table, regional_orders_table):
+    pipeline = make_join_pipeline(
+        sources=[_src("regional_users"), _src("regional_orders")],
+        steps=[{
+            "op": "join",
+            "left": "regional_users",
+            "right": "regional_orders",
+            "on": ["id", "region"],
+            "how": "inner",
+            "output_id": "joined",
+        }],
+    )
+    result = compile_pipeline(pipeline, {
+        "regional_users": regional_users_table,
+        "regional_orders": regional_orders_table,
+    })
+    df = result.execute()
+    assert len(df) == 2
+    assert "name" in df.columns
+    assert "amount" in df.columns
+
+
+def test_join_result_available_for_next_step(users_table, orders_table):
+    pipeline = make_join_pipeline(
+        sources=[_src("users"), _src("orders")],
+        steps=[
+            {
+                "op": "join",
+                "left": "users",
+                "right": "orders",
+                "on": "id",
+                "how": "inner",
+                "output_id": "joined",
+            },
+            {"op": "filter", "expr": "amount > 100"},
+        ],
+    )
+    result = compile_pipeline(pipeline, {"users": users_table, "orders": orders_table})
+    df = result.execute()
+    assert len(df) == 1
+    assert df["name"].iloc[0] == "bob"
+
+
+@pytest.fixture
+def pivot_sales_table(con):
+    df = pd.DataFrame([
+        {"region": "East", "product": "A", "sales": 100},
+        {"region": "East", "product": "B", "sales": 150},
+        {"region": "West", "product": "A", "sales": 200},
+        {"region": "West", "product": "B", "sales": 50},
+    ])
+    return con.create_table("pivot_sales", df, overwrite=True)
+
+
+def test_pivot_sum(pivot_sales_table):
+    pipeline = make_pipeline([{
+        "op": "pivot",
+        "index": "region",
+        "columns": "product",
+        "values": "sales",
+        "agg": "sum",
+    }])
+    result = compile_pipeline(pipeline, {"src": pivot_sales_table})
+    df = result.execute()
+    assert "A" in df.columns
+    assert "B" in df.columns
+    east_row = df[df["region"] == "East"]
+    assert east_row["A"].iloc[0] == 100
+    assert east_row["B"].iloc[0] == 150
+
+
+def test_pivot_count(pivot_sales_table):
+    pipeline = make_pipeline([{
+        "op": "pivot",
+        "index": "region",
+        "columns": "product",
+        "values": "sales",
+        "agg": "count",
+    }])
+    result = compile_pipeline(pipeline, {"src": pivot_sales_table})
+    df = result.execute()
+    assert "A" in df.columns
+    assert "B" in df.columns
+    east_row = df[df["region"] == "East"]
+    assert east_row["A"].iloc[0] == 1
+    assert east_row["B"].iloc[0] == 1

@@ -147,3 +147,88 @@ def test_api_trigger_and_poll(tmp_path):
     assert r.json()["rows_written"] == 1
     result = json.loads(out.read_text())
     assert result[0]["name"] == "alice"
+
+
+def test_end_to_end_join_two_sources(tmp_path):
+    users_data = [
+        {"id": 1, "name": "alice"},
+        {"id": 2, "name": "bob"},
+        {"id": 3, "name": "carol"},
+    ]
+    orders_data = [
+        {"id": 1, "amount": 100},
+        {"id": 2, "amount": 200},
+        {"id": 4, "amount": 50},
+    ]
+    (tmp_path / "users.json").write_text(json.dumps(users_data))
+    (tmp_path / "orders.json").write_text(json.dumps(orders_data))
+    out = tmp_path / "joined_output.json"
+
+    pipeline_dict = make_pipeline_dict(
+        sources=[
+            _dlt_source("users", tmp_path, "users.json", "users"),
+            _dlt_source("orders", tmp_path, "orders.json", "orders"),
+        ],
+        steps=[{
+            "op": "join",
+            "left": "users",
+            "right": "orders",
+            "on": "id",
+            "how": "inner",
+            "output_id": "joined",
+        }],
+        output_path=str(out),
+    )
+    pipeline = Pipeline(**pipeline_dict)
+    engine = DuckDBEngine()
+    tables = {}
+    for src_dict in pipeline_dict["sources"]:
+        src = DltSource(**src_dict)
+        tables[src.id] = load_source(src, engine.con)
+
+    compiled = compile_pipeline(pipeline, tables)
+    df = compiled.execute()
+
+    assert len(df) == 2
+    assert "name" in df.columns
+    assert "amount" in df.columns
+    names = set(df["name"].tolist())
+    assert "alice" in names
+    assert "bob" in names
+    assert "carol" not in names
+
+
+def test_end_to_end_pivot(tmp_path):
+    sales_data = [
+        {"region": "East", "product": "A", "sales": 100},
+        {"region": "East", "product": "B", "sales": 150},
+        {"region": "West", "product": "A", "sales": 200},
+        {"region": "West", "product": "B", "sales": 50},
+    ]
+    (tmp_path / "sales.json").write_text(json.dumps(sales_data))
+    out = tmp_path / "pivot_output.json"
+
+    pipeline_dict = make_pipeline_dict(
+        sources=[_dlt_source("src", tmp_path, "sales.json", "sales")],
+        steps=[{
+            "op": "pivot",
+            "index": "region",
+            "columns": "product",
+            "values": "sales",
+            "agg": "sum",
+        }],
+        output_path=str(out),
+    )
+    pipeline = Pipeline(**pipeline_dict)
+    engine = DuckDBEngine()
+    src = DltSource(**pipeline_dict["sources"][0])
+    tables = {"src": load_source(src, engine.con)}
+    compiled = compile_pipeline(pipeline, tables)
+    df = compiled.execute()
+
+    assert "A" in df.columns
+    assert "B" in df.columns
+    assert "region" in df.columns
+    east_row = df[df["region"] == "East"]
+    assert east_row["A"].iloc[0] == 100
+    assert east_row["B"].iloc[0] == 150
