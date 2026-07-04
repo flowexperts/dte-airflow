@@ -1,16 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from dte.api.deps import get_run_store
+from dte.store.base import RunStore
 
 router = APIRouter()
 
 
-def _get_runs():
-    from dte.api.main import _runs
-    return _runs
-
-
 @router.get("/runs/{run_id}")
-def get_run(run_id: str):
-    _runs = _get_runs()
-    if run_id not in _runs:
+async def get_run(run_id: str, store: RunStore = Depends(get_run_store)):
+    run = await store.get(run_id)
+    if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    return _runs[run_id]
+    return run

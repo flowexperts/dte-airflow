@@ -98,10 +98,14 @@ def test_end_to_end_nested_json_flatten_aggregate(tmp_path):
 
 
 def test_api_trigger_and_poll(tmp_path):
-    from dte.api.main import app, _pipelines, _runs
+    from dte.api.main import app
+    from dte.api.deps import get_pipeline_store, get_run_store
+    from dte.store.memory import MemoryPipelineStore, MemoryRunStore
 
-    _pipelines.clear()
-    _runs.clear()
+    p_store = MemoryPipelineStore()
+    r_store = MemoryRunStore()
+    app.dependency_overrides[get_pipeline_store] = lambda: p_store
+    app.dependency_overrides[get_run_store] = lambda: r_store
 
     data = [
         {"name": "alice", "score": 90},
@@ -147,3 +151,4 @@ def test_api_trigger_and_poll(tmp_path):
     assert r.json()["rows_written"] == 1
     result = json.loads(out.read_text())
     assert result[0]["name"] == "alice"
+    app.dependency_overrides.clear()
