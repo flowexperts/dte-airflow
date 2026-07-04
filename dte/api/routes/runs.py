@@ -11,3 +11,12 @@ async def get_run(run_id: str, store: RunStore = Depends(get_run_store)):
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return run
+
+
+@router.get("/pipelines/{pipeline_id}/runs")
+async def list_runs_for_pipeline(
+    pipeline_id: str,
+    limit: int = 50,
+    store: RunStore = Depends(get_run_store),
+):
+    return await store.list_for_pipeline(pipeline_id, limit=limit)
