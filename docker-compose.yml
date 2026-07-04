@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: dte
+      POSTGRES_USER: dte
+      POSTGRES_PASSWORD: dte
+    ports:
+      - "5432:5432"
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dte:dte@postgres:5432/dte
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    command: uvicorn dte.api.main:app --host 0.0.0.0 --port 8000
