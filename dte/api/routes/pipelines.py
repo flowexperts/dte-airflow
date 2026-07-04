@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import json
 from fastapi import APIRouter, HTTPException, Depends
 from dte.models.pipeline import Pipeline
 from dte.compiler.ibis_compiler import compile_pipeline
@@ -28,6 +29,28 @@ async def get_pipeline(pipeline_id: str, store: PipelineStore = Depends(get_pipe
     if not p:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     return p
+
+
+@router.get("/pipelines/{pipeline_id}/preview")
+async def preview_pipeline(
+    pipeline_id: str,
+    limit: int = 100,
+    store: PipelineStore = Depends(get_pipeline_store),
+):
+    pipeline_dict = await store.get(pipeline_id)
+    if not pipeline_dict:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    try:
+        pipeline = Pipeline(**pipeline_dict)
+        engine = DuckDBEngine()
+        tables = {s.id: load_source(s, engine.con) for s in pipeline.sources}
+        compiled = compile_pipeline(pipeline, tables)
+        df = compiled.limit(limit).execute()
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    rows = json.loads(df.to_json(orient="records", date_format="iso"))
+    return {"rows": rows, "count": len(rows)}
 
 
 @router.post("/pipelines/{pipeline_id}/trigger")
