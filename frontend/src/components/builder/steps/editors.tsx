@@ -9,19 +9,259 @@ import {
   Textarea,
 } from "@/components/ui";
 import { useSchemas } from "../schema-context";
+import { cn } from "@/lib/cn";
 import type { StepShape } from "./types";
 
 type Setter = (patch: Partial<StepShape>) => void;
 
+/* --------------- Filter — Basic + Advanced tabs --------------- */
+
+type FilterOp =
+  | "="
+  | "!="
+  | ">"
+  | "<"
+  | ">="
+  | "<="
+  | "LIKE"
+  | "IN"
+  | "IS NULL"
+  | "IS NOT NULL"
+  | "BETWEEN";
+
+interface FilterRule {
+  field: string;
+  op: FilterOp;
+  value: string;
+  join: "AND" | "OR";
+}
+
+const FILTER_OPS: FilterOp[] = [
+  "=", "!=", ">", "<", ">=", "<=", "LIKE", "IN", "IS NULL", "IS NOT NULL", "BETWEEN",
+];
+
+const OPS_WITHOUT_VALUE = new Set<FilterOp>(["IS NULL", "IS NOT NULL"]);
+
+/** DuckDB identifier quote — wraps in "" and escapes internal " as "". */
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** DuckDB string literal quote — wraps in '' and escapes internal ' as ''. */
+function quoteString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Turn a value into a safe SQL literal.
+ * Bare numbers (int or float) pass through as-is; everything else is quoted as string.
+ * Never concatenates raw user input into the SQL string without going through here.
+ */
+function safeLiteral(v: string): string {
+  const trimmed = v.trim();
+  if (trimmed === "") return "''";
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
+  if (/^(true|false)$/i.test(trimmed)) return trimmed.toUpperCase();
+  return quoteString(trimmed);
+}
+
+function ruleToSql(r: FilterRule): string {
+  if (!r.field) return "";
+  const f = quoteIdent(r.field);
+  switch (r.op) {
+    case "IS NULL":
+    case "IS NOT NULL":
+      return `${f} ${r.op}`;
+    case "IN": {
+      const parts = r.value
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map(safeLiteral);
+      if (parts.length === 0) return "";
+      return `${f} IN (${parts.join(", ")})`;
+    }
+    case "BETWEEN": {
+      const parts = r.value.split(",").map((s) => s.trim()).filter(Boolean);
+      if (parts.length !== 2) return "";
+      return `${f} BETWEEN ${safeLiteral(parts[0])} AND ${safeLiteral(parts[1])}`;
+    }
+    case "LIKE":
+      return `${f} LIKE ${safeLiteral(r.value)}`;
+    default:
+      return `${f} ${r.op} ${safeLiteral(r.value)}`;
+  }
+}
+
+function rulesToSql(rules: FilterRule[]): string {
+  const parts: string[] = [];
+  rules.forEach((r, i) => {
+    const sql = ruleToSql(r);
+    if (!sql) return;
+    if (parts.length === 0) parts.push(sql);
+    else parts.push(`${r.join} ${sql}`);
+  });
+  return parts.join(" ");
+}
+
 export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const { allFields } = useSchemas();
+
+  // Mode is local UI state — not persisted on the step. On first mount, if
+  // there's an existing expr, default to Advanced (we don't try to parse
+  // arbitrary SQL back into structured rules).
+  const initialMode: "basic" | "advanced" = step.expr ? "advanced" : "basic";
+  const [mode, setMode] = useState<"basic" | "advanced">(initialMode);
+  const [rules, setRules] = useState<FilterRule[]>([]);
+
+  const commitRules = (next: FilterRule[]) => {
+    setRules(next);
+    set({ expr: rulesToSql(next) });
+  };
+
+  const addRule = () =>
+    commitRules([
+      ...rules,
+      { field: "", op: "=", value: "", join: "AND" },
+    ]);
+  const updateRule = (i: number, patch: Partial<FilterRule>) =>
+    commitRules(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const removeRule = (i: number) =>
+    commitRules(rules.filter((_, j) => j !== i));
+
+  const previewExpr = mode === "basic" ? rulesToSql(rules) : ((step.expr as string) ?? "");
+
   return (
-    <Field label="Expression" hint="SQL WHERE clause (DuckDB)">
-      <Textarea
-        value={(step.expr as string) ?? ""}
-        onChange={(e) => set({ expr: e.target.value })}
-        placeholder="amount > 0 AND status = 'completed'"
-      />
-    </Field>
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between">
+        <div className="inline-flex border border-border rounded-[var(--radius)] bg-surface p-0.5">
+          {(["basic", "advanced"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                if (m === "basic" && mode === "advanced") {
+                  // Switching from Advanced back to Basic: clear rules so the
+                  // user can rebuild. We do not attempt to parse arbitrary SQL.
+                  commitRules([]);
+                }
+                setMode(m);
+              }}
+              className={cn(
+                "px-3 py-1 text-[12.5px] font-medium rounded-[3px] transition-colors capitalize",
+                m === mode
+                  ? "bg-[color:var(--accent-tint)] text-accent"
+                  : "text-muted hover:text-text",
+              )}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+        <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+          {mode === "basic" ? "structured · safe" : "raw sql"}
+        </span>
+      </div>
+
+      {mode === "basic" ? (
+        <div className="space-y-1.5">
+          {rules.length === 0 && (
+            <div className="font-mono text-[11.5px] text-subtle">
+              No conditions. Add one below.
+            </div>
+          )}
+          {rules.map((r, i) => {
+            const noValue = OPS_WITHOUT_VALUE.has(r.op);
+            return (
+              <div
+                key={i}
+                className="grid grid-cols-[60px_1.4fr_120px_1.4fr_28px] gap-2 items-center"
+              >
+                {i === 0 ? (
+                  <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
+                    where
+                  </span>
+                ) : (
+                  <select
+                    value={r.join}
+                    onChange={(e) => updateRule(i, { join: e.target.value as "AND" | "OR" })}
+                    className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
+                  >
+                    <option value="AND">AND</option>
+                    <option value="OR">OR</option>
+                  </select>
+                )}
+                <FieldPicker
+                  value={r.field}
+                  onChange={(v) => updateRule(i, { field: v })}
+                  options={allFields}
+                  placeholder="field"
+                />
+                <select
+                  value={r.op}
+                  onChange={(e) => updateRule(i, { op: e.target.value as FilterOp })}
+                  className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
+                >
+                  {FILTER_OPS.map((op) => (
+                    <option key={op} value={op}>
+                      {op}
+                    </option>
+                  ))}
+                </select>
+                <Input
+                  value={r.value}
+                  onChange={(e) => updateRule(i, { value: e.target.value })}
+                  placeholder={
+                    r.op === "IN"
+                      ? "a, b, c"
+                      : r.op === "BETWEEN"
+                        ? "min, max"
+                        : "value"
+                  }
+                  disabled={noValue}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeRule(i)}
+                  className="text-subtle hover:text-red text-sm"
+                  aria-label="Remove condition"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={addRule}
+            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+          >
+            + Add condition
+          </button>
+          {previewExpr && (
+            <div className="mt-2">
+              <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
+                Generated SQL
+              </div>
+              <code className="block font-mono text-[12px] text-muted bg-code-bg border border-border rounded px-2.5 py-1.5 whitespace-pre-wrap break-words">
+                {previewExpr}
+              </code>
+            </div>
+          )}
+        </div>
+      ) : (
+        <Field
+          label="Expression"
+          hint="raw DuckDB WHERE clause. You are responsible for quoting — for safe, structured input use Basic."
+        >
+          <Textarea
+            value={(step.expr as string) ?? ""}
+            onChange={(e) => set({ expr: e.target.value })}
+            placeholder="amount > 0 AND status = 'completed'"
+          />
+        </Field>
+      )}
+    </div>
   );
 }
 
