@@ -1,11 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DataTable, type Column } from "@/components/ui";
-import type { Pipeline } from "@/lib/api";
+import { triggerPipeline, type Pipeline } from "@/lib/api";
 
 export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
   const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const runPipeline = async (id: string) => {
+    setBusy(id);
+    try {
+      const { run_id } = await triggerPipeline(id);
+      router.push(`/runs/${encodeURIComponent(run_id)}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+      setBusy(null);
+    }
+  };
 
   const columns: Column<Pipeline>[] = [
     {
@@ -55,11 +68,30 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
     {
       key: "id",
       header: "ID",
-      width: "220px",
+      width: "180px",
       render: (r) => (
         <span className="font-mono text-[11px] text-subtle truncate">
           {r.id}
         </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "80px",
+      align: "right",
+      render: (r) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            runPipeline(r.id);
+          }}
+          disabled={busy === r.id}
+          className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h disabled:opacity-50 disabled:pointer-events-none"
+        >
+          {busy === r.id ? "…" : "▶ Run"}
+        </button>
       ),
     },
   ];

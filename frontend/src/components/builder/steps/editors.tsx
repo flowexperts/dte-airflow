@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Field, Input, Textarea } from "@/components/ui";
 import type { StepShape } from "./types";
 
@@ -17,26 +18,44 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   );
 }
 
+function parseMappings(t: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of t.split("\n")) {
+    const [k, v] = line.split(/→|->/).map((s) => s.trim());
+    if (k && v) out[k] = v;
+  }
+  return out;
+}
+
 export function RenameEditor({ step, set }: { step: StepShape; set: Setter }) {
   const mappings = (step.mappings as Record<string, string>) ?? {};
   const asText = Object.entries(mappings)
     .map(([k, v]) => `${k} → ${v}`)
     .join("\n");
 
-  const parse = (t: string): Record<string, string> => {
-    const out: Record<string, string> = {};
-    for (const line of t.split("\n")) {
-      const [k, v] = line.split(/→|->/).map((s) => s.trim());
-      if (k && v) out[k] = v;
-    }
-    return out;
-  };
+  // Local text state so mid-typing (e.g. "customer_id →") isn't wiped by the parser.
+  const [text, setText] = useState(asText);
+
+  // Sync from external only when the parsed mapping actually differs
+  // (e.g. loading an existing pipeline). We compare via parse of local text
+  // to avoid clobbering the user's cursor while typing.
+  useEffect(() => {
+    const parsed = parseMappings(text);
+    const same =
+      Object.keys(parsed).length === Object.keys(mappings).length &&
+      Object.entries(parsed).every(([k, v]) => mappings[k] === v);
+    if (!same) setText(asText);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asText]);
 
   return (
-    <Field label="Mappings" hint="one per line: old_name → new_name">
+    <Field label="Mappings" hint="one per line: old_name → new_name (or ->)">
       <Textarea
-        value={asText}
-        onChange={(e) => set({ mappings: parse(e.target.value) })}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          set({ mappings: parseMappings(e.target.value) });
+        }}
         placeholder={"customer_id → user_id\norder_ts → created_at"}
         rows={4}
       />
@@ -70,17 +89,27 @@ export function RetypeEditor({ step, set }: { step: StepShape; set: Setter }) {
   );
 }
 
+function parseKVLines(t: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of t.split("\n")) {
+    const [k, v] = line.split("=").map((s) => s.trim());
+    if (k && v) out[k] = v;
+  }
+  return out;
+}
+
 export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter }) {
   const table = (step.table as Record<string, string>) ?? {};
   const asText = Object.entries(table).map(([k, v]) => `${k} = ${v}`).join("\n");
-  const parse = (t: string): Record<string, string> => {
-    const out: Record<string, string> = {};
-    for (const line of t.split("\n")) {
-      const [k, v] = line.split("=").map((s) => s.trim());
-      if (k && v) out[k] = v;
-    }
-    return out;
-  };
+  const [text, setText] = useState(asText);
+  useEffect(() => {
+    const parsed = parseKVLines(text);
+    const same =
+      Object.keys(parsed).length === Object.keys(table).length &&
+      Object.entries(parsed).every(([k, v]) => table[k] === v);
+    if (!same) setText(asText);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asText]);
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-2 gap-3">
@@ -100,8 +129,11 @@ export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter })
       </div>
       <Field label="Lookup table" hint="one per line: key = value">
         <Textarea
-          value={asText}
-          onChange={(e) => set({ table: parse(e.target.value) })}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            set({ table: parseKVLines(e.target.value) });
+          }}
           placeholder={"US = north_america\nCA = north_america\nGB = europe"}
           rows={4}
         />

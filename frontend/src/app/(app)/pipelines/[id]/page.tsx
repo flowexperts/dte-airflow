@@ -7,11 +7,8 @@ import {
   PanelHead,
   Item,
   Tag,
-  Pill,
   SectionHead,
-  DataTable,
   Topbar,
-  type Column,
 } from "@/components/ui";
 import {
   getPipeline,
@@ -21,20 +18,21 @@ import {
   type DltSource,
 } from "@/lib/api";
 import { TriggerButton } from "@/components/trigger-button";
+import { RunsTable } from "@/components/runs-table";
 
 export const dynamic = "force-dynamic";
 
 type Params = Promise<{ id: string }>;
 
-const RunPillFor = ({ status }: { status: Run["status"] }) => {
-  const map: Record<Run["status"], "ok" | "running" | "failed" | "pending"> = {
-    completed: "ok",
-    running: "running",
-    failed: "failed",
-    pending: "pending",
-  };
-  return <Pill status={map[status]} />;
-};
+function sourcePathLabel(s: DltSource): string {
+  const cfg = (s.config as Record<string, unknown>) ?? {};
+  return (
+    (cfg.bucket_url as string) ??
+    (cfg.connection_string as string) ??
+    (cfg.connection_url as string) ??
+    JSON.stringify(cfg)
+  );
+}
 
 export default async function PipelineDetail({ params }: { params: Params }) {
   const { id } = await params;
@@ -42,58 +40,6 @@ export default async function PipelineDetail({ params }: { params: Params }) {
   try {
     const pipeline = await getPipeline(id);
     const runs = await listPipelineRuns(id, 20).catch(() => [] as Run[]);
-
-    const runsColumns: Column<Run>[] = [
-      {
-        key: "id",
-        header: "Run",
-        width: "220px",
-        render: (r) => (
-          <Link
-            href={`/runs/${encodeURIComponent(r.id)}`}
-            className="font-mono text-[12px] text-text hover:text-accent"
-          >
-            {r.id.slice(0, 8)}
-          </Link>
-        ),
-      },
-      {
-        key: "status",
-        header: "Status",
-        width: "120px",
-        render: (r) => <RunPillFor status={r.status} />,
-      },
-      {
-        key: "rows",
-        header: "Rows",
-        width: "120px",
-        render: (r) => (
-          <span className="font-mono text-[12px] text-text tabular-nums">
-            {r.rows_written ?? "—"}
-          </span>
-        ),
-      },
-      {
-        key: "started",
-        header: "Started",
-        width: "220px",
-        render: (r) => (
-          <span className="font-mono text-[11.5px] text-subtle">
-            {r.started_at ?? "—"}
-          </span>
-        ),
-      },
-      {
-        key: "err",
-        header: "Error",
-        width: "1fr",
-        render: (r) => (
-          <span className="font-mono text-[11.5px] text-red truncate">
-            {r.error ?? ""}
-          </span>
-        ),
-      },
-    ];
 
     return (
       <>
@@ -128,12 +74,7 @@ export default async function PipelineDetail({ params }: { params: Params }) {
                   key={s.id}
                   glyph="§"
                   label={s.id}
-                  path={
-                    (s.config as Record<string, unknown>)?.bucket_url as string ??
-                    (s.config as Record<string, unknown>)?.connection_string as string ??
-                    (s.config as Record<string, unknown>)?.connection_url as string ??
-                    JSON.stringify(s.config)
-                  }
+                  path={sourcePathLabel(s)}
                   tag={<Tag>{s.source_type}</Tag>}
                 />
               ))}
@@ -150,20 +91,8 @@ export default async function PipelineDetail({ params }: { params: Params }) {
           </div>
 
           <section>
-            <SectionHead
-              title="Recent runs"
-              count={`· ${runs.length}`}
-            />
-            <DataTable
-              columns={runsColumns}
-              rows={runs}
-              onRowClick={(r) => {
-                if (typeof window !== "undefined") {
-                  window.location.href = `/runs/${encodeURIComponent(r.id)}`;
-                }
-              }}
-              emptyText="No runs yet — trigger one to get started."
-            />
+            <SectionHead title="Recent runs" count={`· ${runs.length}`} />
+            <RunsTable runs={runs} />
           </section>
         </div>
       </>

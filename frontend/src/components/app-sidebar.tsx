@@ -25,7 +25,6 @@ export function AppSidebar() {
       <NavSections>
         <NavGroup>Workspace</NavGroup>
         <NavItem href="/pipelines" label="Pipelines" active={on("/pipelines")} />
-        <NavItem href="/runs" label="Runs" active={on("/runs")} />
         <NavGroup>System</NavGroup>
         <NavItem href="/preview" label="Design" active={on("/preview")} />
       </NavSections>
