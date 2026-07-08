@@ -114,11 +114,43 @@ def _load_sql_database(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
     return con.table(source.table, database=("memory", "dte_sources"))
 
 
+def _mongo_client(connection_url: str):
+    from pymongo import MongoClient
+    return MongoClient(connection_url)
+
+
+def _load_mongodb(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
+    raw_con = con.con
+    config = source.config
+    connection_url = resolve_secret(config["connection_url"])
+    database = config["database"]
+    collection = config["collection"]
+    query_filter = config.get("filter", {})
+
+    client = _mongo_client(connection_url)
+    coll = client[database][collection]
+
+    @dlt.resource(name=source.table)
+    def _mongo_resource():
+        for doc in coll.find(query_filter):
+            doc.pop("_id", None)
+            yield doc
+
+    pipeline = dlt.pipeline(
+        pipeline_name=source.id,
+        destination=dlt.destinations.duckdb(credentials=raw_con),
+        dataset_name="dte_sources",
+    )
+    pipeline.run(_mongo_resource())
+    return con.table(source.table, database=("memory", "dte_sources"))
+
+
 LOADERS: dict[str, Callable[[DltSource, ibis.BaseBackend], ibis.Table]] = {
     "filesystem": _load_filesystem,
     "s3": _load_s3,
     "gcs": _load_gcs,
     "sql_database": _load_sql_database,
+    "mongodb": _load_mongodb,
 }
 
 

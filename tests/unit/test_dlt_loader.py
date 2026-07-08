@@ -230,3 +230,70 @@ def test_sql_database_credentials_resolved_from_env(monkeypatch, tmp_path):
 def test_dispatch_registers_sql_database():
     from dte.sources.dlt_loader import LOADERS
     assert "sql_database" in LOADERS
+
+
+def test_mongodb_loader_end_to_end(monkeypatch):
+    """Load documents from a mongomock-backed MongoDB collection."""
+    import mongomock
+    from dte.sources import dlt_loader
+
+    mock_client = mongomock.MongoClient()
+    mock_client["mydb"]["mycoll"].insert_many([
+        {"name": "alice", "score": 10},
+        {"name": "bob", "score": 20},
+        {"name": "carol", "score": 30},
+    ])
+
+    monkeypatch.setattr(dlt_loader, "_mongo_client", lambda url: mock_client)
+
+    src = DltSource(
+        id="mongo1",
+        source_type="mongodb",
+        config={
+            "connection_url": "mongodb://ignored",
+            "database": "mydb",
+            "collection": "mycoll",
+        },
+        table="mongo_out",
+    )
+    con = ibis.duckdb.connect()
+    result = load_source(src, con)
+    df = result.execute()
+    assert len(df) == 3
+    assert sorted(df["name"].tolist()) == ["alice", "bob", "carol"]
+
+
+def test_mongodb_connection_url_from_env(monkeypatch):
+    import mongomock
+    from dte.sources import dlt_loader
+
+    mock_client = mongomock.MongoClient()
+    mock_client["d"]["c"].insert_one({"x": 1})
+
+    captured = {}
+
+    def fake_client(url):
+        captured["url"] = url
+        return mock_client
+
+    monkeypatch.setenv("DTE_MONGO_URL", "mongodb://prod-host:27017")
+    monkeypatch.setattr(dlt_loader, "_mongo_client", fake_client)
+
+    src = DltSource(
+        id="mongo2",
+        source_type="mongodb",
+        config={
+            "connection_url": {"env": "DTE_MONGO_URL"},
+            "database": "d",
+            "collection": "c",
+        },
+        table="m2",
+    )
+    con = ibis.duckdb.connect()
+    load_source(src, con)
+    assert captured["url"] == "mongodb://prod-host:27017"
+
+
+def test_dispatch_registers_mongodb():
+    from dte.sources.dlt_loader import LOADERS
+    assert "mongodb" in LOADERS
