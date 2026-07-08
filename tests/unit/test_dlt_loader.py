@@ -297,3 +297,75 @@ def test_mongodb_connection_url_from_env(monkeypatch):
 def test_dispatch_registers_mongodb():
     from dte.sources.dlt_loader import LOADERS
     assert "mongodb" in LOADERS
+
+
+def test_rest_api_loader_end_to_end(monkeypatch):
+    """Load a REST API resource via dlt's rest_api source with a mocked HTTP layer."""
+    import requests_mock
+
+    with requests_mock.Mocker() as m:
+        m.get(
+            "https://api.example.com/items",
+            json=[
+                {"id": 1, "title": "one"},
+                {"id": 2, "title": "two"},
+            ],
+        )
+
+        src = DltSource(
+            id="rest1",
+            source_type="rest_api",
+            config={
+                "client": {"base_url": "https://api.example.com/"},
+                "resources": [
+                    {
+                        "name": "items",
+                        "endpoint": {"path": "items", "paginator": "single_page"},
+                    }
+                ],
+            },
+            table="items",
+        )
+        con = ibis.duckdb.connect()
+        result = load_source(src, con)
+        df = result.execute()
+
+    assert len(df) == 2
+    assert set(df.columns).issuperset({"id", "title"})
+    assert sorted(df["title"].tolist()) == ["one", "two"]
+
+
+def test_rest_api_resource_name_overridden_to_source_table(monkeypatch):
+    """The loader materialises the result under source.table regardless of the
+    resource name in config."""
+    import requests_mock
+
+    with requests_mock.Mocker() as m:
+        m.get(
+            "https://api.example.com/things",
+            json=[{"x": 1}],
+        )
+        src = DltSource(
+            id="rest2",
+            source_type="rest_api",
+            config={
+                "client": {"base_url": "https://api.example.com/"},
+                "resources": [
+                    {
+                        "name": "things",
+                        "endpoint": {"path": "things", "paginator": "single_page"},
+                    }
+                ],
+            },
+            table="renamed_output",
+        )
+        con = ibis.duckdb.connect()
+        result = load_source(src, con)
+        df = result.execute()
+    assert len(df) == 1
+    assert df["x"].tolist() == [1]
+
+
+def test_dispatch_registers_rest_api():
+    from dte.sources.dlt_loader import LOADERS
+    assert "rest_api" in LOADERS
