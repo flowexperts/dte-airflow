@@ -18,20 +18,23 @@ export function FilesystemSourceEditor({
   return (
     <div className="grid gap-3">
       <Field
-        label="Bucket URL or local path"
-        hint="e.g. s3://acme-lake/raw/, gs://…, or /Users/me/data"
+        label="Bucket or directory"
+        hint="must be a DIRECTORY, not a file. e.g. s3://acme-lake/raw/ or /Users/me/data. To load one specific file, put the directory here and its exact name in File glob."
       >
         <Input
           value={config.bucket_url ?? ""}
           onChange={(e) => onChange({ ...config, bucket_url: e.target.value })}
-          placeholder="s3://acme-lake/raw/"
+          placeholder="s3://acme-lake/raw/  or  /Users/me/data"
         />
       </Field>
-      <Field label="File glob" hint="pattern relative to the bucket URL">
+      <Field
+        label="File glob"
+        hint="pattern (or exact filename) relative to the bucket / directory"
+      >
         <Input
           value={config.file_glob ?? ""}
           onChange={(e) => onChange({ ...config, file_glob: e.target.value })}
-          placeholder="*.json"
+          placeholder="*.json  or  orders.json"
         />
       </Field>
     </div>
