@@ -145,12 +145,49 @@ def _load_mongodb(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
     return con.table(source.table, database=("memory", "dte_sources"))
 
 
+def _load_rest_api(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
+    from dlt.sources.rest_api import rest_api_source
+
+    raw_con = con.con
+    config = _resolve_rest_config(source.config)
+
+    src = rest_api_source(config)
+    resources = list(src.resources.values())
+    if not resources:
+        raise ValueError("rest_api source produced no resources")
+    resource = resources[0].with_name(source.table)
+
+    pipeline = dlt.pipeline(
+        pipeline_name=source.id,
+        destination=dlt.destinations.duckdb(credentials=raw_con),
+        dataset_name="dte_sources",
+    )
+    pipeline.run(resource)
+    return con.table(source.table, database=("memory", "dte_sources"))
+
+
+def _resolve_rest_config(config: dict) -> dict:
+    """Deep-copy the config and resolve any {"env": "..."} secrets inside
+    client.auth / headers so callers can pass credentials via env vars."""
+    import copy
+    resolved = copy.deepcopy(config)
+    client = resolved.get("client", {})
+    if "auth" in client and isinstance(client["auth"], dict):
+        for k, v in list(client["auth"].items()):
+            client["auth"][k] = resolve_secret(v)
+    if "headers" in client and isinstance(client["headers"], dict):
+        for k, v in list(client["headers"].items()):
+            client["headers"][k] = resolve_secret(v)
+    return resolved
+
+
 LOADERS: dict[str, Callable[[DltSource, ibis.BaseBackend], ibis.Table]] = {
     "filesystem": _load_filesystem,
     "s3": _load_s3,
     "gcs": _load_gcs,
     "sql_database": _load_sql_database,
     "mongodb": _load_mongodb,
+    "rest_api": _load_rest_api,
 }
 
 
