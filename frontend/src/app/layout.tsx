@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Outfit, Space_Mono, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { SwrProvider } from "@/lib/swr-config";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -36,7 +37,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${outfit.variable} ${spaceMono.variable} ${cormorant.variable}`}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <SwrProvider>{children}</SwrProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
