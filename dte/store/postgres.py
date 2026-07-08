@@ -44,11 +44,16 @@ class PostgresRunStore:
 
     async def get(self, id: str) -> dict | None:
         result = await self._session.execute(
-            text("SELECT id, pipeline_id, status, error, rows_written FROM runs WHERE id = :id"),
+            text("SELECT id, pipeline_id, status, error, rows_written, started_at, finished_at FROM runs WHERE id = :id"),
             {"id": id}
         )
         row = result.mappings().fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        d["started_at"] = d["started_at"].isoformat() if d.get("started_at") else None
+        d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
+        return d
 
     async def create(self, pipeline_id: str) -> str:
         run_id = str(uuid.uuid4())
@@ -70,7 +75,13 @@ class PostgresRunStore:
 
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
         result = await self._session.execute(
-            text("SELECT id, pipeline_id, status, error, rows_written FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
+            text("SELECT id, pipeline_id, status, error, rows_written, started_at, finished_at FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
             {"pid": pipeline_id, "limit": limit}
         )
-        return [dict(row) for row in result.mappings().fetchall()]
+        rows = []
+        for row in result.mappings().fetchall():
+            d = dict(row)
+            d["started_at"] = d["started_at"].isoformat() if d.get("started_at") else None
+            d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
+            rows.append(d)
+        return rows
