@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import json
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
 from dte.models.pipeline import Pipeline
 from dte.compiler.ibis_compiler import compile_pipeline
@@ -79,6 +80,16 @@ async def _execute_pipeline(pipeline_id: str, run_id: str, p_store: PipelineStor
 
         compiled = compile_pipeline(pipeline, tables)
         rows = engine.execute_to_json(compiled, pipeline.output.path)
-        await r_store.update(run_id, status="completed", rows_written=rows)
+        await r_store.update(
+            run_id,
+            status="completed",
+            rows_written=rows,
+            finished_at=datetime.now(timezone.utc).isoformat(),
+        )
     except Exception as e:
-        await r_store.update(run_id, status="failed", error=str(e))
+        await r_store.update(
+            run_id,
+            status="failed",
+            error=str(e),
+            finished_at=datetime.now(timezone.utc).isoformat(),
+        )

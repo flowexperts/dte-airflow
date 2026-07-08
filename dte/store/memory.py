@@ -1,4 +1,9 @@
 import uuid
+from datetime import datetime, timezone
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class MemoryPipelineStore:
@@ -37,6 +42,8 @@ class MemoryRunStore:
             "status": "pending",
             "error": None,
             "rows_written": None,
+            "started_at": _utcnow_iso(),
+            "finished_at": None,
         }
         return run_id
 

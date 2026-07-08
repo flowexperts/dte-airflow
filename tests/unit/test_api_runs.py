@@ -50,3 +50,37 @@ def test_list_runs_limit(client):
     r = c.get("/api/pipelines/p1/runs?limit=3")
     assert r.status_code == 200
     assert len(r.json()) == 3
+
+
+def test_run_has_started_at_on_create(client):
+    c, store = client
+    run_id = _run(store.create("p1"))
+
+    r = c.get(f"/api/runs/{run_id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["started_at"] is not None
+    assert body["finished_at"] is None
+
+
+def test_run_finished_at_set_on_completion(client):
+    c, store = client
+    run_id = _run(store.create("p1"))
+    _run(store.update(run_id, status="completed", rows_written=42))
+    # simulate _execute_pipeline setting finished_at
+    from datetime import datetime, timezone
+    _run(store.update(run_id, finished_at=datetime.now(timezone.utc).isoformat()))
+
+    r = c.get(f"/api/runs/{run_id}")
+    body = r.json()
+    assert body["status"] == "completed"
+    assert body["finished_at"] is not None
+
+
+def test_list_runs_includes_timestamps(client):
+    c, store = client
+    _run(store.create("p1"))
+    r = c.get("/api/pipelines/p1/runs")
+    body = r.json()
+    assert "started_at" in body[0]
+    assert "finished_at" in body[0]
