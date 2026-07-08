@@ -74,3 +74,10 @@ class PostgresRunStore:
             {"pid": pipeline_id, "limit": limit}
         )
         return [dict(row) for row in result.mappings().fetchall()]
+
+    async def delete_for_pipeline(self, pipeline_id: str) -> int:
+        result = await self._session.execute(
+            text("DELETE FROM runs WHERE pipeline_id = :pid"), {"pid": pipeline_id}
+        )
+        await self._session.commit()
+        return result.rowcount

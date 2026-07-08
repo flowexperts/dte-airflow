@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 import json
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Response
 from dte.models.pipeline import Pipeline
 from dte.compiler.ibis_compiler import compile_pipeline
 from dte.engine.duckdb_engine import DuckDBEngine
@@ -29,6 +29,36 @@ async def get_pipeline(pipeline_id: str, store: PipelineStore = Depends(get_pipe
     if not p:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     return p
+
+
+@router.put("/pipelines/{pipeline_id}")
+async def update_pipeline(
+    pipeline_id: str,
+    pipeline: Pipeline,
+    store: PipelineStore = Depends(get_pipeline_store),
+):
+    if pipeline.id != pipeline_id:
+        raise HTTPException(status_code=400, detail="Pipeline id in path and body must match")
+    existing = await store.get(pipeline_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    payload = pipeline.model_dump()
+    await store.save(payload)
+    return payload
+
+
+@router.delete("/pipelines/{pipeline_id}", status_code=204)
+async def delete_pipeline(
+    pipeline_id: str,
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    r_store: RunStore = Depends(get_run_store),
+):
+    existing = await p_store.get(pipeline_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    await r_store.delete_for_pipeline(pipeline_id)
+    await p_store.delete(pipeline_id)
+    return Response(status_code=204)
 
 
 @router.get("/pipelines/{pipeline_id}/preview")
