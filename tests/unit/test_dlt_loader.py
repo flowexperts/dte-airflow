@@ -82,3 +82,93 @@ def test_resolve_secret_missing_env_raises(monkeypatch):
     monkeypatch.delenv("DTE_TEST_MISSING", raising=False)
     with pytest.raises(KeyError, match="DTE_TEST_MISSING"):
         resolve_secret({"env": "DTE_TEST_MISSING"})
+
+
+def test_s3_storage_options_from_config():
+    from dte.sources.dlt_loader import _build_s3_storage_options
+    opts = _build_s3_storage_options({
+        "bucket_url": "s3://bkt",
+        "aws_access_key_id": "AKIA",
+        "aws_secret_access_key": "sekret",
+    })
+    assert opts["key"] == "AKIA"
+    assert opts["secret"] == "sekret"
+
+
+def test_s3_storage_options_resolves_env_secrets(monkeypatch):
+    from dte.sources.dlt_loader import _build_s3_storage_options
+    monkeypatch.setenv("MY_AWS_KEY", "AKIAENV")
+    monkeypatch.setenv("MY_AWS_SECRET", "envsekret")
+    opts = _build_s3_storage_options({
+        "bucket_url": "s3://bkt",
+        "aws_access_key_id": {"env": "MY_AWS_KEY"},
+        "aws_secret_access_key": {"env": "MY_AWS_SECRET"},
+    })
+    assert opts["key"] == "AKIAENV"
+    assert opts["secret"] == "envsekret"
+
+
+def test_s3_storage_options_includes_endpoint_url():
+    from dte.sources.dlt_loader import _build_s3_storage_options
+    opts = _build_s3_storage_options({
+        "bucket_url": "s3://bkt",
+        "endpoint_url": "http://localhost:4566",
+    })
+    assert opts["client_kwargs"] == {"endpoint_url": "http://localhost:4566"}
+
+
+def test_gcs_storage_options_from_config():
+    from dte.sources.dlt_loader import _build_gcs_storage_options
+    opts = _build_gcs_storage_options({
+        "bucket_url": "gs://bkt",
+        "credentials_json": {"type": "service_account", "project_id": "p"},
+    })
+    assert opts["token"] == {"type": "service_account", "project_id": "p"}
+
+
+def test_gcs_storage_options_resolves_env_secret(monkeypatch):
+    import json as _json
+    from dte.sources.dlt_loader import _build_gcs_storage_options
+    monkeypatch.setenv("GCS_CREDS_JSON", _json.dumps({"type": "service_account"}))
+    opts = _build_gcs_storage_options({
+        "bucket_url": "gs://bkt",
+        "credentials_json": {"env": "GCS_CREDS_JSON"},
+    })
+    assert opts["token"] == {"type": "service_account"}
+
+
+def test_dispatch_registers_s3_and_gcs():
+    from dte.sources.dlt_loader import LOADERS
+    assert "s3" in LOADERS
+    assert "gcs" in LOADERS
+
+
+def test_s3_end_to_end_via_memory_fs(monkeypatch):
+    import fsspec
+    memfs = fsspec.filesystem("memory")
+    with memfs.open("/bkt/data.json", "wb") as f:
+        f.write(json.dumps([{"a": 1}, {"a": 2}]).encode())
+
+    captured = {}
+
+    def fake(url, storage_options=None, **kw):
+        captured["url"] = url
+        captured["storage_options"] = storage_options
+        return memfs, None, [url]
+
+    monkeypatch.setattr(fsspec, "get_fs_token_paths", fake)
+
+    src = DltSource(
+        id="s5",
+        source_type="s3",
+        config={
+            "bucket_url": "/bkt",
+            "file_glob": "data.json",
+            "aws_access_key_id": "AKIA",
+            "aws_secret_access_key": "sekret",
+        },
+        table="s3data",
+    )
+    con = ibis.duckdb.connect()
+    load_source(src, con)
+    assert captured["storage_options"]["key"] == "AKIA"
