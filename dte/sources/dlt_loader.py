@@ -90,10 +90,35 @@ def _load_gcs(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
     return _load_from_fsspec(source, con, _build_gcs_storage_options(source.config))
 
 
+def _load_sql_database(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
+    from dlt.sources.sql_database import sql_table
+
+    raw_con = con.con
+    config = source.config
+    credentials = resolve_secret(config["credentials"])
+    table_name = config["table"]
+    schema = config.get("schema")
+
+    resource = sql_table(
+        credentials=credentials,
+        table=table_name,
+        schema=schema,
+    ).with_name(source.table)
+
+    pipeline = dlt.pipeline(
+        pipeline_name=source.id,
+        destination=dlt.destinations.duckdb(credentials=raw_con),
+        dataset_name="dte_sources",
+    )
+    pipeline.run(resource)
+    return con.table(source.table, database=("memory", "dte_sources"))
+
+
 LOADERS: dict[str, Callable[[DltSource, ibis.BaseBackend], ibis.Table]] = {
     "filesystem": _load_filesystem,
     "s3": _load_s3,
     "gcs": _load_gcs,
+    "sql_database": _load_sql_database,
 }
 
 
