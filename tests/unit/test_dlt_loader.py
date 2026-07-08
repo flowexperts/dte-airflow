@@ -172,3 +172,61 @@ def test_s3_end_to_end_via_memory_fs(monkeypatch):
     con = ibis.duckdb.connect()
     load_source(src, con)
     assert captured["storage_options"]["key"] == "AKIA"
+
+
+def test_sql_database_loader_end_to_end(tmp_path):
+    """Load a table from a SQLite database via dlt sql_database source."""
+    import sqlite3
+    db_path = tmp_path / "test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE customers (id INTEGER, name TEXT, age INTEGER)")
+    conn.executemany(
+        "INSERT INTO customers VALUES (?, ?, ?)",
+        [(1, "alice", 30), (2, "bob", 25), (3, "carol", 35)],
+    )
+    conn.commit()
+    conn.close()
+
+    src = DltSource(
+        id="sql1",
+        source_type="sql_database",
+        config={
+            "credentials": f"sqlite:///{db_path}",
+            "table": "customers",
+        },
+        table="customers_out",
+    )
+    con = ibis.duckdb.connect()
+    result = load_source(src, con)
+    df = result.execute()
+    assert len(df) == 3
+    assert set(df.columns).issuperset({"id", "name", "age"})
+    assert sorted(df["name"].tolist()) == ["alice", "bob", "carol"]
+
+
+def test_sql_database_credentials_resolved_from_env(monkeypatch, tmp_path):
+    """`credentials` may be an env-indirection."""
+    import sqlite3
+    db_path = tmp_path / "envtest.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE t (x INTEGER)")
+    conn.execute("INSERT INTO t VALUES (42)")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("DTE_SQL_DSN", f"sqlite:///{db_path}")
+    src = DltSource(
+        id="sql2",
+        source_type="sql_database",
+        config={"credentials": {"env": "DTE_SQL_DSN"}, "table": "t"},
+        table="t_out",
+    )
+    con = ibis.duckdb.connect()
+    result = load_source(src, con)
+    df = result.execute()
+    assert df["x"].tolist() == [42]
+
+
+def test_dispatch_registers_sql_database():
+    from dte.sources.dlt_loader import LOADERS
+    assert "sql_database" in LOADERS
