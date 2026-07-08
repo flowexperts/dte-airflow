@@ -10,6 +10,10 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
   const [busy, setBusy] = useState<string | null>(null);
 
   const runPipeline = async (id: string) => {
+    if (!id) {
+      alert("This pipeline is missing an id and can't be triggered. Edit or delete it.");
+      return;
+    }
     setBusy(id);
     try {
       const { run_id } = await triggerPipeline(id);

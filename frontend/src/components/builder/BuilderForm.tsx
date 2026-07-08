@@ -21,7 +21,22 @@ export function BuilderForm({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const validate = (): string | null => {
+    const id = pipeline.id.trim();
+    if (!id) return "Pipeline id is required.";
+    if (!/^[a-zA-Z0-9_-]+$/.test(id))
+      return "Pipeline id may only contain letters, numbers, '_' and '-'.";
+    if (!pipeline.name.trim()) return "Pipeline name is required.";
+    if (!pipeline.output?.path?.trim()) return "Output path is required.";
+    return null;
+  };
+
   const save = async () => {
+    const problem = validate();
+    if (problem) {
+      setErr(problem);
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
