@@ -85,3 +85,10 @@ class PostgresRunStore:
             d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
             rows.append(d)
         return rows
+
+    async def delete_for_pipeline(self, pipeline_id: str) -> int:
+        result = await self._session.execute(
+            text("DELETE FROM runs WHERE pipeline_id = :pid"), {"pid": pipeline_id}
+        )
+        await self._session.commit()
+        return result.rowcount

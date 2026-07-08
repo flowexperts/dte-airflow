@@ -53,3 +53,9 @@ class MemoryRunStore:
 
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
         return [r for r in self._data.values() if r["pipeline_id"] == pipeline_id][:limit]
+
+    async def delete_for_pipeline(self, pipeline_id: str) -> int:
+        to_remove = [rid for rid, r in self._data.items() if r["pipeline_id"] == pipeline_id]
+        for rid in to_remove:
+            del self._data[rid]
+        return len(to_remove)
