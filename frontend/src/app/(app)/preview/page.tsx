@@ -8,13 +8,6 @@ import {
   PageHeader,
   SectionHead,
   Topbar,
-  Sidebar,
-  Brand,
-  NavSearch,
-  NavSections,
-  NavGroup,
-  NavItem,
-  NavFooter,
   DataTable,
   StepRow,
   ExprCode,
@@ -90,26 +83,8 @@ export default function Preview() {
     },
   ]);
   return (
-    <div className="grid grid-cols-[220px_1fr] min-h-screen">
-      <Sidebar>
-        <Brand version="v0.1" />
-        <NavSearch />
-        <NavSections>
-          <NavGroup>Workspace</NavGroup>
-          <NavItem href="#" label="Pipelines" active count={14} />
-          <NavItem href="#" label="Runs" count={312} />
-          <NavItem href="#" label="Sources" count={8} />
-          <NavItem href="#" label="Schedules" count={6} />
-          <NavGroup>System</NavGroup>
-          <NavItem href="#" label="Engine" />
-          <NavItem href="#" label="Design" />
-          <NavItem href="#" label="Settings" />
-        </NavSections>
-        <NavFooter />
-      </Sidebar>
-
-      <main>
-        <Topbar
+    <>
+      <Topbar
           crumbs={[
             { label: "Workspace", href: "#" },
             { label: "Preview" },
@@ -293,7 +268,6 @@ export default function Preview() {
             </div>
           </section>
         </div>
-      </main>
-    </div>
+    </>
   );
 }
