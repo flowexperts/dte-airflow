@@ -32,6 +32,9 @@ import {
 } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SourcesPanel } from "@/components/builder/sources";
+import type { DltSource } from "@/lib/api";
+import { useState } from "react";
 
 interface PipelineRow {
   idx: string;
@@ -78,6 +81,14 @@ const Divider = ({ label }: { label: string }) => (
 );
 
 export default function Preview() {
+  const [sampleSources, setSampleSources] = useState<DltSource[]>([
+    {
+      id: "orders",
+      source_type: "filesystem",
+      config: { bucket_url: "s3://acme-raw/orders/2026-07-08/", file_glob: "*.json" },
+      table: "orders",
+    },
+  ]);
   return (
     <div className="grid grid-cols-[220px_1fr] min-h-screen">
       <Sidebar>
@@ -247,6 +258,12 @@ export default function Preview() {
               <TimelineRow time="02:00:04.691" message={<>Step 5 · <InlineCode>aggregate</InlineCode> — 128,412 groups emitted</>} duration="+0.98s" />
               <TimelineRow tone="err" time="02:00:05.674" message={<>(demo) failure — <InlineCode>sort</InlineCode> tone example</>} duration="+0.21s" />
             </Timeline>
+          </section>
+
+          {/* SOURCES */}
+          <section>
+            <SectionHead title="Source editors" count="· filesystem · sql · mongodb" />
+            <SourcesPanel sources={sampleSources} onChange={setSampleSources} />
           </section>
 
           <Divider label="palette" />
