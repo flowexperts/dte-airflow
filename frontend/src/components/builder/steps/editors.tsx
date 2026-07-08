@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Field, Input, Textarea } from "@/components/ui";
+import { Field, FieldPicker, Input, Textarea } from "@/components/ui";
+import { useSchemas } from "../schema-context";
 import type { StepShape } from "./types";
 
 type Setter = (patch: Partial<StepShape>) => void;
@@ -66,12 +67,14 @@ export function RenameEditor({ step, set }: { step: StepShape; set: Setter }) {
 const RETYPE_OPTIONS = ["string", "int", "float", "boolean", "date", "timestamp"];
 
 export function RetypeEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const { allFields } = useSchemas();
   return (
     <div className="grid grid-cols-2 gap-3">
       <Field label="Field">
-        <Input
+        <FieldPicker
           value={(step.field as string) ?? ""}
-          onChange={(e) => set({ field: e.target.value })}
+          onChange={(v) => set({ field: v })}
+          options={allFields}
         />
       </Field>
       <Field label="To type">
@@ -110,13 +113,15 @@ export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter })
     if (!same) setText(asText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asText]);
+  const { allFields } = useSchemas();
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-2 gap-3">
         <Field label="Field">
-          <Input
+          <FieldPicker
             value={(step.field as string) ?? ""}
-            onChange={(e) => set({ field: e.target.value })}
+            onChange={(v) => set({ field: v })}
+            options={allFields}
           />
         </Field>
         <Field label="Default" hint="value used when no match">
@@ -176,11 +181,19 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
 }
 
 export function SortEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const { allFields } = useSchemas();
   const by = (step.by as string[]) ?? [];
   const asText = by.join(", ");
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Field label="Sort by" hint="comma-separated field names">
+      <Field
+        label="Sort by"
+        hint={
+          allFields.length
+            ? `comma-separated · available: ${allFields.map((f) => f.name).slice(0, 5).join(", ")}${allFields.length > 5 ? "…" : ""}`
+            : "comma-separated field names"
+        }
+      >
         <Input
           value={asText}
           onChange={(e) =>
@@ -208,6 +221,7 @@ const AGG_FUNCS = ["sum", "count", "avg", "min", "max", "count_distinct"];
 interface AggSpec { field: string; func: string; alias: string }
 
 export function AggregateEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const { allFields } = useSchemas();
   const group_by = ((step.group_by as string[]) ?? []).join(", ");
   const aggs = (step.aggregations as AggSpec[]) ?? [];
 
@@ -244,9 +258,10 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
         <div className="grid gap-1.5">
           {aggs.map((a, i) => (
             <div key={i} className="grid grid-cols-[1fr_120px_1fr_28px] gap-2">
-              <Input
+              <FieldPicker
                 value={a.field}
-                onChange={(e) => updateAgg(i, { field: e.target.value })}
+                onChange={(v) => updateAgg(i, { field: v })}
+                options={allFields}
                 placeholder="amount"
               />
               <select
@@ -286,6 +301,7 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
 }
 
 export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const { allFields } = useSchemas();
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-3 gap-3">
@@ -305,13 +321,13 @@ export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="On" hint="single field or comma-separated list">
-          <Input
+          <FieldPicker
             value={Array.isArray(step.on) ? (step.on as string[]).join(", ") : (step.on as string) ?? ""}
-            onChange={(e) => {
-              const v = e.target.value;
+            onChange={(v) => {
               const parts = v.split(",").map((s) => s.trim()).filter(Boolean);
               set({ on: parts.length > 1 ? parts : v });
             }}
+            options={allFields}
             placeholder="user_id"
           />
         </Field>
@@ -326,12 +342,13 @@ export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
 const PIVOT_AGG = ["sum", "count", "avg", "min", "max"];
 
 export function PivotEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const { allFields } = useSchemas();
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-3 gap-3">
-        <Field label="Index"><Input value={(step.index as string) ?? ""} onChange={(e) => set({ index: e.target.value })} /></Field>
-        <Field label="Columns"><Input value={(step.columns as string) ?? ""} onChange={(e) => set({ columns: e.target.value })} /></Field>
-        <Field label="Values"><Input value={(step.values as string) ?? ""} onChange={(e) => set({ values: e.target.value })} /></Field>
+        <Field label="Index"><FieldPicker value={(step.index as string) ?? ""} onChange={(v) => set({ index: v })} options={allFields} /></Field>
+        <Field label="Columns"><FieldPicker value={(step.columns as string) ?? ""} onChange={(v) => set({ columns: v })} options={allFields} /></Field>
+        <Field label="Values"><FieldPicker value={(step.values as string) ?? ""} onChange={(v) => set({ values: v })} options={allFields} /></Field>
       </div>
       <Field label="Aggregation">
         <select

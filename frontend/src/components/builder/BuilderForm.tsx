@@ -8,6 +8,7 @@ import { SourcesPanel } from "./sources";
 import { StepsPanel } from "./steps/StepsPanel";
 import type { StepShape } from "./steps/types";
 import { OutputPanel } from "./OutputPanel";
+import { SchemaProvider } from "./schema-context";
 
 export function BuilderForm({
   initial,
@@ -53,7 +54,7 @@ export function BuilderForm({
   };
 
   return (
-    <>
+    <SchemaProvider>
       <Topbar
         crumbs={[
           { label: "Workspace", href: "/" },
@@ -126,6 +127,6 @@ export function BuilderForm({
           onChange={(output) => setPipeline({ ...pipeline, output })}
         />
       </div>
-    </>
+    </SchemaProvider>
   );
 }
