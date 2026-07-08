@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Field, FieldPicker, Input, Textarea } from "@/components/ui";
+import {
+  Field,
+  FieldPicker,
+  FieldMultiSelect,
+  Input,
+  Textarea,
+} from "@/components/ui";
 import { useSchemas } from "../schema-context";
 import type { StepShape } from "./types";
 
@@ -19,47 +25,85 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   );
 }
 
-function parseMappings(t: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const line of t.split("\n")) {
-    const [k, v] = line.split(/→|->/).map((s) => s.trim());
-    if (k && v) out[k] = v;
-  }
-  return out;
-}
-
+/**
+ * We keep an internal ordered list of {from, to} rows so the user can add
+ * blank rows and edit incrementally. The parent step stores `mappings` as
+ * a plain object; we sync in one direction from the local list.
+ */
 export function RenameEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const { allFields } = useSchemas();
   const mappings = (step.mappings as Record<string, string>) ?? {};
-  const asText = Object.entries(mappings)
-    .map(([k, v]) => `${k} → ${v}`)
-    .join("\n");
 
-  // Local text state so mid-typing (e.g. "customer_id →") isn't wiped by the parser.
-  const [text, setText] = useState(asText);
+  const initial = () =>
+    Object.entries(mappings).map(([from, to]) => ({ from, to }));
 
-  // Sync from external only when the parsed mapping actually differs
-  // (e.g. loading an existing pipeline). We compare via parse of local text
-  // to avoid clobbering the user's cursor while typing.
+  const [rows, setRows] = useState<{ from: string; to: string }[]>(initial);
+
+  // Re-sync if an external mapping (e.g. loading an existing pipeline) diverges.
   useEffect(() => {
-    const parsed = parseMappings(text);
+    const asObj: Record<string, string> = {};
+    for (const r of rows) if (r.from && r.to) asObj[r.from] = r.to;
     const same =
-      Object.keys(parsed).length === Object.keys(mappings).length &&
-      Object.entries(parsed).every(([k, v]) => mappings[k] === v);
-    if (!same) setText(asText);
+      Object.keys(asObj).length === Object.keys(mappings).length &&
+      Object.entries(asObj).every(([k, v]) => mappings[k] === v);
+    if (!same) setRows(initial());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asText]);
+  }, [mappings]);
+
+  const commit = (next: { from: string; to: string }[]) => {
+    setRows(next);
+    const obj: Record<string, string> = {};
+    for (const r of next) if (r.from && r.to) obj[r.from] = r.to;
+    set({ mappings: obj });
+  };
+
+  const updateRow = (i: number, patch: Partial<{ from: string; to: string }>) =>
+    commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  const removeRow = (i: number) => commit(rows.filter((_, j) => j !== i));
+
+  const addRow = () => commit([...rows, { from: "", to: "" }]);
+
+  const usedFromNames = new Set(rows.map((r) => r.from));
 
   return (
-    <Field label="Mappings" hint="one per line: old_name → new_name (or ->)">
-      <Textarea
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          set({ mappings: parseMappings(e.target.value) });
-        }}
-        placeholder={"customer_id → user_id\norder_ts → created_at"}
-        rows={4}
-      />
+    <Field label="Mappings" hint="rename fields — old name on the left, new on the right">
+      <div className="space-y-1.5">
+        {rows.map((r, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[1fr_16px_1fr_28px] gap-2 items-center"
+          >
+            <FieldPicker
+              value={r.from}
+              onChange={(v) => updateRow(i, { from: v })}
+              options={allFields.filter((f) => !usedFromNames.has(f.name) || f.name === r.from)}
+              placeholder="old_name"
+            />
+            <span className="text-subtle text-center">→</span>
+            <Input
+              value={r.to}
+              onChange={(e) => updateRow(i, { to: e.target.value })}
+              placeholder="new_name"
+            />
+            <button
+              type="button"
+              onClick={() => removeRow(i)}
+              className="text-subtle hover:text-red text-sm"
+              aria-label="Remove mapping"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={addRow}
+          className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+        >
+          + Add mapping
+        </button>
+      </div>
     </Field>
   );
 }
@@ -92,28 +136,34 @@ export function RetypeEditor({ step, set }: { step: StepShape; set: Setter }) {
   );
 }
 
-function parseKVLines(t: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const line of t.split("\n")) {
-    const [k, v] = line.split("=").map((s) => s.trim());
-    if (k && v) out[k] = v;
-  }
-  return out;
-}
-
 export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const table = (step.table as Record<string, string>) ?? {};
-  const asText = Object.entries(table).map(([k, v]) => `${k} = ${v}`).join("\n");
-  const [text, setText] = useState(asText);
-  useEffect(() => {
-    const parsed = parseKVLines(text);
-    const same =
-      Object.keys(parsed).length === Object.keys(table).length &&
-      Object.entries(parsed).every(([k, v]) => table[k] === v);
-    if (!same) setText(asText);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asText]);
   const { allFields } = useSchemas();
+  const table = (step.table as Record<string, string>) ?? {};
+
+  const initial = () =>
+    Object.entries(table).map(([k, v]) => ({ k, v }));
+  const [rows, setRows] = useState<{ k: string; v: string }[]>(initial);
+
+  useEffect(() => {
+    const obj: Record<string, string> = {};
+    for (const r of rows) if (r.k) obj[r.k] = r.v;
+    const same =
+      Object.keys(obj).length === Object.keys(table).length &&
+      Object.entries(obj).every(([k, v]) => table[k] === v);
+    if (!same) setRows(initial());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [table]);
+
+  const commit = (next: { k: string; v: string }[]) => {
+    setRows(next);
+    const obj: Record<string, string> = {};
+    for (const r of next) if (r.k) obj[r.k] = r.v;
+    set({ table: obj });
+  };
+  const updateRow = (i: number, patch: Partial<{ k: string; v: string }>) =>
+    commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const removeRow = (i: number) => commit(rows.filter((_, j) => j !== i));
+  const addRow = () => commit([...rows, { k: "", v: "" }]);
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-2 gap-3">
@@ -132,16 +182,42 @@ export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter })
           />
         </Field>
       </div>
-      <Field label="Lookup table" hint="one per line: key = value">
-        <Textarea
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            set({ table: parseKVLines(e.target.value) });
-          }}
-          placeholder={"US = north_america\nCA = north_america\nGB = europe"}
-          rows={4}
-        />
+      <Field label="Lookup table" hint="key on the left, replacement value on the right">
+        <div className="space-y-1.5">
+          {rows.map((r, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1fr_16px_1fr_28px] gap-2 items-center"
+            >
+              <Input
+                value={r.k}
+                onChange={(e) => updateRow(i, { k: e.target.value })}
+                placeholder="US"
+              />
+              <span className="text-subtle text-center">=</span>
+              <Input
+                value={r.v}
+                onChange={(e) => updateRow(i, { v: e.target.value })}
+                placeholder="north_america"
+              />
+              <button
+                type="button"
+                onClick={() => removeRow(i)}
+                className="text-subtle hover:text-red text-sm"
+                aria-label="Remove entry"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={addRow}
+            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+          >
+            + Add entry
+          </button>
+        </div>
       </Field>
     </div>
   );
@@ -183,23 +259,14 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
 export function SortEditor({ step, set }: { step: StepShape; set: Setter }) {
   const { allFields } = useSchemas();
   const by = (step.by as string[]) ?? [];
-  const asText = by.join(", ");
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Field
-        label="Sort by"
-        hint={
-          allFields.length
-            ? `comma-separated · available: ${allFields.map((f) => f.name).slice(0, 5).join(", ")}${allFields.length > 5 ? "…" : ""}`
-            : "comma-separated field names"
-        }
-      >
-        <Input
-          value={asText}
-          onChange={(e) =>
-            set({ by: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })
-          }
-          placeholder="gmv, cohort_week"
+      <Field label="Sort by" hint="fields evaluated in order">
+        <FieldMultiSelect
+          value={by}
+          onChange={(v) => set({ by: v })}
+          options={allFields}
+          placeholder="add field to sort by…"
         />
       </Field>
       <Field label="Direction">
@@ -222,7 +289,7 @@ interface AggSpec { field: string; func: string; alias: string }
 
 export function AggregateEditor({ step, set }: { step: StepShape; set: Setter }) {
   const { allFields } = useSchemas();
-  const group_by = ((step.group_by as string[]) ?? []).join(", ");
+  const group_by = (step.group_by as string[]) ?? [];
   const aggs = (step.aggregations as AggSpec[]) ?? [];
 
   const updateAgg = (i: number, patch: Partial<AggSpec>) => {
@@ -237,18 +304,12 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
 
   return (
     <div className="grid gap-3">
-      <Field label="Group by" hint="comma-separated field names">
-        <Input
+      <Field label="Group by" hint="fields to bucket rows by">
+        <FieldMultiSelect
           value={group_by}
-          onChange={(e) =>
-            set({
-              group_by: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          placeholder="region, cohort_week"
+          onChange={(v) => set({ group_by: v })}
+          options={allFields}
+          placeholder="add group_by field…"
         />
       </Field>
       <div>

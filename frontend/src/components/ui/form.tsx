@@ -1,5 +1,10 @@
 import { cn } from "@/lib/cn";
-import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import type {
+  InputHTMLAttributes,
+  ReactNode,
+  Ref,
+  TextareaHTMLAttributes,
+} from "react";
 
 export function Field({
   label,
@@ -35,9 +40,10 @@ const inputBase =
 
 export function Input({
   className,
+  ref,
   ...rest
-}: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn(inputBase, className)} {...rest} />;
+}: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> }) {
+  return <input ref={ref} className={cn(inputBase, className)} {...rest} />;
 }
 
 export function Textarea({
