@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, Input, PageHeader, Topbar } from "@/components/ui";
 import {
   createPipeline,
   isJsonFileOutput,
   updatePipeline,
+  type DltSource,
   type JsonFileOutput,
   type Pipeline,
 } from "@/lib/api";
@@ -14,7 +15,20 @@ import { SourcesPanel } from "./sources";
 import { StepsPanel } from "./steps/StepsPanel";
 import type { StepShape } from "./steps/types";
 import { OutputPanel } from "./OutputPanel";
-import { SchemaProvider } from "./schema-context";
+import { SchemaProvider, useSchemas } from "./schema-context";
+
+function AutoInferSchemas({ sources }: { sources: DltSource[] }) {
+  const { schemas, refresh } = useSchemas();
+  const inflight = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const s of sources) {
+      if (!s.id || inflight.current.has(s.id) || schemas[s.id]) continue;
+      inflight.current.add(s.id);
+      refresh(s);
+    }
+  }, [sources, schemas, refresh]);
+  return null;
+}
 
 export function BuilderForm({
   initial,
@@ -72,6 +86,7 @@ export function BuilderForm({
 
   return (
     <SchemaProvider>
+      <AutoInferSchemas sources={pipeline.sources ?? []} />
       <Topbar
         crumbs={[
           { label: "Workspace", href: "/" },
