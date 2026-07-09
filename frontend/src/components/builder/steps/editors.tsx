@@ -677,7 +677,6 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
   const knownNames = allFields.map((f) => f.name);
 
   // UI-local mode. On save we always emit a whitelist (`fields`).
-  // Drop mode computes the complement at the moment fields are set.
   const [mode, setMode] = useState<"keep" | "drop">("keep");
   const [dropped, setDropped] = useState<string[]>([]);
 
@@ -696,27 +695,40 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
     });
   };
 
-  const applyDrop = (nextDropped: string[]) => {
-    setDropped(nextDropped);
-    if (knownNames.length === 0) {
-      set({ fields: [] });
-      return;
-    }
-    const keep = knownNames.filter((n) => !nextDropped.includes(n));
-    set({ fields: keep.map((n) => ({ field: n, alias: null })) });
-  };
+  // In Drop mode, `fields` is fully derived from (allFields − dropped).
+  // Whenever the schema becomes available or the dropped list changes,
+  // we recompute the complement. Dropping N fields implicitly selects
+  // the rest — the user shouldn't have to manage two lists.
+  useEffect(() => {
+    if (mode !== "drop") return;
+    if (knownNames.length === 0) return;
+    const keep = knownNames.filter((n) => !dropped.includes(n));
+    const next: SelectField[] = keep.map((n) => ({ field: n, alias: null }));
+    const same =
+      next.length === fields.length &&
+      next.every((f, i) => fields[i]?.field === f.field);
+    if (!same) set({ fields: next });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, dropped, knownNames.join("|")]);
 
   const changeMode = (m: "keep" | "drop") => {
     setMode(m);
-    if (m === "keep") {
-      // preserve — user might want to keep what they had
-    } else {
+    if (m === "drop") {
+      // Reset the dropped list; the effect above will populate `fields`
+      // with the full known set on the next tick.
       setDropped([]);
-      set({ fields: [] });
     }
+    // On switch to "keep", preserve whatever was in fields — the user's
+    // last derived selection is a reasonable starting point.
   };
 
-  const empty = fields.length === 0;
+  // Warn only in states that would actually produce an empty projection.
+  // In Drop mode without a schema we render an explicit "infer first"
+  // placeholder further down — no warning needed there.
+  const warn =
+    mode === "keep"
+      ? fields.length === 0
+      : knownNames.length > 0 && dropped.length >= knownNames.length;
 
   return (
     <div className="grid gap-3">
@@ -734,11 +746,11 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
         />
       </div>
 
-      {empty && (
+      {warn && (
         <div className="font-mono text-[11.5px] text-gold px-2.5 py-1.5 border border-gold rounded bg-[color:color-mix(in_srgb,var(--gold)_10%,transparent)]">
           {mode === "keep"
             ? "Pick at least one field, otherwise the pipeline projection is empty and runs will fail."
-            : "You've dropped every known field — nothing would be projected. Add fields back or delete this step."}
+            : "You've dropped every known field — nothing would be projected. Add some fields back or delete this step."}
         </div>
       )}
 
@@ -785,7 +797,7 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
             <>
               <FieldMultiSelect
                 value={dropped}
-                onChange={applyDrop}
+                onChange={setDropped}
                 options={allFields}
                 placeholder="add field to drop…"
               />
