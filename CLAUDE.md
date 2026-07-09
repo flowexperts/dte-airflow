@@ -22,7 +22,17 @@ pytest --cov=dte
 
 # Start API server
 uvicorn dte.api.main:app --reload
+
+# Frontend (Next.js) — see frontend/README.md
+cd frontend && pnpm install && pnpm dev   # http://localhost:3000
+cd frontend && pnpm gen:types             # regen from live backend
 ```
+
+## Frontend
+
+Next.js 16 app under `frontend/`. Talks to the FastAPI at `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). CORS is wired via `DTE_CORS_ORIGINS` env on the backend (default `http://localhost:3000`). Types in `frontend/src/lib/api-types.ts` are generated from `/openapi.json` — regenerate whenever backend schemas change.
+
+The design system under `frontend/src/components/ui/` is intentionally portable: import only from itself + `lib/cn.ts`, all colors/fonts token-driven via CSS vars in `globals.css`. Copy that folder + `globals.css` to reuse in other projects.
 
 ## Architecture
 
