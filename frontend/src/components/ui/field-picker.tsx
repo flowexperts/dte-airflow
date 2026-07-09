@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { Input } from "./form";
 
@@ -19,8 +26,9 @@ interface FieldPickerProps {
 }
 
 /**
- * Themed combobox — Input + our own popover list, not a native <datalist>
- * (browsers style datalist themselves, ignoring our tokens).
+ * Themed combobox — Input + a portaled popover.
+ * Portaling to <body> is what lets the dropdown escape clipping ancestors
+ * like Panel (which uses overflow-hidden for its rounded corners).
  */
 export function FieldPicker({
   value,
@@ -32,8 +40,14 @@ export function FieldPicker({
 }: FieldPickerProps) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setMounted(true), []);
 
   const filtered = useMemo(() => {
     const q = value.trim().toLowerCase();
@@ -41,10 +55,37 @@ export function FieldPicker({
     return options.filter((o) => o.name.toLowerCase().includes(q));
   }, [options, value]);
 
+  // Position/reposition when opening, on scroll, and on resize.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const compute = () => {
+      const r = inputRef.current?.getBoundingClientRect();
+      if (!r) return;
+      setPos({ left: r.left, top: r.bottom + 4, width: r.width });
+    };
+    compute();
+    window.addEventListener("scroll", compute, true);
+    window.addEventListener("resize", compute);
+    return () => {
+      window.removeEventListener("scroll", compute, true);
+      window.removeEventListener("resize", compute);
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (
+        containerRef.current?.contains(target) ||
+        popoverRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -96,35 +137,45 @@ export function FieldPicker({
         disabled={disabled}
         autoComplete="off"
       />
-      {open && filtered.length > 0 && (
-        <div
-          className="absolute z-30 top-full left-0 right-0 mt-1 max-h-56 overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg"
-          role="listbox"
-        >
-          {filtered.map((o, i) => (
-            <button
-              key={o.name}
-              type="button"
-              role="option"
-              aria-selected={i === highlight}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                select(o.name);
-              }}
-              onMouseEnter={() => setHighlight(i)}
-              className={cn(
-                "w-full flex items-center justify-between gap-3 px-2.5 py-1.5 text-left font-mono text-[12.5px]",
-                i === highlight ? "bg-[color:var(--accent-tint)] text-text" : "text-text hover:bg-hover",
-              )}
-            >
-              <span>{o.name}</span>
-              {o.type && (
-                <span className="text-subtle text-[11px]">{o.type}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+      {mounted && open && pos && filtered.length > 0 &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            style={{
+              position: "fixed",
+              left: pos.left,
+              top: pos.top,
+              width: pos.width,
+              zIndex: 1000,
+            }}
+            className="max-h-56 overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg"
+            role="listbox"
+          >
+            {filtered.map((o, i) => (
+              <button
+                key={o.name}
+                type="button"
+                role="option"
+                aria-selected={i === highlight}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  select(o.name);
+                }}
+                onMouseEnter={() => setHighlight(i)}
+                className={cn(
+                  "w-full flex items-center justify-between gap-3 px-2.5 py-1.5 text-left font-mono text-[12.5px]",
+                  i === highlight ? "bg-[color:var(--accent-tint)] text-text" : "text-text hover:bg-hover",
+                )}
+              >
+                <span>{o.name}</span>
+                {o.type && (
+                  <span className="text-subtle text-[11px]">{o.type}</span>
+                )}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

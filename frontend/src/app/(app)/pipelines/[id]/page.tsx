@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { TriggerButton } from "@/components/trigger-button";
 import { RunsTable } from "@/components/runs-table";
+import { PipelinePreview } from "@/components/pipeline-preview";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,8 @@ export default async function PipelineDetail({ params }: { params: Params }) {
               />
             </Panel>
           </div>
+
+          <PipelinePreview pipelineId={pipeline.id} />
 
           <section>
             <SectionHead title="Recent runs" count={`· ${runs.length}`} />
