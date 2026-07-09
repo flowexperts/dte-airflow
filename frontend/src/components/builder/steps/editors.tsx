@@ -716,6 +716,8 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
     }
   };
 
+  const empty = fields.length === 0;
+
   return (
     <div className="grid gap-3">
       <div className="flex items-center justify-between">
@@ -731,6 +733,14 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
           ]}
         />
       </div>
+
+      {empty && (
+        <div className="font-mono text-[11.5px] text-gold px-2.5 py-1.5 border border-gold rounded bg-[color:color-mix(in_srgb,var(--gold)_10%,transparent)]">
+          {mode === "keep"
+            ? "Pick at least one field, otherwise the pipeline projection is empty and runs will fail."
+            : "You've dropped every known field — nothing would be projected. Add fields back or delete this step."}
+        </div>
+      )}
 
       {mode === "keep" ? (
         <div className="space-y-3">
