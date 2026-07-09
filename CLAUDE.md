@@ -34,9 +34,102 @@ cd frontend && pnpm gen:types             # regen types (backend must be up)
 
 ## Frontend
 
-Next.js 16 app under `frontend/`. Talks to the FastAPI at `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). CORS is wired via `DTE_CORS_ORIGINS` env on the backend (default `http://localhost:3000`). Types in `frontend/src/lib/api-types.ts` are generated from `/openapi.json` — regenerate whenever backend schemas change.
+Next.js **16** (App Router, Turbopack) + Tailwind **v4** + React **19** + TypeScript. Package manager is **pnpm**. Read this section before opening frontend files — most non-obvious choices are captured here.
 
-The design system under `frontend/src/components/ui/` is intentionally portable: import only from itself + `lib/cn.ts`, all colors/fonts token-driven via CSS vars in `globals.css`. Copy that folder + `globals.css` to reuse in other projects.
+### Ports and env
+
+- Frontend dev on **`:3000`**.
+- Backend on **`:8001`** (an unrelated Django dev server squats on `:8000` in this dev environment). Start with `uvicorn dte.api.main:app --port 8001 --reload` from repo root.
+- `frontend/.env.local` sets `NEXT_PUBLIC_API_URL=http://localhost:8001`. `.env.local.example` is committed (`.gitignore` has `!.env.local.example`); actual `.env.local` isn't.
+- Backend CORS reads `DTE_CORS_ORIGINS` (default `http://localhost:3000`).
+- `NEXT_PUBLIC_*` values are inlined at build time — **restart `pnpm dev` after changing them**.
+- `Run` model has `started_at`/`finished_at` (iso strings). Frontend derives elapsed client-side.
+
+### Route structure (App Router)
+
+```
+src/app/
+  layout.tsx           # html + fonts + ThemeProvider + SwrProvider (client tree wrapper)
+  page.tsx             # redirect /  →  /pipelines
+  (app)/               # route group sharing the sidebar shell
+    layout.tsx         # grid: <AppSidebar/> + <main>
+    pipelines/{page, new, [id]/{page, edit}}.tsx
+    runs/[id]/page.tsx
+    preview/page.tsx   # component gallery ("/preview")
+```
+
+- `/runs` (no id) intentionally has **no page** — reach a run via its pipeline detail. The sidebar link was removed.
+- `AppSidebar` is a client component (`usePathname` for active state); everything above it in the tree stays server-render-eligible.
+
+### Design system (portable)
+
+- `src/components/ui/` imports only from itself + `@/lib/cn.ts`. To port to another project: copy this folder + `src/app/globals.css` + the three Google fonts wired in `layout.tsx`. Anything in `src/components/builder/` is DTE-specific.
+- Tokens live in `globals.css` as CSS vars under `[data-theme="dark"]` and `[data-theme="light"]`, remapped into Tailwind's `@theme` (so `bg-surface`, `text-muted`, `border-border`, etc. work).
+- Theme is switched by setting `data-theme` on `<html>` via `ThemeProvider` (`useTheme()` hook; state persisted to localStorage).
+- Fonts: **Outfit** (all UI), **Space Mono** (paths / code / mono metadata), **Cormorant Garamond** — reserved for the `dt·e` wordmark only. Do not use Cormorant for headings or numerals; earlier attempts read as landing-page marketing, not product.
+- Every color the app uses (including status pills, run tones, code bg) comes from tokens. Don't hardcode hex values in components.
+
+### Design vocabulary (`components/ui/`)
+
+`Button` (variants: default/primary/ghost × sm/md, optional `kbd`), `Pill` (`ok`/`running`/`failed`/`pending`), `Panel` + `PanelHead`, `PageHeader`, `SectionHead`, `Sidebar` (+ `Brand`, `NavSearch`, `NavItem`, `NavGroup`, `NavFooter`), `Topbar`, `DataTable<T>` (client), `StepRow`, `ExprCode`/`ExprToken`, `KV`/`KVItem`, `AddStep`, `Item`, `Tag`, `Metric` + `MetricRow`, `Timeline` + `TimelineRow` + `InlineCode`, `Field`/`Input`/`Textarea`/`Segmented`, `FieldPicker`, `FieldMultiSelect`, `ThemeToggle`. Re-exports through `components/ui/index.ts`.
+
+### API client + typegen
+
+- `src/lib/api-types.ts` is generated from the running backend's `/openapi.json`. Regen: **backend must be up on `:8001`**, then `pnpm gen:types` (script sets `DTE_API_URL=http://localhost:8001` if you export it, otherwise defaults to `:8000`). Fastest form: `DTE_API_URL=http://localhost:8001 ./scripts/gen-api-types.sh`.
+- `src/lib/api.ts` is the hand-written wrapper: `apiFetch<T>`, named helpers (`listPipelines`, `getPipeline`, `createPipeline`, `updatePipeline`, `deletePipeline`, `triggerPipeline`, `previewPipeline`, `listPipelineRuns`, `getRun`, `inferSchema`), `Run` type (backend returns dict; typed here), `isTerminal`, `isJsonFileOutput` narrower.
+- SWR wired in `src/lib/swr-config.tsx` with `fetcher: (path) => apiFetch(path)`. `refreshInterval` on the run page uses `(latest) => isTerminal(latest?.status) ? 0 : 2000`.
+
+### Next 16 gotchas (breaking from earlier versions)
+
+- `params` and `searchParams` are `Promise`s. In server components: `const { id } = await params`. In client components: `const { id } = use(params)`.
+- Type helpers `PageProps<'/route'>` and `LayoutProps<'/route'>` are globally available — no import — generated during `next dev`/`build`/`typegen`.
+- `frontend/AGENTS.md` warns: "This is NOT the Next.js you know." When uncertain, read `frontend/node_modules/next/dist/docs/01-app/` before writing code.
+
+### Server vs client component discipline
+
+**The single most common bug in this codebase**: passing a function (event handler or a `render` fn in a `columns` array) from a server component into a client component. FastAPI-fed pages are server components by default. `DataTable` is `"use client"`. Any prop with a function payload — `onRowClick`, `columns[].render` — must originate inside a client component.
+
+Pattern used throughout: extract client sub-components (`PipelinesTable`, `RunsTable`, `TriggerButton`, `PipelinePreview`) that own the handlers; server pages compose them.
+
+Ref forwarding: React 19 lets `ref` ride as a normal prop. `Input` does this so `FieldPicker` can focus/blur it — do the same for any new form primitive.
+
+### FieldPicker portal (do not remove)
+
+`FieldPicker` renders its popover via `createPortal(..., document.body)` with `position: fixed`. This is deliberate — `Panel` uses `overflow-hidden` for its rounded corners, which would otherwise clip the dropdown. Position is recomputed on `scroll` (capture) and `resize`. `FieldMultiSelect` composes `FieldPicker`.
+
+Field autocomplete data comes from `SchemaProvider` (`components/builder/schema-context.tsx`) — a React context storing `{ [source_id]: {fields, loading, error} }` derived from `POST /api/schema/infer`, plus a `allFields` deduped union. The user drives inference with the **Infer schema** button on each `SourceEditor`.
+
+### Builder
+
+- `BuilderForm` wraps everything in `<SchemaProvider>` and validates on submit: id required + alphanumeric/`_`/`-`, name required, output path required, no empty-`fields` select step.
+- `StepsPanel` owns the ordered list, reorder (↑/↓ buttons), remove, and an "Add step" menu keyed off `STEP_OPS`.
+- Every op has a dedicated editor in `components/builder/steps/editors.tsx` — one file so the dispatch is easy to read. Each editor emits the exact dict shape the backend expects.
+- `Rename`, `MapLookup.table`, and `Select` maintain local UI state that syncs to the parent's parsed form via a `useEffect` guarded by shallow equality — needed so mid-typing (`"customer_id →"` with no RHS yet) isn't wiped by the parser.
+- `Filter` has **Basic** / **Advanced** tabs. Basic composes DuckDB SQL with `quoteIdent`/`safeLiteral` — identifiers wrapped in `""` (internal `"` → `""`); values dispatched: bare ints/floats pass through, `true`/`false` pass through as booleans, everything else becomes a `''`-quoted string with internal `'` → `''`. Zero SQL injection surface in Basic. Advanced is raw SQL and the hint says so.
+- `Select` step (op `select`) is the projection editor. Two modes on `Segmented`: **Keep** (chip picker + optional aliases) and **Drop** (chip picker of what to strip). Drop mode is fully derived: a `useEffect` on `(mode, dropped, allFields)` sets `fields = allFields − dropped`, so switching to Drop mode with a schema immediately populates the keep set. If schema is missing, an inline "infer schema first" placeholder shows instead.
+
+### Output — discriminated union
+
+Backend `output` is now a Pydantic discriminated union over `type`: `json_file` | `csv_file` | `parquet_s3` | `postgres` | `sql_database`. The UI **only edits `json_file`** today. `isJsonFileOutput(pipeline.output)` narrows before reading `.path`. `BuilderForm` shows a placeholder card for other types. When adding an output editor, follow the same pattern: narrow with the type guard, don't add optional chaining to bypass the union.
+
+### Sources
+
+`components/builder/sources/` — the multi-type source editor. Per-kind config editors: `filesystem` (bucket_url/directory + file_glob), `sql_database` (connection_string + table/query), `mongodb` (connection_url + database + collection). Adding a new kind means: add to `SOURCE_KINDS`, add a `CONFIG_TEMPLATES[kind]`, write a `<Kind>SourceEditor.tsx`, dispatch in `SourceEditor.tsx`. `filesystem`'s `bucket_url` must be a **directory** — the label + hint explicitly say so; users hit this repeatedly if the hint is softened.
+
+### Run detail
+
+Client-only page (`use(params)` + `useSWR`). Polls `/api/runs/{id}` every 2s until `isTerminal(status)`. Shows `MetricRow` (rows written, elapsed = client-computed from timestamps, started_at localised, engine=DuckDB) + error `<pre>` on failure. The `Timeline` component is stubbed with an "events not recorded yet" state — kept in the kit so we don't rewrite it when per-step events land backend-side.
+
+### Preview / dry run
+
+`PipelinePreview` (client) hits `GET /api/pipelines/{id}/preview?limit=20` and renders sample rows in a themed table. Wired on the pipeline detail page above Recent runs. Errors (compile-time, e.g. `retype` on `"0.1.0"` → float) surface in a red panel — this is the fastest debugging path.
+
+### When adding a new step op
+
+1. Backend: add `Xxx` Pydantic model in `dte/models/pipeline.py`, dispatch in `dte/compiler/ibis_compiler.py`, add compiler tests first.
+2. `pnpm gen:types` (backend up on `:8001`) — this refreshes `frontend/src/lib/api-types.ts`.
+3. Frontend: extend `StepOp` + `STEP_OPS` + `emptyStep()` in `components/builder/steps/types.ts`.
+4. Write `XxxEditor` in `editors.tsx`; dispatch from `StepEditor` at the bottom. Use `useSchemas().allFields` for any field references.
 
 
 ## Architecture
@@ -75,7 +168,7 @@ DuckDBEngine.execute_to_json() → output file + row count
 ### Step dispatch
 
 ```python
-op = step["op"]    # "filter"|"rename"|"retype"|"map"|"sort"|"aggregate"|"join"|"pivot"
+op = step["op"]    # "filter"|"rename"|"retype"|"map"|"sort"|"aggregate"|"join"|"pivot"|"select"
 mode = step.get("mode")   # "lookup"|"expression"|"calculation"  — map steps only
 ```
 
@@ -94,14 +187,16 @@ dlt normalises nested JSON keys with `__` (e.g. `{"order": {"amount": 1}}` → c
 POST   /api/pipelines                     create pipeline
 GET    /api/pipelines                     list pipelines
 GET    /api/pipelines/{id}                get pipeline
+PUT    /api/pipelines/{id}                update pipeline
+DELETE /api/pipelines/{id}                delete pipeline
 POST   /api/pipelines/{id}/trigger        start async run → {run_id}
+GET    /api/pipelines/{id}/preview?limit  compile + execute on sample rows
+GET    /api/pipelines/{id}/runs?limit     run history per pipeline
 GET    /api/runs/{run_id}                 poll run status
+POST   /api/schema/infer                  field tree from a DltSource config
 ```
 
-Missing (tracked in `plans/005-missing-api-endpoints.md`):
-- `POST /api/schema/infer` — field tree from a DltSource config
-- `GET  /api/pipelines/{id}/preview` — compile + execute on sample rows
-- `GET  /api/pipelines/{id}/runs` — run history per pipeline
+`Run` responses include `id`, `pipeline_id`, `status` (`pending`/`running`/`completed`/`failed`), `error`, `rows_written`, `started_at`, `finished_at`. Per-step run events are **not** recorded yet — the frontend `Timeline` renders an empty state placeholder.
 
 ## Development workflow
 
