@@ -168,6 +168,36 @@ def test_output_field_alias(people_table):
     assert "name" not in df.columns
 
 
+def test_select_step_keeps_only_listed_fields(people_table):
+    pipeline = make_pipeline([
+        {"op": "select", "fields": [{"field": "name"}, {"field": "age"}]}
+    ])
+    result = compile_pipeline(pipeline, {"src": people_table})
+    df = result.execute()
+    assert set(df.columns) == {"name", "age"}
+
+
+def test_select_step_supports_alias(people_table):
+    pipeline = make_pipeline([
+        {"op": "select", "fields": [{"field": "name", "alias": "full_name"}]}
+    ])
+    result = compile_pipeline(pipeline, {"src": people_table})
+    df = result.execute()
+    assert "full_name" in df.columns
+    assert "name" not in df.columns
+
+
+def test_select_step_composes_with_later_steps(people_table):
+    pipeline = make_pipeline([
+        {"op": "select", "fields": [{"field": "name"}, {"field": "age"}]},
+        {"op": "filter", "expr": "age >= 18"},
+    ])
+    result = compile_pipeline(pipeline, {"src": people_table})
+    df = result.execute()
+    assert set(df.columns) == {"name", "age"}
+    assert (df["age"] >= 18).all()
+
+
 def make_join_pipeline(steps, sources, output_fields=None):
     output = {"type": "json_file", "path": "/tmp/out.json"}
     if output_fields:
