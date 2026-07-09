@@ -25,6 +25,12 @@ dev = [
     "pytest-cov>=5.0",
     "httpx>=0.27",
 ]
+parquet = ["pyarrow>=15", "fsspec>=2024.6"]
+s3 = ["s3fs>=2024.6"]
+postgres-writer = ["dlt[postgres]>=1.4", "psycopg[binary]>=3.1"]
+mysql-writer = ["dlt[mysql]>=1.4"]
+snowflake-writer = ["dlt[snowflake]>=1.4"]
+bigquery-writer = ["dlt[bigquery]>=1.4"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["dte"]
