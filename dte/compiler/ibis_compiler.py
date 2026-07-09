@@ -6,6 +6,7 @@ from dte.models.pipeline import (
     Pipeline, FilterStep, RenameStep, RetypeStep,
     LookupMapStep, ExpressionMapStep, SortStep,
     AggregateStep, AggSpec, OutputField, JoinStep, PivotStep,
+    SelectStep,
 )
 
 _TYPE_MAP: dict[str, dt.DataType] = {
@@ -74,6 +75,8 @@ def _dispatch_single_table_step(table: ibis.Table, step: dict) -> ibis.Table:
         return _apply_aggregate(table, AggregateStep(**step))
     elif op == "pivot":
         return _apply_pivot(table, PivotStep(**step))
+    elif op == "select":
+        return _apply_output_fields(table, SelectStep(**step).fields)
     return table
 
 

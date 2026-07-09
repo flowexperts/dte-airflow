@@ -59,6 +59,11 @@ class AggregateStep(BaseModel):
     aggregations: list[AggSpec]
 
 
+class SelectStep(BaseModel):
+    op: Literal["select"]
+    fields: list["OutputField"]
+
+
 class JoinStep(BaseModel):
     op: Literal["join"]
     left: str
