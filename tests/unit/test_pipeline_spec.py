@@ -6,7 +6,7 @@ from dte.models.pipeline import (
     LookupMapStep, ExpressionMapStep,
     SortStep, AggSpec, AggregateStep,
     OutputField, JsonFileOutput, Pipeline,
-    JoinStep, PivotStep,
+    JoinStep, PivotStep, SelectStep,
 )
 
 
@@ -215,3 +215,25 @@ def test_pivot_step_parses():
 def test_pivot_step_default_agg_is_sum():
     step = PivotStep(op="pivot", index="region", columns="product", values="sales")
     assert step.agg == "sum"
+
+
+def test_select_step_with_fields():
+    step = SelectStep(op="select", fields=[{"field": "name"}, {"field": "age", "alias": "years"}])
+    assert step.fields[1].alias == "years"
+    assert step.drop == []
+
+
+def test_select_step_with_drop():
+    step = SelectStep(op="select", drop=["ssn", "internal_id"])
+    assert step.drop == ["ssn", "internal_id"]
+    assert step.fields == []
+
+
+def test_select_step_fields_and_drop_mutually_exclusive():
+    with pytest.raises(ValidationError):
+        SelectStep(op="select", fields=[{"field": "name"}], drop=["ssn"])
+
+
+def test_select_step_requires_one_of_fields_or_drop():
+    with pytest.raises(ValidationError):
+        SelectStep(op="select")

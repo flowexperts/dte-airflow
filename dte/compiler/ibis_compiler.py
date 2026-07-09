@@ -76,7 +76,10 @@ def _dispatch_single_table_step(table: ibis.Table, step: dict) -> ibis.Table:
     elif op == "pivot":
         return _apply_pivot(table, PivotStep(**step))
     elif op == "select":
-        return _apply_output_fields(table, SelectStep(**step).fields)
+        s = SelectStep(**step)
+        if s.drop:
+            return table.drop(*[c for c in s.drop if c in table.columns])
+        return _apply_output_fields(table, s.fields)
     return table
 
 
