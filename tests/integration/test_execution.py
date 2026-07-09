@@ -237,3 +237,31 @@ def test_end_to_end_pivot(tmp_path):
     east_row = df[df["region"] == "East"]
     assert east_row["A"].iloc[0] == 100
     assert east_row["B"].iloc[0] == 150
+
+
+def test_select_drop_step_passes_new_columns_through(tmp_path):
+    data = [
+        {"id": 1, "name": "alice", "ssn": "111", "email": "a@x", "phone": "555"},
+        {"id": 2, "name": "bob", "ssn": "222", "email": "b@x", "phone": "666"},
+    ]
+    (tmp_path / "users.json").write_text(json.dumps(data))
+    out = tmp_path / "out.json"
+
+    pipeline_dict = make_pipeline_dict(
+        sources=[_dlt_source("src", tmp_path, "users.json", "users")],
+        steps=[{"op": "select", "drop": ["ssn"]}],
+        output_path=str(out),
+    )
+    pipeline = Pipeline(**pipeline_dict)
+    engine = DuckDBEngine()
+    src = DltSource(**pipeline_dict["sources"][0])
+    tables = {"src": load_source(src, engine.con)}
+    compiled = compile_pipeline(pipeline, tables)
+    engine.execute_to_json(compiled, str(out))
+
+    result = json.loads(out.read_text())
+    for row in result:
+        assert "ssn" not in row
+        # drop is schema-adaptive: everything not named `ssn` survives, even
+        # columns we never enumerated (email, phone).
+        assert set(row.keys()) >= {"id", "name", "email", "phone"}

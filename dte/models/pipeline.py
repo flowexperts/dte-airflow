@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Annotated, Literal, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class DltSource(BaseModel):
@@ -61,7 +61,16 @@ class AggregateStep(BaseModel):
 
 class SelectStep(BaseModel):
     op: Literal["select"]
-    fields: list["OutputField"]
+    fields: list["OutputField"] = []
+    drop: list[str] = []
+
+    @model_validator(mode="after")
+    def _check_exclusive(self):
+        if self.fields and self.drop:
+            raise ValueError("SelectStep: `fields` and `drop` are mutually exclusive")
+        if not self.fields and not self.drop:
+            raise ValueError("SelectStep: one of `fields` or `drop` is required")
+        return self
 
 
 class JoinStep(BaseModel):
