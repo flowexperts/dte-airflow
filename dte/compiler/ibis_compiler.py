@@ -48,8 +48,9 @@ def compile_pipeline(pipeline: Pipeline, tables: dict[str, ibis.Table]) -> ibis.
             registry[current_key] = table
 
     result = registry[current_key]
-    if pipeline.output.fields:
-        result = _apply_output_fields(result, pipeline.output.fields)
+    fields = getattr(pipeline.output, "fields", None)
+    if fields:
+        result = _apply_output_fields(result, fields)
     return result
 
 
