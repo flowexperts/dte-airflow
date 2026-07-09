@@ -1,8 +1,7 @@
 from __future__ import annotations
-import json
-from pathlib import Path
 import ibis
 from dte.engine.base import BaseEngine
+from dte.engine.writers import write as _write, WriteResult
 
 
 class DuckDBEngine(BaseEngine):
@@ -13,11 +12,8 @@ class DuckDBEngine(BaseEngine):
     def con(self) -> ibis.BaseBackend:
         return self._con
 
-    def execute_to_json(self, table: ibis.Table, output_path: str) -> int:
-        df = table.execute()
-        records = df.to_dict(orient="records")
-        Path(output_path).write_text(json.dumps(records, default=str, indent=2))
-        return len(records)
+    def execute(self, table: ibis.Table, target) -> WriteResult:
+        return _write(table, target, self._con)
 
     def apply_filter_sql(self, table: ibis.Table, expr: str) -> ibis.Table:
         self._con.create_view("_filter_input", table, overwrite=True)

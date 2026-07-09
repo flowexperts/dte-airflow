@@ -109,11 +109,12 @@ async def _execute_pipeline(pipeline_id: str, run_id: str, p_store: PipelineStor
             tables[source.id] = load_source(source, engine.con)
 
         compiled = compile_pipeline(pipeline, tables)
-        rows = engine.execute_to_json(compiled, pipeline.output.path)
+        result = engine.execute(compiled, pipeline.output)
         await r_store.update(
             run_id,
             status="completed",
-            rows_written=rows,
+            rows_written=result["rows_written"],
+            location=result["location"],
             finished_at=datetime.now(timezone.utc).isoformat(),
         )
     except Exception as e:

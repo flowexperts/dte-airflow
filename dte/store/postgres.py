@@ -44,7 +44,7 @@ class PostgresRunStore:
 
     async def get(self, id: str) -> dict | None:
         result = await self._session.execute(
-            text("SELECT id, pipeline_id, status, error, rows_written, started_at, finished_at FROM runs WHERE id = :id"),
+            text("SELECT id, pipeline_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE id = :id"),
             {"id": id}
         )
         row = result.mappings().fetchone()
@@ -75,7 +75,7 @@ class PostgresRunStore:
 
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
         result = await self._session.execute(
-            text("SELECT id, pipeline_id, status, error, rows_written, started_at, finished_at FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
+            text("SELECT id, pipeline_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
             {"pid": pipeline_id, "limit": limit}
         )
         rows = []

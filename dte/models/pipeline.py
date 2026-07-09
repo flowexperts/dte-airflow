@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import Literal
-from pydantic import BaseModel
+from typing import Annotated, Literal, Union
+from pydantic import BaseModel, Field
 
 
 class DltSource(BaseModel):
@@ -81,10 +81,59 @@ class OutputField(BaseModel):
     alias: str | None = None
 
 
-class JsonFileOutput(BaseModel):
+class JsonFileTarget(BaseModel):
     type: Literal["json_file"]
     path: str
     fields: list[OutputField] = []
+
+
+# Back-compat alias for callers still importing the old name.
+JsonFileOutput = JsonFileTarget
+
+
+class CsvFileTarget(BaseModel):
+    type: Literal["csv_file"]
+    path: str
+    fields: list[OutputField] = []
+
+
+class ParquetS3Target(BaseModel):
+    type: Literal["parquet_s3"]
+    bucket_url: str
+    storage_options: dict = {}
+
+
+class PostgresTarget(BaseModel):
+    type: Literal["postgres"]
+    credentials: str
+    schema_: str = Field(alias="schema")
+    table: str
+    write_disposition: Literal["replace", "append", "merge"] = "replace"
+
+    model_config = {"populate_by_name": True}
+
+
+class SqlDatabaseTarget(BaseModel):
+    type: Literal["sql_database"]
+    dialect: Literal["mysql", "snowflake", "bigquery"]
+    credentials: str
+    schema_: str = Field(alias="schema")
+    table: str
+    write_disposition: Literal["replace", "append", "merge"] = "replace"
+
+    model_config = {"populate_by_name": True}
+
+
+OutputTarget = Annotated[
+    Union[
+        JsonFileTarget,
+        CsvFileTarget,
+        ParquetS3Target,
+        PostgresTarget,
+        SqlDatabaseTarget,
+    ],
+    Field(discriminator="type"),
+]
 
 
 class Pipeline(BaseModel):
@@ -92,4 +141,4 @@ class Pipeline(BaseModel):
     name: str
     sources: list[DltSource]
     steps: list[dict]
-    output: JsonFileOutput
+    output: OutputTarget
