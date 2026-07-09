@@ -37,9 +37,13 @@ export function BuilderForm({
     const path = "path" in pipeline.output ? pipeline.output.path : "";
     if (!path?.trim()) return "Output path is required.";
     for (const [i, step] of (pipeline.steps ?? []).entries()) {
-      const s = step as { op?: string; fields?: unknown[] };
-      if (s.op === "select" && (!s.fields || s.fields.length === 0)) {
-        return `Step ${i + 1} (select) needs at least one field. Pick one, drop the step, or switch back to "Keep all" by removing the step.`;
+      const s = step as { op?: string; fields?: unknown[]; drop?: unknown[] };
+      if (
+        s.op === "select" &&
+        (!s.fields || s.fields.length === 0) &&
+        (!s.drop || s.drop.length === 0)
+      ) {
+        return `Step ${i + 1} (select) needs at least one field to keep or drop. Pick one or remove the step.`;
       }
     }
     return null;
