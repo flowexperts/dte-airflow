@@ -187,6 +187,15 @@ def test_select_step_supports_alias(people_table):
     assert "name" not in df.columns
 
 
+def test_select_step_drop_only_keeps_remaining_columns(people_table):
+    pipeline = make_pipeline([
+        {"op": "select", "drop": ["score"]}
+    ])
+    result = compile_pipeline(pipeline, {"src": people_table})
+    df = result.execute()
+    assert set(df.columns) == {"name", "age"}
+
+
 def test_select_step_composes_with_later_steps(people_table):
     pipeline = make_pipeline([
         {"op": "select", "fields": [{"field": "name"}, {"field": "age"}]},
