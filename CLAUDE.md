@@ -5,93 +5,132 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Install (uses uv venv at .venv/)
-pip install -e ".[dev]"
+# Install
+uv pip install -e ".[dev]"
 
 # Run all tests
 pytest
 
-# Run a single test file
+# Run a single test file or test
 pytest tests/unit/test_compiler.py
-
-# Run a single test
-pytest tests/unit/test_compiler.py::test_filter_step
+pytest tests/unit/test_compiler.py::test_join_inner
 
 # Run with coverage
 pytest --cov=dte
 
+# Skip postgres integration tests (requires DATABASE_URL)
+pytest -m "not integration"
+
 # Start API server
 uvicorn dte.api.main:app --reload
+
+# Run DB migrations (requires DATABASE_URL)
+alembic upgrade head
+
+# Frontend (Next.js) — see frontend/README.md for details
+cd frontend && pnpm install && pnpm dev   # http://localhost:3000
+cd frontend && pnpm gen:types             # regen types (backend must be up)
 ```
+
+## Frontend
+
+Next.js 16 app under `frontend/`. Talks to the FastAPI at `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`). CORS is wired via `DTE_CORS_ORIGINS` env on the backend (default `http://localhost:3000`). Types in `frontend/src/lib/api-types.ts` are generated from `/openapi.json` — regenerate whenever backend schemas change.
+
+The design system under `frontend/src/components/ui/` is intentionally portable: import only from itself + `lib/cn.ts`, all colors/fonts token-driven via CSS vars in `globals.css`. Copy that folder + `globals.css` to reuse in other projects.
+
 
 ## Architecture
 
-DTE is a batch data transformation engine. A **Pipeline** (Pydantic model) describes sources, an ordered list of transform steps, and an output target. The pipeline JSON is stored in-memory in Phase 1; future phases will persist to Postgres.
+DTE is a batch data transformation engine. A **Pipeline** (Pydantic model) describes sources, ordered transform steps, and an output target.
 
-### Data flow
+### Full data flow
 
 ```
-Pipeline JSON → compile_pipeline() → ibis.Table → DuckDBEngine.execute_to_json()
+DltSource config(s)
+    ↓
+dlt_loader.load_source() → ibis.Table per source (loaded into shared DuckDB connection)
+    ↓
+compile_pipeline(pipeline, tables) → ibis.Table (transformed)
+    ↓
+DuckDBEngine.execute_to_json() → output file + row count
 ```
 
-1. **`dte/models/pipeline.py`** — the pipeline spec. `Pipeline.steps` is `list[dict]` (not a Union type) because the `map` op requires a sub-discriminator on `mode`. The compiler is responsible for parsing each step dict by `op`/`mode`.
+### Key modules
 
-2. **`dte/compiler/ibis_compiler.py`** — translates step dicts into an `ibis.Table` expression chain. Filter and expression-map steps cannot be expressed as pure Ibis because Ibis has no SQL string parser; they fall back to `con.create_view()` + `con.sql()` against the DuckDB backend. This is the intended seam for future distributed backends (Spark, Trino) — replace those two helpers per backend.
+**`dte/models/pipeline.py`** — the pipeline spec. `Pipeline.steps` is `list[dict]` (not a typed Union) because the `map` op requires a sub-discriminator on `mode` that Pydantic's discriminated union can't handle with a shared `op` key. The compiler parses each step dict by `op`/`mode`.
 
-3. **`dte/engine/duckdb_engine.py`** — wraps `ibis.duckdb.connect()`. Executes the compiled ibis expression and writes output. Does **not** load sources directly — that is dlt's job.
+**`dte/sources/dlt_loader.py`** — universal source loading via dlt. `load_source(DltSource, ibis_con)` runs a dlt pipeline into the shared DuckDB connection (`con.con` is the raw `duckdb.DuckDBPyConnection`) and returns an `ibis.Table`. Currently implements `filesystem` source type; add new source types here. Do **not** write custom connector classes — extend this file with new dlt sources.
 
-3a. **`dte/sources/dlt_loader.py`** — universal source loading via dlt. Any source (local file, S3, MongoDB, REST API) is described as a `DltSource` config; `load_source()` runs a dlt pipeline into the shared DuckDB connection and returns an `ibis.Table`. Integration tests use dlt's `filesystem` source pointed at `tmp_path` — no custom connector mocks needed.
+**`dte/compiler/ibis_compiler.py`** — `compile_pipeline(pipeline, tables)` maintains a **named registry** (`dict[str, ibis.Table]`) instead of a rolling variable. Each step reads from and writes back to the registry via `current_key`. Join steps write their result under `output_id` and update `current_key`. This allows multi-source pipelines.
 
-4. **`dte/schema/inferrer.py`** — samples up to N rows from a JSON file, recursively flattens nested dicts into dot-notation keys (`user.address.city`), and infers types. Lists of dicts use the first element; lists of primitives become `{type}_list`. Type merge precedence: `null` → widened, `int+float` → `float`, anything else → `string`.
+- Filter and expression-map steps escape to raw SQL via `con.create_view()` + `con.sql()` — Ibis has no SQL string parser. This is the seam for future distributed backends (Spark, Trino).
+- Pivot uses `con.con.execute("CREATE OR REPLACE TEMP TABLE ... AS PIVOT ...")` — dynamic PIVOT cannot be a view in DuckDB, and `con.sql()` fails because sqlglot can't subquery a PIVOT node.
 
-5. **`dte/api/`** — FastAPI app with in-memory `_pipelines` and `_runs` dicts on `main.py`. Trigger endpoint fires `asyncio.create_task`; the task runs the full compile+execute pipeline and updates run status. Routes import the stores directly from `main` to avoid circular imports.
+**`dte/engine/duckdb_engine.py`** — wraps `ibis.duckdb.connect()`. Exposes `con` property (the ibis backend) for use by `dlt_loader`. Only responsible for execution and output — does not load sources.
 
-### Step dispatch pattern
+**`dte/store/`** — `PipelineStore` and `RunStore` Protocols in `base.py`. `memory.py` is the default (used in all tests). `postgres.py` is the production backend (SQLAlchemy async, requires `DATABASE_URL`). The active backend is wired in `dte/api/deps.py` and injected into routes via FastAPI `Depends()`.
+
+**`dte/api/`** — FastAPI app. Routes use `Depends(get_pipeline_store)` and `Depends(get_run_store)`. Tests override these with `app.dependency_overrides`. `_execute_pipeline` runs as an `asyncio.create_task` — trigger returns `run_id` immediately, caller polls `GET /api/runs/{run_id}`.
+
+### Step dispatch
 
 ```python
-# compiler reads op then mode for "map" steps
-op = step["op"]                        # "filter" | "rename" | "retype" | "map" | "sort" | "aggregate"
-mode = step.get("mode")                # "lookup" | "expression" | "calculation"  (map steps only)
+op = step["op"]    # "filter"|"rename"|"retype"|"map"|"sort"|"aggregate"|"join"|"pivot"
+mode = step.get("mode")   # "lookup"|"expression"|"calculation"  — map steps only
 ```
 
-### Ibis version note
+### dlt column naming
 
-This project uses ibis ≥ 9. The case expression API changed: use `ibis.cases(*[(condition, value), ...], else_=default)`, **not** `ibis.case()`.
+dlt normalises nested JSON keys with `__` (e.g. `{"order": {"amount": 1}}` → column `order__amount`). `_resolve_field()` in the compiler falls back to `__`-joined names when struct traversal fails, making it compatible with both ibis struct columns and dlt-flattened columns.
 
-### Dot-notation fields
+### Ibis version notes
 
-`_resolve_field(table, "order.amount")` traverses struct columns in ibis. DuckDB's `read_json` loads nested JSON as struct columns, so dot-notation field paths in step configs (group_by, sort.by, aggregate.field) are resolved through this helper — not by string splitting at the SQL layer.
+- ibis ≥ 9: use `ibis.cases(*[(condition, value), ...], else_=default)`, **not** `ibis.case()`
+- `table.rename({new_name: old_name})` — ibis rename direction is reversed from intuition
+
+## API surface
+
+```
+POST   /api/pipelines                     create pipeline
+GET    /api/pipelines                     list pipelines
+GET    /api/pipelines/{id}                get pipeline
+POST   /api/pipelines/{id}/trigger        start async run → {run_id}
+GET    /api/runs/{run_id}                 poll run status
+```
+
+Missing (tracked in `plans/005-missing-api-endpoints.md`):
+- `POST /api/schema/infer` — field tree from a DltSource config
+- `GET  /api/pipelines/{id}/preview` — compile + execute on sample rows
+- `GET  /api/pipelines/{id}/runs` — run history per pipeline
 
 ## Development workflow
 
 ### Before implementing any feature
 
-1. Write a plan to `plans/<NNN>-<feature-name>.md` (see existing plans for format). Plans must include: problem statement, architecture change, explicit task list with branch names, and list of files changed/deleted.
-2. Split the plan into tasks — each task maps to one branch and one focused PR.
+Write a plan to `plans/<NNN>-<feature-name>.md`. Plans must include: problem statement, architecture change, explicit task list with branch names, and files changed/deleted. See existing plans for format.
 
 ### Worktree workflow (required for all feature work)
 
 ```bash
-# Start a feature
-git worktree add ./worktrees/dte-<feature> -b feature/<name>
-cd ../dte-<feature>
+# Start
+git worktree add ./worktrees/<name> -b feature/<name>
 
-# Work, then run tests
+# Work in worktree, run tests
 pytest -x
 
-# Merge back from main repo
+# Merge back
 cd /Users/bhavaniravi/projects/dte
-git merge feature/<name>
-git worktree remove ../dte-<feature>
+git merge feature/<name> --no-ff
+git worktree remove worktrees/<name>
 git branch -d feature/<name>
 ```
 
 Every non-trivial change gets its own worktree. Do not develop directly on `main`.
 
-## Source connectors
+## Store / database
 
-Do **not** write custom connector classes for individual data sources. Use **dlt** (dlthub) for all source loading. dlt ships connectors for S3, GCS, MongoDB, REST APIs, SQL databases, local filesystems, and more. The `DltSource` model in `pipeline.py` carries a `source_type` (dlt source name) and a `config` dict passed through to dlt. See `plans/001-dlt-source-integration.md` for the full architectural rationale.
+Alembic manages Postgres schema. Run `alembic upgrade head` with `DATABASE_URL=postgresql+asyncpg://...` set. Without `DATABASE_URL`, the API uses the in-memory store and no Postgres is needed. Postgres integration tests (`tests/integration/test_store_postgres.py`) are skipped automatically when `DATABASE_URL` is unset.
 
 ## TDD convention
 
-Tests are written before implementations. Write failing tests first, implement until they pass, stop. Do not add features beyond what tests require.
+Write failing tests first. Implement until they pass. Stop — do not add features beyond what tests require.
