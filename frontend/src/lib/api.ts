@@ -2,8 +2,13 @@ import type { components, paths } from "./api-types";
 
 export type Pipeline = components["schemas"]["Pipeline"];
 export type DltSource = components["schemas"]["DltSource"];
-export type JsonFileOutput = components["schemas"]["JsonFileOutput"];
+export type JsonFileOutput = components["schemas"]["JsonFileTarget"];
 export type OutputField = components["schemas"]["OutputField"];
+
+/** Discriminated narrowing helper — the UI only edits json_file targets today. */
+export function isJsonFileOutput(o: Pipeline["output"]): o is JsonFileOutput {
+  return o.type === "json_file";
+}
 
 // Run is untyped in OpenAPI (routes return `dict`), so we model it here.
 export type RunStatus = "pending" | "running" | "completed" | "failed";

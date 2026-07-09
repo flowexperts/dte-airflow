@@ -130,6 +130,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** CsvFileTarget */
+        CsvFileTarget: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "csv_file";
+            /** Path */
+            path: string;
+            /**
+             * Fields
+             * @default []
+             */
+            fields: components["schemas"]["OutputField"][];
+        };
         /** DltSource */
         DltSource: {
             /** Id */
@@ -148,11 +163,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
-        /** JsonFileOutput */
-        JsonFileOutput: {
+        /** JsonFileTarget */
+        JsonFileTarget: {
             /**
-             * Type
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             type: "json_file";
             /** Path */
@@ -170,6 +185,23 @@ export interface components {
             /** Alias */
             alias?: string | null;
         };
+        /** ParquetS3Target */
+        ParquetS3Target: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "parquet_s3";
+            /** Bucket Url */
+            bucket_url: string;
+            /**
+             * Storage Options
+             * @default {}
+             */
+            storage_options: {
+                [key: string]: unknown;
+            };
+        };
         /** Pipeline */
         Pipeline: {
             /** Id */
@@ -182,7 +214,53 @@ export interface components {
             steps: {
                 [key: string]: unknown;
             }[];
-            output: components["schemas"]["JsonFileOutput"];
+            /** Output */
+            output: components["schemas"]["JsonFileTarget"] | components["schemas"]["CsvFileTarget"] | components["schemas"]["ParquetS3Target"] | components["schemas"]["PostgresTarget"] | components["schemas"]["SqlDatabaseTarget"];
+        };
+        /** PostgresTarget */
+        PostgresTarget: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "postgres";
+            /** Credentials */
+            credentials: string;
+            /** Schema */
+            schema: string;
+            /** Table */
+            table: string;
+            /**
+             * Write Disposition
+             * @default replace
+             * @enum {string}
+             */
+            write_disposition: "replace" | "append" | "merge";
+        };
+        /** SqlDatabaseTarget */
+        SqlDatabaseTarget: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "sql_database";
+            /**
+             * Dialect
+             * @enum {string}
+             */
+            dialect: "mysql" | "snowflake" | "bigquery";
+            /** Credentials */
+            credentials: string;
+            /** Schema */
+            schema: string;
+            /** Table */
+            table: string;
+            /**
+             * Write Disposition
+             * @default replace
+             * @enum {string}
+             */
+            write_disposition: "replace" | "append" | "merge";
         };
         /** ValidationError */
         ValidationError: {

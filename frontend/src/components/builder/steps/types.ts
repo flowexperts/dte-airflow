@@ -6,7 +6,8 @@ export type StepOp =
   | "sort"
   | "aggregate"
   | "join"
-  | "pivot";
+  | "pivot"
+  | "select";
 
 export type MapMode = "lookup" | "expression" | "calculation";
 
@@ -26,6 +27,7 @@ export const STEP_OPS: { op: StepOp; label: string; mode?: MapMode }[] = [
   { op: "aggregate", label: "Aggregate" },
   { op: "join",      label: "Join" },
   { op: "pivot",     label: "Pivot" },
+  { op: "select",    label: "Select / Drop fields" },
 ];
 
 export function emptyStep(op: StepOp, mode?: MapMode): StepShape {
@@ -40,6 +42,7 @@ export function emptyStep(op: StepOp, mode?: MapMode): StepShape {
     case "aggregate": return { op, group_by: [], aggregations: [] };
     case "join":      return { op, left: "", right: "", on: "", how: "inner", output_id: "" };
     case "pivot":     return { op, index: "", columns: "", values: "", agg: "sum" };
+    case "select":    return { op, fields: [] };
   }
 }
 

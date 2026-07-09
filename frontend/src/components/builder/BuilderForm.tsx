@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, Input, PageHeader, Topbar } from "@/components/ui";
-import { createPipeline, updatePipeline, type Pipeline } from "@/lib/api";
+import {
+  createPipeline,
+  isJsonFileOutput,
+  updatePipeline,
+  type JsonFileOutput,
+  type Pipeline,
+} from "@/lib/api";
 import { SourcesPanel } from "./sources";
 import { StepsPanel } from "./steps/StepsPanel";
 import type { StepShape } from "./steps/types";
@@ -28,7 +34,8 @@ export function BuilderForm({
     if (!/^[a-zA-Z0-9_-]+$/.test(id))
       return "Pipeline id may only contain letters, numbers, '_' and '-'.";
     if (!pipeline.name.trim()) return "Pipeline name is required.";
-    if (!pipeline.output?.path?.trim()) return "Output path is required.";
+    const path = "path" in pipeline.output ? pipeline.output.path : "";
+    if (!path?.trim()) return "Output path is required.";
     return null;
   };
 
@@ -122,10 +129,19 @@ export function BuilderForm({
           onChange={(steps) => setPipeline({ ...pipeline, steps })}
         />
 
-        <OutputPanel
-          output={pipeline.output}
-          onChange={(output) => setPipeline({ ...pipeline, output })}
-        />
+        {isJsonFileOutput(pipeline.output) ? (
+          <OutputPanel
+            output={pipeline.output}
+            onChange={(output: JsonFileOutput) =>
+              setPipeline({ ...pipeline, output })
+            }
+          />
+        ) : (
+          <div className="border border-border rounded p-4 text-sm text-subtle bg-surface">
+            This pipeline uses a {pipeline.output.type} output which isn&apos;t
+            editable in the UI yet.
+          </div>
+        )}
       </div>
     </SchemaProvider>
   );

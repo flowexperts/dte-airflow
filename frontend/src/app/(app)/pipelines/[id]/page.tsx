@@ -63,7 +63,7 @@ export default async function PipelineDetail({ params }: { params: Params }) {
         <PageHeader
           title={pipeline.name}
           sub={pipeline.id}
-          lede={`${pipeline.sources?.length ?? 0} source${(pipeline.sources?.length ?? 0) === 1 ? "" : "s"} · ${pipeline.steps?.length ?? 0} step${(pipeline.steps?.length ?? 0) === 1 ? "" : "s"} · output → ${pipeline.output?.path}`}
+          lede={`${pipeline.sources?.length ?? 0} source${(pipeline.sources?.length ?? 0) === 1 ? "" : "s"} · ${pipeline.steps?.length ?? 0} step${(pipeline.steps?.length ?? 0) === 1 ? "" : "s"} · output → ${"path" in pipeline.output ? pipeline.output.path : pipeline.output.type}`}
         />
 
         <div className="px-14 py-8 space-y-8">
@@ -85,8 +85,8 @@ export default async function PipelineDetail({ params }: { params: Params }) {
               <Item
                 glyph="¶"
                 label="output"
-                path={pipeline.output?.path}
-                tag={<Tag variant="output">{pipeline.output?.type}</Tag>}
+                path={"path" in pipeline.output ? pipeline.output.path : pipeline.output.type}
+                tag={<Tag variant="output">{pipeline.output.type}</Tag>}
               />
             </Panel>
           </div>

@@ -6,6 +6,7 @@ import {
   FieldPicker,
   FieldMultiSelect,
   Input,
+  Segmented,
   Textarea,
 } from "@/components/ui";
 import { useSchemas } from "../schema-context";
@@ -666,6 +667,129 @@ export function PivotEditor({ step, set }: { step: StepShape; set: Setter }) {
   );
 }
 
+/* --------------- Select — pick/drop fields with optional aliases --------------- */
+
+interface SelectField { field: string; alias?: string | null }
+
+export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const { allFields } = useSchemas();
+  const fields = (step.fields as SelectField[]) ?? [];
+  const knownNames = allFields.map((f) => f.name);
+
+  // UI-local mode. On save we always emit a whitelist (`fields`).
+  // Drop mode computes the complement at the moment fields are set.
+  const [mode, setMode] = useState<"keep" | "drop">("keep");
+  const [dropped, setDropped] = useState<string[]>([]);
+
+  const keepNames = fields.map((f) => f.field);
+  const setKeep = (names: string[]) => {
+    const prev = new Map(fields.map((f) => [f.field, f.alias ?? null]));
+    set({
+      fields: names.map((n) => ({ field: n, alias: prev.get(n) ?? null })),
+    });
+  };
+  const setAlias = (field: string, alias: string) => {
+    set({
+      fields: fields.map((f) =>
+        f.field === field ? { ...f, alias: alias || null } : f,
+      ),
+    });
+  };
+
+  const applyDrop = (nextDropped: string[]) => {
+    setDropped(nextDropped);
+    if (knownNames.length === 0) {
+      set({ fields: [] });
+      return;
+    }
+    const keep = knownNames.filter((n) => !nextDropped.includes(n));
+    set({ fields: keep.map((n) => ({ field: n, alias: null })) });
+  };
+
+  const changeMode = (m: "keep" | "drop") => {
+    setMode(m);
+    if (m === "keep") {
+      // preserve — user might want to keep what they had
+    } else {
+      setDropped([]);
+      set({ fields: [] });
+    }
+  };
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+          {mode === "keep" ? "keep only listed" : "drop listed, keep the rest"}
+        </span>
+        <Segmented<"keep" | "drop">
+          value={mode}
+          onChange={changeMode}
+          options={[
+            { value: "keep", label: "Select fields" },
+            { value: "drop", label: "Drop fields" },
+          ]}
+        />
+      </div>
+
+      {mode === "keep" ? (
+        <div className="space-y-3">
+          <FieldMultiSelect
+            value={keepNames}
+            onChange={setKeep}
+            options={allFields}
+            placeholder="add field to keep…"
+          />
+          {fields.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle">
+                Aliases (optional)
+              </div>
+              {fields.map((f) => (
+                <div
+                  key={f.field}
+                  className="grid grid-cols-[1fr_16px_1fr] gap-2 items-center"
+                >
+                  <span className="font-mono text-[12.5px] text-text px-2.5 py-1.5 border border-border rounded bg-code-bg">
+                    {f.field}
+                  </span>
+                  <span className="text-subtle text-center">→</span>
+                  <Input
+                    value={f.alias ?? ""}
+                    onChange={(e) => setAlias(f.field, e.target.value)}
+                    placeholder={f.field}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {knownNames.length === 0 ? (
+            <p className="font-mono text-[11.5px] text-subtle">
+              Infer the source schema first — Drop mode needs to know what
+              fields exist to compute the complement.
+            </p>
+          ) : (
+            <>
+              <FieldMultiSelect
+                value={dropped}
+                onChange={applyDrop}
+                options={allFields}
+                placeholder="add field to drop…"
+              />
+              <p className="font-mono text-[11px] text-subtle">
+                Kept: {fields.map((f) => f.field).join(", ") || "—"}
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
   switch (step.op) {
     case "filter":    return <FilterEditor step={step} set={set} />;
@@ -678,5 +802,6 @@ export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
     case "aggregate": return <AggregateEditor step={step} set={set} />;
     case "join":      return <JoinEditor step={step} set={set} />;
     case "pivot":     return <PivotEditor step={step} set={set} />;
+    case "select":    return <SelectEditor step={step} set={set} />;
   }
 }
