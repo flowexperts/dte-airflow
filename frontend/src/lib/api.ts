@@ -32,7 +32,10 @@ export interface PreviewResponse {
   count: number;
 }
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const BASE =
+  typeof window === "undefined"
+    ? process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001"
+    : process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 class ApiError extends Error {
   constructor(
