@@ -1,6 +1,11 @@
+from __future__ import annotations
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Depends
-from dte.api.deps import get_run_store
-from dte.store.base import RunStore
+from dte.api.deps import get_run_store, get_pipeline_store
+from dte.store.base import RunStore, PipelineStore
+from dte.models.pipeline import Pipeline
 
 router = APIRouter()
 
@@ -20,3 +25,48 @@ async def list_runs_for_pipeline(
     store: RunStore = Depends(get_run_store),
 ):
     return await store.list_for_pipeline(pipeline_id, limit=limit)
+
+
+@router.get("/runs/{run_id}/output")
+async def get_run_output(
+    run_id: str,
+    limit: int = 5,
+    r_store: RunStore = Depends(get_run_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+):
+    run = await r_store.get(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Run has not completed")
+    location = run.get("location")
+    if not location:
+        raise HTTPException(status_code=400, detail="Run has no recorded output location")
+
+    pipeline_dict = await p_store.get(run["pipeline_id"])
+    if not pipeline_dict:
+        raise HTTPException(status_code=404, detail="Parent pipeline not found")
+    pipeline = Pipeline(**pipeline_dict)
+    output_type = pipeline.output.type
+
+    try:
+        if output_type == "json_file":
+            data = json.loads(Path(location).read_text())
+            rows = data[:limit] if isinstance(data, list) else [data]
+        elif output_type == "csv_file":
+            import pandas as pd
+            df = pd.read_csv(location, nrows=limit)
+            rows = json.loads(df.to_json(orient="records", date_format="iso"))
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"preview not supported for {output_type} outputs",
+            )
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Output file missing at {location}")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return {"rows": rows, "count": len(rows)}

@@ -15,7 +15,8 @@ import {
   Timeline,
   Topbar,
 } from "@/components/ui";
-import { getRun, isTerminal, type Run } from "@/lib/api";
+import { getPipeline, getRun, isTerminal, type Pipeline, type Run } from "@/lib/api";
+import { RunOutputPreview } from "@/components/run-output-preview";
 
 type Params = Promise<{ id: string }>;
 
@@ -37,6 +38,11 @@ export default function RunDetail({ params }: { params: Params }) {
     {
       refreshInterval: (latest) => (isTerminal(latest?.status) ? 0 : 2000),
     },
+  );
+
+  const { data: pipeline } = useSWR<Pipeline>(
+    data?.pipeline_id ? ["pipeline", data.pipeline_id] : null,
+    () => getPipeline(data!.pipeline_id),
   );
 
   const pillStatus: "ok" | "running" | "failed" | "pending" =
@@ -115,6 +121,12 @@ export default function RunDetail({ params }: { params: Params }) {
                 </pre>
               </Panel>
             )}
+
+            <RunOutputPreview
+              runId={id}
+              outputType={pipeline?.output?.type}
+              disabled={data.status !== "completed"}
+            />
 
             <section>
               <SectionHead
