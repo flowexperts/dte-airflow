@@ -20,7 +20,7 @@ class PostgresPipelineStore:
         async with self._factory() as s:
             await s.execute(text("""
                 INSERT INTO pipelines (id, name, definition)
-                VALUES (:id, :name, :definition::jsonb)
+                VALUES (:id, :name, CAST(:definition AS jsonb))
                 ON CONFLICT (id) DO UPDATE SET definition = EXCLUDED.definition, updated_at = now()
             """), {"id": pipeline["id"], "name": pipeline["name"], "definition": json.dumps(pipeline)})
             await s.commit()
