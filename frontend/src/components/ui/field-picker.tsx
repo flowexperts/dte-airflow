@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { Input } from "./form";
+import { FieldTreePicker } from "./field-tree-picker";
 
 interface FieldOption {
   name: string;
@@ -23,6 +24,7 @@ interface FieldPickerProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  variant?: "flat" | "tree";
 }
 
 /**
@@ -30,7 +32,24 @@ interface FieldPickerProps {
  * Portaling to <body> is what lets the dropdown escape clipping ancestors
  * like Panel (which uses overflow-hidden for its rounded corners).
  */
-export function FieldPicker({
+export function FieldPicker(props: FieldPickerProps) {
+  if (props.variant === "tree") {
+    return (
+      <FieldTreePicker
+        mode="single"
+        value={props.value}
+        onChange={props.onChange}
+        options={props.options}
+        placeholder={props.placeholder}
+        className={props.className}
+        disabled={props.disabled}
+      />
+    );
+  }
+  return <FieldPickerFlat {...props} />;
+}
+
+function FieldPickerFlat({
   value,
   onChange,
   options,

@@ -29,3 +29,12 @@ export { Timeline, TimelineRow, InlineCode } from "./timeline";
 export { Field, Input, Textarea, Segmented } from "./form";
 export { FieldPicker } from "./field-picker";
 export { FieldMultiSelect } from "./field-multi";
+export { FieldTreePicker } from "./field-tree-picker";
+export {
+  buildTree,
+  findNode,
+  toDisplay,
+  toPath,
+  toWire,
+} from "./field-tree";
+export type { FieldNode, FieldRef } from "./field-tree";
