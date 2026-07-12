@@ -1,20 +1,56 @@
-version: "3.9"
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     environment:
-      POSTGRES_DB: dte
       POSTGRES_USER: dte
       POSTGRES_PASSWORD: dte
+      POSTGRES_DB: dte
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dte -d dte"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
-  api:
-    build: .
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql+asyncpg://dte:dte@postgres:5432/dte
+      DTE_CORS_ORIGINS: http://localhost:3000
+    command: >
+      sh -c "ALEMBIC_URL=$$(echo $$DATABASE_URL | sed 's|+asyncpg||') &&
+             DATABASE_URL=$$ALEMBIC_URL alembic upgrade head &&
+             exec uvicorn dte.api.main:app --host 0.0.0.0 --port 8001 --reload"
+    volumes:
+      - ./dte:/app/dte
+      - ./alembic:/app/alembic
     ports:
-      - "8000:8000"
+      - "8001:8001"
     depends_on:
-      - postgres
-    command: uvicorn dte.api.main:app --host 0.0.0.0 --port 8000
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8001
+      INTERNAL_API_URL: http://backend:8001
+    command: pnpm dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

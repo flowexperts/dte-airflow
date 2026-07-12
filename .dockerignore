@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+worktrees/
+frontend/
+plans/
+.claude/
+.git/
+.gitignore
+docker-compose.yml
