@@ -18,6 +18,7 @@ export interface Run {
   status: RunStatus;
   error: string | null;
   rows_written: number | null;
+  location: string | null;
   started_at: string | null;
   finished_at: string | null;
 }
@@ -119,6 +120,11 @@ export const listPipelineRuns = (id: string, limit = 50) =>
 
 export const getRun = (id: string) =>
   apiFetch<Run>(`/api/runs/${encodeURIComponent(id)}`);
+
+export const getRunOutput = (id: string, limit = 5) =>
+  apiFetch<PreviewResponse>(
+    `/api/runs/${encodeURIComponent(id)}/output?limit=${limit}`,
+  );
 
 export const inferSchema = (source: DltSource) =>
   apiFetch<{ fields: SchemaField[] }>(`/api/schema/infer`, {

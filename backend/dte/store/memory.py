@@ -42,6 +42,7 @@ class MemoryRunStore:
             "status": "pending",
             "error": None,
             "rows_written": None,
+            "location": None,
             "started_at": _utcnow_iso(),
             "finished_at": None,
         }
