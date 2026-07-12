@@ -22,6 +22,9 @@ import {
   Timeline,
   TimelineRow,
   InlineCode,
+  Field,
+  FieldPicker,
+  FieldMultiSelect,
 } from "@/components/ui";
 import type { Column } from "@/components/ui";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -244,6 +247,13 @@ export default function Preview() {
             </SchemaProvider>
           </section>
 
+          <Divider label="field tree" />
+
+          <section>
+            <SectionHead title="Field tree" count="· nested schema picker" />
+            <FieldTreeDemo />
+          </section>
+
           <Divider label="palette" />
 
           {/* PALETTE */}
@@ -272,5 +282,52 @@ export default function Preview() {
           </section>
         </div>
     </>
+  );
+}
+
+const DEMO_FIELDS = [
+  { name: "id", type: "string" },
+  { name: "order__amount", type: "float64" },
+  { name: "order__currency", type: "string" },
+  { name: "order__status", type: "string" },
+  { name: "user__id", type: "string" },
+  { name: "user__email", type: "string" },
+  { name: "user__address__city", type: "string" },
+  { name: "user__address__country", type: "string" },
+  { name: "created_at", type: "timestamp" },
+  { name: "_dlt_id", type: "string" },
+  { name: "_dlt_load_id", type: "string" },
+];
+
+function FieldTreeDemo() {
+  const [single, setSingle] = useState("");
+  const [multi, setMulti] = useState<string[]>([]);
+  return (
+    <Panel>
+      <PanelHead label="Nested source" count="· order + user + _dlt_*" />
+      <div className="p-4 grid gap-4 md:grid-cols-2">
+        <Field label="Single (variant='tree')" hint={`wire: ${single || "—"}`}>
+          <FieldPicker
+            value={single}
+            onChange={setSingle}
+            options={DEMO_FIELDS}
+            placeholder="pick a field…"
+            variant="tree"
+          />
+        </Field>
+        <Field
+          label="Multi (variant='tree')"
+          hint={`wire: [${multi.join(", ")}]`}
+        >
+          <FieldMultiSelect
+            value={multi}
+            onChange={setMulti}
+            options={DEMO_FIELDS}
+            placeholder="add field…"
+            variant="tree"
+          />
+        </Field>
+      </div>
+    </Panel>
   );
 }

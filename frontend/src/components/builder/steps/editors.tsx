@@ -10,6 +10,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import { useSchemas } from "../schema-context";
+import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { StepShape } from "./types";
 
@@ -197,6 +198,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                   onChange={(v) => updateRule(i, { field: v })}
                   options={allFields}
                   placeholder="field"
+                  variant="tree"
                 />
                 <select
                   value={r.op}
@@ -320,6 +322,7 @@ export function RenameEditor({ step, set }: { step: StepShape; set: Setter }) {
               onChange={(v) => updateRow(i, { from: v })}
               options={allFields.filter((f) => !usedFromNames.has(f.name) || f.name === r.from)}
               placeholder="old_name"
+              variant="tree"
             />
             <span className="text-subtle text-center">→</span>
             <Input
@@ -360,6 +363,7 @@ export function RetypeEditor({ step, set }: { step: StepShape; set: Setter }) {
           value={(step.field as string) ?? ""}
           onChange={(v) => set({ field: v })}
           options={allFields}
+          variant="tree"
         />
       </Field>
       <Field label="To type">
@@ -413,6 +417,7 @@ export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter })
             value={(step.field as string) ?? ""}
             onChange={(v) => set({ field: v })}
             options={allFields}
+            variant="tree"
           />
         </Field>
         <Field label="Default" hint="value used when no match">
@@ -508,6 +513,7 @@ export function SortEditor({ step, set }: { step: StepShape; set: Setter }) {
           onChange={(v) => set({ by: v })}
           options={allFields}
           placeholder="add field to sort by…"
+          variant="tree"
         />
       </Field>
       <Field label="Direction">
@@ -551,6 +557,7 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
           onChange={(v) => set({ group_by: v })}
           options={allFields}
           placeholder="add group_by field…"
+          variant="tree"
         />
       </Field>
       <div>
@@ -565,6 +572,7 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
                 onChange={(v) => updateAgg(i, { field: v })}
                 options={allFields}
                 placeholder="amount"
+                variant="tree"
               />
               <select
                 value={a.func}
@@ -631,6 +639,7 @@ export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
             }}
             options={allFields}
             placeholder="user_id"
+            variant="tree"
           />
         </Field>
         <Field label="Output id" hint="name of the resulting table in the registry">
@@ -648,9 +657,9 @@ export function PivotEditor({ step, set }: { step: StepShape; set: Setter }) {
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-3 gap-3">
-        <Field label="Index"><FieldPicker value={(step.index as string) ?? ""} onChange={(v) => set({ index: v })} options={allFields} /></Field>
-        <Field label="Columns"><FieldPicker value={(step.columns as string) ?? ""} onChange={(v) => set({ columns: v })} options={allFields} /></Field>
-        <Field label="Values"><FieldPicker value={(step.values as string) ?? ""} onChange={(v) => set({ values: v })} options={allFields} /></Field>
+        <Field label="Index"><FieldPicker value={(step.index as string) ?? ""} onChange={(v) => set({ index: v })} options={allFields} variant="tree" /></Field>
+        <Field label="Columns"><FieldPicker value={(step.columns as string) ?? ""} onChange={(v) => set({ columns: v })} options={allFields} variant="tree" /></Field>
+        <Field label="Values"><FieldPicker value={(step.values as string) ?? ""} onChange={(v) => set({ values: v })} options={allFields} variant="tree" /></Field>
       </div>
       <Field label="Aggregation">
         <select
@@ -746,6 +755,7 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
             onChange={setKeep}
             options={allFields}
             placeholder="add field to keep…"
+            variant="tree"
           />
           {fields.length > 0 && (
             <div className="space-y-1.5">
@@ -758,13 +768,13 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
                   className="grid grid-cols-[1fr_16px_1fr] gap-2 items-center"
                 >
                   <span className="font-mono text-[12.5px] text-text px-2.5 py-1.5 border border-border rounded bg-code-bg">
-                    {f.field}
+                    {toDisplay(f.field)}
                   </span>
                   <span className="text-subtle text-center">→</span>
                   <Input
                     value={f.alias ?? ""}
                     onChange={(e) => setAlias(f.field, e.target.value)}
-                    placeholder={f.field}
+                    placeholder={toDisplay(f.field)}
                   />
                 </div>
               ))}
@@ -784,6 +794,7 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
                 onChange={setDropped}
                 options={allFields}
                 placeholder="add field to drop…"
+                variant="tree"
               />
               <p className="font-mono text-[11px] text-subtle">
                 Drop is applied at run time — fields added to the source later pass through automatically.
