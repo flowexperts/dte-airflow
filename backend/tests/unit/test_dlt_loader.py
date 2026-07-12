@@ -26,6 +26,64 @@ def test_load_local_json_via_dlt(tmp_path):
     assert names == ["alice", "bob"]
 
 
+def test_load_jsonl_via_dlt(tmp_path):
+    lines = [
+        {"id": "o1", "order": {"amount": 100, "currency": "USD"}},
+        {"id": "o2", "order": {"amount": 42, "currency": "EUR"}},
+        {"id": "o3", "order": {"amount": 7, "currency": "USD"}},
+    ]
+    f = tmp_path / "orders.jsonl"
+    f.write_text("\n".join(json.dumps(l) for l in lines) + "\n")
+
+    src = DltSource(
+        id="s_jsonl",
+        source_type="filesystem",
+        config={"bucket_url": str(tmp_path), "file_glob": "*.jsonl"},
+        table="orders",
+    )
+    con = ibis.duckdb.connect()
+    df = load_source(src, con).execute()
+
+    assert len(df) == 3
+    assert "order__amount" in df.columns
+    assert sorted(df["id"].tolist()) == ["o1", "o2", "o3"]
+
+
+def test_load_jsonl_ignores_blank_lines(tmp_path):
+    f = tmp_path / "orders.jsonl"
+    f.write_text('{"id": "a"}\n\n{"id": "b"}\n   \n')
+
+    src = DltSource(
+        id="s_blank",
+        source_type="filesystem",
+        config={"bucket_url": str(tmp_path), "file_glob": "*.jsonl"},
+        table="orders",
+    )
+    con = ibis.duckdb.connect()
+    df = load_source(src, con).execute()
+    assert sorted(df["id"].tolist()) == ["a", "b"]
+
+
+def test_load_explicit_format_overrides_extension(tmp_path):
+    # File named .json but is really NDJSON — explicit format wins.
+    f = tmp_path / "wrong-ext.json"
+    f.write_text('{"id": "x"}\n{"id": "y"}\n')
+
+    src = DltSource(
+        id="s_fmt",
+        source_type="filesystem",
+        config={
+            "bucket_url": str(tmp_path),
+            "file_glob": "*.json",
+            "format": "jsonl",
+        },
+        table="orders",
+    )
+    con = ibis.duckdb.connect()
+    df = load_source(src, con).execute()
+    assert sorted(df["id"].tolist()) == ["x", "y"]
+
+
 def test_load_returns_ibis_table(tmp_path):
     data = [{"x": 1}]
     f = tmp_path / "data.json"

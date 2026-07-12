@@ -15,6 +15,19 @@ def resolve_secret(value: Any) -> Any:
     return value
 
 
+def _detect_format(path: str, explicit: str | None) -> str:
+    """Explicit `format` config wins; otherwise decide by file extension."""
+    if explicit:
+        fmt = explicit.lower()
+        if fmt in ("ndjson",):
+            return "jsonl"
+        return fmt
+    lower = path.lower()
+    if lower.endswith(".jsonl") or lower.endswith(".ndjson"):
+        return "jsonl"
+    return "json"
+
+
 def _load_from_fsspec(
     source: DltSource,
     con: ibis.BaseBackend,
@@ -24,6 +37,7 @@ def _load_from_fsspec(
     config = source.config
     bucket_url = config["bucket_url"]
     file_glob = config.get("file_glob", "**/*.json")
+    explicit_format = config.get("format")
 
     @dlt.resource(name=source.table)
     def _json_resource():
@@ -37,12 +51,22 @@ def _load_from_fsspec(
                 f"No files matched '{file_glob}' in '{bucket_url}'"
             )
         for path in matched:
+            fmt = _detect_format(path, explicit_format)
             with fs.open(path) as f:
-                data = json.load(f)
-            if isinstance(data, list):
-                yield from data
-            else:
-                yield data
+                if fmt == "jsonl":
+                    for line in f:
+                        if isinstance(line, bytes):
+                            line = line.decode("utf-8")
+                        line = line.strip()
+                        if not line:
+                            continue
+                        yield json.loads(line)
+                else:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        yield from data
+                    else:
+                        yield data
 
     pipeline = dlt.pipeline(
         pipeline_name=source.id,

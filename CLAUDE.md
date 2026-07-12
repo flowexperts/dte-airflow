@@ -192,6 +192,8 @@ DuckDBEngine.execute_to_json() → output file + row count
 
 **`dte/sources/dlt_loader.py`** — universal source loading via dlt. `load_source(DltSource, ibis_con)` runs a dlt pipeline into the shared DuckDB connection (`con.con` is the raw `duckdb.DuckDBPyConnection`) and returns an `ibis.Table`. Currently implements `filesystem` source type; add new source types here. Do **not** write custom connector classes — extend this file with new dlt sources.
 
+`filesystem` reads `json` or `jsonl`/`ndjson`. Format is picked by extension; `config["format"]` overrides. JSONL skips blank lines.
+
 **`dte/compiler/ibis_compiler.py`** — `compile_pipeline(pipeline, tables)` maintains a **named registry** (`dict[str, ibis.Table]`) instead of a rolling variable. Each step reads from and writes back to the registry via `current_key`. Join steps write their result under `output_id` and update `current_key`. This allows multi-source pipelines.
 
 - Filter and expression-map steps escape to raw SQL via `con.create_view()` + `con.sql()` — Ibis has no SQL string parser. This is the seam for future distributed backends (Spark, Trino).
