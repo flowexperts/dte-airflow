@@ -48,8 +48,12 @@ class MemoryRunStore:
         return run_id
 
     async def update(self, id: str, **fields) -> None:
-        if id in self._data:
-            self._data[id].update(fields)
+        if id not in self._data:
+            return
+        self._data[id].update(fields)
+        run = self._data[id]
+        if run.get("status") in ("completed", "failed") and run.get("finished_at") is None:
+            run["finished_at"] = _utcnow_iso()
 
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
         return [r for r in self._data.values() if r["pipeline_id"] == pipeline_id][:limit]
