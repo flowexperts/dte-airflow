@@ -26,6 +26,7 @@ import {
 import type { Column } from "@/components/ui";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SourcesPanel } from "@/components/builder/sources";
+import { SchemaProvider } from "@/components/builder/schema-context";
 import type { DltSource } from "@/lib/api";
 import { useState } from "react";
 
@@ -238,7 +239,9 @@ export default function Preview() {
           {/* SOURCES */}
           <section>
             <SectionHead title="Source editors" count="· filesystem · sql · mongodb" />
-            <SourcesPanel sources={sampleSources} onChange={setSampleSources} />
+            <SchemaProvider>
+              <SourcesPanel sources={sampleSources} onChange={setSampleSources} />
+            </SchemaProvider>
           </section>
 
           <Divider label="palette" />
