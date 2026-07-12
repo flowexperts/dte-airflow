@@ -2,32 +2,69 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Repo layout
+
+```
+backend/       Python package `dte`, alembic, tests, Dockerfile
+frontend/      Next.js app
+docker-compose.yml   whole stack (postgres + backend + frontend)
+plans/         feature plans (numbered)
+```
+
+All Python paths in this file are relative to `backend/`.
+
 ## Commands
 
+### Docker (recommended for anything cross-service)
+
 ```bash
+# Bring up the stack (postgres + backend + frontend, dev-mode hot reload)
+docker compose up -d --build
+
+# Follow logs
+docker compose logs -f backend
+
+# Restart a single service after a config change
+docker compose restart backend
+
+# Tear down (keeps pgdata volume)
+docker compose down
+```
+
+Dev mode is wired: `./backend/dte` and `./backend/alembic` mount into the backend container; uvicorn runs with `--reload`. Frontend mounts `./frontend` and runs `pnpm dev`. Ports are `3000` (frontend), `8001` (backend), `5432` (postgres).
+
+### Backend without Docker
+
+Run from inside `backend/`:
+
+```bash
+cd backend
+
 # Install
-uv pip install -e ".[dev]"
+uv venv && uv pip install -e ".[dev]"
 
 # Run all tests
-pytest
+uv run pytest
 
-# Run a single test file or test
-pytest tests/unit/test_compiler.py
-pytest tests/unit/test_compiler.py::test_join_inner
+# Single test
+uv run pytest tests/unit/test_compiler.py::test_join_inner
 
-# Run with coverage
-pytest --cov=dte
+# Coverage
+uv run pytest --cov=dte
 
 # Skip postgres integration tests (requires DATABASE_URL)
-pytest -m "not integration"
+uv run pytest -m "not integration"
 
 # Start API server
-uvicorn dte.api.main:app --reload
+uv run uvicorn dte.api.main:app --port 8001 --reload
 
-# Run DB migrations (requires DATABASE_URL)
-alembic upgrade head
+# DB migrations (requires DATABASE_URL, sync driver e.g. postgresql://)
+uv run alembic upgrade head
+```
 
-# Frontend (Next.js) — see frontend/README.md for details
+### Frontend
+
+```bash
 cd frontend && pnpm install && pnpm dev   # http://localhost:3000
 cd frontend && pnpm gen:types             # regen types (backend must be up)
 ```
@@ -198,6 +235,8 @@ POST   /api/schema/infer                  field tree from a DltSource config
 
 `Run` responses include `id`, `pipeline_id`, `status` (`pending`/`running`/`completed`/`failed`), `error`, `rows_written`, `started_at`, `finished_at`. Per-step run events are **not** recorded yet — the frontend `Timeline` renders an empty state placeholder.
 
+`finished_at` is written by the Postgres store, not the API code. Migration `003` installs a `BEFORE UPDATE` trigger on `runs` that stamps `finished_at = NOW()` when `status` becomes `completed` or `failed`. `MemoryRunStore.update` mirrors the rule. If you introduce a new terminal status, extend both.
+
 ## Development workflow
 
 ### Before implementing any feature
@@ -211,7 +250,7 @@ Write a plan to `plans/<NNN>-<feature-name>.md`. Plans must include: problem sta
 git worktree add ./worktrees/<name> -b feature/<name>
 
 # Work in worktree, run tests
-pytest -x
+cd backend && uv run pytest -x
 
 # Merge back
 cd /Users/bhavaniravi/projects/dte
@@ -224,7 +263,11 @@ Every non-trivial change gets its own worktree. Do not develop directly on `main
 
 ## Store / database
 
-Alembic manages Postgres schema. Run `alembic upgrade head` with `DATABASE_URL=postgresql+asyncpg://...` set. Without `DATABASE_URL`, the API uses the in-memory store and no Postgres is needed. Postgres integration tests (`tests/integration/test_store_postgres.py`) are skipped automatically when `DATABASE_URL` is unset.
+`dte/api/deps.py` picks the backend at import time: if `DATABASE_URL` is set, it constructs `PostgresPipelineStore`/`PostgresRunStore` with an `async_sessionmaker` singleton; otherwise it falls back to the in-memory stores. Both Postgres stores hold a session factory (not a live session) so the singleton is safe across FastAPI requests and the background `asyncio.create_task` in `trigger_pipeline`.
+
+Under Docker Compose, `DATABASE_URL=postgresql+asyncpg://dte:dte@postgres:5432/dte` is set on the backend service. The compose command runs `alembic upgrade head` first (using a synced URL derived by stripping `+asyncpg`) and then execs uvicorn. Pipelines persist across `docker compose restart` via the `pgdata` volume.
+
+Postgres integration tests (`tests/integration/test_store_postgres.py`) are skipped automatically when `DATABASE_URL` is unset. When enabled, they use an `async_sessionmaker` fixture and pass it to the store constructors — mirror this pattern in any new integration test.
 
 ## TDD convention
 
