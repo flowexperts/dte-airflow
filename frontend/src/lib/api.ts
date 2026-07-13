@@ -26,6 +26,7 @@ export interface Run {
 export interface SchemaField {
   name: string;
   type: string;
+  children?: SchemaField[] | null;
 }
 
 export interface PreviewResponse {

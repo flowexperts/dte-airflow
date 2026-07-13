@@ -12,57 +12,72 @@ export interface FieldRef {
   path: string[];
 }
 
-const SEP_WIRE = "__";
-const SEP_DISPLAY = ".";
+const SEP = ".";
 
 function isReserved(name: string): boolean {
   return name.startsWith("_dlt_");
 }
 
-/** `order__amount` → `order.amount`. Reserved `_dlt_*` names pass through. */
+/** Wire form is now dot syntax — matches STRUCT paths. Identity + guard. */
 export function toDisplay(wire: string): string {
-  if (isReserved(wire)) return wire;
-  return wire.split(SEP_WIRE).join(SEP_DISPLAY);
+  return wire;
 }
 
-/** `order.amount` → `order__amount`. Accepts either form; idempotent. */
+/** Accepts either dot form or legacy `__`-flat; normalises to dot. Idempotent. */
 export function toWire(input: string): string {
   if (isReserved(input)) return input;
-  if (input.includes(SEP_WIRE)) return input;
-  return input.split(SEP_DISPLAY).join(SEP_WIRE);
+  if (input.includes(SEP)) return input;
+  return input.split("__").join(SEP);
 }
 
 export function toPath(wire: string): string[] {
   if (isReserved(wire)) return [wire];
-  return wire.split(SEP_WIRE);
+  return wire.split(SEP);
 }
 
-export function buildTree(
-  fields: { name: string; type?: string }[],
-): FieldNode[] {
+interface FieldInput {
+  name: string;
+  type?: string;
+  children?: FieldInput[] | null;
+}
+
+/** Build the tree.
+ *
+ * The backend now returns `SchemaField[]` with an optional `children` array
+ * for STRUCT columns — we walk it directly. As a fallback, a flat list of
+ * dot-form leaves (or legacy `__`-flat names) is still supported by
+ * splitting on the separator and building a trie.
+ */
+export function buildTree(fields: FieldInput[]): FieldNode[] {
+  // If the input carries `children`, treat it as an already-shaped tree.
+  const isTree = fields.some((f) => Array.isArray(f.children));
+  if (isTree) {
+    const walk = (
+      nodes: FieldInput[],
+      parent: string[] = [],
+    ): FieldNode[] =>
+      nodes.map((n) => {
+        const path = [...parent, n.name];
+        const wire = path.join(SEP);
+        if (Array.isArray(n.children) && n.children.length) {
+          return {
+            name: n.name,
+            wire,
+            path,
+            type: n.type,
+            children: walk(n.children, path),
+          };
+        }
+        return { name: n.name, wire, path, type: n.type };
+      });
+    return walk(fields);
+  }
+
+  // Fallback: flat list → trie.
   const roots: FieldNode[] = [];
   const rootIndex = new Map<string, FieldNode>();
-
   for (const f of fields) {
     const path = toPath(f.name);
-    if (path.length === 1) {
-      const existing = rootIndex.get(path[0]);
-      if (existing) {
-        existing.type = f.type ?? existing.type;
-        existing.wire = f.name;
-        continue;
-      }
-      const node: FieldNode = {
-        name: path[0],
-        wire: f.name,
-        path,
-        type: f.type,
-      };
-      roots.push(node);
-      rootIndex.set(path[0], node);
-      continue;
-    }
-
     let siblings = roots;
     let index = rootIndex;
     let acc: string[] = [];
@@ -72,11 +87,7 @@ export function buildTree(
       const isLeaf = i === path.length - 1;
       let node = index.get(seg);
       if (!node) {
-        node = {
-          name: seg,
-          wire: acc.join(SEP_WIRE),
-          path: acc,
-        };
+        node = { name: seg, wire: acc.join(SEP), path: acc };
         if (!isLeaf) node.children = [];
         siblings.push(node);
         index.set(seg, node);
@@ -85,7 +96,7 @@ export function buildTree(
       }
       if (isLeaf) {
         node.type = f.type;
-        node.wire = f.name;
+        node.wire = acc.join(SEP);
       } else {
         siblings = node.children!;
         const nextIndex = new Map<string, FieldNode>();
