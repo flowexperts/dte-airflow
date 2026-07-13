@@ -26,7 +26,7 @@ def test_load_local_json_via_dlt(tmp_path):
     assert names == ["alice", "bob"]
 
 
-def test_load_jsonl_via_dlt(tmp_path):
+def test_load_jsonl_nested_as_struct(tmp_path):
     lines = [
         {"id": "o1", "order": {"amount": 100, "currency": "USD"}},
         {"id": "o2", "order": {"amount": 42, "currency": "EUR"}},
@@ -42,11 +42,49 @@ def test_load_jsonl_via_dlt(tmp_path):
         table="orders",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con).execute()
+    table = load_source(src, con)
 
+    # DuckDB native readers expose nested JSON as STRUCT columns.
+    schema = table.schema()
+    assert "order" in schema.names
+    assert str(schema["order"]).startswith("struct")
+
+    df = table.execute()
     assert len(df) == 3
-    assert "order__amount" in df.columns
     assert sorted(df["id"].tolist()) == ["o1", "o2", "o3"]
+
+
+def test_load_csv(tmp_path):
+    f = tmp_path / "data.csv"
+    f.write_text("id,name,age\n1,alice,30\n2,bob,25\n")
+
+    src = DltSource(
+        id="s_csv",
+        source_type="filesystem",
+        config={"bucket_url": str(tmp_path), "file_glob": "*.csv"},
+        table="people",
+    )
+    con = ibis.duckdb.connect()
+    df = load_source(src, con).execute()
+    assert sorted(df["name"].tolist()) == ["alice", "bob"]
+
+
+def test_load_parquet(tmp_path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    tbl = pa.table({"id": [1, 2], "name": ["alice", "bob"]})
+    pq.write_table(tbl, str(tmp_path / "data.parquet"))
+
+    src = DltSource(
+        id="s_parq",
+        source_type="filesystem",
+        config={"bucket_url": str(tmp_path), "file_glob": "*.parquet"},
+        table="people",
+    )
+    con = ibis.duckdb.connect()
+    df = load_source(src, con).execute()
+    assert sorted(df["name"].tolist()) == ["alice", "bob"]
 
 
 def test_load_jsonl_ignores_blank_lines(tmp_path):

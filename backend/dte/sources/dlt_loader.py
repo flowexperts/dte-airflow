@@ -15,17 +15,68 @@ def resolve_secret(value: Any) -> Any:
     return value
 
 
+_JSONL_EXTS = (".jsonl", ".ndjson")
+_JSON_EXTS = (".json",)
+_CSV_EXTS = (".csv", ".tsv")
+_PARQUET_EXTS = (".parquet", ".pq")
+
+
 def _detect_format(path: str, explicit: str | None) -> str:
-    """Explicit `format` config wins; otherwise decide by file extension."""
+    """`config['format']` wins; otherwise decide by file extension.
+
+    Returns one of: `json`, `jsonl`, `csv`, `parquet`.
+    """
     if explicit:
         fmt = explicit.lower()
         if fmt in ("ndjson",):
             return "jsonl"
         return fmt
     lower = path.lower()
-    if lower.endswith(".jsonl") or lower.endswith(".ndjson"):
+    if lower.endswith(_JSONL_EXTS):
         return "jsonl"
+    if lower.endswith(_CSV_EXTS):
+        return "csv"
+    if lower.endswith(_PARQUET_EXTS):
+        return "parquet"
+    if lower.endswith(_JSON_EXTS):
+        return "json"
     return "json"
+
+
+def _sql_string_literal(s: str) -> str:
+    """DuckDB SQL string literal — wrap in '', escape internal ' as ''."""
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _sql_ident(name: str) -> str:
+    """DuckDB identifier quote — wrap in "", escape internal " as ""."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _duckdb_reader_call(paths: list[str], fmt: str) -> str:
+    """SQL fragment: `read_<fmt>_auto([...])` — a table-valued function call."""
+    path_list = "[" + ", ".join(_sql_string_literal(p) for p in paths) + "]"
+    if fmt in ("json", "jsonl"):
+        arg = "format='newline_delimited'" if fmt == "jsonl" else "format='auto'"
+        return f"read_json_auto({path_list}, {arg})"
+    if fmt == "csv":
+        return f"read_csv_auto({path_list})"
+    if fmt == "parquet":
+        return f"read_parquet({path_list})"
+    raise ValueError(f"unsupported filesystem format: {fmt!r}")
+
+
+def _glob_local(bucket_url: str, file_glob: str) -> list[str]:
+    """Expand `bucket_url + file_glob` to a sorted list of local paths."""
+    from pathlib import Path
+    import glob as _glob
+
+    if bucket_url.startswith("file://"):
+        root = bucket_url[len("file://"):]
+    else:
+        root = bucket_url
+    pattern = str(Path(root) / file_glob)
+    return sorted(_glob.glob(pattern, recursive=True))
 
 
 def _load_from_fsspec(
@@ -78,7 +129,32 @@ def _load_from_fsspec(
 
 
 def _load_filesystem(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
-    return _load_from_fsspec(source, con, storage_options={})
+    """Read local files directly via DuckDB's native readers.
+
+    Nested JSON comes through as STRUCT columns (DuckDB default). The
+    compiler's `_resolve_field` traverses dot-form refs (`order.amount`)
+    into the struct; legacy `parent__child` refs still work because it
+    falls back to `__`-joined lookups when struct traversal misses.
+    """
+    config = source.config
+    bucket_url = config["bucket_url"]
+    file_glob = config.get("file_glob", "**/*.json")
+    explicit_format = config.get("format")
+
+    matched = _glob_local(bucket_url, file_glob)
+    if not matched:
+        raise FileNotFoundError(
+            f"No files matched '{file_glob}' in '{bucket_url}'"
+        )
+
+    fmt = _detect_format(matched[0], explicit_format)
+    reader_sql = _duckdb_reader_call(matched, fmt)
+    view_sql = (
+        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} "
+        f"AS SELECT * FROM {reader_sql}"
+    )
+    con.con.execute(view_sql)
+    return con.table(source.table)
 
 
 def _build_s3_storage_options(config: dict) -> dict:
