@@ -180,94 +180,131 @@ def test_resolve_secret_missing_env_raises(monkeypatch):
         resolve_secret({"env": "DTE_TEST_MISSING"})
 
 
-def test_s3_storage_options_from_config():
-    from dte.sources.dlt_loader import _build_s3_storage_options
-    opts = _build_s3_storage_options({
-        "bucket_url": "s3://bkt",
+def test_s3_secret_sql_from_config():
+    from dte.sources.dlt_loader import _build_s3_secret_sql
+    sql = _build_s3_secret_sql({
         "aws_access_key_id": "AKIA",
         "aws_secret_access_key": "sekret",
-    })
-    assert opts["key"] == "AKIA"
-    assert opts["secret"] == "sekret"
+        "region_name": "us-east-1",
+    }, secret_name="dte_src_s5_s3")
+    assert 'CREATE OR REPLACE SECRET "dte_src_s5_s3"' in sql
+    assert "TYPE s3" in sql
+    assert "KEY_ID 'AKIA'" in sql
+    assert "SECRET 'sekret'" in sql
+    assert "REGION 'us-east-1'" in sql
 
 
-def test_s3_storage_options_resolves_env_secrets(monkeypatch):
-    from dte.sources.dlt_loader import _build_s3_storage_options
+def test_s3_secret_sql_resolves_env_secrets(monkeypatch):
+    from dte.sources.dlt_loader import _build_s3_secret_sql
     monkeypatch.setenv("MY_AWS_KEY", "AKIAENV")
     monkeypatch.setenv("MY_AWS_SECRET", "envsekret")
-    opts = _build_s3_storage_options({
-        "bucket_url": "s3://bkt",
+    sql = _build_s3_secret_sql({
         "aws_access_key_id": {"env": "MY_AWS_KEY"},
         "aws_secret_access_key": {"env": "MY_AWS_SECRET"},
-    })
-    assert opts["key"] == "AKIAENV"
-    assert opts["secret"] == "envsekret"
+    }, secret_name="s")
+    assert "KEY_ID 'AKIAENV'" in sql
+    assert "SECRET 'envsekret'" in sql
 
 
-def test_s3_storage_options_includes_endpoint_url():
-    from dte.sources.dlt_loader import _build_s3_storage_options
-    opts = _build_s3_storage_options({
-        "bucket_url": "s3://bkt",
+def test_s3_secret_sql_http_endpoint_disables_ssl_and_uses_path_style():
+    from dte.sources.dlt_loader import _build_s3_secret_sql
+    sql = _build_s3_secret_sql({
         "endpoint_url": "http://localhost:4566",
-    })
-    assert opts["client_kwargs"] == {"endpoint_url": "http://localhost:4566"}
+    }, secret_name="s")
+    assert "ENDPOINT 'localhost:4566'" in sql
+    assert "URL_STYLE 'path'" in sql
+    assert "USE_SSL false" in sql
 
 
-def test_gcs_storage_options_from_config():
-    from dte.sources.dlt_loader import _build_gcs_storage_options
-    opts = _build_gcs_storage_options({
-        "bucket_url": "gs://bkt",
-        "credentials_json": {"type": "service_account", "project_id": "p"},
-    })
-    assert opts["token"] == {"type": "service_account", "project_id": "p"}
+def test_s3_secret_sql_https_endpoint_keeps_ssl():
+    from dte.sources.dlt_loader import _build_s3_secret_sql
+    sql = _build_s3_secret_sql({
+        "endpoint_url": "https://custom.s3-endpoint.example",
+    }, secret_name="s")
+    assert "ENDPOINT 'custom.s3-endpoint.example'" in sql
+    assert "USE_SSL" not in sql
 
 
-def test_gcs_storage_options_resolves_env_secret(monkeypatch):
-    import json as _json
-    from dte.sources.dlt_loader import _build_gcs_storage_options
-    monkeypatch.setenv("GCS_CREDS_JSON", _json.dumps({"type": "service_account"}))
-    opts = _build_gcs_storage_options({
-        "bucket_url": "gs://bkt",
-        "credentials_json": {"env": "GCS_CREDS_JSON"},
-    })
-    assert opts["token"] == {"type": "service_account"}
+def test_gcs_secret_sql_hmac_keys():
+    from dte.sources.dlt_loader import _build_gcs_secret_sql
+    sql = _build_gcs_secret_sql({
+        "hmac_key_id": "GOOGKEY",
+        "hmac_secret": "gsecret",
+    }, secret_name="g")
+    assert "TYPE gcs" in sql
+    assert "KEY_ID 'GOOGKEY'" in sql
+    assert "SECRET 'gsecret'" in sql
 
 
-def test_dispatch_registers_s3_and_gcs():
+def test_gcs_secret_sql_env_indirection(monkeypatch):
+    from dte.sources.dlt_loader import _build_gcs_secret_sql
+    monkeypatch.setenv("GCS_HMAC_ID", "GK")
+    monkeypatch.setenv("GCS_HMAC_SECRET", "GS")
+    sql = _build_gcs_secret_sql({
+        "hmac_key_id": {"env": "GCS_HMAC_ID"},
+        "hmac_secret": {"env": "GCS_HMAC_SECRET"},
+    }, secret_name="g")
+    assert "KEY_ID 'GK'" in sql
+    assert "SECRET 'GS'" in sql
+
+
+def test_gcs_credentials_json_no_longer_accepted():
+    from dte.sources.dlt_loader import _build_gcs_secret_sql
+    with pytest.raises(ValueError, match="HMAC"):
+        _build_gcs_secret_sql({
+            "credentials_json": {"type": "service_account"},
+        }, secret_name="g")
+
+
+def test_azure_secret_sql_connection_string():
+    from dte.sources.dlt_loader import _build_azure_secret_sql
+    sql = _build_azure_secret_sql({
+        "connection_string": "DefaultEndpointsProtocol=https;AccountName=a;AccountKey=k;",
+    }, secret_name="az")
+    assert "TYPE azure" in sql
+    assert "CONNECTION_STRING 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=k;'" in sql
+
+
+def test_azure_secret_sql_account_name_and_key():
+    from dte.sources.dlt_loader import _build_azure_secret_sql
+    sql = _build_azure_secret_sql({
+        "account_name": "myacct",
+        "account_key": "mykey",
+    }, secret_name="az")
+    assert "ACCOUNT_NAME 'myacct'" in sql
+    assert "ACCOUNT_KEY 'mykey'" in sql
+
+
+def test_azure_secret_sql_env_indirection(monkeypatch):
+    from dte.sources.dlt_loader import _build_azure_secret_sql
+    monkeypatch.setenv("AZ_CONN", "DefaultEndpointsProtocol=https;AccountName=x;AccountKey=y;")
+    sql = _build_azure_secret_sql({
+        "connection_string": {"env": "AZ_CONN"},
+    }, secret_name="az")
+    assert "AccountName=x" in sql
+
+
+def test_azure_secret_sql_missing_credentials_raises():
+    from dte.sources.dlt_loader import _build_azure_secret_sql
+    with pytest.raises(ValueError, match="credentials"):
+        _build_azure_secret_sql({}, secret_name="az")
+
+
+def test_dispatch_registers_object_storage_types():
     from dte.sources.dlt_loader import LOADERS
     assert "s3" in LOADERS
     assert "gcs" in LOADERS
+    assert "azure" in LOADERS
 
 
-def test_s3_end_to_end_via_memory_fs(monkeypatch):
-    import fsspec
-    memfs = fsspec.filesystem("memory")
-    with memfs.open("/bkt/data.json", "wb") as f:
-        f.write(json.dumps([{"a": 1}, {"a": 2}]).encode())
-
-    captured = {}
-
-    def fake(url, storage_options=None, **kw):
-        captured["url"] = url
-        captured["storage_options"] = storage_options
-        return memfs, None, [url]
-
-    monkeypatch.setattr(fsspec, "get_fs_token_paths", fake)
-
-    src = DltSource(
-        id="s5",
-        source_type="s3",
-        config={
-            "bucket_url": "/bkt",
-            "file_glob": "data.json",
-            "aws_access_key_id": "AKIA",
-            "aws_secret_access_key": "sekret",
-        },
-        table="s3data",
-    )
-    con = ibis.duckdb.connect()
-    load_source(src, con)
-    assert captured["storage_options"]["key"] == "AKIA"
+def test_secret_sql_escapes_single_quotes():
+    """Secrets containing a `'` must be escaped so they don't break the DDL."""
+    from dte.sources.dlt_loader import _build_s3_secret_sql
+    sql = _build_s3_secret_sql({
+        "aws_access_key_id": "AK",
+        "aws_secret_access_key": "has'quote",
+    }, secret_name="s")
+    assert "SECRET 'has''quote'" in sql
 
 
 def test_sql_database_loader_end_to_end(tmp_path):
