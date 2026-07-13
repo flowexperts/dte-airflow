@@ -190,28 +190,67 @@ def _load_gcs(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
     return _load_from_fsspec(source, con, _build_gcs_storage_options(source.config))
 
 
-def _load_sql_database(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
-    from dlt.sources.sql_database import sql_table
+_INSTALLED_EXTS: set[str] = set()
 
+
+def _ensure_ext(raw_con, name: str) -> None:
+    """Idempotently INSTALL + LOAD a DuckDB extension in this process."""
+    if name not in _INSTALLED_EXTS:
+        raw_con.execute(f"INSTALL {name}")
+        _INSTALLED_EXTS.add(name)
+    raw_con.execute(f"LOAD {name}")
+
+
+def _sql_scanner_spec(credentials: str) -> tuple[str, str, str, str]:
+    """(ext_name, attach_target, attach_type, default_schema) for a URL.
+
+    - `sqlite:///path` → ('sqlite', 'path', 'sqlite', 'main')
+    - `postgresql://…` → ('postgres', <url>, 'postgres', 'public')
+    - `mysql://…`      → ('mysql', <url>, 'mysql', '')
+    """
+    if credentials.startswith("sqlite:///"):
+        return "sqlite", credentials[len("sqlite:///"):], "sqlite", "main"
+    if credentials.startswith(("postgresql://", "postgres://")):
+        return "postgres", credentials, "postgres", "public"
+    if credentials.startswith("mysql://"):
+        return "mysql", credentials, "mysql", ""
+    scheme = credentials.split("://", 1)[0] if "://" in credentials else credentials
+    raise NotImplementedError(
+        f"sql_database: unsupported credentials scheme '{scheme}://'. "
+        "Supported: sqlite, postgresql, mysql."
+    )
+
+
+def _load_sql_database(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
+    """Attach the source via a DuckDB scanner extension and expose the
+    requested table as a view. Queries stream through DuckDB — no dlt hop."""
     raw_con = con.con
     config = source.config
     credentials = resolve_secret(config["credentials"])
     table_name = config["table"]
-    schema = config.get("schema")
+    user_schema = config.get("schema")
 
-    resource = sql_table(
-        credentials=credentials,
-        table=table_name,
-        schema=schema,
-    ).with_name(source.table)
+    ext, attach_target, attach_type, default_schema = _sql_scanner_spec(credentials)
+    _ensure_ext(raw_con, ext)
 
-    pipeline = dlt.pipeline(
-        pipeline_name=source.id,
-        destination=dlt.destinations.duckdb(credentials=raw_con),
-        dataset_name="dte_sources",
+    alias = f"dte_src_{source.id}"
+    raw_con.execute(f"DETACH DATABASE IF EXISTS {_sql_ident(alias)}")
+    raw_con.execute(
+        f"ATTACH {_sql_string_literal(attach_target)} "
+        f"AS {_sql_ident(alias)} (TYPE {attach_type}, READ_ONLY)"
     )
-    pipeline.run(resource)
-    return con.table(source.table, database=("memory", "dte_sources"))
+
+    schema = user_schema or default_schema
+    qualified = (
+        f"{_sql_ident(alias)}.{_sql_ident(schema)}.{_sql_ident(table_name)}"
+        if schema
+        else f"{_sql_ident(alias)}.{_sql_ident(table_name)}"
+    )
+    raw_con.execute(
+        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} "
+        f"AS SELECT * FROM {qualified}"
+    )
+    return con.table(source.table)
 
 
 def _mongo_client(connection_url: str):

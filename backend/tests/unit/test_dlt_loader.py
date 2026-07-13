@@ -328,6 +328,18 @@ def test_dispatch_registers_sql_database():
     assert "sql_database" in LOADERS
 
 
+def test_sql_database_unsupported_scheme_raises():
+    src = DltSource(
+        id="sql_bad",
+        source_type="sql_database",
+        config={"credentials": "snowflake://user:pw@acct", "table": "t"},
+        table="t",
+    )
+    con = ibis.duckdb.connect()
+    with pytest.raises(NotImplementedError, match="snowflake"):
+        load_source(src, con)
+
+
 def test_mongodb_loader_end_to_end(monkeypatch):
     """Load documents from a mongomock-backed MongoDB collection."""
     import mongomock
