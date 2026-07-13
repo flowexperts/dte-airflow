@@ -79,53 +79,101 @@ def _glob_local(bucket_url: str, file_glob: str) -> list[str]:
     return sorted(_glob.glob(pattern, recursive=True))
 
 
-def _load_from_fsspec(
+def _secret_kv(key: str, value: str) -> str:
+    """Render one `KEY VALUE` line for a DuckDB CREATE SECRET body."""
+    return f"    {key} {_sql_string_literal(value)}"
+
+
+def _build_s3_secret_sql(config: dict, secret_name: str) -> str:
+    """Return `CREATE OR REPLACE SECRET …` DDL for an S3-compatible endpoint.
+
+    Env-indirection is resolved at build time. Endpoint URL (LocalStack / MinIO)
+    switches on path-style + optional TLS off when the scheme is http.
+    """
+    parts: list[str] = ["TYPE s3"]
+    if "aws_access_key_id" in config:
+        parts.append(_secret_kv("KEY_ID", resolve_secret(config["aws_access_key_id"])))
+    if "aws_secret_access_key" in config:
+        parts.append(_secret_kv("SECRET", resolve_secret(config["aws_secret_access_key"])))
+    if "aws_session_token" in config:
+        parts.append(_secret_kv("SESSION_TOKEN", resolve_secret(config["aws_session_token"])))
+    if "region_name" in config:
+        parts.append(_secret_kv("REGION", resolve_secret(config["region_name"])))
+    if "endpoint_url" in config:
+        endpoint = resolve_secret(config["endpoint_url"])
+        # Strip scheme — DuckDB wants `host[:port]`.
+        stripped = endpoint.split("://", 1)[-1].rstrip("/")
+        parts.append(_secret_kv("ENDPOINT", stripped))
+        parts.append("    URL_STYLE 'path'")
+        if endpoint.startswith("http://"):
+            parts.append("    USE_SSL false")
+    body = ",\n".join(parts)
+    return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
+
+
+def _build_gcs_secret_sql(config: dict, secret_name: str) -> str:
+    """DuckDB uses HMAC keys for GCS via the S3-compatible API — not the
+    service-account JSON that fsspec/gcsfs consumes. Users who previously
+    supplied `credentials_json` must reissue as HMAC key + secret."""
+    if "credentials_json" in config and "hmac_key_id" not in config:
+        raise ValueError(
+            "gcs source: `credentials_json` (service-account JSON) is no longer "
+            "supported. Issue an HMAC key on the storage account and pass "
+            "`hmac_key_id` + `hmac_secret` instead."
+        )
+    parts: list[str] = ["TYPE gcs"]
+    if "hmac_key_id" in config:
+        parts.append(_secret_kv("KEY_ID", resolve_secret(config["hmac_key_id"])))
+    if "hmac_secret" in config:
+        parts.append(_secret_kv("SECRET", resolve_secret(config["hmac_secret"])))
+    body = ",\n".join(parts)
+    return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
+
+
+def _build_azure_secret_sql(config: dict, secret_name: str) -> str:
+    """Azure Blob Storage secret. Prefer `connection_string`; fall back to
+    `account_name` + `account_key`."""
+    parts: list[str] = ["TYPE azure"]
+    if "connection_string" in config:
+        parts.append(_secret_kv("CONNECTION_STRING", resolve_secret(config["connection_string"])))
+    elif "account_name" in config:
+        parts.append(_secret_kv("ACCOUNT_NAME", resolve_secret(config["account_name"])))
+        if "account_key" in config:
+            parts.append(_secret_kv("ACCOUNT_KEY", resolve_secret(config["account_key"])))
+    else:
+        raise ValueError(
+            "azure source: missing credentials. Provide `connection_string` or "
+            "(`account_name` + `account_key`)."
+        )
+    body = ",\n".join(parts)
+    return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
+
+
+def _load_remote_via_duckdb(
     source: DltSource,
     con: ibis.BaseBackend,
-    storage_options: dict,
+    extension: str,
+    secret_sql: str,
 ) -> ibis.Table:
+    """Install the required DuckDB extension, register a scoped SECRET, and
+    materialise `bucket_url + file_glob` as a view over `read_*_auto`."""
     raw_con = con.con
     config = source.config
-    bucket_url = config["bucket_url"]
+    bucket_url = config["bucket_url"].rstrip("/")
     file_glob = config.get("file_glob", "**/*.json")
     explicit_format = config.get("format")
 
-    @dlt.resource(name=source.table)
-    def _json_resource():
-        import fsspec
-        fs, _, _ = fsspec.get_fs_token_paths(
-            bucket_url, storage_options=storage_options
-        )
-        matched = fs.glob(f"{bucket_url.rstrip('/')}/{file_glob}")
-        if not matched:
-            raise FileNotFoundError(
-                f"No files matched '{file_glob}' in '{bucket_url}'"
-            )
-        for path in matched:
-            fmt = _detect_format(path, explicit_format)
-            with fs.open(path) as f:
-                if fmt == "jsonl":
-                    for line in f:
-                        if isinstance(line, bytes):
-                            line = line.decode("utf-8")
-                        line = line.strip()
-                        if not line:
-                            continue
-                        yield json.loads(line)
-                else:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        yield from data
-                    else:
-                        yield data
+    _ensure_ext(raw_con, extension)
+    raw_con.execute(secret_sql)
 
-    pipeline = dlt.pipeline(
-        pipeline_name=source.id,
-        destination=dlt.destinations.duckdb(credentials=raw_con),
-        dataset_name="dte_sources",
+    remote_pattern = f"{bucket_url}/{file_glob}"
+    fmt = _detect_format(file_glob, explicit_format)
+    reader_sql = _duckdb_reader_call([remote_pattern], fmt)
+    raw_con.execute(
+        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} "
+        f"AS SELECT * FROM {reader_sql}"
     )
-    pipeline.run(_json_resource())
-    return con.table(source.table, database=("memory", "dte_sources"))
+    return con.table(source.table)
 
 
 def _load_filesystem(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
@@ -157,37 +205,25 @@ def _load_filesystem(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
     return con.table(source.table)
 
 
-def _build_s3_storage_options(config: dict) -> dict:
-    opts: dict = {}
-    if "aws_access_key_id" in config:
-        opts["key"] = resolve_secret(config["aws_access_key_id"])
-    if "aws_secret_access_key" in config:
-        opts["secret"] = resolve_secret(config["aws_secret_access_key"])
-    if "aws_session_token" in config:
-        opts["token"] = resolve_secret(config["aws_session_token"])
-    if "region_name" in config:
-        opts["client_kwargs"] = {"region_name": config["region_name"]}
-    if "endpoint_url" in config:
-        opts.setdefault("client_kwargs", {})["endpoint_url"] = config["endpoint_url"]
-    return opts
-
-
 def _load_s3(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
-    return _load_from_fsspec(source, con, _build_s3_storage_options(source.config))
-
-
-def _build_gcs_storage_options(config: dict) -> dict:
-    opts: dict = {}
-    if "credentials_json" in config:
-        creds = resolve_secret(config["credentials_json"])
-        if isinstance(creds, str):
-            creds = json.loads(creds)
-        opts["token"] = creds
-    return opts
+    secret_name = f"dte_src_{source.id}_s3"
+    return _load_remote_via_duckdb(
+        source, con, "httpfs", _build_s3_secret_sql(source.config, secret_name)
+    )
 
 
 def _load_gcs(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
-    return _load_from_fsspec(source, con, _build_gcs_storage_options(source.config))
+    secret_name = f"dte_src_{source.id}_gcs"
+    return _load_remote_via_duckdb(
+        source, con, "httpfs", _build_gcs_secret_sql(source.config, secret_name)
+    )
+
+
+def _load_azure(source: DltSource, con: ibis.BaseBackend) -> ibis.Table:
+    secret_name = f"dte_src_{source.id}_azure"
+    return _load_remote_via_duckdb(
+        source, con, "azure", _build_azure_secret_sql(source.config, secret_name)
+    )
 
 
 _INSTALLED_EXTS: set[str] = set()
@@ -324,6 +360,7 @@ LOADERS: dict[str, Callable[[DltSource, ibis.BaseBackend], ibis.Table]] = {
     "filesystem": _load_filesystem,
     "s3": _load_s3,
     "gcs": _load_gcs,
+    "azure": _load_azure,
     "sql_database": _load_sql_database,
     "mongodb": _load_mongodb,
     "rest_api": _load_rest_api,
