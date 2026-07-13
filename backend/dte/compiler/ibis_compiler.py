@@ -123,11 +123,14 @@ def _apply_retype(table: ibis.Table, step: RetypeStep) -> ibis.Table:
 
 
 def _apply_lookup(table: ibis.Table, step: LookupMapStep) -> ibis.Table:
-    col = table[step.field]
+    col = _resolve_field(table, step.field)
     cases = [(col == k, ibis.literal(v)) for k, v in step.table.items()]
     default = ibis.literal(step.default) if step.default is not None else None
     expr = ibis.cases(*cases, else_=default)
-    return table.mutate(**{step.field: expr})
+    # Struct paths can't be mutated in place; the output column takes the
+    # leaf name at the top level of the resulting table.
+    out_name = step.field.split(".")[-1] if "." in step.field else step.field
+    return table.mutate(**{out_name: expr})
 
 
 def _apply_expression(table: ibis.Table, step: ExpressionMapStep) -> ibis.Table:
@@ -177,8 +180,12 @@ def _apply_aggregate(table: ibis.Table, step: AggregateStep) -> ibis.Table:
 def _apply_output_fields(table: ibis.Table, fields: list[OutputField]) -> ibis.Table:
     selections = []
     for f in fields:
-        col = table[f.field]
+        col = _resolve_field(table, f.field)
         if f.alias:
             col = col.name(f.alias)
+        elif "." in f.field:
+            # struct traversal — give the projected column a stable name
+            # from the leaf segment rather than a compiler-generated one.
+            col = col.name(f.field.split(".")[-1])
         selections.append(col)
     return table.select(selections)

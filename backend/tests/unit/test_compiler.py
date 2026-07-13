@@ -391,3 +391,48 @@ def test_pivot_count(pivot_sales_table):
     east_row = df[df["region"] == "East"]
     assert east_row["A"].iloc[0] == 1
     assert east_row["B"].iloc[0] == 1
+
+
+@pytest.fixture
+def struct_orders_table(con):
+    """A DuckDB view with a STRUCT column (mimics DuckDB read_json_auto)."""
+    con.con.execute("""
+        CREATE OR REPLACE VIEW struct_orders AS SELECT * FROM (VALUES
+            ('o1', {'amount': 100, 'currency': 'USD'}, {'city': 'NYC'}),
+            ('o2', {'amount': 42,  'currency': 'EUR'}, {'city': 'Berlin'}),
+            ('o3', {'amount': 250, 'currency': 'USD'}, {'city': 'Austin'})
+        ) AS t(id, "order", addr)
+    """)
+    return con.table("struct_orders")
+
+
+def test_output_fields_resolve_struct_paths(struct_orders_table):
+    pipeline = make_pipeline(
+        steps=[],
+        output_fields=[
+            {"field": "id"},
+            {"field": "order.amount", "alias": "amount"},
+            {"field": "addr.city"},
+        ],
+    )
+    result = compile_pipeline(pipeline, {"src": struct_orders_table})
+    df = result.execute()
+    assert set(df.columns) == {"id", "amount", "city"}
+    assert sorted(df["amount"].tolist()) == [42, 100, 250]
+    assert sorted(df["city"].tolist()) == ["Austin", "Berlin", "NYC"]
+
+
+def test_select_step_resolves_struct_paths(struct_orders_table):
+    pipeline = make_pipeline(
+        steps=[{
+            "op": "select",
+            "fields": [
+                {"field": "id"},
+                {"field": "order.currency", "alias": "cur"},
+            ],
+        }],
+    )
+    result = compile_pipeline(pipeline, {"src": struct_orders_table})
+    df = result.execute()
+    assert set(df.columns) == {"id", "cur"}
+    assert sorted(df["cur"].tolist()) == ["EUR", "USD", "USD"]
