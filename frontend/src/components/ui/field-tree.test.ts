@@ -8,83 +8,96 @@ import {
 } from "./field-tree";
 
 describe("toDisplay / toWire / toPath", () => {
-  it("converts wire to display and back", () => {
-    expect(toDisplay("order__amount")).toBe("order.amount");
-    expect(toWire("order.amount")).toBe("order__amount");
+  it("dot form is identity for display", () => {
+    expect(toDisplay("order.amount")).toBe("order.amount");
   });
 
-  it("is idempotent on already-wire input", () => {
-    expect(toWire("order__amount")).toBe("order__amount");
+  it("normalises legacy `__`-flat input to dot form", () => {
+    expect(toWire("order__amount")).toBe("order.amount");
+    expect(toWire("user__address__city")).toBe("user.address.city");
+  });
+
+  it("is idempotent on dot-form input", () => {
+    expect(toWire("order.amount")).toBe("order.amount");
   });
 
   it("preserves reserved _dlt_* names", () => {
     expect(toDisplay("_dlt_id")).toBe("_dlt_id");
-    expect(toDisplay("_dlt_load_id")).toBe("_dlt_load_id");
     expect(toWire("_dlt_id")).toBe("_dlt_id");
+    expect(toWire("_dlt_load_id")).toBe("_dlt_load_id");
     expect(toPath("_dlt_load_id")).toEqual(["_dlt_load_id"]);
   });
 
-  it("splits a wire name into path segments", () => {
-    expect(toPath("order__amount")).toEqual(["order", "amount"]);
-    expect(toPath("user__address__city")).toEqual(["user", "address", "city"]);
+  it("splits dot-form into path segments", () => {
+    expect(toPath("order.amount")).toEqual(["order", "amount"]);
+    expect(toPath("user.address.city")).toEqual(["user", "address", "city"]);
     expect(toPath("id")).toEqual(["id"]);
   });
 });
 
-describe("buildTree", () => {
+describe("buildTree from backend children[]", () => {
+  it("walks a nested SchemaField tree", () => {
+    const tree = buildTree([
+      { name: "id", type: "string" },
+      {
+        name: "order",
+        type: "struct",
+        children: [
+          { name: "amount", type: "float64" },
+          { name: "currency", type: "string" },
+        ],
+      },
+      {
+        name: "user",
+        type: "struct",
+        children: [
+          {
+            name: "address",
+            type: "struct",
+            children: [{ name: "city", type: "string" }],
+          },
+        ],
+      },
+    ]);
+    expect(tree).toHaveLength(3);
+    expect(tree[1].children).toHaveLength(2);
+    expect(tree[1].children![0]).toMatchObject({
+      name: "amount",
+      wire: "order.amount",
+      path: ["order", "amount"],
+    });
+    const city = tree[2].children![0].children![0];
+    expect(city).toMatchObject({
+      name: "city",
+      wire: "user.address.city",
+      path: ["user", "address", "city"],
+    });
+  });
+
   it("returns [] for empty input", () => {
     expect(buildTree([])).toEqual([]);
   });
+});
 
-  it("keeps flat fields as top-level leaves", () => {
+describe("buildTree from flat list (legacy)", () => {
+  it("groups dot-form flat names into a trie", () => {
     const tree = buildTree([
-      { name: "id", type: "string" },
-      { name: "amount", type: "float64" },
-    ]);
-    expect(tree).toHaveLength(2);
-    expect(tree[0]).toMatchObject({ name: "id", wire: "id", type: "string" });
-    expect(tree[0].children).toBeUndefined();
-  });
-
-  it("groups one level of nesting", () => {
-    const tree = buildTree([
-      { name: "order__amount", type: "float64" },
-      { name: "order__currency", type: "string" },
+      { name: "order.amount", type: "float64" },
+      { name: "order.currency", type: "string" },
     ]);
     expect(tree).toHaveLength(1);
-    const order = tree[0];
-    expect(order.name).toBe("order");
-    expect(order.children).toHaveLength(2);
-    expect(order.children![0]).toMatchObject({
+    expect(tree[0].name).toBe("order");
+    expect(tree[0].children).toHaveLength(2);
+    expect(tree[0].children![0]).toMatchObject({
       name: "amount",
-      wire: "order__amount",
-      path: ["order", "amount"],
-      type: "float64",
+      wire: "order.amount",
     });
   });
 
-  it("supports deep nesting", () => {
-    const tree = buildTree([
-      { name: "user__address__city", type: "string" },
-    ]);
-    expect(tree[0].name).toBe("user");
-    const addr = tree[0].children![0];
-    expect(addr.name).toBe("address");
-    const city = addr.children![0];
-    expect(city).toMatchObject({
-      name: "city",
-      wire: "user__address__city",
-      path: ["user", "address", "city"],
-      type: "string",
-    });
-  });
-
-  it("keeps _dlt_* as flat leaves", () => {
+  it("keeps _dlt_* as flat top-level leaves", () => {
     const tree = buildTree([
       { name: "_dlt_id", type: "string" },
-      { name: "_dlt_load_id", type: "string" },
     ]);
-    expect(tree).toHaveLength(2);
     expect(tree[0].children).toBeUndefined();
     expect(tree[0].wire).toBe("_dlt_id");
   });
@@ -93,15 +106,25 @@ describe("buildTree", () => {
 describe("findNode", () => {
   const tree = buildTree([
     { name: "id", type: "string" },
-    { name: "user__address__city", type: "string" },
+    {
+      name: "user",
+      type: "struct",
+      children: [
+        {
+          name: "address",
+          type: "struct",
+          children: [{ name: "city", type: "string" }],
+        },
+      ],
+    },
   ]);
 
   it("finds a top-level leaf", () => {
     expect(findNode(tree, "id")?.wire).toBe("id");
   });
 
-  it("finds a nested leaf", () => {
-    expect(findNode(tree, "user__address__city")?.name).toBe("city");
+  it("finds a nested leaf by dot-form wire", () => {
+    expect(findNode(tree, "user.address.city")?.name).toBe("city");
   });
 
   it("returns null for unknown wire", () => {

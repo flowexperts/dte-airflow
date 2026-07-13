@@ -53,12 +53,22 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const allFields = useMemo(() => {
+    // Flatten STRUCT children into dot-form leaves so the flat-variant
+    // pickers still see a searchable list. The tree picker rebuilds the
+    // hierarchy from these dot-form names in `buildTree`.
     const seen = new Map<string, SchemaField>();
-    for (const entry of Object.values(schemas)) {
-      for (const f of entry.fields) {
-        if (!seen.has(f.name)) seen.set(f.name, f);
+    const walk = (fields: SchemaField[], prefix: string[] = []) => {
+      for (const f of fields) {
+        const path = [...prefix, f.name];
+        if (f.children && f.children.length) {
+          walk(f.children, path);
+        } else {
+          const name = path.join(".");
+          if (!seen.has(name)) seen.set(name, { name, type: f.type });
+        }
       }
-    }
+    };
+    for (const entry of Object.values(schemas)) walk(entry.fields);
     return Array.from(seen.values());
   }, [schemas]);
 
