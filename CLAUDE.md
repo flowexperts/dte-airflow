@@ -144,7 +144,7 @@ Field autocomplete data comes from `SchemaProvider` (`components/builder/schema-
 - `Rename`, `MapLookup.table`, and `Select` maintain local UI state that syncs to the parent's parsed form via a `useEffect` guarded by shallow equality — needed so mid-typing (`"customer_id →"` with no RHS yet) isn't wiped by the parser.
 - `Filter` has **Basic** / **Advanced** tabs. Basic composes DuckDB SQL with `quoteIdent`/`safeLiteral` — identifiers wrapped in `""` (internal `"` → `""`); values dispatched: bare ints/floats pass through, `true`/`false` pass through as booleans, everything else becomes a `''`-quoted string with internal `'` → `''`. Zero SQL injection surface in Basic. Advanced is raw SQL and the hint says so.
 - `Select` step (op `select`) is the projection editor. Two modes on `Segmented`: **Keep** (chip picker + optional aliases) and **Drop** (chip picker of what to strip). Drop mode is fully derived: a `useEffect` on `(mode, dropped, allFields)` sets `fields = allFields − dropped`, so switching to Drop mode with a schema immediately populates the keep set. If schema is missing, an inline "infer schema first" placeholder shows instead.
-- **Nested fields.** dlt flattens nested JSON with `__` (`order.amount` → `order__amount`). Every schema-aware editor passes `variant="tree"` to `FieldPicker`/`FieldMultiSelect`, which renders `FieldTreePicker` — a collapsible tree with dot-form leaf labels but wire-form (`__`-joined) values on the step. `components/ui/field-tree.ts` is the transform seam (`toDisplay`, `toWire`, `buildTree`, `findNode`). Reserved `_dlt_*` names stay as flat top-level leaves.
+- **Nested fields.** `filesystem` sources return STRUCT columns (DuckDB native). `/api/schema/infer` returns a nested tree; `FieldTreePicker` renders it. **Wire form is dot syntax** (`order.amount`) — matches the struct member path, matches ibis, matches SQL. `field-tree.ts` accepts either the backend's `children[]` tree directly or a flat list of dot-form leaves and builds a trie. `_dlt_*` (still produced by `mongodb` / `rest_api` via dlt) stay as flat top-level leaves. Legacy `parent__child` refs are auto-normalised by `toWire()` on read and can be migrated persistently with `backend/scripts/migrate_field_refs.py`.
 
 ### Output — discriminated union
 
@@ -190,9 +190,12 @@ DuckDBEngine.execute_to_json() → output file + row count
 
 **`dte/models/pipeline.py`** — the pipeline spec. `Pipeline.steps` is `list[dict]` (not a typed Union) because the `map` op requires a sub-discriminator on `mode` that Pydantic's discriminated union can't handle with a shared `op` key. The compiler parses each step dict by `op`/`mode`.
 
-**`dte/sources/dlt_loader.py`** — universal source loading via dlt. `load_source(DltSource, ibis_con)` runs a dlt pipeline into the shared DuckDB connection (`con.con` is the raw `duckdb.DuckDBPyConnection`) and returns an `ibis.Table`. Currently implements `filesystem` source type; add new source types here. Do **not** write custom connector classes — extend this file with new dlt sources.
+**`dte/sources/dlt_loader.py`** — universal source loading. `load_source(DltSource, ibis_con)` returns an `ibis.Table` bound to the shared DuckDB connection. The dispatch splits by source_type:
 
-`filesystem` reads `json` or `jsonl`/`ndjson`. Format is picked by extension; `config["format"]` overrides. JSONL skips blank lines.
+- **`filesystem`**: `read_json_auto` / `read_csv_auto` / `read_parquet` via `CREATE OR REPLACE VIEW`. No dlt. Nested JSON comes through as STRUCT columns; format is detected by extension (`.json`, `.jsonl`, `.ndjson`, `.csv`, `.tsv`, `.parquet`) and `config["format"]` overrides.
+- **`sql_database`**: DuckDB scanner extensions (`INSTALL sqlite|postgres|mysql; ATTACH … (TYPE …, READ_ONLY); CREATE VIEW`). Scheme detected from the SQLAlchemy-style `credentials` URL. No dlt.
+- **`s3`, `gcs`**: still on dlt + fsspec. Migrating to DuckDB `httpfs` + `CREATE SECRET` is a follow-up.
+- **`mongodb`, `rest_api`**: dlt (`@dlt.resource` + `dlt.sources.rest_api.rest_api_source`). Kept because dlt's pagination / normalisation earn their keep for real APIs. Their columns still come through with `__` flattening — refs to them are single-token identifiers, not path expressions.
 
 **`dte/compiler/ibis_compiler.py`** — `compile_pipeline(pipeline, tables)` maintains a **named registry** (`dict[str, ibis.Table]`) instead of a rolling variable. Each step reads from and writes back to the registry via `current_key`. Join steps write their result under `output_id` and update `current_key`. This allows multi-source pipelines.
 
@@ -212,9 +215,15 @@ op = step["op"]    # "filter"|"rename"|"retype"|"map"|"sort"|"aggregate"|"join"|
 mode = step.get("mode")   # "lookup"|"expression"|"calculation"  — map steps only
 ```
 
-### dlt column naming
+### Field references and nested columns
 
-dlt normalises nested JSON keys with `__` (e.g. `{"order": {"amount": 1}}` → column `order__amount`). `_resolve_field()` in the compiler falls back to `__`-joined names when struct traversal fails, making it compatible with both ibis struct columns and dlt-flattened columns.
+Dot syntax is the wire form: `order.amount`, `user.address.city`. `_resolve_field()` splits on `.` and traverses struct members; if the head isn't a top-level column it falls back to the joined `__` name (so `mongodb` / `rest_api` sources — which still flatten via dlt — keep working). `_apply_output_fields` / `_apply_lookup` route through `_resolve_field` so Select and Lookup steps handle struct paths. Struct-path outputs are named after the leaf segment when no alias is given.
+
+To migrate saved pipelines from `parent__child` to `parent.child`:
+```bash
+cd backend && uv run python scripts/migrate_field_refs.py           # dry run
+cd backend && uv run python scripts/migrate_field_refs.py --write   # persist
+```
 
 ### Ibis version notes
 
