@@ -2,16 +2,21 @@
 
 import { Field, Input, Segmented } from "@/components/ui";
 import type { Source } from "@/lib/api";
-import { SOURCE_KINDS, type SourceKind } from "./types";
+import { SOURCE_KINDS, SOURCE_CONNECTION_COMPAT, type SourceKind } from "./types";
 import { FilesystemSourceEditor } from "./FilesystemSourceEditor";
 import { SqlSourceEditor } from "./SqlSourceEditor";
 import { MongoSourceEditor } from "./MongoSourceEditor";
 import { useSchemasOptional } from "../schema-context";
+import { ConnectionPicker } from "../ConnectionPicker";
 
 const CONFIG_TEMPLATES: Record<SourceKind, Record<string, unknown>> = {
   filesystem:   { bucket_url: "", file_glob: "*.json" },
-  sql_database: { connection_string: "", table: "" },
-  mongodb:      { connection_url: "", database: "", collection: "" },
+  s3:           { bucket_url: "", file_glob: "*.json" },
+  gcs:          { bucket_url: "", file_glob: "*.json" },
+  azure:        { bucket_url: "", file_glob: "*.json" },
+  sql_database: { table: "" },
+  mongodb:      { database: "", collection: "" },
+  rest_api:     { client: {}, resources: [] },
 };
 
 export function SourceEditor({
@@ -31,6 +36,12 @@ export function SourceEditor({
       ...source,
       source_type: k,
       config: CONFIG_TEMPLATES[k],
+      // Wrong connection type when switching kind; clear so user reselects.
+      connection_id: SOURCE_CONNECTION_COMPAT[k].includes(
+        (source as { connection_type?: string })?.connection_type as never,
+      )
+        ? source.connection_id
+        : "",
     });
   };
 
@@ -77,7 +88,13 @@ export function SourceEditor({
         </Field>
       </div>
 
-      {kind === "filesystem" && (
+      <ConnectionPicker
+        value={source.connection_id}
+        onChange={(id) => onChange({ ...source, connection_id: id })}
+        allowedTypes={SOURCE_CONNECTION_COMPAT[kind]}
+      />
+
+      {(kind === "filesystem" || kind === "s3" || kind === "gcs" || kind === "azure") && (
         <FilesystemSourceEditor config={config} onChange={setConfig} />
       )}
       {kind === "sql_database" && (
@@ -85,6 +102,11 @@ export function SourceEditor({
       )}
       {kind === "mongodb" && (
         <MongoSourceEditor config={config} onChange={setConfig} />
+      )}
+      {kind === "rest_api" && (
+        <div className="p-3 border border-border rounded bg-code-bg text-xs text-subtle font-mono">
+          rest_api uses a raw dlt config dict; edit `sources/{"{"}source.id{"}"}` directly for now.
+        </div>
       )}
 
       {schemaCtx && (
@@ -97,7 +119,7 @@ export function SourceEditor({
           <button
             type="button"
             onClick={() => schemaCtx.refresh(source)}
-            disabled={!source.id || entry?.loading}
+            disabled={!source.id || !source.connection_id || entry?.loading}
             className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h disabled:opacity-50 disabled:pointer-events-none"
           >
             {entry?.loading ? "Inferring…" : "Infer schema"}

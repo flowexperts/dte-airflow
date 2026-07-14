@@ -1,47 +1,52 @@
-import os
+"""Store wiring for FastAPI routes.
 
-from dte.store.memory import (
-    MemoryDestinationStore,
-    MemoryPipelineStore,
-    MemoryRunStore,
-    MemorySourceStore,
+Postgres-only: `DATABASE_URL` must be set. There is no in-memory
+fallback in production code — tests inject fakes via
+`app.dependency_overrides[get_pipeline_store] = lambda: FakePipelineStore()`
+(see `tests/fakes.py`).
+"""
+from __future__ import annotations
+import os
+from functools import lru_cache
+
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from dte.store.postgres import (
+    PostgresConnectionStore,
+    PostgresDestinationStore,
+    PostgresPipelineStore,
+    PostgresRunStore,
+    PostgresSourceStore,
 )
 
-_db_url = os.getenv("DATABASE_URL")
-if _db_url:
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from dte.store.postgres import (
-        PostgresDestinationStore,
-        PostgresPipelineStore,
-        PostgresRunStore,
-        PostgresSourceStore,
-    )
-
-    _engine = create_async_engine(_db_url)
-    _factory = async_sessionmaker(_engine, expire_on_commit=False)
-    _pipeline_store = PostgresPipelineStore(_factory)
-    _run_store = PostgresRunStore(_factory)
-    _source_store = PostgresSourceStore(_factory)
-    _destination_store = PostgresDestinationStore(_factory)
-else:
-    _pipeline_store = MemoryPipelineStore()
-    _run_store = MemoryRunStore()
-    _source_store = MemorySourceStore()
-    _destination_store = MemoryDestinationStore()
+@lru_cache(maxsize=1)
+def _session_factory():
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. dte requires Postgres in every "
+            "environment; tests inject stores via app.dependency_overrides."
+        )
+    engine = create_async_engine(url)
+    return async_sessionmaker(engine, expire_on_commit=False)
 
 
 def get_pipeline_store():
-    return _pipeline_store
+    return PostgresPipelineStore(_session_factory())
 
 
 def get_run_store():
-    return _run_store
+    return PostgresRunStore(_session_factory())
 
 
 def get_source_store():
-    return _source_store
+    return PostgresSourceStore(_session_factory())
 
 
 def get_destination_store():
-    return _destination_store
+    return PostgresDestinationStore(_session_factory())
+
+
+def get_connection_store():
+    return PostgresConnectionStore(_session_factory())

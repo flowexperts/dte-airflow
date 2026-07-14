@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from dte.api.main import app
 from dte.api.deps import get_destination_store, get_pipeline_store
-from dte.store.memory import MemoryDestinationStore, MemoryPipelineStore
+from tests.fakes import FakeDestinationStore, FakePipelineStore
 
 
 def _run(coro):
@@ -13,16 +13,17 @@ def _run(coro):
 
 @pytest.fixture
 def client():
-    d_store = MemoryDestinationStore()
-    p_store = MemoryPipelineStore()
+    d_store = FakeDestinationStore()
+    p_store = FakePipelineStore()
     app.dependency_overrides[get_destination_store] = lambda: d_store
     app.dependency_overrides[get_pipeline_store] = lambda: p_store
     yield TestClient(app), d_store, p_store
     app.dependency_overrides.clear()
 
 
-def _dest(did="d1", path="/tmp/out.json"):
-    return {"id": did, "config": {"type": "json_file", "path": path}}
+def _dest(did="d1", path="/tmp/out.json", connection_id="local_fs"):
+    return {"id": did, "connection_id": connection_id,
+            "config": {"type": "json_file", "path": path}}
 
 
 def test_create_destination_201(client):

@@ -1,6 +1,6 @@
 import pytest
-from dte.store.memory import (
-    MemoryPipelineStore, MemorySourceStore, MemoryDestinationStore,
+from tests.fakes import (
+    FakePipelineStore, FakeSourceStore, FakeDestinationStore,
 )
 from scripts.migrate_embedded_endpoints import _migrate_pipeline
 
@@ -20,9 +20,9 @@ def _embedded_pipeline(pid="p1"):
 
 
 async def test_migrates_embedded_source_and_output():
-    p_store = MemoryPipelineStore()
-    s_store = MemorySourceStore()
-    d_store = MemoryDestinationStore()
+    p_store = FakePipelineStore()
+    s_store = FakeSourceStore()
+    d_store = FakeDestinationStore()
 
     p = _embedded_pipeline("p1")
     log: list[str] = []
@@ -38,8 +38,8 @@ async def test_migrates_embedded_source_and_output():
 
 
 async def test_idempotent_when_already_id_shape():
-    s_store = MemorySourceStore()
-    d_store = MemoryDestinationStore()
+    s_store = FakeSourceStore()
+    d_store = FakeDestinationStore()
     already = {
         "id": "p1", "name": "p1", "sources": ["s1"], "steps": [], "output_id": "d1",
     }
@@ -50,8 +50,8 @@ async def test_idempotent_when_already_id_shape():
 
 
 async def test_id_collision_creates_suffixed_source():
-    s_store = MemorySourceStore()
-    d_store = MemoryDestinationStore()
+    s_store = FakeSourceStore()
+    d_store = FakeDestinationStore()
     # Pre-seed a different source under the same id.
     await s_store.save({
         "id": "s1", "source_type": "filesystem",
@@ -65,8 +65,8 @@ async def test_id_collision_creates_suffixed_source():
 
 
 async def test_second_pipeline_gets_suffixed_destination():
-    s_store = MemorySourceStore()
-    d_store = MemoryDestinationStore()
+    s_store = FakeSourceStore()
+    d_store = FakeDestinationStore()
     # Pre-seed a destination that clashes with p1_output.
     await d_store.save({
         "id": "p1_output",

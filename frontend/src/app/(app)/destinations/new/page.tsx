@@ -3,6 +3,7 @@ import type { Destination } from "@/lib/api";
 
 const empty: Destination = {
   id: "",
+  connection_id: "",
   config: { type: "json_file", path: "./out/result.json", fields: [] },
 };
 

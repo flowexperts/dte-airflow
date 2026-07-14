@@ -1,4 +1,4 @@
-from dte.store.memory import MemorySourceStore
+from tests.fakes import FakeSourceStore
 
 
 def _src(sid: str) -> dict:
@@ -11,7 +11,7 @@ def _src(sid: str) -> dict:
 
 
 async def test_save_and_get():
-    s = MemorySourceStore()
+    s = FakeSourceStore()
     await s.save(_src("s1"))
     got = await s.get("s1")
     assert got["id"] == "s1"
@@ -20,12 +20,12 @@ async def test_save_and_get():
 
 
 async def test_get_missing_returns_none():
-    s = MemorySourceStore()
+    s = FakeSourceStore()
     assert await s.get("nope") is None
 
 
 async def test_list_pagination():
-    s = MemorySourceStore()
+    s = FakeSourceStore()
     for i in range(5):
         await s.save(_src(f"s{i}"))
     page1 = await s.list(limit=3, offset=0)
@@ -35,12 +35,12 @@ async def test_list_pagination():
 
 
 async def test_delete():
-    s = MemorySourceStore()
+    s = FakeSourceStore()
     await s.save(_src("s1"))
     assert await s.delete("s1") is True
     assert await s.get("s1") is None
 
 
 async def test_delete_missing_returns_false():
-    s = MemorySourceStore()
+    s = FakeSourceStore()
     assert await s.delete("nope") is False

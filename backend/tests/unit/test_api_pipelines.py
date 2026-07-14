@@ -7,18 +7,18 @@ from dte.api.deps import (
     get_pipeline_store, get_run_store,
     get_source_store, get_destination_store,
 )
-from dte.store.memory import (
-    MemoryPipelineStore, MemoryRunStore,
-    MemorySourceStore, MemoryDestinationStore,
+from tests.fakes import (
+    FakePipelineStore, FakeRunStore,
+    FakeSourceStore, FakeDestinationStore,
 )
 
 
 @pytest.fixture
 def client():
-    p_store = MemoryPipelineStore()
-    r_store = MemoryRunStore()
-    s_store = MemorySourceStore()
-    d_store = MemoryDestinationStore()
+    p_store = FakePipelineStore()
+    r_store = FakeRunStore()
+    s_store = FakeSourceStore()
+    d_store = FakeDestinationStore()
     app.dependency_overrides[get_pipeline_store] = lambda: p_store
     app.dependency_overrides[get_run_store] = lambda: r_store
     app.dependency_overrides[get_source_store] = lambda: s_store

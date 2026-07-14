@@ -11,13 +11,20 @@ from dte.api.deps import (
     get_run_store,
     get_source_store,
     get_destination_store,
+    get_connection_store,
 )
-from dte.store.base import PipelineStore, RunStore, SourceStore, DestinationStore
+from dte.store.base import (
+    PipelineStore, RunStore, SourceStore, DestinationStore, ConnectionStore,
+)
 
 router = APIRouter()
 
 
-async def _validate_refs(pipeline: Pipeline, s_store: SourceStore, d_store: DestinationStore):
+async def _validate_pipeline_refs(
+    pipeline: Pipeline,
+    s_store: SourceStore,
+    d_store: DestinationStore,
+):
     """Raise 422 if any source id or the destination id doesn't exist."""
     missing_sources = []
     for sid in pipeline.sources:
@@ -25,7 +32,7 @@ async def _validate_refs(pipeline: Pipeline, s_store: SourceStore, d_store: Dest
             missing_sources.append(sid)
     missing_dest = None if await d_store.get(pipeline.output_id) else pipeline.output_id
     if missing_sources or missing_dest:
-        detail = {}
+        detail: dict = {}
         if missing_sources:
             detail["missing_sources"] = missing_sources
         if missing_dest:
@@ -40,7 +47,7 @@ async def create_pipeline(
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
 ):
-    await _validate_refs(pipeline, s_store, d_store)
+    await _validate_pipeline_refs(pipeline, s_store, d_store)
     await store.save(pipeline.model_dump())
     return {"id": pipeline.id}
 
@@ -71,7 +78,7 @@ async def update_pipeline(
     existing = await store.get(pipeline_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Pipeline not found")
-    await _validate_refs(pipeline, s_store, d_store)
+    await _validate_pipeline_refs(pipeline, s_store, d_store)
     payload = pipeline.model_dump()
     await store.save(payload)
     return payload
@@ -91,19 +98,39 @@ async def delete_pipeline(
     return Response(status_code=204)
 
 
-async def _resolve(pipeline: Pipeline, s_store: SourceStore, d_store: DestinationStore):
-    """Return (list[Source], Destination). 422 on any missing id."""
-    sources: list[Source] = []
+async def _resolve(
+    pipeline: Pipeline,
+    s_store: SourceStore,
+    d_store: DestinationStore,
+    c_store: ConnectionStore,
+) -> tuple[list[tuple[Source, dict]], tuple[Destination, dict]]:
+    """Resolve pipeline id refs to (Source, credentials) tuples and
+    (Destination, credentials). Missing anything → 422 naming what's gone."""
+    sources: list[tuple[Source, dict]] = []
     for sid in pipeline.sources:
         raw = await s_store.get(sid)
         if not raw:
             raise HTTPException(status_code=422, detail=f"Source not found: {sid}")
-        sources.append(Source(**raw))
+        source = Source(**raw)
+        conn = await c_store.get(source.connection_id)
+        if not conn:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Source '{sid}' references missing connection '{source.connection_id}'",
+            )
+        sources.append((source, conn.get("credentials") or {}))
+
     raw_d = await d_store.get(pipeline.output_id)
     if not raw_d:
         raise HTTPException(status_code=422, detail=f"Destination not found: {pipeline.output_id}")
     destination = Destination(**raw_d)
-    return sources, destination
+    dest_conn = await c_store.get(destination.connection_id)
+    if not dest_conn:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Destination '{destination.id}' references missing connection '{destination.connection_id}'",
+        )
+    return sources, (destination, dest_conn.get("credentials") or {})
 
 
 @router.get("/pipelines/{pipeline_id}/preview")
@@ -113,15 +140,16 @@ async def preview_pipeline(
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
+    c_store: ConnectionStore = Depends(get_connection_store),
 ):
     pipeline_dict = await store.get(pipeline_id)
     if not pipeline_dict:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     try:
         pipeline = Pipeline(**pipeline_dict)
-        sources, destination = await _resolve(pipeline, s_store, d_store)
+        sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         engine = DuckDBEngine()
-        tables = {s.id: load_source(s, engine.con) for s in sources}
+        tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
         compiled = compile_pipeline(pipeline, tables, output=destination.config)
         df = compiled.limit(limit).execute()
     except HTTPException:
@@ -140,15 +168,18 @@ async def trigger_pipeline(
     r_store: RunStore = Depends(get_run_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
+    c_store: ConnectionStore = Depends(get_connection_store),
 ):
     p = await p_store.get(pipeline_id)
     if not p:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     pipeline = Pipeline(**p)
     # Fail fast on missing refs before creating a run.
-    await _resolve(pipeline, s_store, d_store)
+    await _resolve(pipeline, s_store, d_store, c_store)
     run_id = await r_store.create(pipeline_id)
-    asyncio.create_task(_execute_pipeline(pipeline_id, run_id, p_store, r_store, s_store, d_store))
+    asyncio.create_task(
+        _execute_pipeline(pipeline_id, run_id, p_store, r_store, s_store, d_store, c_store)
+    )
     return {"run_id": run_id}
 
 
@@ -159,26 +190,18 @@ async def _execute_pipeline(
     r_store: RunStore,
     s_store: SourceStore,
     d_store: DestinationStore,
+    c_store: ConnectionStore,
 ):
     await r_store.update(run_id, status="running")
     try:
         pipeline_dict = await p_store.get(pipeline_id)
         pipeline = Pipeline(**pipeline_dict)
-        sources: list[Source] = []
-        for sid in pipeline.sources:
-            raw = await s_store.get(sid)
-            if not raw:
-                raise ValueError(f"Source not found: {sid}")
-            sources.append(Source(**raw))
-        raw_d = await d_store.get(pipeline.output_id)
-        if not raw_d:
-            raise ValueError(f"Destination not found: {pipeline.output_id}")
-        destination = Destination(**raw_d)
+        sources, (destination, dest_creds) = await _resolve(pipeline, s_store, d_store, c_store)
 
         engine = DuckDBEngine()
-        tables = {s.id: load_source(s, engine.con) for s in sources}
+        tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
         compiled = compile_pipeline(pipeline, tables, output=destination.config)
-        result = engine.execute(compiled, destination.config)
+        result = engine.execute(compiled, destination.config, credentials=dest_creds)
         await r_store.update(
             run_id,
             status="completed",

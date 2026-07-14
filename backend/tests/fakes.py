@@ -1,3 +1,11 @@
+"""In-memory Store implementations for use in tests.
+
+Test-only. Not part of the shipped `dte` package. Production uses the
+Postgres store exclusively.
+
+Use via `app.dependency_overrides[get_pipeline_store] = lambda: FakePipelineStore()`.
+"""
+from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
@@ -6,7 +14,7 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class MemoryPipelineStore:
+class FakePipelineStore:
     def __init__(self):
         self._data: dict[str, dict] = {}
 
@@ -27,7 +35,7 @@ class MemoryPipelineStore:
         return False
 
 
-class MemoryRunStore:
+class FakeRunStore:
     def __init__(self):
         self._data: dict[str, dict] = {}
 
@@ -66,7 +74,7 @@ class MemoryRunStore:
         return len(to_remove)
 
 
-class MemorySourceStore:
+class FakeSourceStore:
     def __init__(self):
         self._data: dict[str, dict] = {}
 
@@ -87,7 +95,7 @@ class MemorySourceStore:
         return False
 
 
-class MemoryDestinationStore:
+class FakeDestinationStore:
     def __init__(self):
         self._data: dict[str, dict] = {}
 
@@ -99,6 +107,34 @@ class MemoryDestinationStore:
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
         items = list(self._data.values())
+        return items[offset:offset + limit]
+
+    async def delete(self, id: str) -> bool:
+        if id in self._data:
+            del self._data[id]
+            return True
+        return False
+
+
+def _mask_credentials(connection: dict) -> dict:
+    creds = connection.get("credentials") or {}
+    masked = {k: "***" for k in creds}
+    return {**connection, "credentials": masked}
+
+
+class FakeConnectionStore:
+    def __init__(self):
+        self._data: dict[str, dict] = {}
+
+    async def get(self, id: str) -> dict | None:
+        entry = self._data.get(id)
+        return dict(entry) if entry else None
+
+    async def save(self, connection: dict) -> None:
+        self._data[connection["id"]] = dict(connection)
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        items = [_mask_credentials(c) for c in self._data.values()]
         return items[offset:offset + limit]
 
     async def delete(self, id: str) -> bool:

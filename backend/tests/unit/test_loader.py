@@ -10,14 +10,14 @@ def test_load_local_json_via_dlt(tmp_path):
     f = tmp_path / "input.json"
     f.write_text(json.dumps(data))
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="s1",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "input.json"},
         table="input",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con)
+    result = load_source(src, con, {})
 
     df = result.execute()
     assert set(df.columns).issuperset({"name", "age"})
@@ -35,14 +35,14 @@ def test_load_jsonl_nested_as_struct(tmp_path):
     f = tmp_path / "orders.jsonl"
     f.write_text("\n".join(json.dumps(l) for l in lines) + "\n")
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="s_jsonl",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "*.jsonl"},
         table="orders",
     )
     con = ibis.duckdb.connect()
-    table = load_source(src, con)
+    table = load_source(src, con, {})
 
     # DuckDB native readers expose nested JSON as STRUCT columns.
     schema = table.schema()
@@ -58,14 +58,14 @@ def test_load_csv(tmp_path):
     f = tmp_path / "data.csv"
     f.write_text("id,name,age\n1,alice,30\n2,bob,25\n")
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="s_csv",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "*.csv"},
         table="people",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con).execute()
+    df = load_source(src, con, {}).execute()
     assert sorted(df["name"].tolist()) == ["alice", "bob"]
 
 
@@ -76,14 +76,14 @@ def test_load_parquet(tmp_path):
     tbl = pa.table({"id": [1, 2], "name": ["alice", "bob"]})
     pq.write_table(tbl, str(tmp_path / "data.parquet"))
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="s_parq",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "*.parquet"},
         table="people",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con).execute()
+    df = load_source(src, con, {}).execute()
     assert sorted(df["name"].tolist()) == ["alice", "bob"]
 
 
@@ -91,14 +91,14 @@ def test_load_jsonl_ignores_blank_lines(tmp_path):
     f = tmp_path / "orders.jsonl"
     f.write_text('{"id": "a"}\n\n{"id": "b"}\n   \n')
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="s_blank",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "*.jsonl"},
         table="orders",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con).execute()
+    df = load_source(src, con, {}).execute()
     assert sorted(df["id"].tolist()) == ["a", "b"]
 
 
@@ -107,7 +107,7 @@ def test_load_explicit_format_overrides_extension(tmp_path):
     f = tmp_path / "wrong-ext.json"
     f.write_text('{"id": "x"}\n{"id": "y"}\n')
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="s_fmt",
         source_type="filesystem",
         config={
@@ -118,7 +118,7 @@ def test_load_explicit_format_overrides_extension(tmp_path):
         table="orders",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con).execute()
+    df = load_source(src, con, {}).execute()
     assert sorted(df["id"].tolist()) == ["x", "y"]
 
 
@@ -127,19 +127,19 @@ def test_load_returns_ibis_table(tmp_path):
     f = tmp_path / "data.json"
     f.write_text(json.dumps(data))
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="s2",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "data.json"},
         table="data",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con)
+    result = load_source(src, con, {})
     assert isinstance(result, ibis.Table)
 
 
 def test_missing_file_raises(tmp_path):
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="s3",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path / "nonexistent"), "file_glob": "*.json"},
@@ -147,19 +147,21 @@ def test_missing_file_raises(tmp_path):
     )
     con = ibis.duckdb.connect()
     with pytest.raises(Exception):
-        load_source(src, con)
+        load_source(src, con, {})
 
 
-def test_unknown_source_type_raises():
-    src = Source(
-        id="s4",
-        source_type="nonesuch",
-        config={},
-        table="t",
-    )
-    con = ibis.duckdb.connect()
-    with pytest.raises(NotImplementedError, match="nonesuch"):
-        load_source(src, con)
+def test_unknown_source_type_rejected_at_model():
+    """Source.source_type is now a Literal — bogus values fail validation
+    before ever reaching the loader."""
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        Source(
+            connection_id="local_fs",
+            id="s4",
+            source_type="nonesuch",
+            config={},
+            table="t",
+        )
 
 
 def test_resolve_secret_returns_literal():
@@ -256,32 +258,35 @@ def test_gcs_credentials_json_no_longer_accepted():
         }, secret_name="g")
 
 
-def test_azure_secret_sql_connection_string():
-    from dte.sources.loader import _build_azure_secret_sql
-    sql = _build_azure_secret_sql({
-        "connection_string": "DefaultEndpointsProtocol=https;AccountName=a;AccountKey=k;",
-    }, secret_name="az")
-    assert "TYPE azure" in sql
-    assert "CONNECTION_STRING 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=k;'" in sql
-
-
 def test_azure_secret_sql_account_name_and_key():
     from dte.sources.loader import _build_azure_secret_sql
     sql = _build_azure_secret_sql({
-        "account_name": "myacct",
-        "account_key": "mykey",
+        "azure_storage_account_name": "myacct",
+        "azure_storage_account_key": "mykey",
     }, secret_name="az")
+    assert "TYPE azure" in sql
     assert "ACCOUNT_NAME 'myacct'" in sql
     assert "ACCOUNT_KEY 'mykey'" in sql
 
 
+def test_azure_secret_sql_account_name_and_sas():
+    from dte.sources.loader import _build_azure_secret_sql
+    sql = _build_azure_secret_sql({
+        "azure_storage_account_name": "myacct",
+        "azure_storage_sas_token": "sv=2020-08-04&ss=...",
+    }, secret_name="az")
+    assert "ACCOUNT_NAME 'myacct'" in sql
+    assert "SAS_TOKEN 'sv=2020-08-04&ss=...'" in sql
+
+
 def test_azure_secret_sql_env_indirection(monkeypatch):
     from dte.sources.loader import _build_azure_secret_sql
-    monkeypatch.setenv("AZ_CONN", "DefaultEndpointsProtocol=https;AccountName=x;AccountKey=y;")
+    monkeypatch.setenv("AZ_KEY", "env-supplied-key")
     sql = _build_azure_secret_sql({
-        "connection_string": {"env": "AZ_CONN"},
+        "azure_storage_account_name": "acct",
+        "azure_storage_account_key": {"env": "AZ_KEY"},
     }, secret_name="az")
-    assert "AccountName=x" in sql
+    assert "ACCOUNT_KEY 'env-supplied-key'" in sql
 
 
 def test_azure_secret_sql_missing_credentials_raises():
@@ -320,17 +325,14 @@ def test_sql_database_loader_end_to_end(tmp_path):
     conn.commit()
     conn.close()
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="sql1",
         source_type="sql_database",
-        config={
-            "credentials": f"sqlite:///{db_path}",
-            "table": "customers",
-        },
+        config={"table": "customers"},
         table="customers_out",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con)
+    result = load_source(src, con, {"url": f"sqlite:///{db_path}"})
     df = result.execute()
     assert len(df) == 3
     assert set(df.columns).issuperset({"id", "name", "age"})
@@ -348,14 +350,16 @@ def test_sql_database_credentials_resolved_from_env(monkeypatch, tmp_path):
     conn.close()
 
     monkeypatch.setenv("DTE_SQL_DSN", f"sqlite:///{db_path}")
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="sql2",
         source_type="sql_database",
-        config={"credentials": {"env": "DTE_SQL_DSN"}, "table": "t"},
+        config={"table": "t"},
         table="t_out",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con)
+    # Credentials come from the connection; env-indirection still supported on
+    # individual values for the env-backed SecretResolver.
+    result = load_source(src, con, {"url": {"env": "DTE_SQL_DSN"}})
     df = result.execute()
     assert df["x"].tolist() == [42]
 
@@ -366,15 +370,15 @@ def test_dispatch_registers_sql_database():
 
 
 def test_sql_database_unsupported_scheme_raises():
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="sql_bad",
         source_type="sql_database",
-        config={"credentials": "snowflake://user:pw@acct", "table": "t"},
+        config={"table": "t"},
         table="t",
     )
     con = ibis.duckdb.connect()
     with pytest.raises(NotImplementedError, match="snowflake"):
-        load_source(src, con)
+        load_source(src, con, {"url": "snowflake://user:pw@acct"})
 
 
 def test_mongodb_loader_end_to_end(monkeypatch):
@@ -391,18 +395,14 @@ def test_mongodb_loader_end_to_end(monkeypatch):
 
     monkeypatch.setattr(dlt_loader, "_mongo_client", lambda url: mock_client)
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="mongo1",
         source_type="mongodb",
-        config={
-            "connection_url": "mongodb://ignored",
-            "database": "mydb",
-            "collection": "mycoll",
-        },
+        config={"database": "mydb", "collection": "mycoll"},
         table="mongo_out",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con)
+    result = load_source(src, con, {"url": "mongodb://ignored"})
     df = result.execute()
     assert len(df) == 3
     assert sorted(df["name"].tolist()) == ["alice", "bob", "carol"]
@@ -424,18 +424,14 @@ def test_mongodb_connection_url_from_env(monkeypatch):
     monkeypatch.setenv("DTE_MONGO_URL", "mongodb://prod-host:27017")
     monkeypatch.setattr(dlt_loader, "_mongo_client", fake_client)
 
-    src = Source(
+    src = Source(connection_id="local_fs",
         id="mongo2",
         source_type="mongodb",
-        config={
-            "connection_url": {"env": "DTE_MONGO_URL"},
-            "database": "d",
-            "collection": "c",
-        },
+        config={"database": "d", "collection": "c"},
         table="m2",
     )
     con = ibis.duckdb.connect()
-    load_source(src, con)
+    load_source(src, con, {"url": {"env": "DTE_MONGO_URL"}})
     assert captured["url"] == "mongodb://prod-host:27017"
 
 
@@ -457,7 +453,7 @@ def test_rest_api_loader_end_to_end(monkeypatch):
             ],
         )
 
-        src = Source(
+        src = Source(connection_id="local_fs",
             id="rest1",
             source_type="rest_api",
             config={
@@ -472,7 +468,7 @@ def test_rest_api_loader_end_to_end(monkeypatch):
             table="items",
         )
         con = ibis.duckdb.connect()
-        result = load_source(src, con)
+        result = load_source(src, con, {})
         df = result.execute()
 
     assert len(df) == 2
@@ -490,7 +486,7 @@ def test_rest_api_resource_name_overridden_to_source_table(monkeypatch):
             "https://api.example.com/things",
             json=[{"x": 1}],
         )
-        src = Source(
+        src = Source(connection_id="local_fs",
             id="rest2",
             source_type="rest_api",
             config={
@@ -505,7 +501,7 @@ def test_rest_api_resource_name_overridden_to_source_table(monkeypatch):
             table="renamed_output",
         )
         con = ibis.duckdb.connect()
-        result = load_source(src, con)
+        result = load_source(src, con, {})
         df = result.execute()
     assert len(df) == 1
     assert df["x"].tolist() == [1]

@@ -15,9 +15,10 @@ export interface Pipeline {
   output_id: string;
 }
 
-/** Source model — same shape as the former DltSource; renamed backend-side. */
+/** Source model — creds live on the linked Connection, not in `config`. */
 export interface Source {
   id: string;
+  connection_id: string;
   source_type: string;
   config: Record<string, unknown>;
   table: string;
@@ -26,20 +27,39 @@ export interface Source {
 /** Back-compat re-export for callers still importing the old name. */
 export type DltSource = Source;
 
+export type ConnectionType =
+  | "local_fs"
+  | "s3" | "gcs" | "azure"
+  | "postgres" | "mysql" | "sqlite"
+  | "mongodb" | "rest_api"
+  | "snowflake" | "bigquery";
+
+export interface Connection {
+  id: string;
+  connection_type: ConnectionType;
+  credentials: Record<string, unknown>;
+}
+
+export interface ProbeResult {
+  ok: boolean;
+  elapsed_ms: number;
+  detail: string;
+}
+
 /**
- * OutputTarget discriminated union — mirrors the backend's Pydantic union.
- * We hand-type it because Destination.config isn't yet in api-types until
- * the openapi regen runs.
+ * OutputTarget discriminated union — slimmed for plan 016 (credentials
+ * live on the linked Connection).
  */
 export type OutputTarget =
   | JsonFileOutput
   | { type: "csv_file"; path: string; fields?: OutputField[] }
-  | { type: "parquet_s3"; bucket_url: string; storage_options?: Record<string, unknown> }
-  | { type: "postgres"; credentials: string; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" }
-  | { type: "sql_database"; dialect: "mysql" | "snowflake" | "bigquery"; credentials: string; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" };
+  | { type: "parquet_s3"; bucket_url: string }
+  | { type: "postgres"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" }
+  | { type: "sql_database"; dialect: "mysql" | "snowflake" | "bigquery"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" };
 
 export interface Destination {
   id: string;
+  connection_id: string;
   config: OutputTarget;
 }
 
@@ -180,6 +200,30 @@ export const updateDestination = (id: string, destination: Destination) =>
   apiFetch<Destination>(`/api/destinations/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(destination) });
 export const deleteDestination = (id: string) =>
   apiFetch<void>(`/api/destinations/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+// ---------- Connections ----------
+
+export const listConnections = () => apiFetch<Connection[]>(`/api/connections`);
+export const getConnection = (id: string, reveal = false) =>
+  apiFetch<Connection>(
+    `/api/connections/${encodeURIComponent(id)}${reveal ? "?reveal=true" : ""}`,
+  );
+export const createConnection = (connection: Connection) =>
+  apiFetch<Connection>(`/api/connections`, {
+    method: "POST",
+    body: JSON.stringify(connection),
+  });
+export const updateConnection = (id: string, connection: Connection) =>
+  apiFetch<Connection>(`/api/connections/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(connection),
+  });
+export const deleteConnection = (id: string) =>
+  apiFetch<void>(`/api/connections/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const testConnection = (id: string) =>
+  apiFetch<ProbeResult>(`/api/connections/${encodeURIComponent(id)}/test`, {
+    method: "POST",
+  });
 
 // ---------- Runs ----------
 

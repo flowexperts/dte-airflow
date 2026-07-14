@@ -7,14 +7,14 @@ from dte.api.main import app
 from dte.api.deps import (
     get_run_store, get_pipeline_store, get_destination_store,
 )
-from dte.store.memory import (
-    MemoryRunStore, MemoryPipelineStore, MemoryDestinationStore,
+from tests.fakes import (
+    FakeRunStore, FakePipelineStore, FakeDestinationStore,
 )
 
 
 @pytest.fixture
 def client():
-    r_store = MemoryRunStore()
+    r_store = FakeRunStore()
     app.dependency_overrides[get_run_store] = lambda: r_store
     yield TestClient(app), r_store
     app.dependency_overrides.clear()
@@ -22,9 +22,9 @@ def client():
 
 @pytest.fixture
 def output_client():
-    r_store = MemoryRunStore()
-    p_store = MemoryPipelineStore()
-    d_store = MemoryDestinationStore()
+    r_store = FakeRunStore()
+    p_store = FakePipelineStore()
+    d_store = FakeDestinationStore()
     app.dependency_overrides[get_run_store] = lambda: r_store
     app.dependency_overrides[get_pipeline_store] = lambda: p_store
     app.dependency_overrides[get_destination_store] = lambda: d_store
@@ -39,8 +39,8 @@ def _pipeline(pid: str, output_id: str = "out1") -> dict:
     }
 
 
-def _destination(dest_id: str, config: dict) -> dict:
-    return {"id": dest_id, "config": config}
+def _destination(dest_id: str, config: dict, connection_id: str = "local_fs") -> dict:
+    return {"id": dest_id, "connection_id": connection_id, "config": config}
 
 
 def _run(coro):
