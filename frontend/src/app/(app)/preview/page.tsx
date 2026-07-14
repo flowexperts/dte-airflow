@@ -81,6 +81,7 @@ export default function Preview() {
   const [sampleSources, setSampleSources] = useState<DltSource[]>([
     {
       id: "orders",
+      connection_id: "local_fs",
       source_type: "filesystem",
       config: { bucket_url: "s3://acme-raw/orders/2026-07-08/", file_glob: "*.json" },
       table: "orders",
@@ -242,9 +243,10 @@ export default function Preview() {
           {/* SOURCES */}
           <section>
             <SectionHead title="Source editors" count="· filesystem · sql · mongodb" />
-            <SchemaProvider>
-              <SourcesPanel sources={sampleSources} onChange={setSampleSources} />
-            </SchemaProvider>
+            <div className="border border-border rounded p-4 text-sm text-subtle">
+              SourcesPanel now resolves ids against live `/api/sources` — see
+              it in context on <code>/pipelines/new</code>.
+            </div>
           </section>
 
           <Divider label="field tree" />

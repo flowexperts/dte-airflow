@@ -63,7 +63,7 @@ export function ConnectionsTable({ rows }: { rows: Connection[] }) {
         if (!p) return <span className="font-mono text-[11px] text-subtle">—</span>;
         return (
           <span className="flex items-center gap-2 font-mono text-[11px]">
-            <Pill variant={p.ok ? "ok" : "failed"}>
+            <Pill status={p.ok ? "ok" : "failed"}>
               {p.ok ? "ok" : "failed"}
             </Pill>
             <span className="text-subtle truncate">{p.detail}</span>
