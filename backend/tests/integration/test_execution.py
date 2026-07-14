@@ -4,29 +4,31 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.compiler.ibis_compiler import compile_pipeline
-from dte.models.pipeline import Pipeline, DltSource
-from dte.sources.dlt_loader import load_source
+from dte.models.pipeline import Pipeline, Source, Destination, JsonFileTarget
+from dte.sources.loader import load_source
 
 
-def make_pipeline_dict(sources, steps, output_path, output_fields=None):
-    out = {"type": "json_file", "path": output_path}
-    if output_fields:
-        out["fields"] = output_fields
-    return {
-        "id": "p1", "name": "integration_test",
-        "sources": sources,
-        "steps": steps,
-        "output": out,
-    }
+def make_pipeline(source_ids, steps, output_id="out1"):
+    return Pipeline(
+        id="p1", name="integration_test",
+        sources=source_ids, steps=steps, output_id=output_id,
+    )
 
 
-def _dlt_source(src_id: str, tmp_path: Path, file_glob: str, table: str) -> dict:
-    return {
-        "id": src_id,
-        "source_type": "filesystem",
-        "config": {"bucket_url": str(tmp_path), "file_glob": file_glob},
-        "table": table,
-    }
+def _fs_source(src_id: str, tmp_path: Path, file_glob: str, table: str) -> Source:
+    return Source(
+        id=src_id,
+        source_type="filesystem",
+        config={"bucket_url": str(tmp_path), "file_glob": file_glob},
+        table=table,
+    )
+
+
+def _json_dest(dest_id: str, out_path: Path, fields=None) -> Destination:
+    cfg = {"type": "json_file", "path": str(out_path)}
+    if fields:
+        cfg["fields"] = fields
+    return Destination(id=dest_id, config=cfg)
 
 
 def test_end_to_end_filter_rename(tmp_path):
@@ -35,23 +37,18 @@ def test_end_to_end_filter_rename(tmp_path):
         {"first_name": "bob", "age": 16},
         {"first_name": "carol", "age": 22},
     ]
-    src_file = tmp_path / "input.json"
-    src_file.write_text(json.dumps(data))
+    (tmp_path / "input.json").write_text(json.dumps(data))
     out = tmp_path / "output.json"
 
-    pipeline_dict = make_pipeline_dict(
-        sources=[_dlt_source("src", tmp_path, "input.json", "input")],
-        steps=[
-            {"op": "filter", "expr": "age >= 18"},
-            {"op": "rename", "mappings": {"first_name": "name"}},
-        ],
-        output_path=str(out),
-    )
-    pipeline = Pipeline(**pipeline_dict)
+    src = _fs_source("src", tmp_path, "input.json", "input")
+    dest = _json_dest("out1", out)
+    pipeline = make_pipeline(["src"], [
+        {"op": "filter", "expr": "age >= 18"},
+        {"op": "rename", "mappings": {"first_name": "name"}},
+    ])
     engine = DuckDBEngine()
-    src = DltSource(**pipeline_dict["sources"][0])
     tables = {"src": load_source(src, engine.con)}
-    compiled = compile_pipeline(pipeline, tables)
+    compiled = compile_pipeline(pipeline, tables, output=dest.config)
     rows = engine.execute_to_json(compiled, str(out))
 
     assert rows == 2
@@ -68,29 +65,23 @@ def test_end_to_end_nested_json_flatten_aggregate(tmp_path):
         {"order": {"category": "electronics", "amount": 200}},
         {"order": {"category": "clothing", "amount": 50}},
     ]
-    src_file = tmp_path / "orders.json"
-    src_file.write_text(json.dumps(data))
+    (tmp_path / "orders.json").write_text(json.dumps(data))
     out = tmp_path / "agg_output.json"
 
-    pipeline_dict = make_pipeline_dict(
-        sources=[_dlt_source("src", tmp_path, "orders.json", "orders")],
-        steps=[{
-            "op": "aggregate",
-            "group_by": ["order.category"],
-            "aggregations": [{"field": "order.amount", "func": "sum", "alias": "total"}]
-        }],
-        output_path=str(out),
-    )
-    pipeline = Pipeline(**pipeline_dict)
+    src = _fs_source("src", tmp_path, "orders.json", "orders")
+    dest = _json_dest("out1", out)
+    pipeline = make_pipeline(["src"], [{
+        "op": "aggregate",
+        "group_by": ["order.category"],
+        "aggregations": [{"field": "order.amount", "func": "sum", "alias": "total"}]
+    }])
     engine = DuckDBEngine()
-    src = DltSource(**pipeline_dict["sources"][0])
     tables = {"src": load_source(src, engine.con)}
-    compiled = compile_pipeline(pipeline, tables)
+    compiled = compile_pipeline(pipeline, tables, output=dest.config)
     rows = engine.execute_to_json(compiled, str(out))
 
     assert rows == 2
     result = json.loads(out.read_text())
-    # dlt normalizes nested keys with __ separator
     key = "order__category" if "order__category" in result[0] else "order.category"
     categories = {r[key]: r["total"] for r in result}
     assert categories["electronics"] == 300
@@ -99,34 +90,50 @@ def test_end_to_end_nested_json_flatten_aggregate(tmp_path):
 
 def test_api_trigger_and_poll(tmp_path):
     from dte.api.main import app
-    from dte.api.deps import get_pipeline_store, get_run_store
-    from dte.store.memory import MemoryPipelineStore, MemoryRunStore
+    from dte.api.deps import (
+        get_pipeline_store, get_run_store,
+        get_source_store, get_destination_store,
+    )
+    from dte.store.memory import (
+        MemoryPipelineStore, MemoryRunStore,
+        MemorySourceStore, MemoryDestinationStore,
+    )
 
     p_store = MemoryPipelineStore()
     r_store = MemoryRunStore()
+    s_store = MemorySourceStore()
+    d_store = MemoryDestinationStore()
     app.dependency_overrides[get_pipeline_store] = lambda: p_store
     app.dependency_overrides[get_run_store] = lambda: r_store
+    app.dependency_overrides[get_source_store] = lambda: s_store
+    app.dependency_overrides[get_destination_store] = lambda: d_store
 
     data = [
         {"name": "alice", "score": 90},
         {"name": "bob", "score": 45},
     ]
-    src_file = tmp_path / "scores.json"
-    src_file.write_text(json.dumps(data))
+    (tmp_path / "scores.json").write_text(json.dumps(data))
     out = tmp_path / "api_out.json"
+
+    # Seed source + destination stores.
+    import asyncio
+    src = _fs_source("src", tmp_path, "scores.json", "scores")
+    dest = _json_dest("out1", out)
+    asyncio.get_event_loop().run_until_complete(s_store.save(src.model_dump()))
+    asyncio.get_event_loop().run_until_complete(d_store.save(dest.model_dump()))
 
     pipeline_payload = {
         "id": "api-p1",
         "name": "api_test",
-        "sources": [_dlt_source("src", tmp_path, "scores.json", "scores")],
+        "sources": ["src"],
         "steps": [{"op": "filter", "expr": "score > 50"}],
-        "output": {"type": "json_file", "path": str(out)},
+        "output_id": "out1",
     }
 
     client = TestClient(app)
 
     r = client.post("/api/pipelines", json=pipeline_payload)
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     pid = r.json()["id"]
     assert pid == "api-p1"
 
@@ -147,7 +154,7 @@ def test_api_trigger_and_poll(tmp_path):
             break
         time.sleep(0.1)
 
-    assert r.json()["status"] == "completed"
+    assert r.json()["status"] == "completed", r.json()
     assert r.json()["rows_written"] == 1
     result = json.loads(out.read_text())
     assert result[0]["name"] == "alice"
@@ -169,29 +176,23 @@ def test_end_to_end_join_two_sources(tmp_path):
     (tmp_path / "orders.json").write_text(json.dumps(orders_data))
     out = tmp_path / "joined_output.json"
 
-    pipeline_dict = make_pipeline_dict(
-        sources=[
-            _dlt_source("users", tmp_path, "users.json", "users"),
-            _dlt_source("orders", tmp_path, "orders.json", "orders"),
-        ],
-        steps=[{
-            "op": "join",
-            "left": "users",
-            "right": "orders",
-            "on": "id",
-            "how": "inner",
-            "output_id": "joined",
-        }],
-        output_path=str(out),
-    )
-    pipeline = Pipeline(**pipeline_dict)
+    users_src = _fs_source("users", tmp_path, "users.json", "users")
+    orders_src = _fs_source("orders", tmp_path, "orders.json", "orders")
+    dest = _json_dest("out1", out)
+    pipeline = make_pipeline(["users", "orders"], [{
+        "op": "join",
+        "left": "users",
+        "right": "orders",
+        "on": "id",
+        "how": "inner",
+        "output_id": "joined",
+    }])
     engine = DuckDBEngine()
-    tables = {}
-    for src_dict in pipeline_dict["sources"]:
-        src = DltSource(**src_dict)
-        tables[src.id] = load_source(src, engine.con)
-
-    compiled = compile_pipeline(pipeline, tables)
+    tables = {
+        "users": load_source(users_src, engine.con),
+        "orders": load_source(orders_src, engine.con),
+    }
+    compiled = compile_pipeline(pipeline, tables, output=dest.config)
     df = compiled.execute()
 
     assert len(df) == 2
@@ -213,22 +214,18 @@ def test_end_to_end_pivot(tmp_path):
     (tmp_path / "sales.json").write_text(json.dumps(sales_data))
     out = tmp_path / "pivot_output.json"
 
-    pipeline_dict = make_pipeline_dict(
-        sources=[_dlt_source("src", tmp_path, "sales.json", "sales")],
-        steps=[{
-            "op": "pivot",
-            "index": "region",
-            "columns": "product",
-            "values": "sales",
-            "agg": "sum",
-        }],
-        output_path=str(out),
-    )
-    pipeline = Pipeline(**pipeline_dict)
+    src = _fs_source("src", tmp_path, "sales.json", "sales")
+    dest = _json_dest("out1", out)
+    pipeline = make_pipeline(["src"], [{
+        "op": "pivot",
+        "index": "region",
+        "columns": "product",
+        "values": "sales",
+        "agg": "sum",
+    }])
     engine = DuckDBEngine()
-    src = DltSource(**pipeline_dict["sources"][0])
     tables = {"src": load_source(src, engine.con)}
-    compiled = compile_pipeline(pipeline, tables)
+    compiled = compile_pipeline(pipeline, tables, output=dest.config)
     df = compiled.execute()
 
     assert "A" in df.columns
@@ -247,21 +244,15 @@ def test_select_drop_step_passes_new_columns_through(tmp_path):
     (tmp_path / "users.json").write_text(json.dumps(data))
     out = tmp_path / "out.json"
 
-    pipeline_dict = make_pipeline_dict(
-        sources=[_dlt_source("src", tmp_path, "users.json", "users")],
-        steps=[{"op": "select", "drop": ["ssn"]}],
-        output_path=str(out),
-    )
-    pipeline = Pipeline(**pipeline_dict)
+    src = _fs_source("src", tmp_path, "users.json", "users")
+    dest = _json_dest("out1", out)
+    pipeline = make_pipeline(["src"], [{"op": "select", "drop": ["ssn"]}])
     engine = DuckDBEngine()
-    src = DltSource(**pipeline_dict["sources"][0])
     tables = {"src": load_source(src, engine.con)}
-    compiled = compile_pipeline(pipeline, tables)
+    compiled = compile_pipeline(pipeline, tables, output=dest.config)
     engine.execute_to_json(compiled, str(out))
 
     result = json.loads(out.read_text())
     for row in result:
         assert "ssn" not in row
-        # drop is schema-adaptive: everything not named `ssn` survives, even
-        # columns we never enumerated (email, phone).
         assert set(row.keys()) >= {"id", "name", "email", "phone"}

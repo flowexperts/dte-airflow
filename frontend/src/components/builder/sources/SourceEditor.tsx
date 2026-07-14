@@ -1,12 +1,12 @@
 "use client";
 
 import { Field, Input, Segmented } from "@/components/ui";
-import type { DltSource } from "@/lib/api";
+import type { Source } from "@/lib/api";
 import { SOURCE_KINDS, type SourceKind } from "./types";
 import { FilesystemSourceEditor } from "./FilesystemSourceEditor";
 import { SqlSourceEditor } from "./SqlSourceEditor";
 import { MongoSourceEditor } from "./MongoSourceEditor";
-import { useSchemas } from "../schema-context";
+import { useSchemasOptional } from "../schema-context";
 
 const CONFIG_TEMPLATES: Record<SourceKind, Record<string, unknown>> = {
   filesystem:   { bucket_url: "", file_glob: "*.json" },
@@ -19,8 +19,8 @@ export function SourceEditor({
   onChange,
   onRemove,
 }: {
-  source: DltSource;
-  onChange: (next: DltSource) => void;
+  source: Source;
+  onChange: (next: Source) => void;
   onRemove?: () => void;
 }) {
   const kind = (source.source_type as SourceKind) ?? "filesystem";
@@ -38,8 +38,8 @@ export function SourceEditor({
     onChange({ ...source, config: next });
   };
 
-  const { schemas, refresh } = useSchemas();
-  const entry = schemas[source.id];
+  const schemaCtx = useSchemasOptional();
+  const entry = schemaCtx?.schemas[source.id];
 
   return (
     <div className="p-4 border-b border-border last:border-b-0 space-y-3">
@@ -87,6 +87,7 @@ export function SourceEditor({
         <MongoSourceEditor config={config} onChange={setConfig} />
       )}
 
+      {schemaCtx && (
       <div className="pt-2 border-t border-dashed border-border">
         <div className="flex items-center justify-between mb-2">
           <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle">
@@ -95,7 +96,7 @@ export function SourceEditor({
           </span>
           <button
             type="button"
-            onClick={() => refresh(source)}
+            onClick={() => schemaCtx.refresh(source)}
             disabled={!source.id || entry?.loading}
             className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h disabled:opacity-50 disabled:pointer-events-none"
           >
@@ -127,6 +128,7 @@ export function SourceEditor({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

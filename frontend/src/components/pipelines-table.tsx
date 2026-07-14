@@ -44,7 +44,7 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
           <span className="size-1.5 rounded-full shrink-0 bg-accent" />
           <span className="font-medium truncate">{r.name}</span>
           <span className="font-mono text-[11px] text-subtle ml-1.5 truncate">
-            {("path" in r.output ? r.output.path : r.output.type) ?? ""}
+            → {r.output_id ?? ""}
           </span>
         </div>
       ),

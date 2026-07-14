@@ -1,8 +1,8 @@
 import pytest
 import json
 import ibis
-from dte.models.pipeline import DltSource
-from dte.sources.dlt_loader import load_source
+from dte.models.pipeline import Source
+from dte.sources.loader import load_source
 
 
 def test_load_local_json_via_dlt(tmp_path):
@@ -10,7 +10,7 @@ def test_load_local_json_via_dlt(tmp_path):
     f = tmp_path / "input.json"
     f.write_text(json.dumps(data))
 
-    src = DltSource(
+    src = Source(
         id="s1",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "input.json"},
@@ -35,7 +35,7 @@ def test_load_jsonl_nested_as_struct(tmp_path):
     f = tmp_path / "orders.jsonl"
     f.write_text("\n".join(json.dumps(l) for l in lines) + "\n")
 
-    src = DltSource(
+    src = Source(
         id="s_jsonl",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "*.jsonl"},
@@ -58,7 +58,7 @@ def test_load_csv(tmp_path):
     f = tmp_path / "data.csv"
     f.write_text("id,name,age\n1,alice,30\n2,bob,25\n")
 
-    src = DltSource(
+    src = Source(
         id="s_csv",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "*.csv"},
@@ -76,7 +76,7 @@ def test_load_parquet(tmp_path):
     tbl = pa.table({"id": [1, 2], "name": ["alice", "bob"]})
     pq.write_table(tbl, str(tmp_path / "data.parquet"))
 
-    src = DltSource(
+    src = Source(
         id="s_parq",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "*.parquet"},
@@ -91,7 +91,7 @@ def test_load_jsonl_ignores_blank_lines(tmp_path):
     f = tmp_path / "orders.jsonl"
     f.write_text('{"id": "a"}\n\n{"id": "b"}\n   \n')
 
-    src = DltSource(
+    src = Source(
         id="s_blank",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "*.jsonl"},
@@ -107,7 +107,7 @@ def test_load_explicit_format_overrides_extension(tmp_path):
     f = tmp_path / "wrong-ext.json"
     f.write_text('{"id": "x"}\n{"id": "y"}\n')
 
-    src = DltSource(
+    src = Source(
         id="s_fmt",
         source_type="filesystem",
         config={
@@ -127,7 +127,7 @@ def test_load_returns_ibis_table(tmp_path):
     f = tmp_path / "data.json"
     f.write_text(json.dumps(data))
 
-    src = DltSource(
+    src = Source(
         id="s2",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": "data.json"},
@@ -139,7 +139,7 @@ def test_load_returns_ibis_table(tmp_path):
 
 
 def test_missing_file_raises(tmp_path):
-    src = DltSource(
+    src = Source(
         id="s3",
         source_type="filesystem",
         config={"bucket_url": str(tmp_path / "nonexistent"), "file_glob": "*.json"},
@@ -151,7 +151,7 @@ def test_missing_file_raises(tmp_path):
 
 
 def test_unknown_source_type_raises():
-    src = DltSource(
+    src = Source(
         id="s4",
         source_type="nonesuch",
         config={},
@@ -163,25 +163,25 @@ def test_unknown_source_type_raises():
 
 
 def test_resolve_secret_returns_literal():
-    from dte.sources.dlt_loader import resolve_secret
+    from dte.sources.loader import resolve_secret
     assert resolve_secret("literal") == "literal"
 
 
 def test_resolve_secret_reads_env(monkeypatch):
-    from dte.sources.dlt_loader import resolve_secret
+    from dte.sources.loader import resolve_secret
     monkeypatch.setenv("DTE_TEST_SECRET", "shhh")
     assert resolve_secret({"env": "DTE_TEST_SECRET"}) == "shhh"
 
 
 def test_resolve_secret_missing_env_raises(monkeypatch):
-    from dte.sources.dlt_loader import resolve_secret
+    from dte.sources.loader import resolve_secret
     monkeypatch.delenv("DTE_TEST_MISSING", raising=False)
     with pytest.raises(KeyError, match="DTE_TEST_MISSING"):
         resolve_secret({"env": "DTE_TEST_MISSING"})
 
 
 def test_s3_secret_sql_from_config():
-    from dte.sources.dlt_loader import _build_s3_secret_sql
+    from dte.sources.loader import _build_s3_secret_sql
     sql = _build_s3_secret_sql({
         "aws_access_key_id": "AKIA",
         "aws_secret_access_key": "sekret",
@@ -195,7 +195,7 @@ def test_s3_secret_sql_from_config():
 
 
 def test_s3_secret_sql_resolves_env_secrets(monkeypatch):
-    from dte.sources.dlt_loader import _build_s3_secret_sql
+    from dte.sources.loader import _build_s3_secret_sql
     monkeypatch.setenv("MY_AWS_KEY", "AKIAENV")
     monkeypatch.setenv("MY_AWS_SECRET", "envsekret")
     sql = _build_s3_secret_sql({
@@ -207,7 +207,7 @@ def test_s3_secret_sql_resolves_env_secrets(monkeypatch):
 
 
 def test_s3_secret_sql_http_endpoint_disables_ssl_and_uses_path_style():
-    from dte.sources.dlt_loader import _build_s3_secret_sql
+    from dte.sources.loader import _build_s3_secret_sql
     sql = _build_s3_secret_sql({
         "endpoint_url": "http://localhost:4566",
     }, secret_name="s")
@@ -217,7 +217,7 @@ def test_s3_secret_sql_http_endpoint_disables_ssl_and_uses_path_style():
 
 
 def test_s3_secret_sql_https_endpoint_keeps_ssl():
-    from dte.sources.dlt_loader import _build_s3_secret_sql
+    from dte.sources.loader import _build_s3_secret_sql
     sql = _build_s3_secret_sql({
         "endpoint_url": "https://custom.s3-endpoint.example",
     }, secret_name="s")
@@ -226,7 +226,7 @@ def test_s3_secret_sql_https_endpoint_keeps_ssl():
 
 
 def test_gcs_secret_sql_hmac_keys():
-    from dte.sources.dlt_loader import _build_gcs_secret_sql
+    from dte.sources.loader import _build_gcs_secret_sql
     sql = _build_gcs_secret_sql({
         "hmac_key_id": "GOOGKEY",
         "hmac_secret": "gsecret",
@@ -237,7 +237,7 @@ def test_gcs_secret_sql_hmac_keys():
 
 
 def test_gcs_secret_sql_env_indirection(monkeypatch):
-    from dte.sources.dlt_loader import _build_gcs_secret_sql
+    from dte.sources.loader import _build_gcs_secret_sql
     monkeypatch.setenv("GCS_HMAC_ID", "GK")
     monkeypatch.setenv("GCS_HMAC_SECRET", "GS")
     sql = _build_gcs_secret_sql({
@@ -249,7 +249,7 @@ def test_gcs_secret_sql_env_indirection(monkeypatch):
 
 
 def test_gcs_credentials_json_no_longer_accepted():
-    from dte.sources.dlt_loader import _build_gcs_secret_sql
+    from dte.sources.loader import _build_gcs_secret_sql
     with pytest.raises(ValueError, match="HMAC"):
         _build_gcs_secret_sql({
             "credentials_json": {"type": "service_account"},
@@ -257,7 +257,7 @@ def test_gcs_credentials_json_no_longer_accepted():
 
 
 def test_azure_secret_sql_connection_string():
-    from dte.sources.dlt_loader import _build_azure_secret_sql
+    from dte.sources.loader import _build_azure_secret_sql
     sql = _build_azure_secret_sql({
         "connection_string": "DefaultEndpointsProtocol=https;AccountName=a;AccountKey=k;",
     }, secret_name="az")
@@ -266,7 +266,7 @@ def test_azure_secret_sql_connection_string():
 
 
 def test_azure_secret_sql_account_name_and_key():
-    from dte.sources.dlt_loader import _build_azure_secret_sql
+    from dte.sources.loader import _build_azure_secret_sql
     sql = _build_azure_secret_sql({
         "account_name": "myacct",
         "account_key": "mykey",
@@ -276,7 +276,7 @@ def test_azure_secret_sql_account_name_and_key():
 
 
 def test_azure_secret_sql_env_indirection(monkeypatch):
-    from dte.sources.dlt_loader import _build_azure_secret_sql
+    from dte.sources.loader import _build_azure_secret_sql
     monkeypatch.setenv("AZ_CONN", "DefaultEndpointsProtocol=https;AccountName=x;AccountKey=y;")
     sql = _build_azure_secret_sql({
         "connection_string": {"env": "AZ_CONN"},
@@ -285,13 +285,13 @@ def test_azure_secret_sql_env_indirection(monkeypatch):
 
 
 def test_azure_secret_sql_missing_credentials_raises():
-    from dte.sources.dlt_loader import _build_azure_secret_sql
+    from dte.sources.loader import _build_azure_secret_sql
     with pytest.raises(ValueError, match="credentials"):
         _build_azure_secret_sql({}, secret_name="az")
 
 
 def test_dispatch_registers_object_storage_types():
-    from dte.sources.dlt_loader import LOADERS
+    from dte.sources.loader import LOADERS
     assert "s3" in LOADERS
     assert "gcs" in LOADERS
     assert "azure" in LOADERS
@@ -299,7 +299,7 @@ def test_dispatch_registers_object_storage_types():
 
 def test_secret_sql_escapes_single_quotes():
     """Secrets containing a `'` must be escaped so they don't break the DDL."""
-    from dte.sources.dlt_loader import _build_s3_secret_sql
+    from dte.sources.loader import _build_s3_secret_sql
     sql = _build_s3_secret_sql({
         "aws_access_key_id": "AK",
         "aws_secret_access_key": "has'quote",
@@ -320,7 +320,7 @@ def test_sql_database_loader_end_to_end(tmp_path):
     conn.commit()
     conn.close()
 
-    src = DltSource(
+    src = Source(
         id="sql1",
         source_type="sql_database",
         config={
@@ -348,7 +348,7 @@ def test_sql_database_credentials_resolved_from_env(monkeypatch, tmp_path):
     conn.close()
 
     monkeypatch.setenv("DTE_SQL_DSN", f"sqlite:///{db_path}")
-    src = DltSource(
+    src = Source(
         id="sql2",
         source_type="sql_database",
         config={"credentials": {"env": "DTE_SQL_DSN"}, "table": "t"},
@@ -361,12 +361,12 @@ def test_sql_database_credentials_resolved_from_env(monkeypatch, tmp_path):
 
 
 def test_dispatch_registers_sql_database():
-    from dte.sources.dlt_loader import LOADERS
+    from dte.sources.loader import LOADERS
     assert "sql_database" in LOADERS
 
 
 def test_sql_database_unsupported_scheme_raises():
-    src = DltSource(
+    src = Source(
         id="sql_bad",
         source_type="sql_database",
         config={"credentials": "snowflake://user:pw@acct", "table": "t"},
@@ -380,7 +380,7 @@ def test_sql_database_unsupported_scheme_raises():
 def test_mongodb_loader_end_to_end(monkeypatch):
     """Load documents from a mongomock-backed MongoDB collection."""
     import mongomock
-    from dte.sources import dlt_loader
+    from dte.sources import loader as dlt_loader
 
     mock_client = mongomock.MongoClient()
     mock_client["mydb"]["mycoll"].insert_many([
@@ -391,7 +391,7 @@ def test_mongodb_loader_end_to_end(monkeypatch):
 
     monkeypatch.setattr(dlt_loader, "_mongo_client", lambda url: mock_client)
 
-    src = DltSource(
+    src = Source(
         id="mongo1",
         source_type="mongodb",
         config={
@@ -410,7 +410,7 @@ def test_mongodb_loader_end_to_end(monkeypatch):
 
 def test_mongodb_connection_url_from_env(monkeypatch):
     import mongomock
-    from dte.sources import dlt_loader
+    from dte.sources import loader as dlt_loader
 
     mock_client = mongomock.MongoClient()
     mock_client["d"]["c"].insert_one({"x": 1})
@@ -424,7 +424,7 @@ def test_mongodb_connection_url_from_env(monkeypatch):
     monkeypatch.setenv("DTE_MONGO_URL", "mongodb://prod-host:27017")
     monkeypatch.setattr(dlt_loader, "_mongo_client", fake_client)
 
-    src = DltSource(
+    src = Source(
         id="mongo2",
         source_type="mongodb",
         config={
@@ -440,7 +440,7 @@ def test_mongodb_connection_url_from_env(monkeypatch):
 
 
 def test_dispatch_registers_mongodb():
-    from dte.sources.dlt_loader import LOADERS
+    from dte.sources.loader import LOADERS
     assert "mongodb" in LOADERS
 
 
@@ -457,7 +457,7 @@ def test_rest_api_loader_end_to_end(monkeypatch):
             ],
         )
 
-        src = DltSource(
+        src = Source(
             id="rest1",
             source_type="rest_api",
             config={
@@ -490,7 +490,7 @@ def test_rest_api_resource_name_overridden_to_source_table(monkeypatch):
             "https://api.example.com/things",
             json=[{"x": 1}],
         )
-        src = DltSource(
+        src = Source(
             id="rest2",
             source_type="rest_api",
             config={
@@ -512,5 +512,5 @@ def test_rest_api_resource_name_overridden_to_source_table(monkeypatch):
 
 
 def test_dispatch_registers_rest_api():
-    from dte.sources.dlt_loader import LOADERS
+    from dte.sources.loader import LOADERS
     assert "rest_api" in LOADERS

@@ -3,11 +3,15 @@ from typing import Annotated, Literal, Union
 from pydantic import BaseModel, Field, model_validator
 
 
-class DltSource(BaseModel):
+class Source(BaseModel):
     id: str
     source_type: str
     config: dict
     table: str
+
+
+# Back-compat alias — deprecated. Delete after plan 015 lands end-to-end.
+DltSource = Source
 
 
 class FilterStep(BaseModel):
@@ -150,9 +154,14 @@ OutputTarget = Annotated[
 ]
 
 
+class Destination(BaseModel):
+    id: str
+    config: OutputTarget
+
+
 class Pipeline(BaseModel):
     id: str
     name: str
-    sources: list[DltSource]
+    sources: list[str]
     steps: list[dict]
-    output: OutputTarget
+    output_id: str

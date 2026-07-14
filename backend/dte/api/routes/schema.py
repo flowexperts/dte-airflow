@@ -3,9 +3,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import ibis.expr.datatypes as dt
 
-from dte.models.pipeline import DltSource
+from dte.models.pipeline import Source
 from dte.engine.duckdb_engine import DuckDBEngine
-from dte.sources.dlt_loader import load_source
+from dte.sources.loader import load_source
 
 router = APIRouter()
 
@@ -36,7 +36,7 @@ def _walk(name: str, dtype: dt.DataType) -> SchemaFieldNode:
 
 
 @router.post("/schema/infer", response_model=InferSchemaResponse)
-async def infer_schema(source: DltSource):
+async def infer_schema(source: Source):
     engine = DuckDBEngine()
     try:
         table = load_source(source, engine.con)

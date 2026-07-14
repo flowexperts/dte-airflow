@@ -5,28 +5,25 @@ import { useRouter } from "next/navigation";
 import { Button, Field, Input, PageHeader, Topbar } from "@/components/ui";
 import {
   createPipeline,
-  isJsonFileOutput,
   updatePipeline,
-  type DltSource,
-  type JsonFileOutput,
   type Pipeline,
 } from "@/lib/api";
 import { SourcesPanel } from "./sources";
 import { StepsPanel } from "./steps/StepsPanel";
 import type { StepShape } from "./steps/types";
-import { OutputPanel } from "./OutputPanel";
+import { DestinationPicker } from "./DestinationPicker";
 import { SchemaProvider, useSchemas } from "./schema-context";
 
-function AutoInferSchemas({ sources }: { sources: DltSource[] }) {
-  const { schemas, refresh } = useSchemas();
+function AutoInferSchemas({ sourceIds }: { sourceIds: string[] }) {
+  const { schemas, refreshById } = useSchemas();
   const inflight = useRef<Set<string>>(new Set());
   useEffect(() => {
-    for (const s of sources) {
-      if (!s.id || inflight.current.has(s.id) || schemas[s.id]) continue;
-      inflight.current.add(s.id);
-      refresh(s);
+    for (const id of sourceIds) {
+      if (!id || inflight.current.has(id) || schemas[id]) continue;
+      inflight.current.add(id);
+      refreshById(id);
     }
-  }, [sources, schemas, refresh]);
+  }, [sourceIds, schemas, refreshById]);
   return null;
 }
 
@@ -48,8 +45,11 @@ export function BuilderForm({
     if (!/^[a-zA-Z0-9_-]+$/.test(id))
       return "Pipeline id may only contain letters, numbers, '_' and '-'.";
     if (!pipeline.name.trim()) return "Pipeline name is required.";
-    const path = "path" in pipeline.output ? pipeline.output.path : "";
-    if (!path?.trim()) return "Output path is required.";
+    if (!(pipeline.sources?.length ?? 0))
+      return "Add at least one source.";
+    if ((pipeline.sources ?? []).some((s) => !s))
+      return "Every source slot needs a saved source picked.";
+    if (!pipeline.output_id?.trim()) return "Pick or create a destination.";
     for (const [i, step] of (pipeline.steps ?? []).entries()) {
       const s = step as { op?: string; fields?: unknown[]; drop?: unknown[] };
       if (
@@ -86,7 +86,7 @@ export function BuilderForm({
 
   return (
     <SchemaProvider>
-      <AutoInferSchemas sources={pipeline.sources ?? []} />
+      <AutoInferSchemas sourceIds={pipeline.sources ?? []} />
       <Topbar
         crumbs={[
           { label: "Workspace", href: "/" },
@@ -154,19 +154,10 @@ export function BuilderForm({
           onChange={(steps) => setPipeline({ ...pipeline, steps })}
         />
 
-        {isJsonFileOutput(pipeline.output) ? (
-          <OutputPanel
-            output={pipeline.output}
-            onChange={(output: JsonFileOutput) =>
-              setPipeline({ ...pipeline, output })
-            }
-          />
-        ) : (
-          <div className="border border-border rounded p-4 text-sm text-subtle bg-surface">
-            This pipeline uses a {pipeline.output.type} output which isn&apos;t
-            editable in the UI yet.
-          </div>
-        )}
+        <DestinationPicker
+          outputId={pipeline.output_id ?? ""}
+          onChange={(output_id) => setPipeline({ ...pipeline, output_id })}
+        />
       </div>
     </SchemaProvider>
   );
