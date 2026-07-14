@@ -3,6 +3,8 @@ from sqlalchemy import text
 import uuid
 import json
 
+from dte.secrets import SecretResolver, get_secret_resolver
+
 
 class PostgresPipelineStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
@@ -213,6 +215,76 @@ class PostgresDestinationStore:
         async with self._factory() as s:
             result = await s.execute(
                 text("DELETE FROM destinations WHERE id = :id"), {"id": id}
+            )
+            await s.commit()
+            return result.rowcount > 0
+
+
+class PostgresConnectionStore:
+    """Stores connection rows with credentials encrypted at rest via a
+    `SecretResolver` (env-based JSON in dev; Fernet in prod)."""
+
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        resolver: SecretResolver | None = None,
+    ):
+        self._factory = session_factory
+        self._resolver = resolver or get_secret_resolver()
+
+    async def get(self, id: str) -> dict | None:
+        async with self._factory() as s:
+            result = await s.execute(
+                text("SELECT id, connection_type, credentials_encrypted FROM connections WHERE id = :id"),
+                {"id": id},
+            )
+            row = result.mappings().fetchone()
+            if not row:
+                return None
+            credentials = self._resolver.decrypt(bytes(row["credentials_encrypted"]))
+            return {
+                "id": row["id"],
+                "connection_type": row["connection_type"],
+                "credentials": credentials,
+            }
+
+    async def save(self, connection: dict) -> None:
+        ciphertext = self._resolver.encrypt(connection.get("credentials") or {})
+        async with self._factory() as s:
+            await s.execute(text("""
+                INSERT INTO connections (id, connection_type, credentials_encrypted)
+                VALUES (:id, :connection_type, :credentials_encrypted)
+                ON CONFLICT (id) DO UPDATE SET
+                    connection_type = EXCLUDED.connection_type,
+                    credentials_encrypted = EXCLUDED.credentials_encrypted,
+                    updated_at = now()
+            """), {
+                "id": connection["id"],
+                "connection_type": connection["connection_type"],
+                "credentials_encrypted": ciphertext,
+            })
+            await s.commit()
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        """Returns rows with credentials **masked** — never decrypts."""
+        async with self._factory() as s:
+            result = await s.execute(
+                text("SELECT id, connection_type FROM connections ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
+                {"limit": limit, "offset": offset},
+            )
+            return [
+                {
+                    "id": row["id"],
+                    "connection_type": row["connection_type"],
+                    "credentials": {},
+                }
+                for row in result.mappings().fetchall()
+            ]
+
+    async def delete(self, id: str) -> bool:
+        async with self._factory() as s:
+            result = await s.execute(
+                text("DELETE FROM connections WHERE id = :id"), {"id": id}
             )
             await s.commit()
             return result.rowcount > 0

@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from dte.api.routes.connections import router as connections_router
 from dte.api.routes.destinations import router as destinations_router
 from dte.api.routes.pipelines import router as pipelines_router
 from dte.api.routes.runs import router as runs_router
@@ -30,3 +31,4 @@ app.include_router(runs_router, prefix="/api")
 app.include_router(schema_router, prefix="/api")
 app.include_router(sources_router, prefix="/api")
 app.include_router(destinations_router, prefix="/api")
+app.include_router(connections_router, prefix="/api")

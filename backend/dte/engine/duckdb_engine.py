@@ -12,8 +12,8 @@ class DuckDBEngine(BaseEngine):
     def con(self) -> ibis.BaseBackend:
         return self._con
 
-    def execute(self, table: ibis.Table, target) -> WriteResult:
-        return _write(table, target, self._con)
+    def execute(self, table: ibis.Table, target, credentials: dict | None = None) -> WriteResult:
+        return _write(table, target, self._con, credentials=credentials)
 
     def apply_filter_sql(self, table: ibis.Table, expr: str) -> ibis.Table:
         self._con.create_view("_filter_input", table, overwrite=True)

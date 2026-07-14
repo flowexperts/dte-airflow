@@ -84,23 +84,26 @@ def _secret_kv(key: str, value: str) -> str:
     return f"    {key} {_sql_string_literal(value)}"
 
 
-def _build_s3_secret_sql(config: dict, secret_name: str) -> str:
+def _build_s3_secret_sql(credentials: dict, secret_name: str) -> str:
     """Return `CREATE OR REPLACE SECRET …` DDL for an S3-compatible endpoint.
 
-    Env-indirection is resolved at build time. Endpoint URL (LocalStack / MinIO)
-    switches on path-style + optional TLS off when the scheme is http.
+    `credentials` comes from the linked Connection (already decrypted by
+    the SecretResolver). Env-indirection is a no-op here — the resolver
+    handled it — but `resolve_secret()` is still safe on literals.
+    Endpoint URL (LocalStack / MinIO) switches on path-style + optional
+    TLS off when the scheme is http.
     """
     parts: list[str] = ["TYPE s3"]
-    if "aws_access_key_id" in config:
-        parts.append(_secret_kv("KEY_ID", resolve_secret(config["aws_access_key_id"])))
-    if "aws_secret_access_key" in config:
-        parts.append(_secret_kv("SECRET", resolve_secret(config["aws_secret_access_key"])))
-    if "aws_session_token" in config:
-        parts.append(_secret_kv("SESSION_TOKEN", resolve_secret(config["aws_session_token"])))
-    if "region_name" in config:
-        parts.append(_secret_kv("REGION", resolve_secret(config["region_name"])))
-    if "endpoint_url" in config:
-        endpoint = resolve_secret(config["endpoint_url"])
+    if "aws_access_key_id" in credentials:
+        parts.append(_secret_kv("KEY_ID", resolve_secret(credentials["aws_access_key_id"])))
+    if "aws_secret_access_key" in credentials:
+        parts.append(_secret_kv("SECRET", resolve_secret(credentials["aws_secret_access_key"])))
+    if "aws_session_token" in credentials:
+        parts.append(_secret_kv("SESSION_TOKEN", resolve_secret(credentials["aws_session_token"])))
+    if "region_name" in credentials:
+        parts.append(_secret_kv("REGION", resolve_secret(credentials["region_name"])))
+    if "endpoint_url" in credentials:
+        endpoint = resolve_secret(credentials["endpoint_url"])
         # Strip scheme — DuckDB wants `host[:port]`.
         stripped = endpoint.split("://", 1)[-1].rstrip("/")
         parts.append(_secret_kv("ENDPOINT", stripped))
@@ -111,39 +114,49 @@ def _build_s3_secret_sql(config: dict, secret_name: str) -> str:
     return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
 
 
-def _build_gcs_secret_sql(config: dict, secret_name: str) -> str:
+def _build_gcs_secret_sql(credentials: dict, secret_name: str) -> str:
     """DuckDB uses HMAC keys for GCS via the S3-compatible API — not the
-    service-account JSON that fsspec/gcsfs consumes. Users who previously
-    supplied `credentials_json` must reissue as HMAC key + secret."""
-    if "credentials_json" in config and "hmac_key_id" not in config:
+    service-account JSON that fsspec/gcsfs consumes. `credentials_json`
+    is rejected; users must issue HMAC keys instead."""
+    if "credentials_json" in credentials and "hmac_key_id" not in credentials:
         raise ValueError(
-            "gcs source: `credentials_json` (service-account JSON) is no longer "
+            "gcs connection: `credentials_json` (service-account JSON) is not "
             "supported. Issue an HMAC key on the storage account and pass "
             "`hmac_key_id` + `hmac_secret` instead."
         )
     parts: list[str] = ["TYPE gcs"]
-    if "hmac_key_id" in config:
-        parts.append(_secret_kv("KEY_ID", resolve_secret(config["hmac_key_id"])))
-    if "hmac_secret" in config:
-        parts.append(_secret_kv("SECRET", resolve_secret(config["hmac_secret"])))
+    if "hmac_key_id" in credentials:
+        parts.append(_secret_kv("KEY_ID", resolve_secret(credentials["hmac_key_id"])))
+    if "hmac_secret" in credentials:
+        parts.append(_secret_kv("SECRET", resolve_secret(credentials["hmac_secret"])))
     body = ",\n".join(parts)
     return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
 
 
-def _build_azure_secret_sql(config: dict, secret_name: str) -> str:
-    """Azure Blob Storage secret. Prefer `connection_string`; fall back to
-    `account_name` + `account_key`."""
+def _build_azure_secret_sql(credentials: dict, secret_name: str) -> str:
+    """Azure Blob Storage secret. Field names follow dlt's `AzureCredentials`:
+    `azure_storage_account_name` + `azure_storage_account_key`, or a
+    `azure_storage_sas_token` for SAS auth."""
     parts: list[str] = ["TYPE azure"]
-    if "connection_string" in config:
-        parts.append(_secret_kv("CONNECTION_STRING", resolve_secret(config["connection_string"])))
-    elif "account_name" in config:
-        parts.append(_secret_kv("ACCOUNT_NAME", resolve_secret(config["account_name"])))
-        if "account_key" in config:
-            parts.append(_secret_kv("ACCOUNT_KEY", resolve_secret(config["account_key"])))
+    account = credentials.get("azure_storage_account_name")
+    key = credentials.get("azure_storage_account_key")
+    sas = credentials.get("azure_storage_sas_token")
+    if account:
+        parts.append(_secret_kv("ACCOUNT_NAME", resolve_secret(account)))
+        if key:
+            parts.append(_secret_kv("ACCOUNT_KEY", resolve_secret(key)))
+        elif sas:
+            parts.append(_secret_kv("SAS_TOKEN", resolve_secret(sas)))
+        else:
+            raise ValueError(
+                "azure connection: missing key. Provide `azure_storage_account_key` "
+                "or `azure_storage_sas_token`."
+            )
     else:
         raise ValueError(
-            "azure source: missing credentials. Provide `connection_string` or "
-            "(`account_name` + `account_key`)."
+            "azure connection: missing credentials. Provide "
+            "`azure_storage_account_name` + `azure_storage_account_key` "
+            "(or `azure_storage_sas_token`)."
         )
     body = ",\n".join(parts)
     return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
@@ -176,7 +189,7 @@ def _load_remote_via_duckdb(
     return con.table(source.table)
 
 
-def _load_filesystem(source: Source, con: ibis.BaseBackend) -> ibis.Table:
+def _load_filesystem(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
     """Read local files directly via DuckDB's native readers.
 
     Nested JSON comes through as STRUCT columns (DuckDB default). The
@@ -205,24 +218,24 @@ def _load_filesystem(source: Source, con: ibis.BaseBackend) -> ibis.Table:
     return con.table(source.table)
 
 
-def _load_s3(source: Source, con: ibis.BaseBackend) -> ibis.Table:
+def _load_s3(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
     secret_name = f"dte_src_{source.id}_s3"
     return _load_remote_via_duckdb(
-        source, con, "httpfs", _build_s3_secret_sql(source.config, secret_name)
+        source, con, "httpfs", _build_s3_secret_sql(credentials, secret_name)
     )
 
 
-def _load_gcs(source: Source, con: ibis.BaseBackend) -> ibis.Table:
+def _load_gcs(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
     secret_name = f"dte_src_{source.id}_gcs"
     return _load_remote_via_duckdb(
-        source, con, "httpfs", _build_gcs_secret_sql(source.config, secret_name)
+        source, con, "httpfs", _build_gcs_secret_sql(credentials, secret_name)
     )
 
 
-def _load_azure(source: Source, con: ibis.BaseBackend) -> ibis.Table:
+def _load_azure(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
     secret_name = f"dte_src_{source.id}_azure"
     return _load_remote_via_duckdb(
-        source, con, "azure", _build_azure_secret_sql(source.config, secret_name)
+        source, con, "azure", _build_azure_secret_sql(credentials, secret_name)
     )
 
 
@@ -257,16 +270,18 @@ def _sql_scanner_spec(credentials: str) -> tuple[str, str, str, str]:
     )
 
 
-def _load_sql_database(source: Source, con: ibis.BaseBackend) -> ibis.Table:
+def _load_sql_database(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
     """Attach the source via a DuckDB scanner extension and expose the
-    requested table as a view. Queries stream through DuckDB — no dlt hop."""
+    requested table as a view. Queries stream through DuckDB — no dlt hop.
+
+    `credentials["url"]` is the SQLAlchemy-style connection string."""
     raw_con = con.con
     config = source.config
-    credentials = resolve_secret(config["credentials"])
+    url = resolve_secret(credentials["url"])
     table_name = config["table"]
     user_schema = config.get("schema")
 
-    ext, attach_target, attach_type, default_schema = _sql_scanner_spec(credentials)
+    ext, attach_target, attach_type, default_schema = _sql_scanner_spec(url)
     _ensure_ext(raw_con, ext)
 
     alias = f"dte_src_{source.id}"
@@ -294,10 +309,10 @@ def _mongo_client(connection_url: str):
     return MongoClient(connection_url)
 
 
-def _load_mongodb(source: Source, con: ibis.BaseBackend) -> ibis.Table:
+def _load_mongodb(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
     raw_con = con.con
     config = source.config
-    connection_url = resolve_secret(config["connection_url"])
+    connection_url = resolve_secret(credentials["url"])
     database = config["database"]
     collection = config["collection"]
     query_filter = config.get("filter", {})
@@ -320,11 +335,11 @@ def _load_mongodb(source: Source, con: ibis.BaseBackend) -> ibis.Table:
     return con.table(source.table, database=("memory", "dte_sources"))
 
 
-def _load_rest_api(source: Source, con: ibis.BaseBackend) -> ibis.Table:
+def _load_rest_api(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
     from dlt.sources.rest_api import rest_api_source
 
     raw_con = con.con
-    config = _resolve_rest_config(source.config)
+    config = _merge_rest_credentials(source.config, credentials)
 
     src = rest_api_source(config)
     resources = list(src.resources.values())
@@ -341,22 +356,23 @@ def _load_rest_api(source: Source, con: ibis.BaseBackend) -> ibis.Table:
     return con.table(source.table, database=("memory", "dte_sources"))
 
 
-def _resolve_rest_config(config: dict) -> dict:
-    """Deep-copy the config and resolve any {"env": "..."} secrets inside
-    client.auth / headers so callers can pass credentials via env vars."""
+def _merge_rest_credentials(config: dict, credentials: dict) -> dict:
+    """Return a fresh rest_api config with `client.auth` and `client.headers`
+    merged from the linked Connection's credentials. Values are still
+    passed through `resolve_secret()` for `{env: X}` back-compat."""
     import copy
     resolved = copy.deepcopy(config)
-    client = resolved.get("client", {})
-    if "auth" in client and isinstance(client["auth"], dict):
-        for k, v in list(client["auth"].items()):
-            client["auth"][k] = resolve_secret(v)
-    if "headers" in client and isinstance(client["headers"], dict):
-        for k, v in list(client["headers"].items()):
-            client["headers"][k] = resolve_secret(v)
+    client = resolved.setdefault("client", {})
+    for key in ("auth", "headers"):
+        if key in credentials and isinstance(credentials[key], dict):
+            merged = dict(client.get(key) or {})
+            for k, v in credentials[key].items():
+                merged[k] = resolve_secret(v)
+            client[key] = merged
     return resolved
 
 
-LOADERS: dict[str, Callable[[Source, ibis.BaseBackend], ibis.Table]] = {
+LOADERS: dict[str, Callable[[Source, ibis.BaseBackend, dict], ibis.Table]] = {
     "filesystem": _load_filesystem,
     "s3": _load_s3,
     "gcs": _load_gcs,
@@ -367,10 +383,12 @@ LOADERS: dict[str, Callable[[Source, ibis.BaseBackend], ibis.Table]] = {
 }
 
 
-def load_source(source: Source, con: ibis.BaseBackend) -> ibis.Table:
+def load_source(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
+    """`credentials` is the linked Connection's decrypted credentials
+    dict — always a dict, empty for `local_fs`."""
     loader = LOADERS.get(source.source_type)
     if loader is None:
         raise NotImplementedError(
             f"source_type '{source.source_type}' is not supported"
         )
-    return loader(source, con)
+    return loader(source, con, credentials)

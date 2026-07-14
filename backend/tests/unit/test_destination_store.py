@@ -1,4 +1,4 @@
-from dte.store.memory import MemoryDestinationStore
+from tests.fakes import FakeDestinationStore
 
 
 def _dest(did: str) -> dict:
@@ -9,7 +9,7 @@ def _dest(did: str) -> dict:
 
 
 async def test_save_and_get():
-    s = MemoryDestinationStore()
+    s = FakeDestinationStore()
     await s.save(_dest("d1"))
     got = await s.get("d1")
     assert got["id"] == "d1"
@@ -17,12 +17,12 @@ async def test_save_and_get():
 
 
 async def test_get_missing_returns_none():
-    s = MemoryDestinationStore()
+    s = FakeDestinationStore()
     assert await s.get("nope") is None
 
 
 async def test_list_pagination():
-    s = MemoryDestinationStore()
+    s = FakeDestinationStore()
     for i in range(5):
         await s.save(_dest(f"d{i}"))
     page1 = await s.list(limit=3, offset=0)
@@ -32,12 +32,12 @@ async def test_list_pagination():
 
 
 async def test_delete():
-    s = MemoryDestinationStore()
+    s = FakeDestinationStore()
     await s.save(_dest("d1"))
     assert await s.delete("d1") is True
     assert await s.get("d1") is None
 
 
 async def test_delete_missing_returns_false():
-    s = MemoryDestinationStore()
+    s = FakeDestinationStore()
     assert await s.delete("nope") is False

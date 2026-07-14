@@ -233,6 +233,53 @@ cd backend && uv run python scripts/migrate_field_refs.py --write   # persist
 - ibis ≥ 9: use `ibis.cases(*[(condition, value), ...], else_=default)`, **not** `ibis.case()`
 - `table.rename({new_name: old_name})` — ibis rename direction is reversed from intuition
 
+## Connections (three-tier model)
+
+Sources and destinations reference a **Connection** by `connection_id`. A Connection holds only credentials (opaque encrypted blob). Sources / destinations hold only the "where inside the target" bits (bucket_url, schema+table, collection, path). Local file targets bind to a no-cred `local_fs` connection so every source and destination has exactly one connection to point at.
+
+Three tiers:
+
+```
+Connection (credentials)
+    ↑
+Source / Destination (references connection_id + carries kind-specific config)
+    ↑
+Pipeline (references source ids + destination id)
+```
+
+### Credential validation via dlt's `@configspec` classes
+
+`Connection.credentials` is validated at model-parse time by instantiating the matching dlt spec class (`dlt.common.configuration.specs.AwsCredentials`, `ConnectionStringCredentials`, etc). We do NOT inherit — that would drag in dlt's config-provider machinery. Instead we call the class, extract public fields via `dataclasses.fields()`, drop dlt's built-in defaults and Nones, and store the result as an opaque dict. See `_DLT_CRED_CLASS` in `dte/models/pipeline.py`.
+
+**Rule for adding a new integration**: add the connection type to `ConnectionType`, add the dlt cred class to `_DLT_CRED_CLASS`, and (for SQL-family) route through `ConnectionStringCredentials` — dlt destinations accept the resulting URL directly.
+
+`ConnectionString`-family (postgres/mysql/sqlite/snowflake/bigquery/mongodb) collapses to `{"url": "..."}` on store — same shape dlt destinations accept.
+
+### Secret resolver seam
+
+`dte/secrets/` — pluggable resolver interface. Two shipped:
+- **EnvSecretResolver** (default in dev): stores plaintext JSON; resolves `{env: "X"}` values from `os.environ` at decrypt time. Preserves the plan-014 env-indirection UX.
+- **FernetSecretResolver** (prod): symmetric encryption via `cryptography.fernet.Fernet`. Key from `DTE_SECRETS_KEY` env var (generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`).
+
+`get_secret_resolver()` in `dte/secrets/__init__.py` picks:
+1. `DTE_SECRETS_BACKEND=env|fernet` — explicit override.
+2. `DTE_SECRETS_KEY` set → Fernet.
+3. else → Env resolver, with a startup warning if `DATABASE_URL` is also set (prod signal).
+
+External adapters (Vault, AWS SM, GCP SM) plug in as new resolvers without touching loaders or writers.
+
+### Connection type ↔ Source/Destination compatibility
+
+Enforced in the API save layer (`SOURCE_CONNECTION_COMPAT` / `DESTINATION_CONNECTION_COMPAT` maps in `dte/models/pipeline.py`). Mismatched combinations (e.g. an s3 source bound to a postgres connection) → 422 on POST/PUT.
+
+### Test endpoint
+
+`POST /api/connections/{id}/test` — lightweight connectivity probe. Returns `{ok: bool, elapsed_ms: int, detail: str}`. Per-type probes in `dte/sources/connection_test.py`. UI shows the result inline on `/connections`.
+
+### Migration
+
+Legacy plan-015 sources/destinations (creds inline in `config`) migrate via `backend/scripts/migrate_extract_connections.py`. Extracts unique cred blobs into Connection rows (sha1-deduped), rewrites source/dest configs to reference by id. `filesystem`/`json_file`/`csv_file` all share a singleton `local_fs_default` connection. Idempotent.
+
 ## First-class sources and destinations
 
 Sources and destinations are stored independently of pipelines. Pipelines reference them by id: `Pipeline.sources: list[str]` and `Pipeline.output_id: str`. Both sides get their own store protocol (`SourceStore`, `DestinationStore` in `backend/dte/store/base.py`), memory + Postgres implementations, and CRUD API routes.
@@ -270,6 +317,12 @@ GET    /api/destinations                  list destinations
 GET    /api/destinations/{id}             get destination
 PUT    /api/destinations/{id}             update destination
 DELETE /api/destinations/{id}             409 with {referenced_by: [...]} if any pipeline uses it
+POST   /api/connections                   create connection (409 on id collision; creds encrypted at rest)
+GET    /api/connections                   list connections (credentials masked)
+GET    /api/connections/{id}              read (?reveal=true for plaintext creds)
+PUT    /api/connections/{id}              update (empty credentials keeps existing)
+DELETE /api/connections/{id}              409 with {referenced_by: {sources, destinations}} if in use
+POST   /api/connections/{id}/test         connectivity probe → {ok, elapsed_ms, detail}
 ```
 
 `Run` responses include `id`, `pipeline_id`, `status` (`pending`/`running`/`completed`/`failed`), `error`, `rows_written`, `started_at`, `finished_at`. Per-step run events are **not** recorded yet — the frontend `Timeline` renders an empty state placeholder.
@@ -302,7 +355,7 @@ Every non-trivial change gets its own worktree. Do not develop directly on `main
 
 ## Store / database
 
-`dte/api/deps.py` picks the backend at import time: if `DATABASE_URL` is set, it constructs `PostgresPipelineStore`/`PostgresRunStore` with an `async_sessionmaker` singleton; otherwise it falls back to the in-memory stores. Both Postgres stores hold a session factory (not a live session) so the singleton is safe across FastAPI requests and the background `asyncio.create_task` in `trigger_pipeline`.
+**Postgres-only** — there is no in-memory production path. `DATABASE_URL` must be set; getters in `dte/api/deps.py` raise `RuntimeError` if it's missing. Tests inject `Fake*Store` implementations from `tests/fakes.py` via `app.dependency_overrides` (an autouse conftest fixture attaches them, plus a pre-seeded `local_fs` connection so most tests don't need boilerplate). Both Postgres stores hold a session factory (not a live session) so the singleton is safe across FastAPI requests and the background `asyncio.create_task` in `trigger_pipeline`.
 
 Under Docker Compose, `DATABASE_URL=postgresql+asyncpg://dte:dte@postgres:5432/dte` is set on the backend service. The compose command runs `alembic upgrade head` first (using a synced URL derived by stripping `+asyncpg`) and then execs uvicorn. Pipelines persist across `docker compose restart` via the `pgdata` volume.
 

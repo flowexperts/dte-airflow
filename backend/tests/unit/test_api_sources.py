@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from dte.api.main import app
 from dte.api.deps import get_source_store, get_pipeline_store
-from dte.store.memory import MemorySourceStore, MemoryPipelineStore
+from tests.fakes import FakeSourceStore, FakePipelineStore
 
 
 def _run(coro):
@@ -14,17 +14,18 @@ def _run(coro):
 
 @pytest.fixture
 def client():
-    s_store = MemorySourceStore()
-    p_store = MemoryPipelineStore()
+    s_store = FakeSourceStore()
+    p_store = FakePipelineStore()
     app.dependency_overrides[get_source_store] = lambda: s_store
     app.dependency_overrides[get_pipeline_store] = lambda: p_store
     yield TestClient(app), s_store, p_store
     app.dependency_overrides.clear()
 
 
-def _src(sid="s1", table="dummy"):
+def _src(sid="s1", table="dummy", connection_id="local_fs"):
     return {
-        "id": sid, "source_type": "filesystem",
+        "id": sid, "connection_id": connection_id,
+        "source_type": "filesystem",
         "config": {"bucket_url": "/tmp"}, "table": table,
     }
 
@@ -108,7 +109,8 @@ def test_source_schema_by_id(tmp_path, client):
     data = [{"user_id": 1, "name": "alice"}]
     (tmp_path / "u.json").write_text(json.dumps(data))
     _run(s_store.save({
-        "id": "s1", "source_type": "filesystem",
+        "id": "s1", "connection_id": "local_fs",
+        "source_type": "filesystem",
         "config": {"bucket_url": str(tmp_path), "file_glob": "u.json"},
         "table": "users",
     }))

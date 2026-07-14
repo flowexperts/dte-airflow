@@ -15,20 +15,21 @@ def make_pipeline(source_ids, steps, output_id="out1"):
     )
 
 
-def _fs_source(src_id: str, tmp_path: Path, file_glob: str, table: str) -> Source:
+def _fs_source(src_id: str, tmp_path: Path, file_glob: str, table: str, connection_id: str = "local_fs") -> Source:
     return Source(
         id=src_id,
+        connection_id=connection_id,
         source_type="filesystem",
         config={"bucket_url": str(tmp_path), "file_glob": file_glob},
         table=table,
     )
 
 
-def _json_dest(dest_id: str, out_path: Path, fields=None) -> Destination:
+def _json_dest(dest_id: str, connection_id: str, out_path: Path, fields=None) -> Destination:
     cfg = {"type": "json_file", "path": str(out_path)}
     if fields:
         cfg["fields"] = fields
-    return Destination(id=dest_id, config=cfg)
+    return Destination(id=dest_id, connection_id=connection_id, config=cfg)
 
 
 def test_end_to_end_filter_rename(tmp_path):
@@ -41,13 +42,13 @@ def test_end_to_end_filter_rename(tmp_path):
     out = tmp_path / "output.json"
 
     src = _fs_source("src", tmp_path, "input.json", "input")
-    dest = _json_dest("out1", out)
+    dest = _json_dest("out1", "local_fs", out)
     pipeline = make_pipeline(["src"], [
         {"op": "filter", "expr": "age >= 18"},
         {"op": "rename", "mappings": {"first_name": "name"}},
     ])
     engine = DuckDBEngine()
-    tables = {"src": load_source(src, engine.con)}
+    tables = {"src": load_source(src, engine.con, {})}
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     rows = engine.execute_to_json(compiled, str(out))
 
@@ -69,14 +70,14 @@ def test_end_to_end_nested_json_flatten_aggregate(tmp_path):
     out = tmp_path / "agg_output.json"
 
     src = _fs_source("src", tmp_path, "orders.json", "orders")
-    dest = _json_dest("out1", out)
+    dest = _json_dest("out1", "local_fs", out)
     pipeline = make_pipeline(["src"], [{
         "op": "aggregate",
         "group_by": ["order.category"],
         "aggregations": [{"field": "order.amount", "func": "sum", "alias": "total"}]
     }])
     engine = DuckDBEngine()
-    tables = {"src": load_source(src, engine.con)}
+    tables = {"src": load_source(src, engine.con, {})}
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     rows = engine.execute_to_json(compiled, str(out))
 
@@ -94,15 +95,15 @@ def test_api_trigger_and_poll(tmp_path):
         get_pipeline_store, get_run_store,
         get_source_store, get_destination_store,
     )
-    from dte.store.memory import (
-        MemoryPipelineStore, MemoryRunStore,
-        MemorySourceStore, MemoryDestinationStore,
+    from tests.fakes import (
+        FakePipelineStore, FakeRunStore,
+        FakeSourceStore, FakeDestinationStore,
     )
 
-    p_store = MemoryPipelineStore()
-    r_store = MemoryRunStore()
-    s_store = MemorySourceStore()
-    d_store = MemoryDestinationStore()
+    p_store = FakePipelineStore()
+    r_store = FakeRunStore()
+    s_store = FakeSourceStore()
+    d_store = FakeDestinationStore()
     app.dependency_overrides[get_pipeline_store] = lambda: p_store
     app.dependency_overrides[get_run_store] = lambda: r_store
     app.dependency_overrides[get_source_store] = lambda: s_store
@@ -118,7 +119,7 @@ def test_api_trigger_and_poll(tmp_path):
     # Seed source + destination stores.
     import asyncio
     src = _fs_source("src", tmp_path, "scores.json", "scores")
-    dest = _json_dest("out1", out)
+    dest = _json_dest("out1", "local_fs", out)
     asyncio.get_event_loop().run_until_complete(s_store.save(src.model_dump()))
     asyncio.get_event_loop().run_until_complete(d_store.save(dest.model_dump()))
 
@@ -178,7 +179,7 @@ def test_end_to_end_join_two_sources(tmp_path):
 
     users_src = _fs_source("users", tmp_path, "users.json", "users")
     orders_src = _fs_source("orders", tmp_path, "orders.json", "orders")
-    dest = _json_dest("out1", out)
+    dest = _json_dest("out1", "local_fs", out)
     pipeline = make_pipeline(["users", "orders"], [{
         "op": "join",
         "left": "users",
@@ -189,8 +190,8 @@ def test_end_to_end_join_two_sources(tmp_path):
     }])
     engine = DuckDBEngine()
     tables = {
-        "users": load_source(users_src, engine.con),
-        "orders": load_source(orders_src, engine.con),
+        "users": load_source(users_src, engine.con, {}),
+        "orders": load_source(orders_src, engine.con, {}),
     }
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     df = compiled.execute()
@@ -215,7 +216,7 @@ def test_end_to_end_pivot(tmp_path):
     out = tmp_path / "pivot_output.json"
 
     src = _fs_source("src", tmp_path, "sales.json", "sales")
-    dest = _json_dest("out1", out)
+    dest = _json_dest("out1", "local_fs", out)
     pipeline = make_pipeline(["src"], [{
         "op": "pivot",
         "index": "region",
@@ -224,7 +225,7 @@ def test_end_to_end_pivot(tmp_path):
         "agg": "sum",
     }])
     engine = DuckDBEngine()
-    tables = {"src": load_source(src, engine.con)}
+    tables = {"src": load_source(src, engine.con, {})}
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     df = compiled.execute()
 
@@ -245,10 +246,10 @@ def test_select_drop_step_passes_new_columns_through(tmp_path):
     out = tmp_path / "out.json"
 
     src = _fs_source("src", tmp_path, "users.json", "users")
-    dest = _json_dest("out1", out)
+    dest = _json_dest("out1", "local_fs", out)
     pipeline = make_pipeline(["src"], [{"op": "select", "drop": ["ssn"]}])
     engine = DuckDBEngine()
-    tables = {"src": load_source(src, engine.con)}
+    tables = {"src": load_source(src, engine.con, {})}
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     engine.execute_to_json(compiled, str(out))
 

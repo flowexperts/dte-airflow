@@ -14,9 +14,21 @@ import {
   createDestination,
   updateDestination,
   isJsonFileOutput,
+  type ConnectionType,
   type Destination,
 } from "@/lib/api";
 import { OutputPanel } from "@/components/builder/OutputPanel";
+import { ConnectionPicker } from "@/components/builder/ConnectionPicker";
+
+/** Which connection_types a given destination `config.type` may bind to.
+ *  Mirrors backend's DESTINATION_CONNECTION_COMPAT. */
+const DESTINATION_CONNECTION_COMPAT: Record<string, ConnectionType[]> = {
+  json_file:    ["local_fs"],
+  csv_file:     ["local_fs"],
+  parquet_s3:   ["s3"],
+  postgres:     ["postgres"],
+  sql_database: ["mysql", "snowflake", "bigquery"],
+};
 
 export function DestinationForm({
   initial,
@@ -34,6 +46,7 @@ export function DestinationForm({
     if (!destination.id.trim()) return "Destination id is required.";
     if (!/^[a-zA-Z0-9_-]+$/.test(destination.id))
       return "Destination id may only contain letters, numbers, '_' and '-'.";
+    if (!destination.connection_id) return "Pick a connection.";
     if (isJsonFileOutput(destination.config) && !destination.config.path?.trim()) {
       return "Output path is required.";
     }
@@ -60,6 +73,8 @@ export function DestinationForm({
       setSaving(false);
     }
   };
+
+  const allowed = DESTINATION_CONNECTION_COMPAT[destination.config.type] ?? ["local_fs"];
 
   return (
     <>
@@ -91,7 +106,7 @@ export function DestinationForm({
           </div>
         )}
         <Panel>
-          <div className="p-4">
+          <div className="p-4 space-y-3">
             <Field label="Destination id" hint="stable identifier; can't change after create">
               <Input
                 value={destination.id}
@@ -99,6 +114,11 @@ export function DestinationForm({
                 disabled={mode === "edit"}
               />
             </Field>
+            <ConnectionPicker
+              value={destination.connection_id}
+              onChange={(id) => setDestination({ ...destination, connection_id: id })}
+              allowedTypes={allowed}
+            />
           </div>
         </Panel>
         {isJsonFileOutput(destination.config) ? (

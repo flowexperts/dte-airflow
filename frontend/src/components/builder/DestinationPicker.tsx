@@ -14,6 +14,7 @@ import { OutputPanel } from "./OutputPanel";
 function emptyDestination(id: string): Destination {
   return {
     id,
+    connection_id: "local_fs",
     config: { type: "json_file", path: "./out/result.json", fields: [] },
   };
 }

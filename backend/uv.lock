@@ -769,6 +769,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
+    { name = "cryptography" },
     { name = "dlt", extra = ["duckdb"] },
     { name = "fastapi" },
     { name = "httpx" },
@@ -812,6 +813,7 @@ snowflake-writer = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "asyncpg", specifier = ">=0.29" },
+    { name = "cryptography", specifier = ">=42.0" },
     { name = "dlt", extras = ["bigquery"], marker = "extra == 'bigquery-writer'", specifier = ">=1.4" },
     { name = "dlt", extras = ["duckdb"], specifier = ">=1.4" },
     { name = "dlt", extras = ["mysql"], marker = "extra == 'mysql-writer'", specifier = ">=1.4" },

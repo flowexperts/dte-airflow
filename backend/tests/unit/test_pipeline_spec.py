@@ -24,19 +24,35 @@ def _pipeline(**overrides):
 def test_source_parses():
     s = Source(
         id="s1",
+        connection_id="local_fs",
         source_type="filesystem",
         config={"bucket_url": "/tmp/data", "file_glob": "*.json"},
         table="data",
     )
     assert s.id == "s1"
+    assert s.connection_id == "local_fs"
     assert s.source_type == "filesystem"
     assert s.config["bucket_url"] == "/tmp/data"
     assert s.table == "data"
 
 
+def test_source_config_strict_rejects_extras():
+    with pytest.raises(ValidationError):
+        Source(
+            id="s1", connection_id="local_fs", source_type="filesystem",
+            config={"bucket_url": "/tmp", "nonsense_key": 1},
+            table="t",
+        )
+
+
 def test_destination_parses():
-    d = Destination(id="out1", config={"type": "json_file", "path": "/out.json"})
+    d = Destination(
+        id="out1",
+        connection_id="local_fs",
+        config={"type": "json_file", "path": "/out.json"},
+    )
     assert d.id == "out1"
+    assert d.connection_id == "local_fs"
     assert d.config.type == "json_file"
     assert d.config.path == "/out.json"
 
@@ -49,7 +65,7 @@ def test_pipeline_holds_source_ids_and_output_id():
 
 def test_invalid_source_missing_table_raises():
     with pytest.raises(ValidationError):
-        Source(id="s1", source_type="filesystem", config={})
+        Source(id="s1", connection_id="local_fs", source_type="filesystem", config={"bucket_url": "/tmp"})
 
 
 def test_filter_step_in_pipeline():
@@ -113,6 +129,7 @@ def test_aggregate_step_in_pipeline():
 def test_destination_output_fields():
     d = Destination(
         id="out1",
+        connection_id="local_fs",
         config={
             "type": "json_file", "path": "/out.json",
             "fields": [{"field": "name", "alias": "full_name"}, {"field": "age"}]

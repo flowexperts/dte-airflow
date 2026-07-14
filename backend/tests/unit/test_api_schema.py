@@ -10,7 +10,7 @@ def test_schema_infer_returns_fields(tmp_path):
     f.write_text(json.dumps(data))
 
     payload = {
-        "id": "s1",
+        "id": "s1", "connection_id": "local_fs",
         "source_type": "filesystem",
         "config": {"bucket_url": str(tmp_path), "file_glob": "users.json"},
         "table": "users",
@@ -40,7 +40,7 @@ def test_schema_infer_returns_nested_tree(tmp_path):
     f.write_text(json.dumps(data))
 
     payload = {
-        "id": "s_nested",
+        "id": "s_nested", "connection_id": "local_fs",
         "source_type": "filesystem",
         "config": {"bucket_url": str(tmp_path), "file_glob": "orders.json"},
         "table": "orders",
@@ -64,7 +64,7 @@ def test_schema_infer_returns_nested_tree(tmp_path):
 
 def test_schema_infer_missing_source_returns_422(tmp_path):
     payload = {
-        "id": "s2",
+        "id": "s2", "connection_id": "local_fs",
         "source_type": "filesystem",
         "config": {"bucket_url": str(tmp_path / "nonexistent"), "file_glob": "*.json"},
         "table": "missing",
