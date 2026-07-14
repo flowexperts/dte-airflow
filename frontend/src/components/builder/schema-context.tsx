@@ -8,7 +8,12 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import { inferSchema, type DltSource, type SchemaField } from "@/lib/api";
+import {
+  getSourceSchema,
+  inferSchema,
+  type Source,
+  type SchemaField,
+} from "@/lib/api";
 
 interface SchemaEntry {
   fields: SchemaField[];
@@ -18,7 +23,8 @@ interface SchemaEntry {
 
 interface SchemaState {
   schemas: Record<string, SchemaEntry>;
-  refresh: (source: DltSource) => Promise<void>;
+  refresh: (source: Source) => Promise<void>;
+  refreshById: (id: string) => Promise<void>;
   allFields: SchemaField[];
 }
 
@@ -27,35 +33,47 @@ const SchemaContext = createContext<SchemaState | null>(null);
 export function SchemaProvider({ children }: { children: ReactNode }) {
   const [schemas, setSchemas] = useState<Record<string, SchemaEntry>>({});
 
-  const refresh = useCallback(async (source: DltSource) => {
-    const id = source.id;
-    if (!id) return;
+  const _apply = useCallback((id: string, fn: () => Promise<{ fields: SchemaField[] }>) => {
     setSchemas((prev) => ({
       ...prev,
       [id]: { fields: prev[id]?.fields ?? [], loading: true, error: null },
     }));
-    try {
-      const { fields } = await inferSchema(source);
-      setSchemas((prev) => ({
-        ...prev,
-        [id]: { fields, loading: false, error: null },
-      }));
-    } catch (e) {
-      setSchemas((prev) => ({
-        ...prev,
-        [id]: {
-          fields: prev[id]?.fields ?? [],
-          loading: false,
-          error: e instanceof Error ? e.message : String(e),
-        },
-      }));
-    }
+    return fn()
+      .then(({ fields }) => {
+        setSchemas((prev) => ({
+          ...prev,
+          [id]: { fields, loading: false, error: null },
+        }));
+      })
+      .catch((e: unknown) => {
+        setSchemas((prev) => ({
+          ...prev,
+          [id]: {
+            fields: prev[id]?.fields ?? [],
+            loading: false,
+            error: e instanceof Error ? e.message : String(e),
+          },
+        }));
+      });
   }, []);
 
+  const refresh = useCallback(
+    async (source: Source) => {
+      if (!source.id) return;
+      await _apply(source.id, () => inferSchema(source));
+    },
+    [_apply],
+  );
+
+  const refreshById = useCallback(
+    async (id: string) => {
+      if (!id) return;
+      await _apply(id, () => getSourceSchema(id));
+    },
+    [_apply],
+  );
+
   const allFields = useMemo(() => {
-    // Flatten STRUCT children into dot-form leaves so the flat-variant
-    // pickers still see a searchable list. The tree picker rebuilds the
-    // hierarchy from these dot-form names in `buildTree`.
     const seen = new Map<string, SchemaField>();
     const walk = (fields: SchemaField[], prefix: string[] = []) => {
       for (const f of fields) {
@@ -73,7 +91,7 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
   }, [schemas]);
 
   return (
-    <SchemaContext.Provider value={{ schemas, refresh, allFields }}>
+    <SchemaContext.Provider value={{ schemas, refresh, refreshById, allFields }}>
       {children}
     </SchemaContext.Provider>
   );
@@ -83,4 +101,11 @@ export function useSchemas() {
   const ctx = useContext(SchemaContext);
   if (!ctx) throw new Error("useSchemas must be used inside <SchemaProvider>");
   return ctx;
+}
+
+/** Returns null when no <SchemaProvider> is above — useful for components
+ *  reused on standalone pages (e.g. /sources/new) where schema inference
+ *  isn't wired up. */
+export function useSchemasOptional() {
+  return useContext(SchemaContext);
 }

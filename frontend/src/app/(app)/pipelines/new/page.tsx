@@ -6,7 +6,7 @@ const empty: Pipeline = {
   name: "",
   sources: [],
   steps: [],
-  output: { type: "json_file", path: "./out/result.json", fields: [] },
+  output_id: "",
 };
 
 export default function NewPipeline() {

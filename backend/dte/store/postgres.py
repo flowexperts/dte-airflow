@@ -101,3 +101,118 @@ class PostgresRunStore:
             )
             await s.commit()
             return result.rowcount
+
+
+class PostgresSourceStore:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def get(self, id: str) -> dict | None:
+        async with self._factory() as s:
+            result = await s.execute(
+                text("SELECT id, source_type, config, table_name FROM sources WHERE id = :id"),
+                {"id": id},
+            )
+            row = result.mappings().fetchone()
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "source_type": row["source_type"],
+                "config": row["config"],
+                "table": row["table_name"],
+            }
+
+    async def save(self, source: dict) -> None:
+        async with self._factory() as s:
+            await s.execute(text("""
+                INSERT INTO sources (id, source_type, config, table_name)
+                VALUES (:id, :source_type, CAST(:config AS jsonb), :table_name)
+                ON CONFLICT (id) DO UPDATE SET
+                    source_type = EXCLUDED.source_type,
+                    config = EXCLUDED.config,
+                    table_name = EXCLUDED.table_name,
+                    updated_at = now()
+            """), {
+                "id": source["id"],
+                "source_type": source["source_type"],
+                "config": json.dumps(source.get("config", {})),
+                "table_name": source["table"],
+            })
+            await s.commit()
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        async with self._factory() as s:
+            result = await s.execute(
+                text("SELECT id, source_type, config, table_name FROM sources ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
+                {"limit": limit, "offset": offset},
+            )
+            return [
+                {
+                    "id": row["id"],
+                    "source_type": row["source_type"],
+                    "config": row["config"],
+                    "table": row["table_name"],
+                }
+                for row in result.mappings().fetchall()
+            ]
+
+    async def delete(self, id: str) -> bool:
+        async with self._factory() as s:
+            result = await s.execute(
+                text("DELETE FROM sources WHERE id = :id"), {"id": id}
+            )
+            await s.commit()
+            return result.rowcount > 0
+
+
+class PostgresDestinationStore:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def get(self, id: str) -> dict | None:
+        async with self._factory() as s:
+            result = await s.execute(
+                text("SELECT id, config FROM destinations WHERE id = :id"),
+                {"id": id},
+            )
+            row = result.mappings().fetchone()
+            if not row:
+                return None
+            return {"id": row["id"], "config": row["config"]}
+
+    async def save(self, destination: dict) -> None:
+        async with self._factory() as s:
+            config = destination["config"]
+            await s.execute(text("""
+                INSERT INTO destinations (id, dest_type, config)
+                VALUES (:id, :dest_type, CAST(:config AS jsonb))
+                ON CONFLICT (id) DO UPDATE SET
+                    dest_type = EXCLUDED.dest_type,
+                    config = EXCLUDED.config,
+                    updated_at = now()
+            """), {
+                "id": destination["id"],
+                "dest_type": config["type"],
+                "config": json.dumps(config),
+            })
+            await s.commit()
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        async with self._factory() as s:
+            result = await s.execute(
+                text("SELECT id, config FROM destinations ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
+                {"limit": limit, "offset": offset},
+            )
+            return [
+                {"id": row["id"], "config": row["config"]}
+                for row in result.mappings().fetchall()
+            ]
+
+    async def delete(self, id: str) -> bool:
+        async with self._factory() as s:
+            result = await s.execute(
+                text("DELETE FROM destinations WHERE id = :id"), {"id": id}
+            )
+            await s.commit()
+            return result.rowcount > 0

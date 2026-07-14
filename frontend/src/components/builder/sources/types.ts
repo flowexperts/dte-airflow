@@ -1,4 +1,4 @@
-import type { DltSource } from "@/lib/api";
+import type { Source } from "@/lib/api";
 
 export type SourceKind = "filesystem" | "sql_database" | "mongodb";
 
@@ -8,7 +8,7 @@ export const SOURCE_KINDS: { value: SourceKind; label: string }[] = [
   { value: "mongodb",      label: "MongoDB" },
 ];
 
-export function emptySource(id = ""): DltSource {
+export function emptySource(id = ""): Source {
   return {
     id,
     source_type: "filesystem",

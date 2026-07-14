@@ -2,24 +2,26 @@ import pytest
 import ibis
 import pandas as pd
 from dte.compiler.ibis_compiler import compile_pipeline
-from dte.models.pipeline import Pipeline, JoinStep, PivotStep
+from dte.models.pipeline import Pipeline, JoinStep, PivotStep, JsonFileTarget
+
+
+def _output(output_fields=None):
+    cfg = {"type": "json_file", "path": "/tmp/out.json"}
+    if output_fields:
+        cfg["fields"] = output_fields
+    return JsonFileTarget(**cfg)
 
 
 def make_pipeline(steps, output_fields=None):
-    output = {"type": "json_file", "path": "/tmp/out.json"}
-    if output_fields:
-        output["fields"] = output_fields
-    return Pipeline(
-        id="p1", name="test",
-        sources=[{
-            "id": "src",
-            "source_type": "filesystem",
-            "config": {"bucket_url": "/tmp"},
-            "table": "dummy",
-        }],
-        steps=steps,
-        output=output,
+    return (
+        Pipeline(id="p1", name="test", sources=["src"], steps=steps, output_id="out1"),
+        _output(output_fields),
     )
+
+
+def _run(pipeline_and_output, tables):
+    pipeline, output = pipeline_and_output
+    return compile_pipeline(pipeline, tables, output=output)
 
 
 @pytest.fixture
@@ -59,7 +61,7 @@ def country_table(con):
 
 def test_filter_step(people_table):
     pipeline = make_pipeline([{"op": "filter", "expr": "age >= 18"}])
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     assert len(df) == 2
     assert set(df["name"].tolist()) == {"alice", "carol"}
@@ -67,7 +69,7 @@ def test_filter_step(people_table):
 
 def test_rename_step(people_table):
     pipeline = make_pipeline([{"op": "rename", "mappings": {"name": "full_name"}}])
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     assert "full_name" in df.columns
     assert "name" not in df.columns
@@ -77,7 +79,7 @@ def test_retype_step(con):
     df = pd.DataFrame([{"age_str": "30"}, {"age_str": "25"}])
     table = con.create_table("retype_test", df, overwrite=True)
     pipeline = make_pipeline([{"op": "retype", "field": "age_str", "to_type": "int"}])
-    result = compile_pipeline(pipeline, {"src": table})
+    result = _run(pipeline, {"src": table})
     df_out = result.execute()
     assert df_out["age_str"].dtype in (int, "int64", "Int64") or str(df_out["age_str"].dtype).startswith("int")
 
@@ -88,7 +90,7 @@ def test_lookup_map_step(country_table):
         "table": {"US": "United States", "CA": "Canada"},
         "default": "Unknown"
     }])
-    result = compile_pipeline(pipeline, {"src": country_table})
+    result = _run(pipeline, {"src": country_table})
     df = result.execute()
     assert "United States" in df["country_code"].tolist()
     assert "Canada" in df["country_code"].tolist()
@@ -100,7 +102,7 @@ def test_expression_map_step(sales_table):
         "op": "map", "mode": "expression",
         "output_field": "total", "expr": "price * quantity"
     }])
-    result = compile_pipeline(pipeline, {"src": sales_table})
+    result = _run(pipeline, {"src": sales_table})
     df = result.execute()
     assert "total" in df.columns
     assert df[df["product"] == "A"]["total"].iloc[0] == pytest.approx(30.0)
@@ -108,7 +110,7 @@ def test_expression_map_step(sales_table):
 
 def test_sort_step_ascending(people_table):
     pipeline = make_pipeline([{"op": "sort", "by": ["age"], "ascending": True}])
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     ages = df["age"].tolist()
     assert ages == sorted(ages)
@@ -116,7 +118,7 @@ def test_sort_step_ascending(people_table):
 
 def test_sort_step_descending(people_table):
     pipeline = make_pipeline([{"op": "sort", "by": ["age"], "ascending": False}])
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     ages = df["age"].tolist()
     assert ages == sorted(ages, reverse=True)
@@ -128,7 +130,7 @@ def test_aggregate_sum(sales_table):
         "group_by": ["category"],
         "aggregations": [{"field": "price", "func": "sum", "alias": "total_price"}]
     }])
-    result = compile_pipeline(pipeline, {"src": sales_table})
+    result = _run(pipeline, {"src": sales_table})
     df = result.execute()
     x_row = df[df["category"] == "x"]
     assert x_row["total_price"].iloc[0] == pytest.approx(30.0)
@@ -140,7 +142,7 @@ def test_aggregate_count(sales_table):
         "group_by": ["category"],
         "aggregations": [{"field": "product", "func": "count", "alias": "cnt"}]
     }])
-    result = compile_pipeline(pipeline, {"src": sales_table})
+    result = _run(pipeline, {"src": sales_table})
     df = result.execute()
     x_row = df[df["category"] == "x"]
     assert x_row["cnt"].iloc[0] == 2
@@ -151,7 +153,7 @@ def test_output_field_selection(people_table):
         steps=[],
         output_fields=[{"field": "name"}, {"field": "age"}]
     )
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     assert set(df.columns) == {"name", "age"}
     assert "score" not in df.columns
@@ -162,7 +164,7 @@ def test_output_field_alias(people_table):
         steps=[],
         output_fields=[{"field": "name", "alias": "full_name"}, {"field": "age"}]
     )
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     assert "full_name" in df.columns
     assert "name" not in df.columns
@@ -172,7 +174,7 @@ def test_select_step_keeps_only_listed_fields(people_table):
     pipeline = make_pipeline([
         {"op": "select", "fields": [{"field": "name"}, {"field": "age"}]}
     ])
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     assert set(df.columns) == {"name", "age"}
 
@@ -181,7 +183,7 @@ def test_select_step_supports_alias(people_table):
     pipeline = make_pipeline([
         {"op": "select", "fields": [{"field": "name", "alias": "full_name"}]}
     ])
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     assert "full_name" in df.columns
     assert "name" not in df.columns
@@ -191,7 +193,7 @@ def test_select_step_drop_only_keeps_remaining_columns(people_table):
     pipeline = make_pipeline([
         {"op": "select", "drop": ["score"]}
     ])
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     assert set(df.columns) == {"name", "age"}
 
@@ -201,21 +203,17 @@ def test_select_step_composes_with_later_steps(people_table):
         {"op": "select", "fields": [{"field": "name"}, {"field": "age"}]},
         {"op": "filter", "expr": "age >= 18"},
     ])
-    result = compile_pipeline(pipeline, {"src": people_table})
+    result = _run(pipeline, {"src": people_table})
     df = result.execute()
     assert set(df.columns) == {"name", "age"}
     assert (df["age"] >= 18).all()
 
 
 def make_join_pipeline(steps, sources, output_fields=None):
-    output = {"type": "json_file", "path": "/tmp/out.json"}
-    if output_fields:
-        output["fields"] = output_fields
-    return Pipeline(
-        id="p1", name="test",
-        sources=sources,
-        steps=steps,
-        output=output,
+    source_ids = [s["id"] if isinstance(s, dict) else s for s in sources]
+    return (
+        Pipeline(id="p1", name="test", sources=source_ids, steps=steps, output_id="out1"),
+        _output(output_fields),
     )
 
 
@@ -279,7 +277,7 @@ def test_join_inner(users_table, orders_table):
             "output_id": "joined",
         }],
     )
-    result = compile_pipeline(pipeline, {"users": users_table, "orders": orders_table})
+    result = _run(pipeline, {"users": users_table, "orders": orders_table})
     df = result.execute()
     assert len(df) == 2
     assert "name" in df.columns
@@ -298,7 +296,7 @@ def test_join_left(users_table, orders_table):
             "output_id": "joined",
         }],
     )
-    result = compile_pipeline(pipeline, {"users": users_table, "orders": orders_table})
+    result = _run(pipeline, {"users": users_table, "orders": orders_table})
     df = result.execute()
     assert len(df) == 3
     carol_row = df[df["name"] == "carol"]
@@ -317,7 +315,7 @@ def test_join_on_multiple_columns(regional_users_table, regional_orders_table):
             "output_id": "joined",
         }],
     )
-    result = compile_pipeline(pipeline, {
+    result = _run(pipeline, {
         "regional_users": regional_users_table,
         "regional_orders": regional_orders_table,
     })
@@ -342,7 +340,7 @@ def test_join_result_available_for_next_step(users_table, orders_table):
             {"op": "filter", "expr": "amount > 100"},
         ],
     )
-    result = compile_pipeline(pipeline, {"users": users_table, "orders": orders_table})
+    result = _run(pipeline, {"users": users_table, "orders": orders_table})
     df = result.execute()
     assert len(df) == 1
     assert df["name"].iloc[0] == "bob"
@@ -367,7 +365,7 @@ def test_pivot_sum(pivot_sales_table):
         "values": "sales",
         "agg": "sum",
     }])
-    result = compile_pipeline(pipeline, {"src": pivot_sales_table})
+    result = _run(pipeline, {"src": pivot_sales_table})
     df = result.execute()
     assert "A" in df.columns
     assert "B" in df.columns
@@ -384,7 +382,7 @@ def test_pivot_count(pivot_sales_table):
         "values": "sales",
         "agg": "count",
     }])
-    result = compile_pipeline(pipeline, {"src": pivot_sales_table})
+    result = _run(pipeline, {"src": pivot_sales_table})
     df = result.execute()
     assert "A" in df.columns
     assert "B" in df.columns
@@ -415,7 +413,7 @@ def test_output_fields_resolve_struct_paths(struct_orders_table):
             {"field": "addr.city"},
         ],
     )
-    result = compile_pipeline(pipeline, {"src": struct_orders_table})
+    result = _run(pipeline, {"src": struct_orders_table})
     df = result.execute()
     assert set(df.columns) == {"id", "amount", "city"}
     assert sorted(df["amount"].tolist()) == [42, 100, 250]
@@ -432,7 +430,7 @@ def test_select_step_resolves_struct_paths(struct_orders_table):
             ],
         }],
     )
-    result = compile_pipeline(pipeline, {"src": struct_orders_table})
+    result = _run(pipeline, {"src": struct_orders_table})
     df = result.execute()
     assert set(df.columns) == {"id", "cur"}
     assert sorted(df["cur"].tolist()) == ["EUR", "USD", "USD"]

@@ -32,9 +32,13 @@ def _resolve_field(table: ibis.Table, field_path: str) -> ibis.Expr:
     return table[field_path]
 
 
-def compile_pipeline(pipeline: Pipeline, tables: dict[str, ibis.Table]) -> ibis.Table:
+def compile_pipeline(
+    pipeline: Pipeline,
+    tables: dict[str, ibis.Table],
+    output=None,
+) -> ibis.Table:
     registry = dict(tables)
-    current_key = pipeline.sources[0].id
+    current_key = pipeline.sources[0]
 
     for step in pipeline.steps:
         op = step["op"]
@@ -49,7 +53,7 @@ def compile_pipeline(pipeline: Pipeline, tables: dict[str, ibis.Table]) -> ibis.
             registry[current_key] = table
 
     result = registry[current_key]
-    fields = getattr(pipeline.output, "fields", None)
+    fields = getattr(output, "fields", None)
     if fields:
         result = _apply_output_fields(result, fields)
     return result

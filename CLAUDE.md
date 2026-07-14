@@ -138,7 +138,10 @@ Field autocomplete data comes from `SchemaProvider` (`components/builder/schema-
 
 ### Builder
 
-- `BuilderForm` wraps everything in `<SchemaProvider>` and validates on submit: id required + alphanumeric/`_`/`-`, name required, output path required, no empty-`fields` select step.
+- `BuilderForm` wraps everything in `<SchemaProvider>` and validates on submit: id required + alphanumeric/`_`/`-`, name required, at least one source picked, destination picked, no empty-`fields` select step. Pipelines carry id refs (`sources: string[]`, `output_id: string`); the picker components (`SourcesPanel`, `DestinationPicker`) resolve those against the `/api/sources` and `/api/destinations` SWR lists.
+- `SourcesPanel` is a per-slot dropdown with reorder + remove + "+ New source" inline creator. Inline save POSTs to `/api/sources` and appends the id. "Edit" pre-loads a saved source and PUTs — hint copy notes it's shared across pipelines.
+- `DestinationPicker` is the single-value parallel for the output slot.
+- `SchemaProvider` exposes `refresh(source)` for in-flight (unsaved) sources — which POST `/api/schema/infer` with the body — and `refreshById(id)` for saved sources, which GETs `/api/sources/{id}/schema`. `AutoInferSchemas` on the builder uses the id path.
 - `StepsPanel` owns the ordered list, reorder (↑/↓ buttons), remove, and an "Add step" menu keyed off `STEP_OPS`.
 - Every op has a dedicated editor in `components/builder/steps/editors.tsx` — one file so the dispatch is easy to read. Each editor emits the exact dict shape the backend expects.
 - `Rename`, `MapLookup.table`, and `Select` maintain local UI state that syncs to the parent's parsed form via a `useEffect` guarded by shallow equality — needed so mid-typing (`"customer_id →"` with no RHS yet) isn't wiped by the parser.
@@ -230,10 +233,22 @@ cd backend && uv run python scripts/migrate_field_refs.py --write   # persist
 - ibis ≥ 9: use `ibis.cases(*[(condition, value), ...], else_=default)`, **not** `ibis.case()`
 - `table.rename({new_name: old_name})` — ibis rename direction is reversed from intuition
 
+## First-class sources and destinations
+
+Sources and destinations are stored independently of pipelines. Pipelines reference them by id: `Pipeline.sources: list[str]` and `Pipeline.output_id: str`. Both sides get their own store protocol (`SourceStore`, `DestinationStore` in `backend/dte/store/base.py`), memory + Postgres implementations, and CRUD API routes.
+
+- `Source` (renamed from `DltSource`) — `id`, `source_type`, `config`, `table`. `DltSource` remains as a deprecated alias for one release.
+- `Destination` — `{id, config: OutputTarget}` where `OutputTarget` is the existing discriminated union (`json_file` | `csv_file` | `parquet_s3` | `postgres` | `sql_database`).
+- Pipeline execution (`preview`, `trigger`) resolves each source id via `SourceStore.get` and the destination id via `DestinationStore.get` before compiling. Missing id → 422 naming what's missing.
+- `compile_pipeline(pipeline, tables, output=None)` — the compiler is source-agnostic; the caller passes the resolved `OutputTarget` if it needs the output-fields projection.
+- Legacy embedded pipelines migrate via `backend/scripts/migrate_embedded_endpoints.py`: extracts every embedded `Source` and `output` into their own tables (generated dest id: `<pipeline_id>_output`), rewrites the pipeline. Idempotent.
+- Module rename: `dte.sources.dlt_loader` → `dte.sources.loader`. A `dlt_loader` shim re-exports for one release.
+- Alembic `004` creates the `sources` and `destinations` tables. Shape: `id text PK`, `source_type`/`dest_type text`, `config jsonb`, plus `table_name` on sources.
+
 ## API surface
 
 ```
-POST   /api/pipelines                     create pipeline
+POST   /api/pipelines                     create pipeline (validates source/dest ids exist)
 GET    /api/pipelines                     list pipelines
 GET    /api/pipelines/{id}                get pipeline
 PUT    /api/pipelines/{id}                update pipeline
@@ -242,7 +257,19 @@ POST   /api/pipelines/{id}/trigger        start async run → {run_id}
 GET    /api/pipelines/{id}/preview?limit  compile + execute on sample rows
 GET    /api/pipelines/{id}/runs?limit     run history per pipeline
 GET    /api/runs/{run_id}                 poll run status
-POST   /api/schema/infer                  field tree from a DltSource config
+GET    /api/runs/{run_id}/output?limit    peek at the run's output file
+POST   /api/schema/infer                  field tree from an in-flight Source body
+POST   /api/sources                       create source (409 on id collision)
+GET    /api/sources                       list sources
+GET    /api/sources/{id}                  get source
+PUT    /api/sources/{id}                  update source
+DELETE /api/sources/{id}                  409 with {referenced_by: [...]} if any pipeline uses it
+GET    /api/sources/{id}/schema           field tree for a saved source (id-only)
+POST   /api/destinations                  create destination
+GET    /api/destinations                  list destinations
+GET    /api/destinations/{id}             get destination
+PUT    /api/destinations/{id}             update destination
+DELETE /api/destinations/{id}             409 with {referenced_by: [...]} if any pipeline uses it
 ```
 
 `Run` responses include `id`, `pipeline_id`, `status` (`pending`/`running`/`completed`/`failed`), `error`, `rows_written`, `started_at`, `finished_at`. Per-step run events are **not** recorded yet — the frontend `Timeline` renders an empty state placeholder.

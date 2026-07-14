@@ -64,3 +64,45 @@ class MemoryRunStore:
         for rid in to_remove:
             del self._data[rid]
         return len(to_remove)
+
+
+class MemorySourceStore:
+    def __init__(self):
+        self._data: dict[str, dict] = {}
+
+    async def get(self, id: str) -> dict | None:
+        return self._data.get(id)
+
+    async def save(self, source: dict) -> None:
+        self._data[source["id"]] = source
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        items = list(self._data.values())
+        return items[offset:offset + limit]
+
+    async def delete(self, id: str) -> bool:
+        if id in self._data:
+            del self._data[id]
+            return True
+        return False
+
+
+class MemoryDestinationStore:
+    def __init__(self):
+        self._data: dict[str, dict] = {}
+
+    async def get(self, id: str) -> dict | None:
+        return self._data.get(id)
+
+    async def save(self, destination: dict) -> None:
+        self._data[destination["id"]] = destination
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        items = list(self._data.values())
+        return items[offset:offset + limit]
+
+    async def delete(self, id: str) -> bool:
+        if id in self._data:
+            del self._data[id]
+            return True
+        return False
