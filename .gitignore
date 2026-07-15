@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 dist/
 .coverage
+worktrees
+.pnpm-store
+.env
+!.env.example

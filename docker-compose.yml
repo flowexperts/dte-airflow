@@ -22,6 +22,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://dte:dte@postgres:5432/dte
       DTE_CORS_ORIGINS: http://localhost:3000
+      # Fernet key for Connection.credentials encryption at rest.
+      # Must be set — put it in `.env` next to docker-compose.yml
+      # (untracked). See `.env.example` and README.
+      DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:?DTE_SECRETS_KEY must be set — see .env.example}
     command: >
       sh -c "ALEMBIC_URL=$$(echo $$DATABASE_URL | sed 's|+asyncpg||') &&
              DATABASE_URL=$$ALEMBIC_URL alembic upgrade head &&
@@ -29,6 +33,7 @@ services:
     volumes:
       - ./backend/dte:/app/dte
       - ./backend/alembic:/app/alembic
+      - /tmp/dte-samples:/tmp/dte-samples
     ports:
       - "8001:8001"
     depends_on:
