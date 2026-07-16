@@ -37,6 +37,6 @@ export function emptySource(id = ""): Source {
     connection_id: "",
     source_type: "filesystem",
     config: { bucket_url: "", file_glob: "*.json" },
-    table: id || "table",
+    table: id,
   };
 }

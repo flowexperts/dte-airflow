@@ -27,6 +27,8 @@ export { Item, Tag } from "./item";
 export { Metric, MetricRow } from "./metric";
 export { Timeline, TimelineRow, InlineCode } from "./timeline";
 export { Field, Input, Textarea, Segmented } from "./form";
+export { Dropdown } from "./dropdown";
+export type { DropdownOption } from "./dropdown";
 export { FieldPicker } from "./field-picker";
 export { FieldMultiSelect } from "./field-multi";
 export { FieldTreePicker } from "./field-tree-picker";

@@ -149,14 +149,14 @@ export function BuilderForm({
           onChange={(sources) => setPipeline({ ...pipeline, sources })}
         />
 
-        <StepsPanel
-          steps={(pipeline.steps ?? []) as StepShape[]}
-          onChange={(steps) => setPipeline({ ...pipeline, steps })}
-        />
-
         <DestinationPicker
           outputId={pipeline.output_id ?? ""}
           onChange={(output_id) => setPipeline({ ...pipeline, output_id })}
+        />
+
+        <StepsPanel
+          steps={(pipeline.steps ?? []) as StepShape[]}
+          onChange={(steps) => setPipeline({ ...pipeline, steps })}
         />
       </div>
     </SchemaProvider>

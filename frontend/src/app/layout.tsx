@@ -36,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
       className={`${outfit.variable} ${spaceMono.variable} ${cormorant.variable}`}
     >
-      <body>
+      <body suppressHydrationWarning>
         <ThemeProvider>
           <SwrProvider>{children}</SwrProvider>
         </ThemeProvider>

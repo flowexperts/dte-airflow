@@ -1,6 +1,6 @@
 "use client";
 
-import { Field, Input, Segmented } from "@/components/ui";
+import { Dropdown, Field, Input } from "@/components/ui";
 import type { Source } from "@/lib/api";
 import { SOURCE_KINDS, SOURCE_CONNECTION_COMPAT, type SourceKind } from "./types";
 import { FilesystemSourceEditor } from "./FilesystemSourceEditor";
@@ -54,13 +54,8 @@ export function SourceEditor({
 
   return (
     <div className="p-4 border-b border-border last:border-b-0 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <Segmented<SourceKind>
-          value={kind}
-          onChange={setKind}
-          options={SOURCE_KINDS}
-        />
-        {onRemove && (
+      {onRemove && (
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={onRemove}
@@ -68,22 +63,25 @@ export function SourceEditor({
           >
             Remove
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Source id" hint="referenced by steps">
+        <Field label="Source id" hint="referenced by steps; also used as the local table name">
           <Input
             value={source.id}
-            onChange={(e) => onChange({ ...source, id: e.target.value })}
+            onChange={(e) => {
+              const id = e.target.value;
+              onChange({ ...source, id, table: id });
+            }}
             placeholder="orders"
           />
         </Field>
-        <Field label="Load into (table)">
-          <Input
-            value={source.table ?? ""}
-            onChange={(e) => onChange({ ...source, table: e.target.value })}
-            placeholder="orders"
+        <Field label="Type">
+          <Dropdown<SourceKind>
+            value={kind}
+            onChange={setKind}
+            options={SOURCE_KINDS}
           />
         </Field>
       </div>

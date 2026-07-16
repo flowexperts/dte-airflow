@@ -135,8 +135,163 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Infer Schema */
+        /**
+         * Infer Schema
+         * @description Infer schema for an in-flight (unsaved) source. Requires
+         *     `source.connection_id` to reference an existing Connection so the
+         *     loader can decrypt credentials.
+         */
         post: operations["infer_schema_api_schema_infer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sources */
+        get: operations["list_sources_api_sources_get"];
+        put?: never;
+        /** Create Source */
+        post: operations["create_source_api_sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Source */
+        get: operations["get_source_api_sources__source_id__get"];
+        /** Update Source */
+        put: operations["update_source_api_sources__source_id__put"];
+        post?: never;
+        /** Delete Source */
+        delete: operations["delete_source_api_sources__source_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sources/{source_id}/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Source Schema */
+        get: operations["source_schema_api_sources__source_id__schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Destinations */
+        get: operations["list_destinations_api_destinations_get"];
+        put?: never;
+        /** Create Destination */
+        post: operations["create_destination_api_destinations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/destinations/{destination_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Destination */
+        get: operations["get_destination_api_destinations__destination_id__get"];
+        /** Update Destination */
+        put: operations["update_destination_api_destinations__destination_id__put"];
+        post?: never;
+        /** Delete Destination */
+        delete: operations["delete_destination_api_destinations__destination_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Connections */
+        get: operations["list_connections_api_connections_get"];
+        put?: never;
+        /** Create Connection */
+        post: operations["create_connection_api_connections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Connection */
+        get: operations["get_connection_api_connections__connection_id__get"];
+        /** Update Connection */
+        put: operations["update_connection_api_connections__connection_id__put"];
+        post?: never;
+        /** Delete Connection */
+        delete: operations["delete_connection_api_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connections/{connection_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Connection
+         * @description Lightweight connectivity probe. Returns
+         *     `{ok: bool, elapsed_ms: int, detail: str}`. Does not raise on probe
+         *     failure — the UI shows detail either way.
+         */
+        post: operations["test_connection_api_connections__connection_id__test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -147,6 +302,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Connection
+         * @description Reusable credential bundle. `credentials` is validated per
+         *     `connection_type` against dlt's `@configspec` classes — see
+         *     `_DLT_CRED_CLASS`.
+         */
+        Connection: {
+            /** Id */
+            id: string;
+            /**
+             * Connection Type
+             * @enum {string}
+             */
+            connection_type: "local_fs" | "s3" | "gcs" | "azure" | "postgres" | "mysql" | "sqlite" | "mongodb" | "rest_api" | "snowflake" | "bigquery";
+            /**
+             * Credentials
+             * @default {}
+             */
+            credentials: {
+                [key: string]: unknown;
+            };
+        };
         /** CsvFileTarget */
         CsvFileTarget: {
             /**
@@ -162,23 +339,24 @@ export interface components {
              */
             fields: components["schemas"]["OutputField"][];
         };
-        /** DltSource */
-        DltSource: {
+        /** Destination */
+        Destination: {
             /** Id */
             id: string;
-            /** Source Type */
-            source_type: string;
+            /** Connection Id */
+            connection_id: string;
             /** Config */
-            config: {
-                [key: string]: unknown;
-            };
-            /** Table */
-            table: string;
+            config: components["schemas"]["JsonFileTarget"] | components["schemas"]["CsvFileTarget"] | components["schemas"]["ParquetS3Target"] | components["schemas"]["PostgresTarget"] | components["schemas"]["SqlDatabaseTarget"];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InferSchemaResponse */
+        InferSchemaResponse: {
+            /** Fields */
+            fields: components["schemas"]["SchemaFieldNode"][];
         };
         /** JsonFileTarget */
         JsonFileTarget: {
@@ -211,13 +389,6 @@ export interface components {
             type: "parquet_s3";
             /** Bucket Url */
             bucket_url: string;
-            /**
-             * Storage Options
-             * @default {}
-             */
-            storage_options: {
-                [key: string]: unknown;
-            };
         };
         /** Pipeline */
         Pipeline: {
@@ -226,13 +397,13 @@ export interface components {
             /** Name */
             name: string;
             /** Sources */
-            sources: components["schemas"]["DltSource"][];
+            sources: string[];
             /** Steps */
             steps: {
                 [key: string]: unknown;
             }[];
-            /** Output */
-            output: components["schemas"]["JsonFileTarget"] | components["schemas"]["CsvFileTarget"] | components["schemas"]["ParquetS3Target"] | components["schemas"]["PostgresTarget"] | components["schemas"]["SqlDatabaseTarget"];
+            /** Output Id */
+            output_id: string;
         };
         /** PostgresTarget */
         PostgresTarget: {
@@ -241,8 +412,6 @@ export interface components {
              * @enum {string}
              */
             type: "postgres";
-            /** Credentials */
-            credentials: string;
             /** Schema */
             schema: string;
             /** Table */
@@ -253,6 +422,39 @@ export interface components {
              * @enum {string}
              */
             write_disposition: "replace" | "append" | "merge";
+        };
+        /**
+         * SchemaFieldNode
+         * @description One node in the schema tree.
+         *
+         *     Leaf: `type` is the ibis dtype string, `children` is None.
+         *     Branch (STRUCT): `type` is "struct", `children` lists its fields.
+         */
+        SchemaFieldNode: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Children */
+            children?: components["schemas"]["SchemaFieldNode"][] | null;
+        };
+        /** Source */
+        Source: {
+            /** Id */
+            id: string;
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Source Type
+             * @enum {string}
+             */
+            source_type: "filesystem" | "s3" | "gcs" | "azure" | "sql_database" | "mongodb" | "rest_api";
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Table */
+            table: string;
         };
         /** SqlDatabaseTarget */
         SqlDatabaseTarget: {
@@ -266,8 +468,6 @@ export interface components {
              * @enum {string}
              */
             dialect: "mysql" | "snowflake" | "bigquery";
-            /** Credentials */
-            credentials: string;
             /** Schema */
             schema: string;
             /** Table */
@@ -631,9 +831,553 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DltSource"];
+                "application/json": components["schemas"]["Source"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InferSchemaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sources_api_sources_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_source_api_sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Source"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_source_api_sources__source_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_source_api_sources__source_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Source"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_source_api_sources__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_schema_api_sources__source_id__schema_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InferSchemaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_destinations_api_destinations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_destination_api_destinations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Destination"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_destination_api_destinations__destination_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destination_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_destination_api_destinations__destination_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destination_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Destination"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_destination_api_destinations__destination_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destination_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_connections_api_connections_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_connection_api_connections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Connection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_connection_api_connections__connection_id__get: {
+        parameters: {
+            query?: {
+                reveal?: boolean;
+            };
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_connection_api_connections__connection_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Connection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_connection_api_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_connection_api_connections__connection_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

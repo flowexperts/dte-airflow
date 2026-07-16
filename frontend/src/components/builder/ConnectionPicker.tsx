@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import Link from "next/link";
-import { Field } from "@/components/ui";
+import { Dropdown, Field, type DropdownOption } from "@/components/ui";
 import type { Connection, ConnectionType } from "@/lib/api";
 
 /**
@@ -40,23 +40,21 @@ export function ConnectionPicker({
         </>
       }
     >
-      <select
-        className="w-full bg-transparent border border-border rounded px-2 py-1 font-mono text-[12px]"
+      <Dropdown<string>
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="" disabled>
-          {isLoading ? "loading…" : "— pick a connection —"}
-        </option>
-        {candidates.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.id} · {c.connection_type}
-          </option>
-        ))}
-        {value && !candidates.find((c) => c.id === value) && (
-          <option value={value}>{value} (not found or wrong type)</option>
-        )}
-      </select>
+        onChange={onChange}
+        placeholder={isLoading ? "loading…" : "— pick a connection —"}
+        options={[
+          ...candidates.map<DropdownOption<string>>((c) => ({
+            value: c.id,
+            label: c.id,
+            meta: c.connection_type,
+          })),
+          ...(value && !candidates.find((c) => c.id === value)
+            ? ([{ value, label: `${value} (not found or wrong type)`, disabled: true }] as DropdownOption<string>[])
+            : []),
+        ]}
+      />
     </Field>
   );
 }

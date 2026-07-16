@@ -38,14 +38,6 @@ export function SourcesTable({ rows }: { rows: Source[] }) {
       ),
     },
     {
-      key: "table",
-      header: "Table",
-      width: "160px",
-      render: (r) => (
-        <span className="font-mono text-[11.5px] text-muted">{r.table}</span>
-      ),
-    },
-    {
       key: "config",
       header: "Config",
       width: "2fr",

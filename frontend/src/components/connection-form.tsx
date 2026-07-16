@@ -9,7 +9,7 @@ import {
   PageHeader,
   Panel,
   PanelHead,
-  Segmented,
+  Dropdown,
   Topbar,
 } from "@/components/ui";
 import {
@@ -106,7 +106,7 @@ export function ConnectionForm({
                 />
               </Field>
               <Field label="Type">
-                <Segmented<ConnectionType>
+                <Dropdown<ConnectionType>
                   value={connection.connection_type}
                   onChange={setKind}
                   options={CONNECTION_KINDS}

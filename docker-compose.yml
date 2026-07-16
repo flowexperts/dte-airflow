@@ -26,6 +26,10 @@ services:
       # Must be set — put it in `.env` next to docker-compose.yml
       # (untracked). See `.env.example` and README.
       DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:?DTE_SECRETS_KEY must be set — see .env.example}
+      # Force polling for uvicorn --reload's watchfiles. Native FS events
+      # are unstable in arm64 containers on Apple Silicon (SIGILL / exit 132
+      # on file change). Polling costs a bit of CPU but is rock solid.
+      WATCHFILES_FORCE_POLLING: "true"
     command: >
       sh -c "ALEMBIC_URL=$$(echo $$DATABASE_URL | sed 's|+asyncpg||') &&
              DATABASE_URL=$$ALEMBIC_URL alembic upgrade head &&

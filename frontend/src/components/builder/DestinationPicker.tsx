@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Button, Panel, PanelHead } from "@/components/ui";
+import { Button, Dropdown, Panel, PanelHead, type DropdownOption } from "@/components/ui";
 import {
   createDestination,
   updateDestination,
@@ -72,22 +72,28 @@ export function DestinationPicker({
     <Panel>
       <PanelHead label="Destination" />
       <div className="flex items-center gap-2 p-3 border-b border-border">
-        <select
-          className="flex-1 bg-transparent border border-border rounded px-2 py-1 font-mono text-[12px]"
-          value={outputId}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          <option value="" disabled>
-            — pick a destination —
-          </option>
-          {available.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.id} · {d.config.type}
-              {"path" in d.config && d.config.path ? ` · ${d.config.path}` : ""}
-            </option>
-          ))}
-          {outputId && !chosen && <option value={outputId}>{outputId} (missing)</option>}
-        </select>
+        <div className="flex-1">
+          <Dropdown<string>
+            value={outputId}
+            onChange={onChange}
+            placeholder="— pick a destination —"
+            options={[
+              { kind: "action", label: "+ Create new destination…", onSelect: openNew },
+              ...(available.length > 0 ? ([{ kind: "divider" }] as DropdownOption<string>[]) : []),
+              ...available.map<DropdownOption<string>>((d) => ({
+                value: d.id,
+                label: d.id,
+                meta:
+                  "path" in d.config && d.config.path
+                    ? d.config.path
+                    : d.config.type,
+              })),
+              ...(outputId && !chosen
+                ? ([{ value: outputId, label: `${outputId} (missing)`, disabled: true }] as DropdownOption<string>[])
+                : []),
+            ]}
+          />
+        </div>
         {outputId && chosen && (
           <button
             type="button"
@@ -159,15 +165,6 @@ export function DestinationPicker({
         </div>
       )}
 
-      {!editing && (
-        <button
-          type="button"
-          onClick={openNew}
-          className="w-full text-center py-3 px-3.5 border-t border-dashed border-border font-medium text-xs text-subtle hover:text-accent hover:bg-[color:var(--accent-tint)] transition-colors"
-        >
-          <span className="text-accent font-bold mr-1">+</span> New destination
-        </button>
-      )}
     </Panel>
   );
 }
