@@ -253,6 +253,50 @@ _FORMAT_FAMILY: dict[str, str] = {
     "excel":   "excel",
 }
 
+# Family a file-shaped destination writes into. Used to enforce that
+# `path` (or `bucket_url` for parquet_s3) matches the target's `type`:
+# `json_file` at `orders.csv` is silent nonsense, so we reject at save.
+_DEST_FAMILY: dict[str, str] = {
+    "json_file":  "json",
+    "csv_file":   "csv",
+    "excel_file": "excel",
+    "parquet_s3": "parquet",
+}
+
+_FAMILY_CANONICAL_EXT: dict[str, str] = {
+    "json":    ".json",
+    "csv":     ".csv",
+    "excel":   ".xlsx",
+    "parquet": ".parquet",
+}
+
+
+def _check_dest_path_extension(
+    dest_type: str, path: str, field_name: str = "path"
+) -> None:
+    """Refuse when the file's extension doesn't match the destination
+    type's family. Missing extension is rejected too — silent typing
+    of a naked filename would produce a file with no discoverable
+    format hint on disk. Case-insensitive; `.jsonl`/`.ndjson` are
+    accepted for `json_file` (same family)."""
+    family = _DEST_FAMILY[dest_type]
+    ext = _glob_extension(path)
+    canonical = _FAMILY_CANONICAL_EXT[family]
+    if not ext:
+        raise ValueError(
+            f"destination {field_name} '{path}' has no file extension; "
+            f"{dest_type} expects a {family}-family extension (e.g. {canonical}). "
+            f"Add an extension to the path or change the destination type."
+        )
+    ext_family = _EXT_FAMILY.get(ext)
+    if ext_family and ext_family != family:
+        raise ValueError(
+            f"destination {field_name} '{path}' ends in '{ext}' "
+            f"(a {ext_family}-family extension), which does not match "
+            f"destination type '{dest_type}' (expected {canonical}). "
+            f"Rename the file or change the type."
+        )
+
 
 def _glob_extension(glob: str) -> str | None:
     """Return the last `.ext` in a glob's final path segment, or None if
@@ -432,6 +476,11 @@ class JsonFileTarget(BaseModel):
     path: str
     fields: list[OutputField] = []
 
+    @model_validator(mode="after")
+    def _validate_extension(self):
+        _check_dest_path_extension(self.type, self.path)
+        return self
+
 
 # Back-compat alias for callers still importing the old name.
 JsonFileOutput = JsonFileTarget
@@ -442,17 +491,32 @@ class CsvFileTarget(BaseModel):
     path: str
     fields: list[OutputField] = []
 
+    @model_validator(mode="after")
+    def _validate_extension(self):
+        _check_dest_path_extension(self.type, self.path)
+        return self
+
 
 class ExcelFileTarget(BaseModel):
     type: Literal["excel_file"]
     path: str
     fields: list[OutputField] = []
 
+    @model_validator(mode="after")
+    def _validate_extension(self):
+        _check_dest_path_extension(self.type, self.path)
+        return self
+
 
 class ParquetS3Target(BaseModel):
     type: Literal["parquet_s3"]
     bucket_url: str
     # `storage_options` removed — creds come from the linked s3 Connection.
+
+    @model_validator(mode="after")
+    def _validate_extension(self):
+        _check_dest_path_extension(self.type, self.bucket_url, field_name="bucket_url")
+        return self
 
 
 class PostgresTarget(BaseModel):

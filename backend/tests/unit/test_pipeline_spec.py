@@ -7,6 +7,8 @@ from dte.models.pipeline import (
     SortStep, AggSpec, AggregateStep,
     OutputField, JsonFileOutput, Pipeline,
     JoinStep, PivotStep, SelectStep,
+    CsvFileTarget, ExcelFileTarget, JsonFileTarget, ParquetS3Target,
+    PostgresTarget, SqlDatabaseTarget,
 )
 
 
@@ -116,6 +118,55 @@ def test_source_format_no_glob_extension_no_check():
         config={"bucket_url": "/tmp", "file_glob": "**/*"},
         table="t",
         format="excel",
+    )
+
+
+def test_destination_json_accepts_json_and_ndjson():
+    """`.json`, `.jsonl`, `.ndjson` all live in the json family — dlt
+    can produce either, so all three should pass."""
+    for ext in (".json", ".jsonl", ".ndjson"):
+        JsonFileTarget(type="json_file", path=f"/tmp/out/orders{ext}")
+
+
+def test_destination_csv_rejects_wrong_extension():
+    with pytest.raises(ValidationError) as exc:
+        CsvFileTarget(type="csv_file", path="/tmp/out/orders.json")
+    assert ".json" in str(exc.value) and "csv_file" in str(exc.value)
+
+
+def test_destination_excel_rejects_wrong_extension():
+    with pytest.raises(ValidationError) as exc:
+        ExcelFileTarget(type="excel_file", path="/tmp/out/orders.csv")
+    assert ".csv" in str(exc.value) and "excel_file" in str(exc.value)
+
+
+def test_destination_json_rejects_csv_path():
+    """The prompting case: user creates `json_file` at `orders.csv` and
+    gets JSON bytes in a .csv file. Reject at save-time."""
+    with pytest.raises(ValidationError) as exc:
+        JsonFileTarget(type="json_file", path="/tmp/out/orders.csv")
+    assert ".csv" in str(exc.value) and "json_file" in str(exc.value)
+
+
+def test_destination_requires_extension():
+    """Missing extension is silent nonsense too — reject."""
+    with pytest.raises(ValidationError) as exc:
+        JsonFileTarget(type="json_file", path="/tmp/out/orders")
+    assert "no file extension" in str(exc.value)
+
+
+def test_destination_parquet_s3_extension_checked_on_bucket_url():
+    ParquetS3Target(type="parquet_s3", bucket_url="s3://acme/out/orders.parquet")
+    with pytest.raises(ValidationError) as exc:
+        ParquetS3Target(type="parquet_s3", bucket_url="s3://acme/out/orders.json")
+    assert "bucket_url" in str(exc.value)
+
+
+def test_destination_postgres_no_extension_check():
+    """Non-file destinations have no path field — validator is a no-op."""
+    PostgresTarget(type="postgres", schema="public", table="orders")
+    SqlDatabaseTarget(
+        type="sql_database", dialect="mysql", schema="analytics", table="orders",
     )
 
 
