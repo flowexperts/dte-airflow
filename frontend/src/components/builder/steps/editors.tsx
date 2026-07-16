@@ -44,9 +44,16 @@ const FILTER_OPS: FilterOp[] = [
 
 const OPS_WITHOUT_VALUE = new Set<FilterOp>(["IS NULL", "IS NOT NULL"]);
 
-/** DuckDB identifier quote — wraps in "" and escapes internal " as "". */
+/** DuckDB identifier quote — wraps in "" and escapes internal " as "".
+ *  Dots navigate STRUCT members, so each dot-separated segment is quoted
+ *  individually: `order.amount` → `"order"."amount"`.  A single quoted
+ *  `"order.amount"` would ask DuckDB for a top-level column literally
+ *  named `order.amount`, which is not what struct paths mean. */
 function quoteIdent(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
+  return name
+    .split(".")
+    .map((seg) => `"${seg.replace(/"/g, '""')}"`)
+    .join(".");
 }
 
 /** DuckDB string literal quote — wraps in '' and escapes internal ' as ''. */

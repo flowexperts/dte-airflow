@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal, Union
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import Column, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as SMField, SQLModel
@@ -250,6 +250,15 @@ class FilterStep(BaseModel):
     op: Literal["filter"]
     expr: str
 
+    @field_validator("expr")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError(
+                "filter step needs a non-empty expression — fill it in or remove the step"
+            )
+        return v
+
 
 class RenameStep(BaseModel):
     op: Literal["rename"]
@@ -275,6 +284,15 @@ class ExpressionMapStep(BaseModel):
     mode: Literal["expression", "calculation"]
     output_field: str
     expr: str
+
+    @field_validator("expr")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError(
+                "map step needs a non-empty expression — fill it in or remove the step"
+            )
+        return v
 
 
 class SortStep(BaseModel):
