@@ -1,19 +1,22 @@
 from tests.fakes import FakeDestinationStore
+from dte.models.pipeline import DestinationCreate
 
 
-def _dest(did: str) -> dict:
-    return {
-        "id": did,
-        "config": {"type": "json_file", "path": f"/tmp/{did}.json"},
-    }
+def _dest(did: str) -> DestinationCreate:
+    return DestinationCreate(
+        id=did,
+        connection_id="local_fs",
+        config={"type": "json_file", "path": f"/tmp/{did}.json"},
+    )
 
 
 async def test_save_and_get():
     s = FakeDestinationStore()
     await s.save(_dest("d1"))
     got = await s.get("d1")
-    assert got["id"] == "d1"
-    assert got["config"]["type"] == "json_file"
+    assert got is not None
+    assert got.id == "d1"
+    assert got.config.type == "json_file"
 
 
 async def test_get_missing_returns_none():

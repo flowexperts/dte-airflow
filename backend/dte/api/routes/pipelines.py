@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 from fastapi import APIRouter, HTTPException, Depends, Response
-from dte.models.pipeline import Pipeline, PipelineBase, PipelineCreate, Source, Destination
+from dte.models.pipeline import Pipeline, PipelineBase, PipelineCreate, Source, Destination, DestinationCreate
 from dte.compiler.ibis_compiler import compile_pipeline
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.sources.loader import load_source
@@ -119,10 +119,9 @@ async def _resolve(
             )
         sources.append((source, conn.credentials_dict()))
 
-    raw_d = await d_store.get(pipeline.output_id)
-    if not raw_d:
+    destination = await d_store.get(pipeline.output_id)
+    if not destination:
         raise HTTPException(status_code=422, detail=f"Destination not found: {pipeline.output_id}")
-    destination = Destination(**raw_d)
     dest_conn = await c_store.get(destination.connection_id)
     if not dest_conn:
         raise HTTPException(

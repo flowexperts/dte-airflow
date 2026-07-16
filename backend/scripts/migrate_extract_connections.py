@@ -226,11 +226,14 @@ async def main(write: bool) -> None:
     for source in await s_store.list(limit=10_000):
         total_srcs += 1
         log: list[str] = []
-        updated, was_changed = await _migrate_source(source, c_store, log)
+        # `source` is a typed `Source` instance; convert to dict for
+        # `_migrate_source` which works with plain dicts.
+        src_dict = source.model_dump() if hasattr(source, "model_dump") else dict(source)
+        updated, was_changed = await _migrate_source(src_dict, c_store, log)
         if not was_changed:
             continue
         changed_srcs += 1
-        print(f"[source {source['id']}] → connection_id={updated['connection_id']}")
+        print(f"[source {src_dict['id']}] → connection_id={updated['connection_id']}")
         for line in log:
             print(line)
         if write:
@@ -239,11 +242,14 @@ async def main(write: bool) -> None:
     for destination in await d_store.list(limit=10_000):
         total_dests += 1
         log = []
-        updated, was_changed = await _migrate_destination(destination, c_store, log)
+        # `destination` is a typed `Destination` instance; convert to dict for
+        # `_migrate_destination` which works with plain dicts.
+        dest_dict = destination.to_api_dict() if hasattr(destination, "to_api_dict") else dict(destination)
+        updated, was_changed = await _migrate_destination(dest_dict, c_store, log)
         if not was_changed:
             continue
         changed_dests += 1
-        print(f"[destination {destination['id']}] → connection_id={updated['connection_id']}")
+        print(f"[destination {dest_dict['id']}] → connection_id={updated['connection_id']}")
         for line in log:
             print(line)
         if write:

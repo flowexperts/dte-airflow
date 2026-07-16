@@ -32,7 +32,9 @@ def test_create_destination_201(client):
     r = c.post("/api/destinations", json=_dest())
     assert r.status_code == 201, r.text
     assert r.json()["id"] == "d1"
-    assert _run(d_store.get("d1"))["config"]["type"] == "json_file"
+    dest = _run(d_store.get("d1"))
+    assert dest is not None
+    assert dest.config.type == "json_file"
 
 
 def test_create_destination_duplicate_409(client):

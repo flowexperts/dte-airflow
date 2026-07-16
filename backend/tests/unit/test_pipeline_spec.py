@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 from dte.models.pipeline import (
-    Source, SourceCreate, Destination,
+    Source, SourceCreate, Destination, DestinationCreate,
     FilterStep, RenameStep, RetypeStep,
     LookupMapStep, ExpressionMapStep,
     SortStep, AggSpec, AggregateStep,
@@ -173,7 +173,9 @@ def test_destination_postgres_no_extension_check():
 
 
 def test_destination_parses():
-    d = Destination(
+    # Use DestinationCreate (non-table) so Pydantic validators fire and
+    # narrow config to the typed union.
+    d = DestinationCreate(
         id="out1",
         connection_id="local_fs",
         config={"type": "json_file", "path": "/out.json"},
@@ -254,7 +256,9 @@ def test_aggregate_step_in_pipeline():
 
 
 def test_destination_output_fields():
-    d = Destination(
+    # Use DestinationCreate (non-table) so Pydantic validators fire and
+    # narrow config to the typed union.
+    d = DestinationCreate(
         id="out1",
         connection_id="local_fs",
         config={

@@ -651,10 +651,98 @@ OutputTarget = Annotated[
 ]
 
 
-class Destination(BaseModel):
-    id: str
+# ─── Destination (SQLModel — single class serves API validation + persistence) ──
+#
+# Design choice: `config` is declared as `dict` on `DestinationBase` so SQLModel
+# can map it to a JSONB column without tripping on the discriminated union type.
+# A `@model_validator(mode="after")` narrows it to the typed `OutputTarget` union
+# after construction — so in-memory callers (writers, compiler) get a typed
+# instance with attribute access (`dest.config.path`, `isinstance(dest.config,
+# JsonFileTarget)`). The store saves by serialising back to dict via
+# `config.model_dump(by_alias=True, exclude_none=True)` before the INSERT.
+#
+# `dest_type` is a denormalised TEXT column (migration 004). We keep writing it
+# from `config.type` via the same validator. Dropping it is a follow-up migration.
+
+class DestinationBase(SQLModel):
+    """Base domain fields — no persistence identity.
+
+    `connection_id` references a Connection row.
+    `config` is declared as `dict` for SQLModel JSONB mapping, but is narrowed
+    to the typed `OutputTarget` union by `_narrow_config` at validation time.
+    """
     connection_id: str
-    config: OutputTarget
+    config: dict = SMField(default_factory=dict, sa_column=Column(JSONB, nullable=False))
+
+    @model_validator(mode="after")
+    def _narrow_config(self) -> "DestinationBase":
+        """Parse raw dict config into the typed OutputTarget discriminated union.
+
+        Runs after ORM hydration (where SQLAlchemy gives back a raw dict from JSONB)
+        and after direct construction. Writers and the compiler receive a typed
+        instance with real attribute access — no dict key lookups at call sites."""
+        if isinstance(self.config, dict) and self.config:
+            from pydantic import TypeAdapter
+            adapter = TypeAdapter(OutputTarget)
+            self.config = adapter.validate_python(self.config)  # type: ignore[assignment]
+        return self
+
+    def to_api_dict(self) -> dict:
+        """Serialise for API responses: id + connection_id + config as plain dict.
+
+        Both `Destination` (table=True) and `DestinationCreate` (API input) inherit
+        this so routes have a single serialisation path regardless of which subclass
+        they receive."""
+        cfg = self.config
+        if hasattr(cfg, "model_dump"):
+            cfg_dict = cfg.model_dump(by_alias=True, exclude_none=True)
+        else:
+            cfg_dict = cfg  # already a plain dict (edge case)
+        return {
+            "id": self.id,  # type: ignore[attr-defined]
+            "connection_id": self.connection_id,
+            "config": cfg_dict,
+        }
+
+
+class Destination(DestinationBase, table=True):
+    """ORM-mapped row. `dest_type` mirrors `config.type` and is written at save
+    time by the store (denormalised column — drop in a follow-up migration).
+
+    IMPORTANT: SQLModel's `table=True` bypasses Pydantic model validators on
+    __init__, so `_narrow_config` does NOT auto-run after ORM hydration. The
+    store calls `row.narrow_config()` explicitly after fetching from the DB —
+    same pattern as `Connection._hydrate()` for credentials.
+    """
+    __tablename__ = "destinations"
+
+    id: str = SMField(primary_key=True)
+    dest_type: str = SMField(sa_column=Column(Text, nullable=False))
+    created_at: datetime | None = SMField(
+        default=None, sa_column=Column(server_default=func.now())
+    )
+    updated_at: datetime | None = SMField(
+        default=None,
+        sa_column=Column(server_default=func.now(), onupdate=func.now()),
+    )
+
+    def narrow_config(self) -> "Destination":
+        """Parse raw dict `config` into the typed OutputTarget union in-place.
+
+        Must be called explicitly by the store after ORM hydration because
+        `table=True` classes bypass model validators at __init__ time."""
+        if isinstance(self.config, dict) and self.config:
+            from pydantic import TypeAdapter
+            adapter = TypeAdapter(OutputTarget)
+            # Use object.__setattr__ to bypass SQLAlchemy's instrumented
+            # attribute machinery — same technique as Connection._hydrate.
+            object.__setattr__(self, "config", adapter.validate_python(self.config))
+        return self
+
+
+class DestinationCreate(DestinationBase):
+    """Strict API input — non-table so required-field checks fire."""
+    id: str
 
 
 # ─── Pipeline (SQLModel — single class serves API validation + persistence) ──

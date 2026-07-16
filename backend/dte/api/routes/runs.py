@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends
 from dte.api.deps import get_run_store, get_pipeline_store, get_destination_store
 from dte.store.base import RunStore, PipelineStore, DestinationStore
-from dte.models.pipeline import Pipeline, Destination
+from dte.models.pipeline import Pipeline
 
 router = APIRouter()
 
@@ -47,10 +47,10 @@ async def get_run_output(
     pipeline = await p_store.get(run["pipeline_id"])
     if not pipeline:
         raise HTTPException(status_code=404, detail="Parent pipeline not found")
-    raw_dest = await d_store.get(pipeline.output_id)
-    if not raw_dest:
+    dest = await d_store.get(pipeline.output_id)
+    if not dest:
         raise HTTPException(status_code=404, detail="Destination not found")
-    output_type = Destination(**raw_dest).config.type
+    output_type = dest.config.type
 
     try:
         if output_type == "json_file":

@@ -34,7 +34,8 @@ async def test_migrates_embedded_source_and_output():
     assert "output" not in new_p
     assert (await s_store.get("s1")).table == "t"
     dest = await d_store.get("p1_output")
-    assert dest["config"]["type"] == "json_file"
+    assert dest is not None
+    assert dest.config.type == "json_file"
 
 
 async def test_idempotent_when_already_id_shape():

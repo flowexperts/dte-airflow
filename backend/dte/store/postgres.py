@@ -5,7 +5,7 @@ from sqlmodel import select
 import uuid
 import json
 
-from dte.models.pipeline import Connection, ConnectionCreate, Pipeline, Source, SourceCreate
+from dte.models.pipeline import Connection, ConnectionCreate, Destination, DestinationCreate, Pipeline, Source, SourceCreate
 from dte.secrets import SecretResolver, get_secret_resolver
 
 
@@ -168,65 +168,76 @@ class PostgresSourceStore:
 
 
 class PostgresDestinationStore:
+    """ORM-backed destination store. Returns typed `Destination` instances.
+
+    `save` accepts a `DestinationCreate` (the strict API input type). The store
+    uses pg_insert upsert so `updated_at` fires on re-save. `config` is
+    serialised to a plain dict for JSONB storage; on read, `Destination`'s
+    `_narrow_config` validator automatically narrows it back to the typed
+    `OutputTarget` union — no extra work needed in `get`/`list`.
+
+    `dest_type` is a denormalised column kept for backward compat; it is written
+    explicitly at save time from `config.type` (drop in a follow-up migration).
+    """
+
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._factory = session_factory
 
-    async def get(self, id: str) -> dict | None:
+    async def get(self, id: str) -> Destination | None:
         async with self._factory() as s:
-            result = await s.execute(
-                text("SELECT id, config, connection_id FROM destinations WHERE id = :id"),
-                {"id": id},
-            )
-            row = result.mappings().fetchone()
-            if not row:
+            row = await s.get(Destination, id)
+            if row is None:
                 return None
-            return {
-                "id": row["id"],
-                "config": row["config"],
-                "connection_id": row["connection_id"],
-            }
+            return row.narrow_config()
 
-    async def save(self, destination: dict) -> None:
+    async def save(self, destination: "DestinationCreate") -> None:
+        # Serialise config to a plain dict for JSONB storage. The `config`
+        # field is the typed OutputTarget union in memory; model_dump gives
+        # back a JSON-serialisable dict. `by_alias=True` so `schema_` → `schema`.
+        cfg = destination.config
+        if hasattr(cfg, "model_dump"):
+            config_dict = cfg.model_dump(by_alias=True, exclude_none=True)
+        else:
+            config_dict = dict(cfg)  # already a plain dict
+        dest_type = config_dict.get("type", "")
+
+        stmt = pg_insert(Destination).values(
+            id=destination.id,
+            connection_id=destination.connection_id,
+            config=config_dict,
+            dest_type=dest_type,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Destination.id],
+            set_={
+                "connection_id": stmt.excluded.connection_id,
+                "config": stmt.excluded.config,
+                "dest_type": stmt.excluded.dest_type,
+            },
+        )
         async with self._factory() as s:
-            config = destination["config"]
-            await s.execute(text("""
-                INSERT INTO destinations (id, dest_type, config, connection_id)
-                VALUES (:id, :dest_type, CAST(:config AS jsonb), :connection_id)
-                ON CONFLICT (id) DO UPDATE SET
-                    dest_type = EXCLUDED.dest_type,
-                    config = EXCLUDED.config,
-                    connection_id = EXCLUDED.connection_id,
-                    updated_at = now()
-            """), {
-                "id": destination["id"],
-                "dest_type": config["type"],
-                "config": json.dumps(config),
-                "connection_id": destination.get("connection_id"),
-            })
+            await s.execute(stmt)
             await s.commit()
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Destination]:
+        stmt = (
+            select(Destination)
+            .order_by(Destination.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         async with self._factory() as s:
-            result = await s.execute(
-                text("SELECT id, config, connection_id FROM destinations ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
-                {"limit": limit, "offset": offset},
-            )
-            return [
-                {
-                    "id": row["id"],
-                    "config": row["config"],
-                    "connection_id": row["connection_id"],
-                }
-                for row in result.mappings().fetchall()
-            ]
+            rows = list((await s.execute(stmt)).scalars().all())
+        return [row.narrow_config() for row in rows]
 
     async def delete(self, id: str) -> bool:
         async with self._factory() as s:
-            result = await s.execute(
-                text("DELETE FROM destinations WHERE id = :id"), {"id": id}
-            )
+            row = await s.get(Destination, id)
+            if row is None:
+                return False
+            await s.delete(row)
             await s.commit()
-            return result.rowcount > 0
+            return True
 
 
 class PostgresConnectionStore:
