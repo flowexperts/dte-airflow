@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Button, Panel, PanelHead } from "@/components/ui";
+import { Button, Dropdown, Panel, PanelHead, type DropdownOption } from "@/components/ui";
 import {
   createSource,
   updateSource,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { SourceEditor } from "./SourceEditor";
 import { emptySource } from "./types";
+import { useSchemas } from "../schema-context";
 
 /**
  * Slots are ordered source-id references. The picker shows saved sources
@@ -25,6 +26,7 @@ export function SourcesPanel({
   onChange: (next: string[]) => void;
 }) {
   const { data: available = [], mutate } = useSWR<Source[]>("/api/sources");
+  const { schemas, refreshById } = useSchemas();
   const [editing, setEditing] = useState<{
     slot: number;
     draft: Source;
@@ -34,22 +36,19 @@ export function SourcesPanel({
   const [err, setErr] = useState<string | null>(null);
 
   const setSlot = (i: number, id: string) => {
+    if (i >= sources.length) {
+      onChange([...sources, id]);
+      return;
+    }
     const copy = [...sources];
     copy[i] = id;
     onChange(copy);
   };
-  const move = (i: number, dir: -1 | 1) => {
-    const j = i + dir;
-    if (j < 0 || j >= sources.length) return;
-    const copy = [...sources];
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-    onChange(copy);
-  };
   const remove = (i: number) => onChange(sources.filter((_, j) => j !== i));
 
-  const openNew = () => {
-    const nextId = `source_${sources.length + 1}`;
-    setEditing({ slot: sources.length, draft: emptySource(nextId), isNew: true });
+  const openNewAtSlot = (slot: number) => {
+    const nextId = `source_${slot + 1}`;
+    setEditing({ slot, draft: emptySource(nextId), isNew: true });
     setErr(null);
   };
   const openEdit = async (slot: number) => {
@@ -88,77 +87,88 @@ export function SourcesPanel({
   return (
     <Panel>
       <PanelHead label="Sources" count={sources.length} />
-      {sources.length === 0 && !editing && (
-        <div className="p-6 text-center text-sm text-subtle">
-          No sources yet.
-        </div>
-      )}
-      {sources.map((id, i) => {
+      {[...sources, ""].map((id, i) => {
+        const isTrailing = i === sources.length;
         const info = available.find((s) => s.id === id);
+        const opts: DropdownOption<string>[] = [
+          { kind: "action", label: "+ Create new source…", onSelect: () => openNewAtSlot(i) },
+          ...(available.length > 0 ? ([{ kind: "divider" }] as DropdownOption<string>[]) : []),
+          ...available.map<DropdownOption<string>>((s) => {
+            const cfg = (s.config ?? {}) as Record<string, string>;
+            const meta = cfg.bucket_url ?? cfg.connection_url ?? s.source_type;
+            return { value: s.id, label: s.id, meta };
+          }),
+          ...(id && !info
+            ? ([{ value: id, label: `${id} (missing)`, disabled: true }] as DropdownOption<string>[])
+            : []),
+        ];
         return (
           <div
             key={`${id}-${i}`}
-            className="flex items-center gap-2 p-3 border-b border-border last:border-b-0"
+            className="p-3 border-b border-border last:border-b-0"
           >
-            <span className="font-mono text-[10.5px] text-subtle w-6">
-              {String(i + 1).padStart(2, "0")}
-            </span>
-            <select
-              className="flex-1 bg-transparent border border-border rounded px-2 py-1 font-mono text-[12px]"
-              value={id}
-              onChange={(e) => setSlot(i, e.target.value)}
-            >
-              <option value="" disabled>
-                — pick a source —
-              </option>
-              {available.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.id} · {s.source_type}
-                  {s.config &&
-                    ((s.config as Record<string, string>).bucket_url ||
-                      (s.config as Record<string, string>).connection_url ||
-                      "")
-                    ? ` · ${
-                        (s.config as Record<string, string>).bucket_url ??
-                        (s.config as Record<string, string>).connection_url ??
-                        ""
-                      }`
-                    : ""}
-                </option>
-              ))}
-              {id && !info && <option value={id}>{id} (missing)</option>}
-            </select>
-            <button
-              type="button"
-              onClick={() => openEdit(i)}
-              className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
-              title="shared with other pipelines"
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => move(i, -1)}
-              disabled={i === 0}
-              className="font-mono text-[12px] px-1 text-subtle disabled:opacity-30"
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              onClick={() => move(i, 1)}
-              disabled={i === sources.length - 1}
-              className="font-mono text-[12px] px-1 text-subtle disabled:opacity-30"
-            >
-              ↓
-            </button>
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red"
-            >
-              Remove
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <Dropdown<string>
+                  value={id}
+                  onChange={(v) => setSlot(i, v)}
+                  options={opts}
+                  placeholder="— pick a source —"
+                />
+              </div>
+              {id && info && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => refreshById(id)}
+                    disabled={schemas[id]?.loading}
+                    className={`font-mono text-[10.5px] tracking-[0.15em] uppercase disabled:opacity-50 disabled:pointer-events-none ${
+                      schemas[id]?.error
+                        ? "text-red hover:opacity-80"
+                        : "text-accent hover:text-accent-h"
+                    }`}
+                    title={
+                      schemas[id]?.error
+                        ? "click to retry"
+                        : schemas[id]?.fields.length
+                          ? `${schemas[id]!.fields.length} fields inferred`
+                          : "run schema inference for this source"
+                    }
+                  >
+                    {schemas[id]?.loading
+                      ? "Inferring…"
+                      : schemas[id]?.error
+                        ? "Retry infer"
+                        : schemas[id]?.fields.length
+                          ? `Infer schema · ${schemas[id]!.fields.length}`
+                          : "Infer schema"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openEdit(i)}
+                    className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+                    title="shared with other pipelines"
+                  >
+                    Edit
+                  </button>
+                </>
+              )}
+              {!isTrailing && (
+                <button
+                  type="button"
+                  onClick={() => remove(i)}
+                  aria-label="Remove source"
+                  className="text-subtle hover:text-red text-[16px] leading-none px-1"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            {id && info && schemas[id]?.error && (
+              <div className="mt-2 font-mono text-[11.5px] text-red break-all whitespace-pre-wrap">
+                {schemas[id]!.error}
+              </div>
+            )}
           </div>
         );
       })}
@@ -207,15 +217,6 @@ export function SourcesPanel({
         </div>
       )}
 
-      {!editing && (
-        <button
-          type="button"
-          onClick={openNew}
-          className="w-full text-center py-3 px-3.5 border-t border-dashed border-border font-medium text-xs text-subtle hover:text-accent hover:bg-[color:var(--accent-tint)] transition-colors"
-        >
-          <span className="text-accent font-bold mr-1">+</span> Add source
-        </button>
-      )}
     </Panel>
   );
 }

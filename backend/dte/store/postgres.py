@@ -123,7 +123,7 @@ class PostgresSourceStore:
     async def get(self, id: str) -> dict | None:
         async with self._factory() as s:
             result = await s.execute(
-                text("SELECT id, source_type, config, table_name FROM sources WHERE id = :id"),
+                text("SELECT id, source_type, config, table_name, connection_id FROM sources WHERE id = :id"),
                 {"id": id},
             )
             row = result.mappings().fetchone()
@@ -134,30 +134,33 @@ class PostgresSourceStore:
                 "source_type": row["source_type"],
                 "config": row["config"],
                 "table": row["table_name"],
+                "connection_id": row["connection_id"],
             }
 
     async def save(self, source: dict) -> None:
         async with self._factory() as s:
             await s.execute(text("""
-                INSERT INTO sources (id, source_type, config, table_name)
-                VALUES (:id, :source_type, CAST(:config AS jsonb), :table_name)
+                INSERT INTO sources (id, source_type, config, table_name, connection_id)
+                VALUES (:id, :source_type, CAST(:config AS jsonb), :table_name, :connection_id)
                 ON CONFLICT (id) DO UPDATE SET
                     source_type = EXCLUDED.source_type,
                     config = EXCLUDED.config,
                     table_name = EXCLUDED.table_name,
+                    connection_id = EXCLUDED.connection_id,
                     updated_at = now()
             """), {
                 "id": source["id"],
                 "source_type": source["source_type"],
                 "config": json.dumps(source.get("config", {})),
                 "table_name": source["table"],
+                "connection_id": source.get("connection_id"),
             })
             await s.commit()
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
         async with self._factory() as s:
             result = await s.execute(
-                text("SELECT id, source_type, config, table_name FROM sources ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
+                text("SELECT id, source_type, config, table_name, connection_id FROM sources ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
                 {"limit": limit, "offset": offset},
             )
             return [
@@ -166,6 +169,7 @@ class PostgresSourceStore:
                     "source_type": row["source_type"],
                     "config": row["config"],
                     "table": row["table_name"],
+                    "connection_id": row["connection_id"],
                 }
                 for row in result.mappings().fetchall()
             ]
@@ -186,39 +190,49 @@ class PostgresDestinationStore:
     async def get(self, id: str) -> dict | None:
         async with self._factory() as s:
             result = await s.execute(
-                text("SELECT id, config FROM destinations WHERE id = :id"),
+                text("SELECT id, config, connection_id FROM destinations WHERE id = :id"),
                 {"id": id},
             )
             row = result.mappings().fetchone()
             if not row:
                 return None
-            return {"id": row["id"], "config": row["config"]}
+            return {
+                "id": row["id"],
+                "config": row["config"],
+                "connection_id": row["connection_id"],
+            }
 
     async def save(self, destination: dict) -> None:
         async with self._factory() as s:
             config = destination["config"]
             await s.execute(text("""
-                INSERT INTO destinations (id, dest_type, config)
-                VALUES (:id, :dest_type, CAST(:config AS jsonb))
+                INSERT INTO destinations (id, dest_type, config, connection_id)
+                VALUES (:id, :dest_type, CAST(:config AS jsonb), :connection_id)
                 ON CONFLICT (id) DO UPDATE SET
                     dest_type = EXCLUDED.dest_type,
                     config = EXCLUDED.config,
+                    connection_id = EXCLUDED.connection_id,
                     updated_at = now()
             """), {
                 "id": destination["id"],
                 "dest_type": config["type"],
                 "config": json.dumps(config),
+                "connection_id": destination.get("connection_id"),
             })
             await s.commit()
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
         async with self._factory() as s:
             result = await s.execute(
-                text("SELECT id, config FROM destinations ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
+                text("SELECT id, config, connection_id FROM destinations ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
                 {"limit": limit, "offset": offset},
             )
             return [
-                {"id": row["id"], "config": row["config"]}
+                {
+                    "id": row["id"],
+                    "config": row["config"],
+                    "connection_id": row["connection_id"],
+                }
                 for row in result.mappings().fetchall()
             ]
 

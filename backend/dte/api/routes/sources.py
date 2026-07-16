@@ -1,5 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
+from pydantic import ValidationError
 
 from dte.models.pipeline import Source, SOURCE_CONNECTION_COMPAT
 from dte.engine.duckdb_engine import DuckDBEngine
@@ -104,7 +105,20 @@ async def source_schema(
     raw = await store.get(source_id)
     if not raw:
         raise HTTPException(status_code=404, detail="Source not found")
-    source = Source(**raw)
+    try:
+        source = Source(**raw)
+    except ValidationError as e:
+        missing = [".".join(str(p) for p in err["loc"]) for err in e.errors() if err["type"] == "missing"]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Source '{source_id}' is missing required field(s): {', '.join(missing)}. "
+                    f"This looks like a legacy row — open it in the source editor and re-save, "
+                    f"or run backend/scripts/migrate_extract_connections.py."
+                ),
+            )
+        raise HTTPException(status_code=422, detail=str(e))
     conn = await c_store.get(source.connection_id)
     if not conn:
         raise HTTPException(

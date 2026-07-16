@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, PageHeader, Panel, Topbar } from "@/components/ui";
 import { createSource, updateSource, type Source } from "@/lib/api";
 import { SourceEditor } from "@/components/builder/sources/SourceEditor";
+import { SchemaProvider } from "@/components/builder/schema-context";
 
 export function SourceForm({
   initial,
@@ -22,7 +23,6 @@ export function SourceForm({
     if (!source.id.trim()) return "Source id is required.";
     if (!/^[a-zA-Z0-9_-]+$/.test(source.id))
       return "Source id may only contain letters, numbers, '_' and '-'.";
-    if (!source.table.trim()) return "Table name is required.";
     return null;
   };
 
@@ -48,7 +48,7 @@ export function SourceForm({
   };
 
   return (
-    <>
+    <SchemaProvider>
       <Topbar
         crumbs={[
           { label: "Workspace", href: "/" },
@@ -90,6 +90,6 @@ export function SourceForm({
           <SourceEditor source={source} onChange={setSource} />
         </Panel>
       </div>
-    </>
+    </SchemaProvider>
   );
 }
