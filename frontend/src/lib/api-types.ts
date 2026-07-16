@@ -346,7 +346,22 @@ export interface components {
             /** Connection Id */
             connection_id: string;
             /** Config */
-            config: components["schemas"]["JsonFileTarget"] | components["schemas"]["CsvFileTarget"] | components["schemas"]["ParquetS3Target"] | components["schemas"]["PostgresTarget"] | components["schemas"]["SqlDatabaseTarget"];
+            config: components["schemas"]["JsonFileTarget"] | components["schemas"]["CsvFileTarget"] | components["schemas"]["ExcelFileTarget"] | components["schemas"]["ParquetS3Target"] | components["schemas"]["PostgresTarget"] | components["schemas"]["SqlDatabaseTarget"];
+        };
+        /** ExcelFileTarget */
+        ExcelFileTarget: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "excel_file";
+            /** Path */
+            path: string;
+            /**
+             * Fields
+             * @default []
+             */
+            fields: components["schemas"]["OutputField"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -392,18 +407,40 @@ export interface components {
         };
         /** Pipeline */
         Pipeline: {
-            /** Id */
-            id: string;
             /** Name */
             name: string;
             /** Sources */
-            sources: string[];
+            sources?: string[];
             /** Steps */
-            steps: {
+            steps?: {
                 [key: string]: unknown;
             }[];
             /** Output Id */
             output_id: string;
+            /** Id */
+            id: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /**
+         * PipelineCreate
+         * @description Strict API input — non-table so required-field checks fire.
+         */
+        PipelineCreate: {
+            /** Name */
+            name: string;
+            /** Sources */
+            sources?: string[];
+            /** Steps */
+            steps?: {
+                [key: string]: unknown;
+            }[];
+            /** Output Id */
+            output_id: string;
+            /** Id */
+            id: string;
         };
         /** PostgresTarget */
         PostgresTarget: {
@@ -455,6 +492,8 @@ export interface components {
             };
             /** Table */
             table: string;
+            /** Format */
+            format?: ("json" | "jsonl" | "ndjson" | "csv" | "parquet" | "excel") | null;
         };
         /** SqlDatabaseTarget */
         SqlDatabaseTarget: {
@@ -519,7 +558,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["Pipeline"][];
                 };
             };
             /** @description Validation Error */
@@ -542,7 +581,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Pipeline"];
+                "application/json": components["schemas"]["PipelineCreate"];
             };
         };
         responses: {
@@ -583,7 +622,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["Pipeline"];
                 };
             };
             /** @description Validation Error */
@@ -608,7 +647,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Pipeline"];
+                "application/json": components["schemas"]["PipelineCreate"];
             };
         };
         responses: {
@@ -618,7 +657,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["Pipeline"];
                 };
             };
             /** @description Validation Error */

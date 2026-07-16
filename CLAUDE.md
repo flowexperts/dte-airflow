@@ -151,7 +151,7 @@ Field autocomplete data comes from `SchemaProvider` (`components/builder/schema-
 
 ### Output — discriminated union
 
-Backend `output` is now a Pydantic discriminated union over `type`: `json_file` | `csv_file` | `parquet_s3` | `postgres` | `sql_database`. The UI **only edits `json_file`** today. `isJsonFileOutput(pipeline.output)` narrows before reading `.path`. `BuilderForm` shows a placeholder card for other types. When adding an output editor, follow the same pattern: narrow with the type guard, don't add optional chaining to bypass the union.
+Backend `output` is now a Pydantic discriminated union over `type`: `json_file` | `csv_file` | `excel_file` | `parquet_s3` | `postgres` | `sql_database`. The UI **only edits `json_file`** today. `isJsonFileOutput(pipeline.output)` narrows before reading `.path`. `BuilderForm` shows a placeholder card for other types. When adding an output editor, follow the same pattern: narrow with the type guard, don't add optional chaining to bypass the union.
 
 ### Sources
 
@@ -195,7 +195,7 @@ DuckDBEngine.execute_to_json() → output file + row count
 
 **`dte/sources/dlt_loader.py`** — universal source loading. `load_source(DltSource, ibis_con)` returns an `ibis.Table` bound to the shared DuckDB connection. The dispatch splits by source_type:
 
-- **`filesystem`**: `read_json_auto` / `read_csv_auto` / `read_parquet` via `CREATE OR REPLACE VIEW`. No dlt. Nested JSON comes through as STRUCT columns; format is detected by extension (`.json`, `.jsonl`, `.ndjson`, `.csv`, `.tsv`, `.parquet`) and `config["format"]` overrides.
+- **`filesystem`**: `read_json_auto` / `read_csv_auto` / `read_parquet` / `read_xlsx` via `CREATE OR REPLACE VIEW`. No dlt. Nested JSON comes through as STRUCT columns; format is detected by extension (`.json`, `.jsonl`, `.ndjson`, `.csv`, `.tsv`, `.parquet`, `.xlsx`) and `config["format"]` overrides. `.xlsx` uses DuckDB's `excel` extension (lazy `INSTALL excel; LOAD excel;`) and reads only the first sheet.
 - **`sql_database`**: DuckDB scanner extensions (`INSTALL sqlite|postgres|mysql; ATTACH … (TYPE …, READ_ONLY); CREATE VIEW`). Scheme detected from the SQLAlchemy-style `credentials` URL. No dlt.
 - **`s3`, `gcs`, `azure`**: DuckDB native remote reads. `s3` and `gcs` go through the `httpfs` extension; `azure` through the `azure` extension. Each loader installs the extension, emits `CREATE OR REPLACE SECRET <scoped-name> (TYPE …, …)`, then materialises `bucket_url + file_glob` via `read_json_auto` / `read_csv_auto` / `read_parquet` in a `CREATE OR REPLACE VIEW`. **GCS auth is HMAC-only** — supply `hmac_key_id` + `hmac_secret`; the old `credentials_json` (service-account JSON) is rejected. **Azure auth**: `connection_string` (preferred) or `account_name` + `account_key`.
 - **`mongodb`, `rest_api`**: dlt (`@dlt.resource` + `dlt.sources.rest_api.rest_api_source`). Kept because dlt's pagination / normalisation earn their keep for real APIs. Their columns still come through with `__` flattening — refs to them are single-token identifiers, not path expressions.
@@ -284,7 +284,7 @@ Legacy plan-015 sources/destinations (creds inline in `config`) migrate via `bac
 
 Sources and destinations are stored independently of pipelines. Pipelines reference them by id: `Pipeline.sources: list[str]` and `Pipeline.output_id: str`. Both sides get their own store protocol (`SourceStore`, `DestinationStore` in `backend/dte/store/base.py`), memory + Postgres implementations, and CRUD API routes.
 
-- `Source` (renamed from `DltSource`) — `id`, `source_type`, `config`, `table`. `DltSource` remains as a deprecated alias for one release.
+- `Source` (renamed from `DltSource`) — `id`, `source_type`, `config`, `table`, `format`. `DltSource` remains as a deprecated alias for one release. `format` is a top-level nullable column (migration `009`) — one of `json`/`jsonl`/`ndjson`/`csv`/`parquet`/`excel`, or NULL for auto-detect from the glob extension. Only meaningful for filesystem-family kinds. On save, `Source` rejects `format` that lives in a different reader family than the glob's trailing extension (e.g. `format=excel` + `*.csv` → 422); same-family mismatches like `format=jsonl` + `*.json` pass through, preserving the "wrong extension, right content" escape hatch.
 - `Destination` — `{id, config: OutputTarget}` where `OutputTarget` is the existing discriminated union (`json_file` | `csv_file` | `parquet_s3` | `postgres` | `sql_database`).
 - Pipeline execution (`preview`, `trigger`) resolves each source id via `SourceStore.get` and the destination id via `DestinationStore.get` before compiling. Missing id → 422 naming what's missing.
 - `compile_pipeline(pipeline, tables, output=None)` — the compiler is source-agnostic; the caller passes the resolved `OutputTarget` if it needs the output-fields projection.

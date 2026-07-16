@@ -162,15 +162,18 @@ class Connection(BaseModel):
 # ─── Source configs (per source_type) ─────────────────────────────────────
 
 SourceKind = Literal["filesystem", "s3", "gcs", "azure", "sql_database", "mongodb", "rest_api"]
-_FileFormat = Literal["json", "jsonl", "ndjson", "csv", "parquet"]
+_FileFormat = Literal["json", "jsonl", "ndjson", "csv", "parquet", "excel"]
 
 
 class _BucketSourceConfig(BaseModel):
     """Shared shape for filesystem + s3 + gcs + azure — everything is a
-    directory + glob against an object store or local mount."""
+    directory + glob against an object store or local mount.
+
+    `format` lives on `Source` (top-level column since migration 009),
+    not here.
+    """
     bucket_url: str
     file_glob: str = "**/*.json"
-    format: _FileFormat | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -223,12 +226,69 @@ _SOURCE_CONFIG_MODELS: dict[str, type[BaseModel]] = {
 }
 
 
+_FILESYSTEM_KINDS = {"filesystem", "s3", "gcs", "azure"}
+
+# Family the extension belongs to. Format ↔ extension pairs are OK as
+# long as they land in the same family. This tolerates the real-world
+# case of `.json` files that are actually NDJSON (both "json family"),
+# while still catching genuinely wrong pairings like `format=excel` +
+# `*.csv`.
+_EXT_FAMILY: dict[str, str] = {
+    ".json":    "json",
+    ".jsonl":   "json",
+    ".ndjson":  "json",
+    ".csv":     "csv",
+    ".tsv":     "csv",
+    ".parquet": "parquet",
+    ".pq":      "parquet",
+    ".xlsx":    "excel",
+}
+
+_FORMAT_FAMILY: dict[str, str] = {
+    "json":    "json",
+    "jsonl":   "json",
+    "ndjson":  "json",
+    "csv":     "csv",
+    "parquet": "parquet",
+    "excel":   "excel",
+}
+
+
+def _glob_extension(glob: str) -> str | None:
+    """Return the last `.ext` in a glob's final path segment, or None if
+    it's a directory-like pattern with no extension."""
+    tail = glob.rsplit("/", 1)[-1]
+    dot = tail.rfind(".")
+    if dot < 0 or dot == len(tail) - 1:
+        return None
+    return tail[dot:].lower()
+
+
 class Source(BaseModel):
     id: str
     connection_id: str
     source_type: SourceKind
     config: dict
     table: str
+    format: _FileFormat | None = None
+    """Filesystem-family override that pins the reader. None = auto-detect
+    from the file extension in `config.file_glob`. Only meaningful when
+    `source_type` is filesystem/s3/gcs/azure."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _extract_legacy_format(cls, data):
+        """Back-compat: earlier clients put `format` inside `config`. Lift
+        it to the top-level field so `_BucketSourceConfig` (extra=forbid)
+        doesn't reject it during round-trip."""
+        if isinstance(data, dict):
+            cfg = data.get("config")
+            if isinstance(cfg, dict) and "format" in cfg:
+                if not data.get("format"):
+                    data["format"] = cfg["format"]
+                cfg = {k: v for k, v in cfg.items() if k != "format"}
+                data["config"] = cfg
+        return data
 
     @model_validator(mode="after")
     def _validate_config(self):
@@ -237,6 +297,22 @@ class Source(BaseModel):
         typed = model(**self.config)
         # `by_alias=True` so `schema_` re-serialises as `schema` on the wire.
         self.config = typed.model_dump(exclude_none=True, by_alias=True)
+
+        # Guardrail: if the user pinned a format AND the glob has an
+        # extension that belongs to a different reader family, refuse.
+        # Same-family mismatches (e.g. `.json` file that's actually
+        # NDJSON, `format=jsonl` + `*.json`) pass through.
+        if self.format and self.source_type in _FILESYSTEM_KINDS:
+            glob = str(self.config.get("file_glob") or "")
+            ext = _glob_extension(glob)
+            ext_family = _EXT_FAMILY.get(ext) if ext else None
+            fmt_family = _FORMAT_FAMILY.get(self.format)
+            if ext_family and fmt_family and ext_family != fmt_family:
+                raise ValueError(
+                    f"file_glob '{glob}' ends in '{ext}' (a {ext_family} format), "
+                    f"which does not match format '{self.format}' (a {fmt_family} "
+                    f"format). Change one to match, or clear the format to auto-detect."
+                )
         return self
 
 
@@ -367,6 +443,12 @@ class CsvFileTarget(BaseModel):
     fields: list[OutputField] = []
 
 
+class ExcelFileTarget(BaseModel):
+    type: Literal["excel_file"]
+    path: str
+    fields: list[OutputField] = []
+
+
 class ParquetS3Target(BaseModel):
     type: Literal["parquet_s3"]
     bucket_url: str
@@ -394,6 +476,7 @@ OutputTarget = Annotated[
     Union[
         JsonFileTarget,
         CsvFileTarget,
+        ExcelFileTarget,
         ParquetS3Target,
         PostgresTarget,
         SqlDatabaseTarget,
@@ -465,6 +548,7 @@ SOURCE_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
 DESTINATION_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "json_file": {"local_fs"},
     "csv_file": {"local_fs"},
+    "excel_file": {"local_fs"},
     "parquet_s3": {"s3"},
     "postgres": {"postgres"},
     "sql_database": {"mysql", "snowflake", "bigquery"},

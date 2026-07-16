@@ -93,7 +93,12 @@ export function SourceEditor({
       />
 
       {(kind === "filesystem" || kind === "s3" || kind === "gcs" || kind === "azure") && (
-        <FilesystemSourceEditor config={config} onChange={setConfig} />
+        <FilesystemSourceEditor
+          config={config}
+          onChange={setConfig}
+          format={source.format ?? null}
+          onFormatChange={(fmt) => onChange({ ...source, format: fmt })}
+        />
       )}
       {kind === "sql_database" && (
         <SqlSourceEditor config={config} onChange={setConfig} />

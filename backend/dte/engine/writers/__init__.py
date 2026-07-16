@@ -4,6 +4,7 @@ import ibis
 from dte.models.pipeline import (
     JsonFileTarget,
     CsvFileTarget,
+    ExcelFileTarget,
     ParquetS3Target,
     PostgresTarget,
     SqlDatabaseTarget,
@@ -30,6 +31,9 @@ def write(
     if isinstance(target, CsvFileTarget):
         from dte.engine.writers import csv_file
         return csv_file.write(table, target, con)
+    if isinstance(target, ExcelFileTarget):
+        from dte.engine.writers import excel_file
+        return excel_file.write(table, target, con)
     if isinstance(target, ParquetS3Target):
         from dte.engine.writers import parquet_s3
         return parquet_s3.write(table, target, con, creds)

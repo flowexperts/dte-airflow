@@ -60,6 +60,18 @@ async def get_run_output(
             import pandas as pd
             df = pd.read_csv(location, nrows=limit)
             rows = json.loads(df.to_json(orient="records", date_format="iso"))
+        elif output_type == "excel_file":
+            # DuckDB's excel extension for read too — keeps openpyxl out
+            # of the dep tree and matches how the writer produced it.
+            import ibis
+            con = ibis.duckdb.connect()
+            con.raw_sql("INSTALL excel")
+            con.raw_sql("LOAD excel")
+            df = con.sql(
+                f"SELECT * FROM read_xlsx('{location.replace(chr(39), chr(39)*2)}') "
+                f"LIMIT {int(limit)}"
+            ).execute()
+            rows = json.loads(df.to_json(orient="records", date_format="iso"))
         else:
             raise HTTPException(
                 status_code=400,
