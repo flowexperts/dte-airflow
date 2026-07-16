@@ -45,6 +45,22 @@ export function OutputPanel({
     onChange(emptyFileOutput(t, output.path ?? ""));
   };
 
+  const expectedExt = FILE_OUTPUT_EXT[output.type];
+
+  /** Blur-time autofill: if the user typed a bare filename (no
+   *  extension), append the canonical one. Never rewrite an extension
+   *  the user already typed — even a wrong one — since that's their
+   *  intent. The backend validator will reject a genuine mismatch. */
+  const onPathBlur = () => {
+    const p = (output.path ?? "").trim();
+    if (!p) return;
+    const tail = p.split("/").pop() ?? "";
+    const hasExt = tail.includes(".") && !tail.endsWith(".");
+    if (!hasExt) {
+      onChange({ ...output, path: p + expectedExt });
+    }
+  };
+
   return (
     <Panel>
       <PanelHead label="Output" />
@@ -58,12 +74,13 @@ export function OutputPanel({
         </Field>
         <Field
           label="Path"
-          hint={`local or bucket path where the result is written; expected extension ${FILE_OUTPUT_EXT[output.type]}`}
+          hint={`local or bucket path where the result is written; expected extension ${expectedExt}. Backend rejects on save if the extension disagrees.`}
         >
           <Input
             value={output.path ?? ""}
             onChange={(e) => onChange({ ...output, path: e.target.value })}
-            placeholder={`./out/result${FILE_OUTPUT_EXT[output.type]}`}
+            onBlur={onPathBlur}
+            placeholder={`./out/result${expectedExt}`}
           />
         </Field>
       </div>
