@@ -5,7 +5,7 @@ from sqlmodel import select
 import uuid
 import json
 
-from dte.models.pipeline import Connection, ConnectionCreate, Pipeline
+from dte.models.pipeline import Connection, ConnectionCreate, Pipeline, Source, SourceCreate
 from dte.secrets import SecretResolver, get_secret_resolver
 
 
@@ -117,74 +117,54 @@ class PostgresRunStore:
 
 
 class PostgresSourceStore:
+    """ORM-backed source store. Returns typed `Source` instances.
+
+    `save` accepts a `SourceCreate` (the strict API input type). The store
+    uses pg_insert upsert so `updated_at` fires on re-save.
+    """
+
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._factory = session_factory
 
-    async def get(self, id: str) -> dict | None:
+    async def get(self, id: str) -> Source | None:
         async with self._factory() as s:
-            result = await s.execute(
-                text("SELECT id, source_type, config, table_name, connection_id, format FROM sources WHERE id = :id"),
-                {"id": id},
-            )
-            row = result.mappings().fetchone()
-            if not row:
-                return None
-            return {
-                "id": row["id"],
-                "source_type": row["source_type"],
-                "config": row["config"],
-                "table": row["table_name"],
-                "connection_id": row["connection_id"],
-                "format": row["format"],
-            }
+            return await s.get(Source, id)
 
-    async def save(self, source: dict) -> None:
+    async def save(self, source: SourceCreate) -> None:
+        values = source.model_dump(exclude={"created_at", "updated_at"})
+        stmt = pg_insert(Source).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Source.id],
+            set_={
+                "source_type": stmt.excluded.source_type,
+                "config": stmt.excluded.config,
+                "table_name": stmt.excluded.table_name,
+                "connection_id": stmt.excluded.connection_id,
+                "format": stmt.excluded.format,
+            },
+        )
         async with self._factory() as s:
-            await s.execute(text("""
-                INSERT INTO sources (id, source_type, config, table_name, connection_id, format)
-                VALUES (:id, :source_type, CAST(:config AS jsonb), :table_name, :connection_id, :format)
-                ON CONFLICT (id) DO UPDATE SET
-                    source_type = EXCLUDED.source_type,
-                    config = EXCLUDED.config,
-                    table_name = EXCLUDED.table_name,
-                    connection_id = EXCLUDED.connection_id,
-                    format = EXCLUDED.format,
-                    updated_at = now()
-            """), {
-                "id": source["id"],
-                "source_type": source["source_type"],
-                "config": json.dumps(source.get("config", {})),
-                "table_name": source["table"],
-                "connection_id": source.get("connection_id"),
-                "format": source.get("format"),
-            })
+            await s.execute(stmt)
             await s.commit()
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Source]:
+        stmt = (
+            select(Source)
+            .order_by(Source.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         async with self._factory() as s:
-            result = await s.execute(
-                text("SELECT id, source_type, config, table_name, connection_id, format FROM sources ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
-                {"limit": limit, "offset": offset},
-            )
-            return [
-                {
-                    "id": row["id"],
-                    "source_type": row["source_type"],
-                    "config": row["config"],
-                    "table": row["table_name"],
-                    "connection_id": row["connection_id"],
-                    "format": row["format"],
-                }
-                for row in result.mappings().fetchall()
-            ]
+            return list((await s.execute(stmt)).scalars().all())
 
     async def delete(self, id: str) -> bool:
         async with self._factory() as s:
-            result = await s.execute(
-                text("DELETE FROM sources WHERE id = :id"), {"id": id}
-            )
+            row = await s.get(Source, id)
+            if row is None:
+                return False
+            await s.delete(row)
             await s.commit()
-            return result.rowcount > 0
+            return True
 
 
 class PostgresDestinationStore:

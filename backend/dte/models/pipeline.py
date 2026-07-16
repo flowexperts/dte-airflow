@@ -365,16 +365,26 @@ def _glob_extension(glob: str) -> str | None:
     return tail[dot:].lower()
 
 
-class Source(BaseModel):
-    id: str
+# ─── Source (SQLModel — single class serves API validation + persistence) ──
+#
+# `SourceBase` holds the domain fields with the two existing `@model_validator`
+# methods. Both `Source(table=True)` (used by the store) and `SourceCreate`
+# (used by the API) inherit them so validation fires in both code paths.
+#
+# `source_type` and `format` are typed as `str` / `str | None` on `SourceBase`
+# so SQLModel can map them to TEXT columns without tripping on Literal[...] —
+# SQLModel 0.0.x cannot resolve Literal to a SA column type. `SourceCreate`
+# overrides them with the Literal types for strict validation at the API edge.
+#
+# `table` maps to the DB column `table_name` via sa_column so no migration is
+# needed.
+
+class SourceBase(SQLModel):
     connection_id: str
-    source_type: SourceKind
-    config: dict
-    table: str
-    format: _FileFormat | None = None
-    """Filesystem-family override that pins the reader. None = auto-detect
-    from the file extension in `config.file_glob`. Only meaningful when
-    `source_type` is filesystem/s3/gcs/azure."""
+    source_type: str = SMField(sa_column=Column(Text, nullable=False))
+    config: dict = SMField(default_factory=dict, sa_column=Column(JSONB, nullable=False))
+    table: str = SMField(sa_column=Column("table_name", Text, nullable=False))
+    format: str | None = SMField(default=None, sa_column=Column(Text, nullable=True))
 
     @model_validator(mode="before")
     @classmethod
@@ -393,7 +403,10 @@ class Source(BaseModel):
 
     @model_validator(mode="after")
     def _validate_config(self):
-        model = _SOURCE_CONFIG_MODELS[self.source_type]
+        model = _SOURCE_CONFIG_MODELS.get(self.source_type)
+        if model is None:
+            # Unknown source_type — let SourceCreate's Literal override catch it.
+            return self
         # Round-trip through the typed model so extras raise + defaults fill in.
         typed = model(**self.config)
         # `by_alias=True` so `schema_` re-serialises as `schema` on the wire.
@@ -415,6 +428,38 @@ class Source(BaseModel):
                     f"format). Change one to match, or clear the format to auto-detect."
                 )
         return self
+
+
+class Source(SourceBase, table=True):
+    """ORM-mapped row — persistence identity + timestamp columns.
+
+    `table=True` bypasses Pydantic required-field checks at __init__ so ORM
+    row hydration can populate instances incrementally. The validators on
+    `SourceBase` still fire when a Source is constructed explicitly (e.g.
+    `Source(id=..., source_type=..., ...)`) but NOT when SQLAlchemy hydrates
+    a row from the DB — that is intentional (data already validated at save).
+    """
+    __tablename__ = "sources"
+
+    id: str = SMField(primary_key=True)
+    created_at: datetime | None = SMField(
+        default=None, sa_column=Column(server_default=func.now())
+    )
+    updated_at: datetime | None = SMField(
+        default=None,
+        sa_column=Column(server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class SourceCreate(SourceBase):
+    """Strict API input — non-table so required-field checks fire.
+
+    Overrides `source_type` and `format` with Literal types so Pydantic
+    rejects unknown values at the API edge.
+    """
+    id: str
+    source_type: SourceKind  # type: ignore[override]
+    format: _FileFormat | None = None  # type: ignore[override]
 
 
 # Back-compat alias — deprecated. Delete after plan 015 lands end-to-end.

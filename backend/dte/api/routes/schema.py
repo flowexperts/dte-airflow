@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 import ibis.expr.datatypes as dt
 
-from dte.models.pipeline import Source
+from dte.models.pipeline import SourceCreate as Source
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.sources.loader import load_source
 from dte.api.deps import get_connection_store

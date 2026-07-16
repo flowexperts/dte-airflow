@@ -32,7 +32,7 @@ async def test_migrates_embedded_source_and_output():
     assert new_p["sources"] == ["s1"]
     assert new_p["output_id"] == "p1_output"
     assert "output" not in new_p
-    assert (await s_store.get("s1"))["table"] == "t"
+    assert (await s_store.get("s1")).table == "t"
     dest = await d_store.get("p1_output")
     assert dest["config"]["type"] == "json_file"
 

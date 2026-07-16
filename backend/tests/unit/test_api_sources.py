@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from dte.api.main import app
 from dte.api.deps import get_source_store, get_pipeline_store
-from dte.models.pipeline import Pipeline
+from dte.models.pipeline import Pipeline, SourceCreate
 from tests.fakes import FakeSourceStore, FakePipelineStore
 
 
@@ -31,25 +31,33 @@ def _src(sid="s1", table="dummy", connection_id="local_fs"):
     }
 
 
+def _src_create(sid="s1", table="dummy", connection_id="local_fs"):
+    return SourceCreate(
+        id=sid, connection_id=connection_id,
+        source_type="filesystem",
+        config={"bucket_url": "/tmp"}, table=table,
+    )
+
+
 def test_create_source_201(client):
     c, s_store, _ = client
     r = c.post("/api/sources", json=_src())
     assert r.status_code == 201, r.text
     assert r.json()["id"] == "s1"
-    assert _run(s_store.get("s1"))["table"] == "dummy"
+    assert _run(s_store.get("s1")).table == "dummy"
 
 
 def test_create_source_duplicate_409(client):
     c, s_store, _ = client
-    _run(s_store.save(_src()))
+    _run(s_store.save(_src_create()))
     r = c.post("/api/sources", json=_src())
     assert r.status_code == 409
 
 
 def test_list_sources(client):
     c, s_store, _ = client
-    _run(s_store.save(_src("s1")))
-    _run(s_store.save(_src("s2")))
+    _run(s_store.save(_src_create("s1")))
+    _run(s_store.save(_src_create("s2")))
     r = c.get("/api/sources")
     assert r.status_code == 200
     ids = {row["id"] for row in r.json()}
