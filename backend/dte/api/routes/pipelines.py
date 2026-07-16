@@ -118,7 +118,7 @@ async def _resolve(
                 status_code=422,
                 detail=f"Source '{sid}' references missing connection '{source.connection_id}'",
             )
-        sources.append((source, conn.get("credentials") or {}))
+        sources.append((source, conn.credentials_dict()))
 
     raw_d = await d_store.get(pipeline.output_id)
     if not raw_d:
@@ -130,7 +130,7 @@ async def _resolve(
             status_code=422,
             detail=f"Destination '{destination.id}' references missing connection '{destination.connection_id}'",
         )
-    return sources, (destination, dest_conn.get("credentials") or {})
+    return sources, (destination, dest_conn.credentials_dict())
 
 
 @router.get("/pipelines/{pipeline_id}/preview")

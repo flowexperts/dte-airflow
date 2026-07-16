@@ -113,4 +113,4 @@ _PROBES: dict[str, Callable[[dict], ProbeResult]] = {
 
 def probe_connection(connection: Connection) -> ProbeResult:
     probe = _PROBES.get(connection.connection_type, _probe_unknown)
-    return probe(connection.credentials)
+    return probe(connection.credentials_dict())
