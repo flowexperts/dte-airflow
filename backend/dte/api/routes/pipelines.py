@@ -108,10 +108,9 @@ async def _resolve(
     (Destination, credentials). Missing anything → 422 naming what's gone."""
     sources: list[tuple[Source, dict]] = []
     for sid in pipeline.sources:
-        raw = await s_store.get(sid)
-        if not raw:
+        source = await s_store.get(sid)
+        if not source:
             raise HTTPException(status_code=422, detail=f"Source not found: {sid}")
-        source = Source(**raw)
         conn = await c_store.get(source.connection_id)
         if not conn:
             raise HTTPException(

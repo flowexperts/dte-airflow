@@ -117,8 +117,8 @@ async def delete_connection(
     if not await c_store.get(connection_id):
         raise HTTPException(status_code=404, detail="Connection not found")
     ref_sources = [
-        s["id"] for s in await s_store.list(limit=10_000)
-        if s.get("connection_id") == connection_id
+        s.id for s in await s_store.list(limit=10_000)
+        if s.connection_id == connection_id
     ]
     ref_dests = [
         d["id"] for d in await d_store.list(limit=10_000)

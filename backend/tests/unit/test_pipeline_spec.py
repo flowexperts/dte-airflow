@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 from dte.models.pipeline import (
-    Source, Destination,
+    Source, SourceCreate, Destination,
     FilterStep, RenameStep, RetypeStep,
     LookupMapStep, ExpressionMapStep,
     SortStep, AggSpec, AggregateStep,
@@ -39,8 +39,10 @@ def test_source_parses():
 
 
 def test_source_config_strict_rejects_extras():
+    # `SourceCreate` carries the strict Literal + validators; `Source(table=True)`
+    # is for ORM hydration and skips required-field checks at __init__.
     with pytest.raises(ValidationError):
-        Source(
+        SourceCreate(
             id="s1", connection_id="local_fs", source_type="filesystem",
             config={"bucket_url": "/tmp", "nonsense_key": 1},
             table="t",
@@ -49,7 +51,7 @@ def test_source_config_strict_rejects_extras():
 
 def test_source_format_top_level():
     """`format` is a top-level Source field, not inside `config`."""
-    s = Source(
+    s = SourceCreate(
         id="s_xl",
         connection_id="local_fs",
         source_type="filesystem",
@@ -65,7 +67,7 @@ def test_source_format_lifted_from_legacy_config():
     """Older payloads carrying `format` inside `config` migrate cleanly:
     the top-level `Source.format` picks it up and it's stripped from
     the JSONB blob."""
-    s = Source(
+    s = SourceCreate(
         id="s_legacy",
         connection_id="local_fs",
         source_type="filesystem",
@@ -79,7 +81,7 @@ def test_source_format_lifted_from_legacy_config():
 def test_source_format_glob_mismatch_rejected():
     """`format=excel` + `*.csv` glob is a footgun; reject at save-time."""
     with pytest.raises(ValidationError) as exc:
-        Source(
+        SourceCreate(
             id="s_bad",
             connection_id="local_fs",
             source_type="filesystem",
@@ -98,7 +100,7 @@ def test_source_format_glob_match_ok():
         ("csv", "*.tsv"),
         ("excel", "orders.xlsx"),
     ]:
-        Source(
+        SourceCreate(
             id=f"s_{fmt}",
             connection_id="local_fs",
             source_type="filesystem",
@@ -111,7 +113,7 @@ def test_source_format_glob_match_ok():
 def test_source_format_no_glob_extension_no_check():
     """Bare directory-glob (e.g. `**/*`) is ambiguous — validator lets
     it through so the loader can decide at read time."""
-    Source(
+    SourceCreate(
         id="s_bare",
         connection_id="local_fs",
         source_type="filesystem",
@@ -190,7 +192,7 @@ def test_pipeline_holds_source_ids_and_output_id():
 
 def test_invalid_source_missing_table_raises():
     with pytest.raises(ValidationError):
-        Source(id="s1", connection_id="local_fs", source_type="filesystem", config={"bucket_url": "/tmp"})
+        SourceCreate(id="s1", connection_id="local_fs", source_type="filesystem", config={"bucket_url": "/tmp"})
 
 
 def test_filter_step_in_pipeline():

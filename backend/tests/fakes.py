@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from dte.models.pipeline import Connection, ConnectionCreate, Pipeline
+from dte.models.pipeline import Connection, ConnectionCreate, Pipeline, Source, SourceCreate
 
 
 def _utcnow_iso() -> str:
@@ -87,18 +87,65 @@ class FakeRunStore:
         return len(to_remove)
 
 
-class FakeSourceStore:
-    def __init__(self):
-        self._data: dict[str, dict] = {}
+def _make_source(s: "SourceCreate | dict") -> Source:
+    """Build a `Source` ORM instance from a `SourceCreate` or a plain dict.
 
-    async def get(self, id: str) -> dict | None:
+    Uses normal `Source(...)` construction so SQLAlchemy's SA instrumentation
+    (`_sa_instance_state`) is properly initialised — `model_construct` bypasses
+    it and causes AttributeError when setting attributes later.
+
+    Validators on `SourceBase` are skipped because `Source` is `table=True`
+    (SQLModel bypasses required-field checks on table classes).
+
+    Dict input is tolerated for backwards compat with migration scripts and
+    legacy test helpers that pre-date the typed store.
+    """
+    if isinstance(s, dict):
+        return Source(
+            id=s["id"],
+            connection_id=s.get("connection_id", ""),
+            source_type=s.get("source_type", ""),
+            config=s.get("config", {}),
+            table=s.get("table", ""),
+            format=s.get("format"),
+        )
+    return Source(
+        id=s.id,
+        connection_id=s.connection_id,
+        source_type=s.source_type,
+        config=s.config,
+        table=s.table,
+        format=s.format,
+    )
+
+
+class FakeSourceStore:
+    """In-memory source store for tests. Stores typed `Source` instances.
+
+    `save` accepts `SourceCreate` (the typed API input) or a plain `dict`
+    (for migration scripts and legacy test helpers).
+    """
+
+    def __init__(self):
+        self._data: dict[str, Source] = {}
+
+    async def get(self, id: str) -> Source | None:
         return self._data.get(id)
 
-    async def save(self, source: dict) -> None:
-        self._data[source["id"]] = source
+    async def save(self, source: "SourceCreate | dict") -> None:  # type: ignore[override]
+        source_id = source.id if isinstance(source, SourceCreate) else source["id"]
+        existing = self._data.get(source_id)
+        row = _make_source(source)
+        row.created_at = existing.created_at if existing else _utcnow()
+        row.updated_at = _utcnow()
+        self._data[source_id] = row
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        items = list(self._data.values())
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Source]:
+        items = sorted(
+            self._data.values(),
+            key=lambda src: src.created_at or _utcnow(),
+            reverse=True,
+        )
         return items[offset:offset + limit]
 
     async def delete(self, id: str) -> bool:

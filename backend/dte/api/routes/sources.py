@@ -1,8 +1,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
-from pydantic import ValidationError
 
-from dte.models.pipeline import Source, SOURCE_CONNECTION_COMPAT
+from dte.models.pipeline import Source, SourceCreate, SOURCE_CONNECTION_COMPAT
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.sources.loader import load_source
 from dte.api.deps import (
@@ -14,7 +13,7 @@ from dte.store.base import SourceStore, PipelineStore, ConnectionStore
 router = APIRouter()
 
 
-async def _validate_connection(source: Source, c_store: ConnectionStore):
+async def _validate_connection(source: SourceCreate | Source, c_store: ConnectionStore):
     """Fetch the linked connection and verify its type is compatible with
     `source.source_type`. Raises 422 otherwise. Returns the Connection."""
     conn = await c_store.get(source.connection_id)
@@ -37,20 +36,21 @@ async def _validate_connection(source: Source, c_store: ConnectionStore):
 
 @router.post("/sources", status_code=201)
 async def create_source(
-    source: Source,
+    source: SourceCreate,
     store: SourceStore = Depends(get_source_store),
     c_store: ConnectionStore = Depends(get_connection_store),
 ):
     if await store.get(source.id):
         raise HTTPException(status_code=409, detail=f"Source '{source.id}' already exists")
     await _validate_connection(source, c_store)
-    await store.save(source.model_dump())
+    await store.save(source)
     return source.model_dump()
 
 
 @router.get("/sources")
 async def list_sources(limit: int = 50, offset: int = 0, store: SourceStore = Depends(get_source_store)):
-    return await store.list(limit=limit, offset=offset)
+    sources = await store.list(limit=limit, offset=offset)
+    return [s.model_dump() for s in sources]
 
 
 @router.get("/sources/{source_id}")
@@ -58,13 +58,13 @@ async def get_source(source_id: str, store: SourceStore = Depends(get_source_sto
     s = await store.get(source_id)
     if not s:
         raise HTTPException(status_code=404, detail="Source not found")
-    return s
+    return s.model_dump()
 
 
 @router.put("/sources/{source_id}")
 async def update_source(
     source_id: str,
-    source: Source,
+    source: SourceCreate,
     store: SourceStore = Depends(get_source_store),
     c_store: ConnectionStore = Depends(get_connection_store),
 ):
@@ -73,9 +73,8 @@ async def update_source(
     if not await store.get(source_id):
         raise HTTPException(status_code=404, detail="Source not found")
     await _validate_connection(source, c_store)
-    payload = source.model_dump()
-    await store.save(payload)
-    return payload
+    await store.save(source)
+    return source.model_dump()
 
 
 @router.delete("/sources/{source_id}", status_code=204)
@@ -102,23 +101,20 @@ async def source_schema(
     store: SourceStore = Depends(get_source_store),
     c_store: ConnectionStore = Depends(get_connection_store),
 ):
-    raw = await store.get(source_id)
-    if not raw:
+    source = await store.get(source_id)
+    if not source:
         raise HTTPException(status_code=404, detail="Source not found")
-    try:
-        source = Source(**raw)
-    except ValidationError as e:
-        missing = [".".join(str(p) for p in err["loc"]) for err in e.errors() if err["type"] == "missing"]
-        if missing:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Source '{source_id}' is missing required field(s): {', '.join(missing)}. "
-                    f"This looks like a legacy row — open it in the source editor and re-save, "
-                    f"or run backend/scripts/migrate_extract_connections.py."
-                ),
-            )
-        raise HTTPException(status_code=422, detail=str(e))
+    # Validate that required fields are present (legacy rows may be missing
+    # connection_id if migrated incompletely).
+    if not source.connection_id:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Source '{source_id}' is missing required field(s): connection_id. "
+                f"This looks like a legacy row — open it in the source editor and re-save, "
+                f"or run backend/scripts/migrate_extract_connections.py."
+            ),
+        )
     conn = await c_store.get(source.connection_id)
     if not conn:
         raise HTTPException(

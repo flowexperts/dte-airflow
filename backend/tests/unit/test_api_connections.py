@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from dte.api.main import app
+from dte.models.pipeline import Source
 
 
 def _conn(cid="c1", ctype="s3"):
@@ -97,10 +98,10 @@ def test_delete_referenced_by_source_returns_409(fake_stores):
     c.post("/api/connections", json=_conn())
     # Seed a fake source referencing this connection directly on the
     # store's private dict — avoids spinning up an event loop for a sync test.
-    fake_stores["source"]._data["s1"] = {
-        "id": "s1", "connection_id": "c1", "source_type": "s3",
-        "config": {"bucket_url": "s3://foo"}, "table": "t",
-    }
+    fake_stores["source"]._data["s1"] = Source(
+        id="s1", connection_id="c1", source_type="s3",
+        config={"bucket_url": "s3://foo"}, table="t",
+    )
     r = c.delete("/api/connections/c1")
     assert r.status_code == 409
     assert r.json()["detail"]["referenced_by"]["sources"] == ["s1"]

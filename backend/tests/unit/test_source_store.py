@@ -1,22 +1,24 @@
+from dte.models.pipeline import SourceCreate
 from tests.fakes import FakeSourceStore
 
 
-def _src(sid: str) -> dict:
-    return {
-        "id": sid,
-        "source_type": "filesystem",
-        "config": {"bucket_url": "/tmp"},
-        "table": f"{sid}_t",
-    }
+def _src(sid: str) -> SourceCreate:
+    return SourceCreate(
+        id=sid,
+        connection_id="local_fs",
+        source_type="filesystem",
+        config={"bucket_url": "/tmp"},
+        table=f"{sid}_t",
+    )
 
 
 async def test_save_and_get():
     s = FakeSourceStore()
     await s.save(_src("s1"))
     got = await s.get("s1")
-    assert got["id"] == "s1"
-    assert got["source_type"] == "filesystem"
-    assert got["table"] == "s1_t"
+    assert got.id == "s1"
+    assert got.source_type == "filesystem"
+    assert got.table == "s1_t"
 
 
 async def test_get_missing_returns_none():

@@ -1,7 +1,7 @@
 import pytest
 import json
 import ibis
-from dte.models.pipeline import Source
+from dte.models.pipeline import Source, SourceCreate
 from dte.sources.loader import load_source
 
 
@@ -177,11 +177,13 @@ def test_missing_file_raises(tmp_path):
 
 
 def test_unknown_source_type_rejected_at_model():
-    """Source.source_type is now a Literal — bogus values fail validation
-    before ever reaching the loader."""
+    """SourceCreate.source_type is a Literal — bogus values fail validation
+    before ever reaching the loader. Source(table=True) accepts str for ORM
+    compatibility; SourceCreate is the API-edge class that enforces the Literal.
+    """
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
-        Source(
+        SourceCreate(
             connection_id="local_fs",
             id="s4",
             source_type="nonesuch",
