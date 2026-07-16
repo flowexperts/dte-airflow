@@ -1,8 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlmodel import select
 import uuid
 import json
 
+from dte.models.pipeline import Pipeline
 from dte.secrets import SecretResolver, get_secret_resolver
 
 
@@ -10,38 +13,46 @@ class PostgresPipelineStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._factory = session_factory
 
-    async def get(self, id: str) -> dict | None:
+    async def get(self, id: str) -> Pipeline | None:
         async with self._factory() as s:
-            result = await s.execute(
-                text("SELECT definition FROM pipelines WHERE id = :id"), {"id": id}
-            )
-            row = result.fetchone()
-            return row[0] if row else None
+            return await s.get(Pipeline, id)
 
-    async def save(self, pipeline: dict) -> None:
+    async def save(self, pipeline: Pipeline) -> None:
+        # Upsert via ON CONFLICT so a re-save touches `updated_at`
+        # (session.merge would leave the column's `onupdate` unfired).
+        values = pipeline.model_dump(exclude={"created_at", "updated_at"})
+        stmt = pg_insert(Pipeline).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Pipeline.id],
+            set_={
+                "name": stmt.excluded.name,
+                "sources": stmt.excluded.sources,
+                "steps": stmt.excluded.steps,
+                "output_id": stmt.excluded.output_id,
+            },
+        )
         async with self._factory() as s:
-            await s.execute(text("""
-                INSERT INTO pipelines (id, name, definition)
-                VALUES (:id, :name, CAST(:definition AS jsonb))
-                ON CONFLICT (id) DO UPDATE SET definition = EXCLUDED.definition, updated_at = now()
-            """), {"id": pipeline["id"], "name": pipeline["name"], "definition": json.dumps(pipeline)})
+            await s.execute(stmt)
             await s.commit()
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Pipeline]:
+        stmt = (
+            select(Pipeline)
+            .order_by(Pipeline.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         async with self._factory() as s:
-            result = await s.execute(
-                text("SELECT definition FROM pipelines ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
-                {"limit": limit, "offset": offset}
-            )
-            return [row[0] for row in result.fetchall()]
+            return list((await s.execute(stmt)).scalars().all())
 
     async def delete(self, id: str) -> bool:
         async with self._factory() as s:
-            result = await s.execute(
-                text("DELETE FROM pipelines WHERE id = :id"), {"id": id}
-            )
+            row = await s.get(Pipeline, id)
+            if row is None:
+                return False
+            await s.delete(row)
             await s.commit()
-            return result.rowcount > 0
+            return True
 
 
 class PostgresRunStore:

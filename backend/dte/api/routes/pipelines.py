@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 from fastapi import APIRouter, HTTPException, Depends, Response
-from dte.models.pipeline import Pipeline, Source, Destination
+from dte.models.pipeline import Pipeline, PipelineBase, PipelineCreate, Source, Destination
 from dte.compiler.ibis_compiler import compile_pipeline
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.sources.loader import load_source
@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 async def _validate_pipeline_refs(
-    pipeline: Pipeline,
+    pipeline: PipelineBase,
     s_store: SourceStore,
     d_store: DestinationStore,
 ):
@@ -42,23 +42,23 @@ async def _validate_pipeline_refs(
 
 @router.post("/pipelines")
 async def create_pipeline(
-    pipeline: Pipeline,
+    pipeline: PipelineCreate,
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
 ):
     await _validate_pipeline_refs(pipeline, s_store, d_store)
-    await store.save(pipeline.model_dump())
+    await store.save(Pipeline(**pipeline.model_dump()))
     return {"id": pipeline.id}
 
 
 @router.get("/pipelines")
-async def list_pipelines(limit: int = 50, offset: int = 0, store: PipelineStore = Depends(get_pipeline_store)):
+async def list_pipelines(limit: int = 50, offset: int = 0, store: PipelineStore = Depends(get_pipeline_store)) -> list[Pipeline]:
     return await store.list(limit=limit, offset=offset)
 
 
 @router.get("/pipelines/{pipeline_id}")
-async def get_pipeline(pipeline_id: str, store: PipelineStore = Depends(get_pipeline_store)):
+async def get_pipeline(pipeline_id: str, store: PipelineStore = Depends(get_pipeline_store)) -> Pipeline:
     p = await store.get(pipeline_id)
     if not p:
         raise HTTPException(status_code=404, detail="Pipeline not found")
@@ -68,20 +68,20 @@ async def get_pipeline(pipeline_id: str, store: PipelineStore = Depends(get_pipe
 @router.put("/pipelines/{pipeline_id}")
 async def update_pipeline(
     pipeline_id: str,
-    pipeline: Pipeline,
+    pipeline: PipelineCreate,
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
-):
+) -> Pipeline:
     if pipeline.id != pipeline_id:
         raise HTTPException(status_code=400, detail="Pipeline id in path and body must match")
     existing = await store.get(pipeline_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     await _validate_pipeline_refs(pipeline, s_store, d_store)
-    payload = pipeline.model_dump()
-    await store.save(payload)
-    return payload
+    row = Pipeline(**pipeline.model_dump())
+    await store.save(row)
+    return row
 
 
 @router.delete("/pipelines/{pipeline_id}", status_code=204)
@@ -142,11 +142,10 @@ async def preview_pipeline(
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
 ):
-    pipeline_dict = await store.get(pipeline_id)
-    if not pipeline_dict:
+    pipeline = await store.get(pipeline_id)
+    if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     try:
-        pipeline = Pipeline(**pipeline_dict)
         sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         engine = DuckDBEngine()
         tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
@@ -170,10 +169,9 @@ async def trigger_pipeline(
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
 ):
-    p = await p_store.get(pipeline_id)
-    if not p:
+    pipeline = await p_store.get(pipeline_id)
+    if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
-    pipeline = Pipeline(**p)
     # Fail fast on missing refs before creating a run.
     await _resolve(pipeline, s_store, d_store, c_store)
     run_id = await r_store.create(pipeline_id)
@@ -194,8 +192,7 @@ async def _execute_pipeline(
 ):
     await r_store.update(run_id, status="running")
     try:
-        pipeline_dict = await p_store.get(pipeline_id)
-        pipeline = Pipeline(**pipeline_dict)
+        pipeline = await p_store.get(pipeline_id)
         sources, (destination, dest_creds) = await _resolve(pipeline, s_store, d_store, c_store)
 
         engine = DuckDBEngine()

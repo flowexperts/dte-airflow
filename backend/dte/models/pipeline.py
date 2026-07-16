@@ -1,6 +1,10 @@
 from __future__ import annotations
+from datetime import datetime
 from typing import Annotated, Literal, Union
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import Column, func
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlmodel import Field as SMField, SQLModel
 
 
 # ─── Connections ─────────────────────────────────────────────────────────
@@ -69,7 +73,7 @@ class _RestApiSpec:
 
 
 _DLT_CRED_CLASS: dict[str, type | None] = {
-    "local_fs": None,  # no creds
+    "local_fs": None,  # no creds              
     "s3": _DltAws,
     "gcs": _GcsHmacSpec,
     "azure": _DltAzure,
@@ -386,12 +390,44 @@ class Destination(BaseModel):
     config: OutputTarget
 
 
-class Pipeline(BaseModel):
-    id: str
+# ─── Pipeline (SQLModel — single class serves API validation + persistence) ──
+#
+# `PipelineBase` holds the domain fields with strict Pydantic validation.
+# `Pipeline` (table=True) adds the persistence identity/timestamp columns.
+# `PipelineCreate` is the FastAPI input shape.
+#
+# Why the base + table split: SQLModel's `table=True` classes bypass Pydantic
+# required-field checks at `__init__` so ORM row hydration can populate
+# instances incrementally. That makes a `table=True` class unsafe as a
+# FastAPI request body. `PipelineCreate` keeps validation strict at the edge.
+
+class PipelineBase(SQLModel):
     name: str
-    sources: list[str]
-    steps: list[dict]
+    sources: list[str] = SMField(
+        default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
+    steps: list[dict] = SMField(
+        default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
     output_id: str
+
+
+class Pipeline(PipelineBase, table=True):
+    __tablename__ = "pipelines"
+
+    id: str = SMField(primary_key=True)
+    created_at: datetime | None = SMField(
+        default=None, sa_column=Column(server_default=func.now())
+    )
+    updated_at: datetime | None = SMField(
+        default=None,
+        sa_column=Column(server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class PipelineCreate(PipelineBase):
+    """Strict API input — non-table so required-field checks fire."""
+    id: str
 
 
 # ─── Connection ↔ Source/Destination compatibility ────────────────────────
@@ -415,3 +451,4 @@ DESTINATION_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "postgres": {"postgres"},
     "sql_database": {"mysql", "snowflake", "bigquery"},
 }
+ 

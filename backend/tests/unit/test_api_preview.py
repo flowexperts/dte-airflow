@@ -7,6 +7,7 @@ from dte.api.main import app
 from dte.api.deps import (
     get_pipeline_store, get_source_store, get_destination_store,
 )
+from dte.models.pipeline import Pipeline
 from tests.fakes import (
     FakePipelineStore, FakeSourceStore, FakeDestinationStore,
 )
@@ -49,7 +50,7 @@ def client(tmp_path):
 
 
 def _save(store, payload):
-    _run(store.save(payload))
+    _run(store.save(Pipeline(**payload)))
 
 
 def test_preview_returns_sample_rows(tmp_path, client):

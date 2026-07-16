@@ -7,6 +7,7 @@ from dte.api.deps import (
     get_pipeline_store, get_run_store,
     get_source_store, get_destination_store,
 )
+from dte.models.pipeline import Pipeline
 from tests.fakes import (
     FakePipelineStore, FakeRunStore,
     FakeSourceStore, FakeDestinationStore,
@@ -49,11 +50,15 @@ def _pipeline(pipeline_id: str = "p1", name: str = "orig", sources=("s1",), outp
     }
 
 
+def _obj(**kwargs) -> Pipeline:
+    return Pipeline(**_pipeline(**kwargs))
+
+
 def test_create_pipeline_with_valid_refs(client):
     c, p_store, _, _, _ = client
     r = c.post("/api/pipelines", json=_pipeline())
     assert r.status_code == 200, r.text
-    assert _run(p_store.get("p1"))["name"] == "orig"
+    assert _run(p_store.get("p1")).name == "orig"
 
 
 def test_create_pipeline_missing_source_returns_422(client):
@@ -74,14 +79,14 @@ def test_create_pipeline_missing_destination_returns_422(client):
 
 def test_update_pipeline_replaces_definition(client):
     c, p_store, _, _, _ = client
-    _run(p_store.save(_pipeline("p1", "orig")))
+    _run(p_store.save(_obj(pipeline_id="p1", name="orig")))
 
     updated = _pipeline("p1", "renamed")
     r = c.put("/api/pipelines/p1", json=updated)
 
     assert r.status_code == 200
     assert r.json()["name"] == "renamed"
-    assert _run(p_store.get("p1"))["name"] == "renamed"
+    assert _run(p_store.get("p1")).name == "renamed"
 
 
 def test_update_missing_pipeline_returns_404(client):
@@ -92,7 +97,7 @@ def test_update_missing_pipeline_returns_404(client):
 
 def test_update_pipeline_id_mismatch_returns_400(client):
     c, p_store, _, _, _ = client
-    _run(p_store.save(_pipeline("p1")))
+    _run(p_store.save(_obj(pipeline_id="p1")))
     body = _pipeline("different-id")
     r = c.put("/api/pipelines/p1", json=body)
     assert r.status_code == 400
@@ -100,7 +105,7 @@ def test_update_pipeline_id_mismatch_returns_400(client):
 
 def test_delete_pipeline_returns_204(client):
     c, p_store, _, _, _ = client
-    _run(p_store.save(_pipeline("p1")))
+    _run(p_store.save(_obj(pipeline_id="p1")))
     r = c.delete("/api/pipelines/p1")
     assert r.status_code == 204
     assert _run(p_store.get("p1")) is None
@@ -114,8 +119,8 @@ def test_delete_missing_pipeline_returns_404(client):
 
 def test_delete_cascades_runs(client):
     c, p_store, r_store, _, _ = client
-    _run(p_store.save(_pipeline("p1")))
-    _run(p_store.save(_pipeline("p2")))
+    _run(p_store.save(_obj(pipeline_id="p1")))
+    _run(p_store.save(_obj(pipeline_id="p2")))
     _run(r_store.create("p1"))
     _run(r_store.create("p1"))
     keep = _run(r_store.create("p2"))

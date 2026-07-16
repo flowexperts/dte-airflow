@@ -44,10 +44,9 @@ async def get_run_output(
     if not location:
         raise HTTPException(status_code=400, detail="Run has no recorded output location")
 
-    pipeline_dict = await p_store.get(run["pipeline_id"])
-    if not pipeline_dict:
+    pipeline = await p_store.get(run["pipeline_id"])
+    if not pipeline:
         raise HTTPException(status_code=404, detail="Parent pipeline not found")
-    pipeline = Pipeline(**pipeline_dict)
     raw_dest = await d_store.get(pipeline.output_id)
     if not raw_dest:
         raise HTTPException(status_code=404, detail="Destination not found")
