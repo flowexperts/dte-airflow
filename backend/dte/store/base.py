@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from dte.models.pipeline import Pipeline
+    from dte.models.pipeline import Connection, ConnectionCreate, Pipeline
 
 
 @runtime_checkable
@@ -41,14 +41,14 @@ class DestinationStore(Protocol):
 class ConnectionStore(Protocol):
     """Stores connections with credentials encrypted at rest.
 
-    - `get` returns credentials in plaintext (decrypted). Callers own
-      not leaking them to the wire.
-    - `list` returns credentials **masked** (each value replaced with
-      `"***"`). Suitable for list views.
-    - `save` accepts plaintext credentials; the implementation encrypts
-      via its injected SecretResolver.
+    - `get` returns a `Connection` instance with `credentials` populated
+      from decryption. Callers own not leaking them to the wire.
+    - `list` returns `Connection` instances with `credentials` set to `{}`
+      (masked). Suitable for list views.
+    - `save` accepts a `ConnectionCreate` with plaintext credentials; the
+      implementation encrypts via its injected SecretResolver.
     """
-    async def get(self, id: str) -> dict | None: ...
-    async def save(self, connection: dict) -> None: ...
-    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]: ...
+    async def get(self, id: str) -> "Connection | None": ...
+    async def save(self, connection: "ConnectionCreate") -> None: ...
+    async def list(self, limit: int = 50, offset: int = 0) -> "list[Connection]": ...
     async def delete(self, id: str) -> bool: ...

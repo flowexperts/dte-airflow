@@ -1,7 +1,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
 
-from dte.models.pipeline import Connection
+from dte.models.pipeline import Connection, ConnectionCreate
 from dte.api.deps import (
     get_connection_store,
     get_source_store,
@@ -13,20 +13,35 @@ from dte.store.base import ConnectionStore, SourceStore, DestinationStore
 router = APIRouter()
 
 
-def _mask(c: dict) -> dict:
-    creds = c.get("credentials") or {}
-    return {**c, "credentials": {k: "***" for k in creds}}
+def _mask(c: Connection) -> dict:
+    """Return a plain dict with credentials values replaced by '***'."""
+    creds = c.credentials_dict()
+    return {
+        "id": c.id,
+        "connection_type": c.connection_type,
+        "credentials": {k: "***" for k in creds},
+    }
 
 
 @router.post("/connections", status_code=201)
 async def create_connection(
-    connection: Connection,
+    connection: ConnectionCreate,
     store: ConnectionStore = Depends(get_connection_store),
 ):
     if await store.get(connection.id):
         raise HTTPException(status_code=409, detail=f"Connection '{connection.id}' already exists")
-    await store.save(connection.model_dump())
-    return _mask(connection.model_dump())
+    await store.save(connection)
+    return _mask_create(connection)
+
+
+def _mask_create(connection: ConnectionCreate) -> dict:
+    """Mask credentials from a ConnectionCreate (used for POST response)."""
+    creds = connection.credentials or {}
+    return {
+        "id": connection.id,
+        "connection_type": connection.connection_type,
+        "credentials": {k: "***" for k in creds},
+    }
 
 
 @router.get("/connections")
@@ -35,7 +50,8 @@ async def list_connections(
     offset: int = 0,
     store: ConnectionStore = Depends(get_connection_store),
 ):
-    return await store.list(limit=limit, offset=offset)
+    connections = await store.list(limit=limit, offset=offset)
+    return [_mask(c) for c in connections]
 
 
 @router.get("/connections/{connection_id}")
@@ -50,14 +66,14 @@ async def get_connection(
     if reveal:
         # Reveal path is a deliberate escape hatch (e.g., the UI edit form
         # pre-populating fields). Callers should treat this as sensitive.
-        return c
+        return c.to_api_dict()
     return _mask(c)
 
 
 @router.put("/connections/{connection_id}")
 async def update_connection(
     connection_id: str,
-    connection: Connection,
+    connection: ConnectionCreate,
     store: ConnectionStore = Depends(get_connection_store),
 ):
     if connection.id != connection_id:
@@ -65,12 +81,16 @@ async def update_connection(
     existing = await store.get(connection_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Connection not found")
-    payload = connection.model_dump()
     # If credentials omitted (empty dict) on PUT, keep the existing set.
-    if not payload.get("credentials"):
-        payload["credentials"] = existing.get("credentials", {})
-    await store.save(payload)
-    return _mask(payload)
+    if not connection.credentials:
+        existing_creds = existing.credentials_dict()
+        connection = ConnectionCreate(
+            id=connection.id,
+            connection_type=connection.connection_type,
+            credentials=existing_creds,
+        )
+    await store.save(connection)
+    return _mask_create(connection)
 
 
 @router.post("/connections/{connection_id}/test")
@@ -81,10 +101,10 @@ async def test_connection(
     """Lightweight connectivity probe. Returns
     `{ok: bool, elapsed_ms: int, detail: str}`. Does not raise on probe
     failure — the UI shows detail either way."""
-    raw = await store.get(connection_id)
-    if not raw:
+    c = await store.get(connection_id)
+    if not c:
         raise HTTPException(status_code=404, detail="Connection not found")
-    return probe_connection(Connection(**raw))
+    return probe_connection(c)
 
 
 @router.delete("/connections/{connection_id}", status_code=204)

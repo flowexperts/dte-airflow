@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import Column, func
+from sqlalchemy import Column, LargeBinary, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as SMField, SQLModel
 
@@ -135,12 +135,69 @@ def _public_fields(instance) -> dict:
     return out
 
 
-class Connection(BaseModel):
-    """Reusable credential bundle. `credentials` is validated per
-    `connection_type` against dlt's `@configspec` classes — see
-    `_DLT_CRED_CLASS`."""
+# ─── Connection (SQLModel — single class serves API validation + persistence) ──
+#
+# `ConnectionBase` holds domain fields. `Connection` (table=True) adds the
+# persistence columns including `credentials_encrypted` (BYTEA). `credentials`
+# lives only on `ConnectionBase`/`ConnectionCreate` — SQLModel cannot map a
+# plain `dict` column without an explicit `sa_column`, so we keep it off the
+# table class and let the store layer decrypt into a dynamic attribute.
+#
+# `ConnectionCreate` is the FastAPI input shape and carries the credential
+# validator — the `table=True` class must not carry it because ORM hydration
+# bypasses Pydantic's required-field checks.
+
+class ConnectionBase(SQLModel):
+    """Base domain fields — no persistence identity, no encryption.
+
+    `connection_type` is typed as `str` here so SQLModel can map it to a TEXT
+    column without tripping on Literal[...] — which SQLModel 0.0.x cannot
+    resolve to a SA type. `ConnectionCreate` overrides it with the Literal for
+    strict validation at the API edge.
+    """
+    connection_type: str = SMField(sa_column=Column(Text, nullable=False))
+
+
+class Connection(ConnectionBase, table=True):
+    """ORM-mapped row. `credentials` is NOT a mapped column — it is set as a
+    plain Python attribute by the store after decryption. `model_dump()` will
+    NOT include it; routes build the response dict manually."""
+    __tablename__ = "connections"
+
+    id: str = SMField(primary_key=True)
+    credentials_encrypted: bytes = SMField(
+        sa_column=Column(LargeBinary, nullable=False)
+    )
+    created_at: datetime | None = SMField(
+        default=None, sa_column=Column(server_default=func.now())
+    )
+    updated_at: datetime | None = SMField(
+        default=None,
+        sa_column=Column(server_default=func.now(), onupdate=func.now()),
+    )
+
+    def credentials_dict(self) -> dict:
+        """Return the `credentials` attribute set by the store, or {} if
+        the store hasn't populated it (e.g. list path masks them)."""
+        return getattr(self, "credentials", {})
+
+    def to_api_dict(self) -> dict:
+        """Serialise for API responses: id + connection_type + credentials."""
+        return {
+            "id": self.id,
+            "connection_type": self.connection_type,
+            "credentials": self.credentials_dict(),
+        }
+
+
+class ConnectionCreate(ConnectionBase):
+    """Strict API input — non-table so required-field checks fire.
+
+    Overrides `connection_type` with the `ConnectionType` Literal so
+    Pydantic rejects unknown types at the API edge.
+    """
     id: str
-    connection_type: ConnectionType
+    connection_type: ConnectionType  # type: ignore[override]
     credentials: dict = {}
 
     @model_validator(mode="after")

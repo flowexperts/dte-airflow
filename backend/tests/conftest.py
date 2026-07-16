@@ -16,6 +16,7 @@ from dte.api.deps import (
     get_destination_store,
     get_connection_store,
 )
+from dte.models.pipeline import Connection
 from tests.fakes import (
     FakePipelineStore,
     FakeRunStore,
@@ -23,6 +24,17 @@ from tests.fakes import (
     FakeDestinationStore,
     FakeConnectionStore,
 )
+
+
+def _make_local_fs_connection() -> Connection:
+    """Build the pre-seeded local_fs Connection instance."""
+    row = Connection(
+        id="local_fs",
+        connection_type="local_fs",
+        credentials_encrypted=b"",
+    )
+    object.__setattr__(row, "credentials", {})
+    return row
 
 
 @pytest.fixture(autouse=True)
@@ -36,11 +48,7 @@ def fake_stores():
     )
     # Every test gets a `local_fs` connection pre-seeded — most sources /
     # destinations use it, tests don't have to re-declare it every time.
-    c._data["local_fs"] = {
-        "id": "local_fs",
-        "connection_type": "local_fs",
-        "credentials": {},
-    }
+    c._data["local_fs"] = _make_local_fs_connection()
     app.dependency_overrides[get_pipeline_store] = lambda: p
     app.dependency_overrides[get_run_store] = lambda: r
     app.dependency_overrides[get_source_store] = lambda: s

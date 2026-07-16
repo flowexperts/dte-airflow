@@ -53,7 +53,7 @@ async def infer_schema(
         )
     engine = DuckDBEngine()
     try:
-        table = load_source(source, engine.con, conn.get("credentials") or {})
+        table = load_source(source, engine.con, conn.credentials_dict())
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 

@@ -5,7 +5,7 @@ from sqlmodel import select
 import uuid
 import json
 
-from dte.models.pipeline import Pipeline
+from dte.models.pipeline import Connection, ConnectionCreate, Pipeline
 from dte.secrets import SecretResolver, get_secret_resolver
 
 
@@ -251,7 +251,12 @@ class PostgresDestinationStore:
 
 class PostgresConnectionStore:
     """Stores connection rows with credentials encrypted at rest via a
-    `SecretResolver` (env-based JSON in dev; Fernet in prod)."""
+    `SecretResolver` (env-based JSON in dev; Fernet in prod).
+
+    Returns typed `Connection` instances. `credentials` is NOT a mapped
+    column — `get` decrypts and attaches it as a plain Python attribute;
+    `list` attaches an empty dict (masking behaviour stays in the store).
+    """
 
     def __init__(
         self,
@@ -261,59 +266,54 @@ class PostgresConnectionStore:
         self._factory = session_factory
         self._resolver = resolver or get_secret_resolver()
 
-    async def get(self, id: str) -> dict | None:
-        async with self._factory() as s:
-            result = await s.execute(
-                text("SELECT id, connection_type, credentials_encrypted FROM connections WHERE id = :id"),
-                {"id": id},
-            )
-            row = result.mappings().fetchone()
-            if not row:
-                return None
-            credentials = self._resolver.decrypt(bytes(row["credentials_encrypted"]))
-            return {
-                "id": row["id"],
-                "connection_type": row["connection_type"],
-                "credentials": credentials,
-            }
+    def _hydrate(self, row: Connection, credentials: dict) -> Connection:
+        """Attach decrypted credentials as a plain attribute."""
+        object.__setattr__(row, "credentials", credentials)
+        return row
 
-    async def save(self, connection: dict) -> None:
-        ciphertext = self._resolver.encrypt(connection.get("credentials") or {})
+    async def get(self, id: str) -> Connection | None:
         async with self._factory() as s:
-            await s.execute(text("""
-                INSERT INTO connections (id, connection_type, credentials_encrypted)
-                VALUES (:id, :connection_type, :credentials_encrypted)
-                ON CONFLICT (id) DO UPDATE SET
-                    connection_type = EXCLUDED.connection_type,
-                    credentials_encrypted = EXCLUDED.credentials_encrypted,
-                    updated_at = now()
-            """), {
-                "id": connection["id"],
-                "connection_type": connection["connection_type"],
-                "credentials_encrypted": ciphertext,
-            })
+            row = await s.get(Connection, id)
+            if row is None:
+                return None
+            credentials = self._resolver.decrypt(bytes(row.credentials_encrypted))
+            return self._hydrate(row, credentials)
+
+    async def save(self, connection: ConnectionCreate) -> None:
+        ciphertext = self._resolver.encrypt(connection.credentials or {})
+        stmt = pg_insert(Connection).values(
+            id=connection.id,
+            connection_type=connection.connection_type,
+            credentials_encrypted=ciphertext,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Connection.id],
+            set_={
+                "connection_type": stmt.excluded.connection_type,
+                "credentials_encrypted": stmt.excluded.credentials_encrypted,
+            },
+        )
+        async with self._factory() as s:
+            await s.execute(stmt)
             await s.commit()
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        """Returns rows with credentials **masked** — never decrypts."""
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Connection]:
+        """Returns rows with credentials masked (empty dict) — never decrypts."""
+        stmt = (
+            select(Connection)
+            .order_by(Connection.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         async with self._factory() as s:
-            result = await s.execute(
-                text("SELECT id, connection_type FROM connections ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
-                {"limit": limit, "offset": offset},
-            )
-            return [
-                {
-                    "id": row["id"],
-                    "connection_type": row["connection_type"],
-                    "credentials": {},
-                }
-                for row in result.mappings().fetchall()
-            ]
+            rows = list((await s.execute(stmt)).scalars().all())
+        return [self._hydrate(row, {}) for row in rows]
 
     async def delete(self, id: str) -> bool:
         async with self._factory() as s:
-            result = await s.execute(
-                text("DELETE FROM connections WHERE id = :id"), {"id": id}
-            )
+            row = await s.get(Connection, id)
+            if row is None:
+                return False
+            await s.delete(row)
             await s.commit()
-            return result.rowcount > 0
+            return True

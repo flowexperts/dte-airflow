@@ -14,9 +14,9 @@ from dte.store.base import SourceStore, PipelineStore, ConnectionStore
 router = APIRouter()
 
 
-async def _validate_connection(source: Source, c_store: ConnectionStore) -> dict:
+async def _validate_connection(source: Source, c_store: ConnectionStore):
     """Fetch the linked connection and verify its type is compatible with
-    `source.source_type`. Raises 422 otherwise."""
+    `source.source_type`. Raises 422 otherwise. Returns the Connection."""
     conn = await c_store.get(source.connection_id)
     if not conn:
         raise HTTPException(
@@ -24,12 +24,12 @@ async def _validate_connection(source: Source, c_store: ConnectionStore) -> dict
             detail=f"Connection '{source.connection_id}' does not exist",
         )
     allowed = SOURCE_CONNECTION_COMPAT.get(source.source_type, set())
-    if conn["connection_type"] not in allowed:
+    if conn.connection_type not in allowed:
         raise HTTPException(
             status_code=422,
             detail=(
                 f"Source type '{source.source_type}' is not compatible with "
-                f"connection type '{conn['connection_type']}' (allowed: {sorted(allowed)})"
+                f"connection type '{conn.connection_type}' (allowed: {sorted(allowed)})"
             ),
         )
     return conn
@@ -127,7 +127,7 @@ async def source_schema(
         )
     engine = DuckDBEngine()
     try:
-        table = load_source(source, engine.con, conn.get("credentials") or {})
+        table = load_source(source, engine.con, conn.credentials_dict())
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
     fields = [_walk(name, dtype) for name, dtype in table.schema().items()]

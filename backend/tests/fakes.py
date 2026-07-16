@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from dte.models.pipeline import Pipeline
+from dte.models.pipeline import Connection, ConnectionCreate, Pipeline
 
 
 def _utcnow_iso() -> str:
@@ -129,26 +129,50 @@ class FakeDestinationStore:
         return False
 
 
-def _mask_credentials(connection: dict) -> dict:
-    creds = connection.get("credentials") or {}
-    masked = {k: "***" for k in creds}
-    return {**connection, "credentials": masked}
+def _make_connection(c: ConnectionCreate) -> Connection:
+    """Build a `Connection` ORM instance from a `ConnectionCreate`, attaching
+    `credentials` as a plain attribute (mirrors what the Postgres store does)."""
+    row = Connection(
+        id=c.id,
+        connection_type=c.connection_type,
+        credentials_encrypted=b"",  # fake store doesn't encrypt
+    )
+    object.__setattr__(row, "credentials", c.credentials)
+    return row
 
 
 class FakeConnectionStore:
+    """In-memory connection store for tests. Stores typed `Connection`
+    instances; `credentials` live as a plain attribute on each instance."""
+
     def __init__(self):
-        self._data: dict[str, dict] = {}
+        self._data: dict[str, Connection] = {}
 
-    async def get(self, id: str) -> dict | None:
-        entry = self._data.get(id)
-        return dict(entry) if entry else None
+    async def get(self, id: str) -> Connection | None:
+        return self._data.get(id)
 
-    async def save(self, connection: dict) -> None:
-        self._data[connection["id"]] = dict(connection)
+    async def save(self, connection: ConnectionCreate) -> None:
+        existing = self._data.get(connection.id)
+        row = _make_connection(connection)
+        # Preserve created_at if already saved (mirrors FakePipelineStore).
+        if existing is not None:
+            row.created_at = existing.created_at
+        row.updated_at = _utcnow()
+        self._data[connection.id] = row
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        items = [_mask_credentials(c) for c in self._data.values()]
-        return items[offset:offset + limit]
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Connection]:
+        items = list(self._data.values())
+        # Mask: return copies with credentials={}
+        masked = []
+        for c in items[offset:offset + limit]:
+            masked_row = Connection(
+                id=c.id,
+                connection_type=c.connection_type,
+                credentials_encrypted=c.credentials_encrypted,
+            )
+            object.__setattr__(masked_row, "credentials", {})
+            masked.append(masked_row)
+        return masked
 
     async def delete(self, id: str) -> bool:
         if id in self._data:

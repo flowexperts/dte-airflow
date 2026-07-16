@@ -172,23 +172,24 @@ async def _upsert_connection(
 ) -> str:
     """Return the id used. Local_fs is a singleton across the fleet;
     everything else keys off a sha1 of the cred blob."""
+    from dte.models.pipeline import ConnectionCreate
     if connection_type == "local_fs":
         if not await c_store.get(LOCAL_FS_DEFAULT_ID):
-            await c_store.save({
-                "id": LOCAL_FS_DEFAULT_ID,
-                "connection_type": "local_fs",
-                "credentials": {},
-            })
+            await c_store.save(ConnectionCreate(
+                id=LOCAL_FS_DEFAULT_ID,
+                connection_type="local_fs",
+                credentials={},
+            ))
             log.append(f"  created shared connection {LOCAL_FS_DEFAULT_ID}")
         return LOCAL_FS_DEFAULT_ID
 
     cid = _dedupe_key(credentials, connection_type)
     if not await c_store.get(cid):
-        await c_store.save({
-            "id": cid,
-            "connection_type": connection_type,
-            "credentials": credentials,
-        })
+        await c_store.save(ConnectionCreate(
+            id=cid,
+            connection_type=connection_type,
+            credentials=credentials,
+        ))
         log.append(f"  created connection {cid} ({connection_type})")
     return cid
 
