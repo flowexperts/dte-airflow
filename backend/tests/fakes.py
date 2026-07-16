@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from dte.models.pipeline import Connection, ConnectionCreate, Pipeline, Source, SourceCreate
+from dte.models.pipeline import Connection, ConnectionCreate, Destination, DestinationCreate, Pipeline, Source, SourceCreate
 
 
 def _utcnow_iso() -> str:
@@ -155,18 +155,72 @@ class FakeSourceStore:
         return False
 
 
-class FakeDestinationStore:
-    def __init__(self):
-        self._data: dict[str, dict] = {}
+def _make_destination(d: "DestinationCreate | dict") -> Destination:
+    """Build a typed `Destination` ORM instance from a `DestinationCreate` or a
+    plain dict, then call `narrow_config()` to ensure `config` is a typed
+    `OutputTarget` union instance.
 
-    async def get(self, id: str) -> dict | None:
+    Uses normal `Destination(...)` construction so SQLAlchemy's SA instrumentation
+    (`_sa_instance_state`) is properly initialised. `table=True` bypasses
+    Pydantic validators, so `narrow_config()` must be called explicitly — same
+    pattern as `PostgresDestinationStore.get`/`list`.
+
+    Dict input is tolerated for backwards compat with migration scripts and
+    legacy test helpers that pre-date the typed store.
+    """
+    if isinstance(d, dict):
+        config_raw = d.get("config", {})
+        dest_type = config_raw.get("type", "") if isinstance(config_raw, dict) else ""
+        row = Destination(
+            id=d["id"],
+            connection_id=d.get("connection_id", "local_fs"),
+            config=config_raw,
+            dest_type=dest_type,
+        )
+    else:
+        # DestinationCreate — _narrow_config ran, so config is already typed.
+        cfg = d.config
+        if hasattr(cfg, "model_dump"):
+            config_dict = cfg.model_dump(by_alias=True, exclude_none=True)
+        else:
+            config_dict = dict(cfg)  # type: ignore[arg-type]
+        dest_type = config_dict.get("type", "")
+        row = Destination(
+            id=d.id,
+            connection_id=d.connection_id,
+            config=config_dict,
+            dest_type=dest_type,
+        )
+    return row.narrow_config()
+
+
+class FakeDestinationStore:
+    """In-memory destination store for tests. Stores typed `Destination` instances.
+
+    `save` accepts `DestinationCreate` (the typed API input) or a plain `dict`
+    (for migration scripts and legacy test helpers that pre-date the typed store).
+    """
+
+    def __init__(self):
+        self._data: dict[str, Destination] = {}
+
+    async def get(self, id: str) -> Destination | None:
         return self._data.get(id)
 
-    async def save(self, destination: dict) -> None:
-        self._data[destination["id"]] = destination
+    async def save(self, destination: "DestinationCreate | dict") -> None:  # type: ignore[override]
+        dest_id = destination.id if isinstance(destination, DestinationCreate) else destination["id"]
+        existing = self._data.get(dest_id)
+        row = _make_destination(destination)
+        row.created_at = existing.created_at if existing else _utcnow()
+        row.updated_at = _utcnow()
+        self._data[dest_id] = row
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        items = list(self._data.values())
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Destination]:
+        items = sorted(
+            self._data.values(),
+            key=lambda d: d.created_at or _utcnow(),
+            reverse=True,
+        )
         return items[offset:offset + limit]
 
     async def delete(self, id: str) -> bool:

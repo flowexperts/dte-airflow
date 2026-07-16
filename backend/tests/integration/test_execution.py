@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.compiler.ibis_compiler import compile_pipeline
-from dte.models.pipeline import Pipeline, Source, Destination, JsonFileTarget
+from dte.models.pipeline import Pipeline, Source, Destination, DestinationCreate, JsonFileTarget
 from dte.sources.loader import load_source
 
 
@@ -25,11 +25,12 @@ def _fs_source(src_id: str, tmp_path: Path, file_glob: str, table: str, connecti
     )
 
 
-def _json_dest(dest_id: str, connection_id: str, out_path: Path, fields=None) -> Destination:
+def _json_dest(dest_id: str, connection_id: str, out_path: Path, fields=None) -> DestinationCreate:
+    """Return a DestinationCreate so Pydantic validators run and config is typed."""
     cfg = {"type": "json_file", "path": str(out_path)}
     if fields:
         cfg["fields"] = fields
-    return Destination(id=dest_id, connection_id=connection_id, config=cfg)
+    return DestinationCreate(id=dest_id, connection_id=connection_id, config=cfg)
 
 
 def test_end_to_end_filter_rename(tmp_path):

@@ -6,8 +6,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from dte.store.postgres import PostgresPipelineStore, PostgresRunStore, PostgresSourceStore
-from dte.models.pipeline import Pipeline, SourceCreate
+from dte.store.postgres import PostgresPipelineStore, PostgresRunStore, PostgresSourceStore, PostgresDestinationStore
+from dte.models.pipeline import Pipeline, SourceCreate, DestinationCreate, JsonFileTarget
 
 
 def _pipeline(id: str, name: str = "n", output_id: str = "out") -> Pipeline:
@@ -137,3 +137,58 @@ async def test_postgres_source_upsert(session_factory):
     result = await store.get("pg-src-up")
     assert result.table == "after"
     await store.delete("pg-src-up")
+
+
+def _destination(id: str, path: str = "/tmp/out.json") -> DestinationCreate:
+    return DestinationCreate(
+        id=id,
+        connection_id="local_fs",
+        config={"type": "json_file", "path": path},
+    )
+
+
+async def test_postgres_destination_save_and_get(session_factory):
+    store = PostgresDestinationStore(session_factory)
+    await store.save(_destination("pg-dest1"))
+    result = await store.get("pg-dest1")
+    assert result is not None
+    assert result.id == "pg-dest1"
+    # config is narrowed to typed OutputTarget union by narrow_config()
+    assert isinstance(result.config, JsonFileTarget)
+    assert result.config.type == "json_file"
+    assert result.config.path == "/tmp/out.json"
+    assert result.connection_id == "local_fs"
+    await store.delete("pg-dest1")
+
+
+async def test_postgres_destination_list(session_factory):
+    store = PostgresDestinationStore(session_factory)
+    await store.save(_destination("pg-dest-l1"))
+    await store.save(_destination("pg-dest-l2"))
+    dests = await store.list(limit=10)
+    ids = {d.id for d in dests}
+    assert {"pg-dest-l1", "pg-dest-l2"}.issubset(ids)
+    # All items have typed configs
+    for d in dests:
+        if d.id in {"pg-dest-l1", "pg-dest-l2"}:
+            assert isinstance(d.config, JsonFileTarget)
+    await store.delete("pg-dest-l1")
+    await store.delete("pg-dest-l2")
+
+
+async def test_postgres_destination_upsert(session_factory):
+    """Re-saving with the same id updates the row (upsert semantics)."""
+    store = PostgresDestinationStore(session_factory)
+    await store.save(_destination("pg-dest-up", "/tmp/before.json"))
+    await store.save(_destination("pg-dest-up", "/tmp/after.json"))
+    result = await store.get("pg-dest-up")
+    assert result.config.path == "/tmp/after.json"
+    await store.delete("pg-dest-up")
+
+
+async def test_postgres_destination_delete(session_factory):
+    store = PostgresDestinationStore(session_factory)
+    await store.save(_destination("pg-dest-del"))
+    deleted = await store.delete("pg-dest-del")
+    assert deleted is True
+    assert await store.get("pg-dest-del") is None

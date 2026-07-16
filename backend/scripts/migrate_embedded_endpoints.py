@@ -34,6 +34,21 @@ def _is_embedded_output(entry) -> bool:
     return isinstance(entry, dict) and "type" in entry
 
 
+def _as_dict(row) -> dict:
+    """Convert a store row to a plain dict for comparison.
+
+    Typed store rows (Source, Destination) have `to_api_dict()` / attribute
+    access; legacy dict rows pass through unchanged."""
+    if row is None:
+        return {}
+    if isinstance(row, dict):
+        return row
+    if hasattr(row, "to_api_dict"):
+        return row.to_api_dict()
+    # Source / Connection: fall back to model_dump
+    return row.model_dump()
+
+
 async def _upsert_with_id_collision(store, entry: dict, base_id: str, log: list[str]) -> str:
     """Insert `entry` into `store` under `base_id`, appending `-N` on
     collision if the existing row has a different payload. Returns the id
@@ -44,7 +59,7 @@ async def _upsert_with_id_collision(store, entry: dict, base_id: str, log: list[
         await store.save(entry)
         return base_id
     # Same id — if same payload, no-op; else pick suffix.
-    if existing == {**entry, "id": base_id}:
+    if _as_dict(existing) == {**entry, "id": base_id}:
         return base_id
     suffix = 2
     while True:
@@ -55,7 +70,7 @@ async def _upsert_with_id_collision(store, entry: dict, base_id: str, log: list[
             entry = {**entry, "id": candidate}
             await store.save(entry)
             return candidate
-        if collision == {**entry, "id": candidate}:
+        if _as_dict(collision) == {**entry, "id": candidate}:
             return candidate
         suffix += 1
 

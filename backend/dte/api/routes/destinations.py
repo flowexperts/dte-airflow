@@ -1,7 +1,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
 
-from dte.models.pipeline import Destination
+from dte.models.pipeline import DestinationCreate
 from dte.api.deps import get_destination_store, get_pipeline_store
 from dte.store.base import DestinationStore, PipelineStore
 
@@ -10,18 +10,19 @@ router = APIRouter()
 
 @router.post("/destinations", status_code=201)
 async def create_destination(
-    destination: Destination,
+    destination: DestinationCreate,
     store: DestinationStore = Depends(get_destination_store),
 ):
     if await store.get(destination.id):
         raise HTTPException(status_code=409, detail=f"Destination '{destination.id}' already exists")
-    await store.save(destination.model_dump())
-    return destination.model_dump()
+    await store.save(destination)
+    return destination.to_api_dict()
 
 
 @router.get("/destinations")
 async def list_destinations(limit: int = 50, offset: int = 0, store: DestinationStore = Depends(get_destination_store)):
-    return await store.list(limit=limit, offset=offset)
+    items = await store.list(limit=limit, offset=offset)
+    return [d.to_api_dict() for d in items]
 
 
 @router.get("/destinations/{destination_id}")
@@ -29,22 +30,21 @@ async def get_destination(destination_id: str, store: DestinationStore = Depends
     d = await store.get(destination_id)
     if not d:
         raise HTTPException(status_code=404, detail="Destination not found")
-    return d
+    return d.to_api_dict()
 
 
 @router.put("/destinations/{destination_id}")
 async def update_destination(
     destination_id: str,
-    destination: Destination,
+    destination: DestinationCreate,
     store: DestinationStore = Depends(get_destination_store),
 ):
     if destination.id != destination_id:
         raise HTTPException(status_code=400, detail="Destination id in path and body must match")
     if not await store.get(destination_id):
         raise HTTPException(status_code=404, detail="Destination not found")
-    payload = destination.model_dump()
-    await store.save(payload)
-    return payload
+    await store.save(destination)
+    return destination.to_api_dict()
 
 
 @router.delete("/destinations/{destination_id}", status_code=204)
