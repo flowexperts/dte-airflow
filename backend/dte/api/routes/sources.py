@@ -86,8 +86,8 @@ async def delete_source(
     if not await s_store.get(source_id):
         raise HTTPException(status_code=404, detail="Source not found")
     referenced_by = [
-        p["id"] for p in await p_store.list(limit=10_000)
-        if source_id in (p.get("sources") or [])
+        p.id for p in await p_store.list(limit=10_000)
+        if source_id in (p.sources or [])
     ]
     if referenced_by:
         raise HTTPException(status_code=409, detail={"referenced_by": referenced_by})

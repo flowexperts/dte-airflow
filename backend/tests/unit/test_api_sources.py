@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from dte.api.main import app
 from dte.api.deps import get_source_store, get_pipeline_store
+from dte.models.pipeline import Pipeline
 from tests.fakes import FakeSourceStore, FakePipelineStore
 
 
@@ -96,9 +97,9 @@ def test_delete_source_204(client):
 def test_delete_source_referenced_409(client):
     c, s_store, p_store = client
     _run(s_store.save(_src("s1")))
-    _run(p_store.save({
-        "id": "p1", "name": "p", "sources": ["s1"], "steps": [], "output_id": "d1",
-    }))
+    _run(p_store.save(Pipeline(
+        id="p1", name="p", sources=["s1"], steps=[], output_id="d1",
+    )))
     r = c.delete("/api/sources/s1")
     assert r.status_code == 409
     assert r.json()["detail"]["referenced_by"] == ["p1"]

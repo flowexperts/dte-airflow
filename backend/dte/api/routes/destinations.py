@@ -56,8 +56,8 @@ async def delete_destination(
     if not await d_store.get(destination_id):
         raise HTTPException(status_code=404, detail="Destination not found")
     referenced_by = [
-        p["id"] for p in await p_store.list(limit=10_000)
-        if p.get("output_id") == destination_id
+        p.id for p in await p_store.list(limit=10_000)
+        if p.output_id == destination_id
     ]
     if referenced_by:
         raise HTTPException(status_code=409, detail={"referenced_by": referenced_by})

@@ -9,23 +9,36 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from dte.models.pipeline import Pipeline
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class FakePipelineStore:
     def __init__(self):
-        self._data: dict[str, dict] = {}
+        self._data: dict[str, Pipeline] = {}
 
-    async def get(self, id: str) -> dict | None:
+    async def get(self, id: str) -> Pipeline | None:
         return self._data.get(id)
 
-    async def save(self, pipeline: dict) -> None:
-        self._data[pipeline["id"]] = pipeline
+    async def save(self, pipeline: Pipeline) -> None:
+        existing = self._data.get(pipeline.id)
+        pipeline.created_at = existing.created_at if existing else _utcnow()
+        pipeline.updated_at = _utcnow()
+        self._data[pipeline.id] = pipeline
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        items = list(self._data.values())
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Pipeline]:
+        items = sorted(
+            self._data.values(),
+            key=lambda p: p.created_at or _utcnow(),
+            reverse=True,
+        )
         return items[offset:offset + limit]
 
     async def delete(self, id: str) -> bool:

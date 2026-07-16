@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from dte.api.main import app
+from dte.models.pipeline import Pipeline
 from dte.api.deps import (
     get_run_store, get_pipeline_store, get_destination_store,
 )
@@ -120,7 +121,7 @@ def test_output_returns_first_rows_for_json_file(tmp_path, output_client):
     out_path.write_text(json.dumps(rows))
 
     _run(d_store.save(_destination("out1", {"type": "json_file", "path": str(out_path)})))
-    _run(p_store.save(_pipeline("p1")))
+    _run(p_store.save(Pipeline(**_pipeline("p1"))))
     run_id = _run(r_store.create("p1"))
     _run(r_store.update(run_id, status="completed", rows_written=10, location=str(out_path)))
 
@@ -140,7 +141,7 @@ def test_output_unknown_run_returns_404(output_client):
 def test_output_pending_run_returns_400(output_client):
     c, r_store, p_store, d_store = output_client
     _run(d_store.save(_destination("out1", {"type": "json_file", "path": "/tmp/x.json"})))
-    _run(p_store.save(_pipeline("p1")))
+    _run(p_store.save(Pipeline(**_pipeline("p1"))))
     run_id = _run(r_store.create("p1"))
     r = c.get(f"/api/runs/{run_id}/output")
     assert r.status_code == 400
@@ -149,7 +150,7 @@ def test_output_pending_run_returns_400(output_client):
 def test_output_missing_location_returns_400(output_client):
     c, r_store, p_store, d_store = output_client
     _run(d_store.save(_destination("out1", {"type": "json_file", "path": "/tmp/x.json"})))
-    _run(p_store.save(_pipeline("p1")))
+    _run(p_store.save(Pipeline(**_pipeline("p1"))))
     run_id = _run(r_store.create("p1"))
     _run(r_store.update(run_id, status="completed", rows_written=0))
     r_store._data[run_id]["location"] = None
@@ -166,7 +167,7 @@ def test_output_unsupported_target_returns_400(tmp_path, output_client):
         "table": "t",
     }
     _run(d_store.save(_destination("out1", output)))
-    _run(p_store.save(_pipeline("p1")))
+    _run(p_store.save(Pipeline(**_pipeline("p1"))))
     run_id = _run(r_store.create("p1"))
     _run(r_store.update(run_id, status="completed", rows_written=1, location="tcp://ignored"))
 
