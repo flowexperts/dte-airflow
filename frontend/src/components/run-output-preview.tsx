@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Panel, PanelHead, SectionHead } from "@/components/ui";
+import { Button, JsonCell, Panel, PanelHead, SectionHead } from "@/components/ui";
 import { getRunOutput, type PreviewResponse } from "@/lib/api";
 
 const SUPPORTED = new Set(["json_file", "csv_file"]);
@@ -108,14 +108,9 @@ export function RunOutputPreview({
                       {columns.map((c) => (
                         <td
                           key={c}
-                          className="px-3 py-2 font-mono text-[12px] text-text tabular-nums truncate max-w-[280px]"
-                          title={String(row[c] ?? "")}
+                          className="px-3 py-2 font-mono text-[12px] text-text tabular-nums align-top"
                         >
-                          {row[c] === null || row[c] === undefined ? (
-                            <span className="text-subtle">null</span>
-                          ) : (
-                            String(row[c])
-                          )}
+                          <JsonCell value={row[c]} />
                         </td>
                       ))}
                     </tr>
