@@ -123,7 +123,7 @@ class PostgresSourceStore:
     async def get(self, id: str) -> dict | None:
         async with self._factory() as s:
             result = await s.execute(
-                text("SELECT id, source_type, config, table_name, connection_id FROM sources WHERE id = :id"),
+                text("SELECT id, source_type, config, table_name, connection_id, format FROM sources WHERE id = :id"),
                 {"id": id},
             )
             row = result.mappings().fetchone()
@@ -135,18 +135,20 @@ class PostgresSourceStore:
                 "config": row["config"],
                 "table": row["table_name"],
                 "connection_id": row["connection_id"],
+                "format": row["format"],
             }
 
     async def save(self, source: dict) -> None:
         async with self._factory() as s:
             await s.execute(text("""
-                INSERT INTO sources (id, source_type, config, table_name, connection_id)
-                VALUES (:id, :source_type, CAST(:config AS jsonb), :table_name, :connection_id)
+                INSERT INTO sources (id, source_type, config, table_name, connection_id, format)
+                VALUES (:id, :source_type, CAST(:config AS jsonb), :table_name, :connection_id, :format)
                 ON CONFLICT (id) DO UPDATE SET
                     source_type = EXCLUDED.source_type,
                     config = EXCLUDED.config,
                     table_name = EXCLUDED.table_name,
                     connection_id = EXCLUDED.connection_id,
+                    format = EXCLUDED.format,
                     updated_at = now()
             """), {
                 "id": source["id"],
@@ -154,13 +156,14 @@ class PostgresSourceStore:
                 "config": json.dumps(source.get("config", {})),
                 "table_name": source["table"],
                 "connection_id": source.get("connection_id"),
+                "format": source.get("format"),
             })
             await s.commit()
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
         async with self._factory() as s:
             result = await s.execute(
-                text("SELECT id, source_type, config, table_name, connection_id FROM sources ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
+                text("SELECT id, source_type, config, table_name, connection_id, format FROM sources ORDER BY created_at DESC LIMIT :limit OFFSET :offset"),
                 {"limit": limit, "offset": offset},
             )
             return [
@@ -170,6 +173,7 @@ class PostgresSourceStore:
                     "config": row["config"],
                     "table": row["table_name"],
                     "connection_id": row["connection_id"],
+                    "format": row["format"],
                 }
                 for row in result.mappings().fetchall()
             ]

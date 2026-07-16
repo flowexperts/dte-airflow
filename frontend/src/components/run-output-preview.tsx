@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button, JsonCell, Panel, PanelHead, SectionHead } from "@/components/ui";
 import { getRunOutput, type PreviewResponse } from "@/lib/api";
 
-const SUPPORTED = new Set(["json_file", "csv_file"]);
+const SUPPORTED = new Set(["json_file", "csv_file", "excel_file"]);
 
 export function RunOutputPreview({
   runId,

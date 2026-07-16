@@ -6,7 +6,7 @@ import { Button, Dropdown, Panel, PanelHead, type DropdownOption } from "@/compo
 import {
   createDestination,
   updateDestination,
-  isJsonFileOutput,
+  isFileOutput,
   type Destination,
 } from "@/lib/api";
 import { OutputPanel } from "./OutputPanel";
@@ -149,7 +149,7 @@ export function DestinationPicker({
               placeholder="destination_id"
             />
           )}
-          {isJsonFileOutput(editing.draft.config) ? (
+          {isFileOutput(editing.draft.config) ? (
             <OutputPanel
               output={editing.draft.config}
               onChange={(cfg) =>

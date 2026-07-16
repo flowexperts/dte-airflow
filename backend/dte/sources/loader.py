@@ -19,12 +19,13 @@ _JSONL_EXTS = (".jsonl", ".ndjson")
 _JSON_EXTS = (".json",)
 _CSV_EXTS = (".csv", ".tsv")
 _PARQUET_EXTS = (".parquet", ".pq")
+_EXCEL_EXTS = (".xlsx",)
 
 
 def _detect_format(path: str, explicit: str | None) -> str:
     """`config['format']` wins; otherwise decide by file extension.
 
-    Returns one of: `json`, `jsonl`, `csv`, `parquet`.
+    Returns one of: `json`, `jsonl`, `csv`, `parquet`, `excel`.
     """
     if explicit:
         fmt = explicit.lower()
@@ -38,6 +39,8 @@ def _detect_format(path: str, explicit: str | None) -> str:
         return "csv"
     if lower.endswith(_PARQUET_EXTS):
         return "parquet"
+    if lower.endswith(_EXCEL_EXTS):
+        return "excel"
     if lower.endswith(_JSON_EXTS):
         return "json"
     return "json"
@@ -53,8 +56,20 @@ def _sql_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def _ensure_format_ext(raw_con, fmt: str) -> None:
+    """Some DuckDB reader TVFs live in extensions rather than core.
+    Idempotently install + load the required extension for `fmt`."""
+    if fmt == "excel":
+        _ensure_ext(raw_con, "excel")
+
+
 def _duckdb_reader_call(paths: list[str], fmt: str) -> str:
-    """SQL fragment: `read_<fmt>_auto([...])` — a table-valued function call."""
+    """SQL fragment: `read_<fmt>_auto([...])` — a table-valued function call.
+
+    Excel is a `UNION ALL` across `read_xlsx(...)` calls because
+    `read_xlsx` doesn't accept a path list. Fine — xlsx sources rarely
+    fan out to hundreds of files.
+    """
     path_list = "[" + ", ".join(_sql_string_literal(p) for p in paths) + "]"
     if fmt in ("json", "jsonl"):
         arg = "format='newline_delimited'" if fmt == "jsonl" else "format='auto'"
@@ -63,6 +78,11 @@ def _duckdb_reader_call(paths: list[str], fmt: str) -> str:
         return f"read_csv_auto({path_list})"
     if fmt == "parquet":
         return f"read_parquet({path_list})"
+    if fmt == "excel":
+        readers = [
+            f"SELECT * FROM read_xlsx({_sql_string_literal(p)})" for p in paths
+        ]
+        return "(" + " UNION ALL BY NAME ".join(readers) + ")"
     raise ValueError(f"unsupported filesystem format: {fmt!r}")
 
 
@@ -174,13 +194,13 @@ def _load_remote_via_duckdb(
     config = source.config
     bucket_url = config["bucket_url"].rstrip("/")
     file_glob = config.get("file_glob", "**/*.json")
-    explicit_format = config.get("format")
 
     _ensure_ext(raw_con, extension)
     raw_con.execute(secret_sql)
 
     remote_pattern = f"{bucket_url}/{file_glob}"
-    fmt = _detect_format(file_glob, explicit_format)
+    fmt = _detect_format(file_glob, source.format)
+    _ensure_format_ext(raw_con, fmt)
     reader_sql = _duckdb_reader_call([remote_pattern], fmt)
     raw_con.execute(
         f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} "
@@ -200,7 +220,6 @@ def _load_filesystem(source: Source, con: ibis.BaseBackend, credentials: dict) -
     config = source.config
     bucket_url = config["bucket_url"]
     file_glob = config.get("file_glob", "**/*.json")
-    explicit_format = config.get("format")
 
     matched = _glob_local(bucket_url, file_glob)
     if not matched:
@@ -208,7 +227,8 @@ def _load_filesystem(source: Source, con: ibis.BaseBackend, credentials: dict) -
             f"No files matched '{file_glob}' in '{bucket_url}'"
         )
 
-    fmt = _detect_format(matched[0], explicit_format)
+    fmt = _detect_format(matched[0], source.format)
+    _ensure_format_ext(con.con, fmt)
     reader_sql = _duckdb_reader_call(matched, fmt)
     view_sql = (
         f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} "

@@ -13,7 +13,7 @@ import {
 import {
   createDestination,
   updateDestination,
-  isJsonFileOutput,
+  isFileOutput,
   type ConnectionType,
   type Destination,
 } from "@/lib/api";
@@ -25,6 +25,7 @@ import { ConnectionPicker } from "@/components/builder/ConnectionPicker";
 const DESTINATION_CONNECTION_COMPAT: Record<string, ConnectionType[]> = {
   json_file:    ["local_fs"],
   csv_file:     ["local_fs"],
+  excel_file:   ["local_fs"],
   parquet_s3:   ["s3"],
   postgres:     ["postgres"],
   sql_database: ["mysql", "snowflake", "bigquery"],
@@ -47,7 +48,7 @@ export function DestinationForm({
     if (!/^[a-zA-Z0-9_-]+$/.test(destination.id))
       return "Destination id may only contain letters, numbers, '_' and '-'.";
     if (!destination.connection_id) return "Pick a connection.";
-    if (isJsonFileOutput(destination.config) && !destination.config.path?.trim()) {
+    if (isFileOutput(destination.config) && !destination.config.path?.trim()) {
       return "Output path is required.";
     }
     return null;
@@ -121,7 +122,7 @@ export function DestinationForm({
             />
           </div>
         </Panel>
-        {isJsonFileOutput(destination.config) ? (
+        {isFileOutput(destination.config) ? (
           <OutputPanel
             output={destination.config}
             onChange={(cfg) => setDestination({ ...destination, config: cfg })}

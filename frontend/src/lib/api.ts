@@ -1,7 +1,26 @@
 import type { components, paths } from "./api-types";
 
 export type JsonFileOutput = components["schemas"]["JsonFileTarget"];
+export type CsvFileOutput = components["schemas"]["CsvFileTarget"];
+export type ExcelFileOutput = components["schemas"]["ExcelFileTarget"];
 export type OutputField = components["schemas"]["OutputField"];
+
+/** Output kinds the destination form can create/edit inline.
+ *  All three share `{ path, fields? }` — divergence is metadata only. */
+export type FileOutputTarget = JsonFileOutput | CsvFileOutput | ExcelFileOutput;
+export type FileOutputType = FileOutputTarget["type"];
+
+export const FILE_OUTPUT_TYPES: FileOutputType[] = [
+  "json_file",
+  "csv_file",
+  "excel_file",
+];
+
+export const FILE_OUTPUT_EXT: Record<FileOutputType, string> = {
+  json_file: ".json",
+  csv_file: ".csv",
+  excel_file: ".xlsx",
+};
 
 /**
  * Pipeline model — hand-typed because api-types.ts is stale until
@@ -15,14 +34,21 @@ export interface Pipeline {
   output_id: string;
 }
 
-/** Source model — creds live on the linked Connection, not in `config`. */
+/** Source model — creds live on the linked Connection, not in `config`.
+ *  `format` is a top-level column on the sources table (post-migration
+ *  009) so it can be queried without JSONB traversal and enforced by
+ *  the extension/glob guardrail. Only meaningful for filesystem-family
+ *  source_types; null = auto-detect from extension. */
 export interface Source {
   id: string;
   connection_id: string;
   source_type: string;
   config: Record<string, unknown>;
   table: string;
+  format?: FileFormat | null;
 }
+
+export type FileFormat = "json" | "jsonl" | "ndjson" | "csv" | "parquet" | "excel";
 
 /** Back-compat re-export for callers still importing the old name. */
 export type DltSource = Source;
@@ -52,7 +78,8 @@ export interface ProbeResult {
  */
 export type OutputTarget =
   | JsonFileOutput
-  | { type: "csv_file"; path: string; fields?: OutputField[] }
+  | CsvFileOutput
+  | ExcelFileOutput
   | { type: "parquet_s3"; bucket_url: string }
   | { type: "postgres"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" }
   | { type: "sql_database"; dialect: "mysql" | "snowflake" | "bigquery"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" };
@@ -63,9 +90,24 @@ export interface Destination {
   config: OutputTarget;
 }
 
-/** Discriminated narrowing helper — the UI only edits json_file targets today. */
+/** Discriminated narrowing helper — kept for callers that still special-case json. */
 export function isJsonFileOutput(o: OutputTarget): o is JsonFileOutput {
   return o.type === "json_file";
+}
+
+/** True for any file-shaped output the destination form can edit inline. */
+export function isFileOutput(o: OutputTarget): o is FileOutputTarget {
+  return (FILE_OUTPUT_TYPES as string[]).includes(o.type);
+}
+
+/** Empty config for a given file output type — used when the type picker
+ *  swaps the discriminant. Preserves the current `path` so users don't
+ *  lose what they've typed. */
+export function emptyFileOutput(
+  type: FileOutputType,
+  path = "",
+): FileOutputTarget {
+  return { type, path, fields: [] } as FileOutputTarget;
 }
 
 // Run is untyped in OpenAPI (routes return `dict`), so we model it here.

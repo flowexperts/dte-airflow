@@ -69,6 +69,32 @@ def test_load_csv(tmp_path):
     assert sorted(df["name"].tolist()) == ["alice", "bob"]
 
 
+def test_load_xlsx(tmp_path):
+    """Round-trip an xlsx via DuckDB's excel extension.
+
+    Generating the fixture with DuckDB itself keeps `openpyxl` out of
+    the test deps, matching how the writer produces xlsx in prod.
+    """
+    fixture = tmp_path / "people.xlsx"
+    gen = ibis.duckdb.connect()
+    gen.raw_sql("INSTALL excel")
+    gen.raw_sql("LOAD excel")
+    gen.raw_sql(
+        f"COPY (SELECT * FROM (VALUES (1,'alice',30),(2,'bob',25)) "
+        f"AS t(id,name,age)) TO '{fixture}' (FORMAT xlsx, HEADER true)"
+    )
+
+    src = Source(connection_id="local_fs",
+        id="s_xlsx",
+        source_type="filesystem",
+        config={"bucket_url": str(tmp_path), "file_glob": "*.xlsx"},
+        table="people",
+    )
+    con = ibis.duckdb.connect()
+    df = load_source(src, con, {}).execute()
+    assert sorted(df["name"].tolist()) == ["alice", "bob"]
+
+
 def test_load_parquet(tmp_path):
     import pyarrow as pa
     import pyarrow.parquet as pq

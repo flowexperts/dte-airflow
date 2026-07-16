@@ -45,6 +45,80 @@ def test_source_config_strict_rejects_extras():
         )
 
 
+def test_source_format_top_level():
+    """`format` is a top-level Source field, not inside `config`."""
+    s = Source(
+        id="s_xl",
+        connection_id="local_fs",
+        source_type="filesystem",
+        config={"bucket_url": "/tmp/data", "file_glob": "*.xlsx"},
+        table="data",
+        format="excel",
+    )
+    assert s.format == "excel"
+    assert "format" not in s.config
+
+
+def test_source_format_lifted_from_legacy_config():
+    """Older payloads carrying `format` inside `config` migrate cleanly:
+    the top-level `Source.format` picks it up and it's stripped from
+    the JSONB blob."""
+    s = Source(
+        id="s_legacy",
+        connection_id="local_fs",
+        source_type="filesystem",
+        config={"bucket_url": "/tmp/data", "file_glob": "*.xlsx", "format": "excel"},
+        table="data",
+    )
+    assert s.format == "excel"
+    assert "format" not in s.config
+
+
+def test_source_format_glob_mismatch_rejected():
+    """`format=excel` + `*.csv` glob is a footgun; reject at save-time."""
+    with pytest.raises(ValidationError) as exc:
+        Source(
+            id="s_bad",
+            connection_id="local_fs",
+            source_type="filesystem",
+            config={"bucket_url": "/tmp", "file_glob": "*.csv"},
+            table="t",
+            format="excel",
+        )
+    msg = str(exc.value)
+    assert ".csv" in msg and "excel" in msg
+
+
+def test_source_format_glob_match_ok():
+    """Compatible extension aliases pass."""
+    for fmt, glob in [
+        ("jsonl", "*.ndjson"),
+        ("csv", "*.tsv"),
+        ("excel", "orders.xlsx"),
+    ]:
+        Source(
+            id=f"s_{fmt}",
+            connection_id="local_fs",
+            source_type="filesystem",
+            config={"bucket_url": "/tmp", "file_glob": glob},
+            table="t",
+            format=fmt,
+        )
+
+
+def test_source_format_no_glob_extension_no_check():
+    """Bare directory-glob (e.g. `**/*`) is ambiguous — validator lets
+    it through so the loader can decide at read time."""
+    Source(
+        id="s_bare",
+        connection_id="local_fs",
+        source_type="filesystem",
+        config={"bucket_url": "/tmp", "file_glob": "**/*"},
+        table="t",
+        format="excel",
+    )
+
+
 def test_destination_parses():
     d = Destination(
         id="out1",

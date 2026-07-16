@@ -6,7 +6,12 @@ import ibis
 import pytest
 
 from dte.engine.writers import write
-from dte.models.pipeline import JsonFileTarget, CsvFileTarget, ParquetS3Target
+from dte.models.pipeline import (
+    JsonFileTarget,
+    CsvFileTarget,
+    ExcelFileTarget,
+    ParquetS3Target,
+)
 
 
 @pytest.fixture
@@ -39,6 +44,21 @@ def test_csv_file_writer(tmp_path, sample_table):
     text = out.read_text().strip().splitlines()
     assert text[0].split(",") == ["id", "name", "score"]
     assert len(text) == 3
+
+
+def test_excel_file_writer(tmp_path, sample_table):
+    out = tmp_path / "out.xlsx"
+    target = ExcelFileTarget(type="excel_file", path=str(out))
+    result = write(sample_table, target)
+    assert result["rows_written"] == 2
+    assert result["location"] == str(out)
+    # Read back through DuckDB to avoid pulling in openpyxl at test time.
+    reader = ibis.duckdb.connect()
+    reader.raw_sql("INSTALL excel")
+    reader.raw_sql("LOAD excel")
+    df = reader.sql(f"SELECT * FROM read_xlsx('{out}')").execute()
+    assert set(df.columns) == {"id", "name", "score"}
+    assert sorted(df["name"].tolist()) == ["alice", "bob"]
 
 
 def test_parquet_writer_memory_fs(sample_table):
