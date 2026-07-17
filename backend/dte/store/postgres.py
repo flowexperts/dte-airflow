@@ -7,6 +7,7 @@ import uuid
 from dte.models.pipeline import (
     Connection, ConnectionBase,
     Destination, DestinationBase,
+    LookupTable, LookupTableBase,
     Pipeline, PipelineBase,
     Source, SourceBase,
 )
@@ -236,6 +237,56 @@ class PostgresDestinationStore:
     async def delete(self, id: str) -> bool:
         async with self._factory() as s:
             row = await s.get(Destination, id)
+            if row is None:
+                return False
+            await s.delete(row)
+            await s.commit()
+            return True
+
+
+class PostgresLookupTableStore:
+    """ORM-backed lookup table store. Returns typed `LookupTable` instances."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def get(self, id: str) -> LookupTable | None:
+        async with self._factory() as s:
+            return await s.get(LookupTable, id)
+
+    async def save(self, lookup: "LookupTableBase | LookupTable") -> None:
+        values = {
+            "id": lookup.id,
+            "name": lookup.name,
+            "mappings": lookup.mappings,
+            "default": lookup.default,
+        }
+        stmt = pg_insert(LookupTable).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[LookupTable.id],
+            set_={
+                "name": stmt.excluded.name,
+                "mappings": stmt.excluded.mappings,
+                "default": stmt.excluded.default,
+            },
+        )
+        async with self._factory() as s:
+            await s.execute(stmt)
+            await s.commit()
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[LookupTable]:
+        stmt = (
+            select(LookupTable)
+            .order_by(LookupTable.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        async with self._factory() as s:
+            return list((await s.execute(stmt)).scalars().all())
+
+    async def delete(self, id: str) -> bool:
+        async with self._factory() as s:
+            row = await s.get(LookupTable, id)
             if row is None:
                 return False
             await s.delete(row)

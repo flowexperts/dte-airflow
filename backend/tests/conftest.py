@@ -15,6 +15,7 @@ from dte.api.deps import (
     get_source_store,
     get_destination_store,
     get_connection_store,
+    get_lookup_table_store,
 )
 from dte.models.pipeline import Connection
 from tests.fakes import (
@@ -23,6 +24,7 @@ from tests.fakes import (
     FakeSourceStore,
     FakeDestinationStore,
     FakeConnectionStore,
+    FakeLookupTableStore,
 )
 
 
@@ -37,12 +39,13 @@ def _make_local_fs_connection() -> Connection:
 
 @pytest.fixture(autouse=True)
 def fake_stores():
-    p, r, s, d, c = (
+    p, r, s, d, c, lt = (
         FakePipelineStore(),
         FakeRunStore(),
         FakeSourceStore(),
         FakeDestinationStore(),
         FakeConnectionStore(),
+        FakeLookupTableStore(),
     )
     # Every test gets a `local_fs` connection pre-seeded — most sources /
     # destinations use it, tests don't have to re-declare it every time.
@@ -52,7 +55,11 @@ def fake_stores():
     app.dependency_overrides[get_source_store] = lambda: s
     app.dependency_overrides[get_destination_store] = lambda: d
     app.dependency_overrides[get_connection_store] = lambda: c
-    yield {"pipeline": p, "run": r, "source": s, "destination": d, "connection": c}
+    app.dependency_overrides[get_lookup_table_store] = lambda: lt
+    yield {
+        "pipeline": p, "run": r, "source": s, "destination": d,
+        "connection": c, "lookup_table": lt,
+    }
     app.dependency_overrides.clear()
 
 

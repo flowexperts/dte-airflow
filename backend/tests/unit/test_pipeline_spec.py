@@ -219,12 +219,37 @@ def test_retype_step_in_pipeline():
 def test_lookup_map_step_in_pipeline():
     p = _pipeline(steps=[{
         "op": "map", "mode": "lookup", "field": "country_code",
-        "table": {"US": "United States", "CA": "Canada"},
-        "default": "Unknown"
+        "lookup_id": "country_names",
     }])
     step = LookupMapStep(**p.steps[0])
-    assert step.table["US"] == "United States"
-    assert step.default == "Unknown"
+    assert step.field == "country_code"
+    assert step.lookup_id == "country_names"
+    assert step.output_field is None
+
+
+def test_lookup_map_step_rejects_inline_table():
+    import pytest as _pt
+    from pydantic import ValidationError
+    with _pt.raises(ValidationError):
+        LookupMapStep(
+            op="map", mode="lookup", field="country_code",
+            table={"US": "United States"},
+        )
+
+
+def test_lookup_map_step_requires_lookup_id():
+    import pytest as _pt
+    from pydantic import ValidationError
+    with _pt.raises(ValidationError):
+        LookupMapStep(op="map", mode="lookup", field="country_code")
+
+
+def test_lookup_map_step_with_output_field():
+    step = LookupMapStep(
+        op="map", mode="lookup", field="country_code",
+        lookup_id="country_names", output_field="country_name",
+    )
+    assert step.output_field == "country_name"
 
 
 def test_expression_map_step_in_pipeline():

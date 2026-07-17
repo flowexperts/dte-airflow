@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from dte.store.postgres import (
     PostgresConnectionStore,
     PostgresDestinationStore,
+    PostgresLookupTableStore,
     PostgresPipelineStore,
     PostgresRunStore,
     PostgresSourceStore,
@@ -50,3 +51,7 @@ def get_destination_store():
 
 def get_connection_store():
     return PostgresConnectionStore(_session_factory())
+
+
+def get_lookup_table_store():
+    return PostgresLookupTableStore(_session_factory())
