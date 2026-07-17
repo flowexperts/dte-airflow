@@ -8,58 +8,10 @@ import {
   updateLookupTable,
   type LookupTable,
 } from "@/lib/api";
+import { LookupMappingsEditor } from "@/components/lookup-mappings-editor";
 
 function emptyLookup(id: string): LookupTable {
   return { id, name: null, mappings: {}, default: null };
-}
-
-function MappingsEditor({
-  value,
-  onChange,
-}: {
-  value: Record<string, string>;
-  onChange: (next: Record<string, string>) => void;
-}) {
-  const rows = Object.entries(value);
-  const commit = (next: Array<[string, string]>) => {
-    const obj: Record<string, string> = {};
-    for (const [k, v] of next) if (k) obj[k] = v;
-    onChange(obj);
-  };
-  const updateRow = (i: number, patch: { k?: string; v?: string }) => {
-    const next: Array<[string, string]> = rows.map(([k, v], j) =>
-      j === i ? [patch.k ?? k, patch.v ?? v] : [k, v],
-    );
-    commit(next);
-  };
-  const removeRow = (i: number) => commit(rows.filter((_, j) => j !== i));
-  const addRow = () => commit([...rows, ["", ""]]);
-  return (
-    <div className="space-y-1.5">
-      {rows.map(([k, v], i) => (
-        <div key={i} className="grid grid-cols-[1fr_16px_1fr_28px] gap-2 items-center">
-          <Input value={k} onChange={(e) => updateRow(i, { k: e.target.value })} placeholder="US" />
-          <span className="text-subtle text-center">=</span>
-          <Input value={v} onChange={(e) => updateRow(i, { v: e.target.value })} placeholder="United States" />
-          <button
-            type="button"
-            onClick={() => removeRow(i)}
-            className="text-subtle hover:text-red text-sm"
-            aria-label="Remove entry"
-          >
-            ×
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={addRow}
-        className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
-      >
-        + Add entry
-      </button>
-    </div>
-  );
 }
 
 export function LookupTablePicker({
@@ -199,7 +151,7 @@ export function LookupTablePicker({
             />
           </Field>
           <Field label="Mappings" hint="key on the left, replacement value on the right">
-            <MappingsEditor
+            <LookupMappingsEditor
               value={editing.draft.mappings}
               onChange={(m) =>
                 setEditing({ ...editing, draft: { ...editing.draft, mappings: m } })

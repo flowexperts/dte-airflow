@@ -1,0 +1,218 @@
+"use client";
+
+import { useState } from "react";
+import useSWR from "swr";
+import {
+  Button,
+  DataTable,
+  Field,
+  Input,
+  Panel,
+  type Column,
+} from "@/components/ui";
+import {
+  createLookupTable,
+  deleteLookupTable,
+  updateLookupTable,
+  type LookupTable,
+} from "@/lib/api";
+import { LookupMappingsEditor } from "@/components/lookup-mappings-editor";
+
+function emptyLookup(id: string): LookupTable {
+  return { id, name: null, mappings: {}, default: null };
+}
+
+function LookupEditorPanel({
+  draft,
+  isNew,
+  busy,
+  err,
+  onChange,
+  onCancel,
+  onSave,
+}: {
+  draft: LookupTable;
+  isNew: boolean;
+  busy: boolean;
+  err: string | null;
+  onChange: (next: LookupTable) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <Panel>
+      <div className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-accent">
+            {isNew ? "New lookup table" : `Editing ${draft.id}`}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={onSave} disabled={busy}>
+              {busy ? "Saving…" : "Save lookup"}
+            </Button>
+          </div>
+        </div>
+        {err && <div className="font-mono text-[11.5px] text-red">{err}</div>}
+        {isNew && (
+          <input
+            className="w-full bg-transparent border border-border rounded px-2 py-1 font-mono text-[12px]"
+            value={draft.id}
+            onChange={(e) => onChange({ ...draft, id: e.target.value })}
+            placeholder="lookup_id"
+          />
+        )}
+        <Field label="Name (optional)">
+          <Input
+            value={draft.name ?? ""}
+            onChange={(e) => onChange({ ...draft, name: e.target.value || null })}
+            placeholder="Country names"
+          />
+        </Field>
+        <Field label="Default" hint="value used when no match">
+          <Input
+            value={draft.default ?? ""}
+            onChange={(e) => onChange({ ...draft, default: e.target.value || null })}
+            placeholder="OTHER"
+          />
+        </Field>
+        <Field label="Mappings" hint="key on the left, replacement value on the right">
+          <LookupMappingsEditor
+            value={draft.mappings}
+            onChange={(m) => onChange({ ...draft, mappings: m })}
+          />
+        </Field>
+      </div>
+    </Panel>
+  );
+}
+
+export function LookupTablesTable() {
+  const { data: rows = [], mutate } = useSWR<LookupTable[]>("/api/lookup-tables");
+  const [editing, setEditing] = useState<{ draft: LookupTable; isNew: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const openNew = () => {
+    setEditing({ draft: emptyLookup(`lookup_${rows.length + 1}`), isNew: true });
+    setErr(null);
+  };
+  const openEdit = (row: LookupTable) => {
+    setEditing({ draft: row, isNew: false });
+    setErr(null);
+  };
+  const save = async () => {
+    if (!editing) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      if (editing.isNew) await createLookupTable(editing.draft);
+      else await updateLookupTable(editing.draft.id, editing.draft);
+      await mutate();
+      setEditing(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onDelete = async (id: string) => {
+    if (!confirm(`Delete lookup table '${id}'?`)) return;
+    setDeletingId(id);
+    try {
+      await deleteLookupTable(id);
+      await mutate();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const columns: Column<LookupTable>[] = [
+    {
+      key: "id",
+      header: "ID",
+      width: "1.5fr",
+      render: (r) => <span className="font-mono text-[12px]">{r.id}</span>,
+    },
+    {
+      key: "name",
+      header: "Name",
+      width: "1.5fr",
+      render: (r) => <span className="text-[12.5px]">{r.name ?? ""}</span>,
+    },
+    {
+      key: "entries",
+      header: "Entries",
+      width: "90px",
+      render: (r) => (
+        <span className="font-mono text-[11.5px] text-muted">
+          {Object.keys(r.mappings || {}).length}
+        </span>
+      ),
+    },
+    {
+      key: "default",
+      header: "Default",
+      width: "1fr",
+      render: (r) => (
+        <span className="font-mono text-[11.5px] text-subtle truncate">
+          {r.default ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      width: "100px",
+      align: "right",
+      render: (r) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(r.id);
+          }}
+          disabled={deletingId === r.id}
+          className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
+        >
+          {deletingId === r.id ? "…" : "Delete"}
+        </button>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {editing ? (
+        <LookupEditorPanel
+          draft={editing.draft}
+          isNew={editing.isNew}
+          busy={busy}
+          err={err}
+          onChange={(d) => setEditing({ ...editing, draft: d })}
+          onCancel={() => setEditing(null)}
+          onSave={save}
+        />
+      ) : (
+        <>
+          <div className="flex justify-end">
+            <Button variant="primary" size="sm" onClick={openNew}>
+              + New lookup table
+            </Button>
+          </div>
+          <DataTable
+            columns={columns}
+            rows={rows}
+            onRowClick={openEdit}
+            emptyText="No lookup tables yet. Create one to reuse across map/lookup steps."
+          />
+        </>
+      )}
+    </div>
+  );
+}
