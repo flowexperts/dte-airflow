@@ -11,7 +11,8 @@ from dte.models.pipeline import (
     Pipeline, PipelineBase,
     Source, SourceBase,
 )
-from dte.models.user import User, UserBase
+from dte.models.user import Role, User, UserBase, UserRoleLink
+from sqlalchemy import func as sa_func
 
 
 class PostgresPipelineStore:
@@ -376,14 +377,29 @@ class PostgresUserStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._factory = session_factory
 
+    async def _load_roles(self, s: AsyncSession, user: User) -> None:
+        role_stmt = (
+            select(Role)
+            .join(UserRoleLink, UserRoleLink.role_id == Role.id)
+            .where(UserRoleLink.user_id == user.id)
+        )
+        roles = list((await s.execute(role_stmt)).scalars().all())
+        user.narrow_roles(roles)
+
     async def get_by_id(self, id: str) -> User | None:
         async with self._factory() as s:
-            return await s.get(User, id)
+            row = await s.get(User, id)
+            if row is not None:
+                await self._load_roles(s, row)
+            return row
 
     async def get_by_email(self, email: str) -> User | None:
         stmt = select(User).where(User.email == email)
         async with self._factory() as s:
-            return (await s.execute(stmt)).scalars().first()
+            row = (await s.execute(stmt)).scalars().first()
+            if row is not None:
+                await self._load_roles(s, row)
+            return row
 
     async def save(self, user: "UserBase", password_hash: str) -> None:
         stmt = pg_insert(User).values(
@@ -412,7 +428,10 @@ class PostgresUserStore:
             .offset(offset)
         )
         async with self._factory() as s:
-            return list((await s.execute(stmt)).scalars().all())
+            rows = list((await s.execute(stmt)).scalars().all())
+            for row in rows:
+                await self._load_roles(s, row)
+            return rows
 
     async def delete(self, id: str) -> bool:
         async with self._factory() as s:
@@ -422,3 +441,36 @@ class PostgresUserStore:
             await s.delete(row)
             await s.commit()
             return True
+
+    async def count(self) -> int:
+        async with self._factory() as s:
+            return int((await s.execute(select(sa_func.count()).select_from(User))).scalar_one())
+
+    async def add_role(self, user_id: str, role_id: str) -> None:
+        stmt = pg_insert(UserRoleLink).values(user_id=user_id, role_id=role_id)
+        stmt = stmt.on_conflict_do_nothing(index_elements=[UserRoleLink.user_id, UserRoleLink.role_id])
+        async with self._factory() as s:
+            await s.execute(stmt)
+            await s.commit()
+
+    async def remove_role(self, user_id: str, role_id: str) -> bool:
+        async with self._factory() as s:
+            link = await s.get(UserRoleLink, (user_id, role_id))
+            if link is None:
+                return False
+            await s.delete(link)
+            await s.commit()
+            return True
+
+
+class PostgresRoleStore:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def get(self, id: str) -> Role | None:
+        async with self._factory() as s:
+            return await s.get(Role, id)
+
+    async def list(self) -> list[Role]:
+        async with self._factory() as s:
+            return list((await s.execute(select(Role).order_by(Role.name))).scalars().all())
