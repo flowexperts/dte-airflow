@@ -3,7 +3,6 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 import uuid
-import json
 
 from dte.models.pipeline import Connection, ConnectionCreate, Destination, DestinationCreate, Pipeline, Source, SourceCreate
 from dte.secrets import SecretResolver, get_secret_resolver

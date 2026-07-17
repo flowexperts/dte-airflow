@@ -121,8 +121,8 @@ def test_api_trigger_and_poll(tmp_path):
     import asyncio
     src = _fs_source("src", tmp_path, "scores.json", "scores")
     dest = _json_dest("out1", "local_fs", out)
-    asyncio.get_event_loop().run_until_complete(s_store.save(src.model_dump()))
-    asyncio.get_event_loop().run_until_complete(d_store.save(dest.model_dump()))
+    asyncio.get_event_loop().run_until_complete(s_store.save(src))
+    asyncio.get_event_loop().run_until_complete(d_store.save(dest))
 
     pipeline_payload = {
         "id": "api-p1",

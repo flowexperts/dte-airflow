@@ -207,7 +207,7 @@ DuckDBEngine.execute_to_json() → output file + row count
 
 **`dte/engine/duckdb_engine.py`** — wraps `ibis.duckdb.connect()`. Exposes `con` property (the ibis backend) for use by `dlt_loader`. Only responsible for execution and output — does not load sources.
 
-**`dte/store/`** — `PipelineStore` and `RunStore` Protocols in `base.py`. `memory.py` is the default (used in all tests). `postgres.py` is the production backend (SQLAlchemy async, requires `DATABASE_URL`). The active backend is wired in `dte/api/deps.py` and injected into routes via FastAPI `Depends()`.
+**`dte/store/`** — Protocols in `base.py`, one per persisted entity: `PipelineStore`, `SourceStore`, `DestinationStore`, `ConnectionStore`, `RunStore`. `postgres.py` is the sole production backend (SQLAlchemy async, requires `DATABASE_URL`). Tests use `tests/fakes.py` — there is no in-memory store shipped in the package. The active backend is wired in `dte/api/deps.py` and injected into routes via FastAPI `Depends()`. All four Pydantic-modelled stores speak typed SQLModel instances end-to-end (see the **Model + store pattern** subsection below); `PostgresRunStore` still hand-writes SQL because `Run` isn't a Pydantic model yet.
 
 **`dte/api/`** — FastAPI app. Routes use `Depends(get_pipeline_store)` and `Depends(get_run_store)`. Tests override these with `app.dependency_overrides`. `_execute_pipeline` runs as an `asyncio.create_task` — trigger returns `run_id` immediately, caller polls `GET /api/runs/{run_id}`.
 
@@ -360,6 +360,28 @@ Every non-trivial change gets its own worktree. Do not develop directly on `main
 Under Docker Compose, `DATABASE_URL=postgresql+asyncpg://dte:dte@postgres:5432/dte` is set on the backend service. The compose command runs `alembic upgrade head` first (using a synced URL derived by stripping `+asyncpg`) and then execs uvicorn. Pipelines persist across `docker compose restart` via the `pgdata` volume.
 
 Postgres integration tests (`tests/integration/test_store_postgres.py`) are skipped automatically when `DATABASE_URL` is unset. When enabled, they use an `async_sessionmaker` fixture and pass it to the store constructors — mirror this pattern in any new integration test.
+
+### Model + store pattern (SQLModel)
+
+Every Pydantic-modelled persisted entity — `Pipeline`, `Source`, `Destination`, `Connection` — is a triple in `dte/models/pipeline.py`:
+
+- `XxxBase(SQLModel)` — API/domain fields + Pydantic validators. No persistence identity.
+- `Xxx(XxxBase, table=True)` — adds `id`, `created_at`, `updated_at`, plus persistence-only columns (e.g. `Connection.credentials_encrypted`, `Destination.dest_type`).
+- `XxxCreate(XxxBase)` — the FastAPI request body. `id: str` is required here; `table=True` bypasses required-field checks so it can't play that role.
+
+**SQLModel 0.0.39 gotchas hit by this codebase:**
+
+- `Literal[...]` types on a `table=True` class break the metaclass (it calls `issubclass(Literal, Enum)`). Workaround: type as `str` on `Base` with `sa_column=Column(Text, ...)`, then override with the `Literal` on `Create` for strict API-edge validation. See `ConnectionBase.connection_type` vs `ConnectionCreate.connection_type`.
+- `table=True` maps every inherited field to a column — there's no `sa_column=None` escape. For attributes you want in the API model but *not* persisted (e.g. `Connection.credentials`, plaintext), define them only on `Base` / `Create` and let the store attach them to `Xxx(table=True)` instances as plain Python attributes via `object.__setattr__` after decrypt/hydration. Read via a helper (`Connection.credentials_dict()`).
+- `table=True` construction skips Pydantic validators. For hydrated instances that need post-load massage (e.g. `Destination.config` narrowed from a JSONB dict to the discriminated `OutputTarget` union), the store calls an explicit method — `Destination.narrow_config()` uses `TypeAdapter(OutputTarget).validate_python(...)` — before returning the row. Do NOT rely on validators to fire on ORM hydration.
+
+**Store shape.** Every `Postgres*Store` (except `PostgresRunStore`) uses the same three-verb ORM template — see `PostgresPipelineStore` as the canonical example:
+
+- `get(id)` → `session.get(Xxx, id)`
+- `save(create)` → `pg_insert(Xxx).values(**create.model_dump(...)).on_conflict_do_update(...)` — the `on_conflict_do_update` form is required (not `session.merge`) because `updated_at` has an `onupdate=func.now()` server default that `merge` won't trigger
+- `list(...)` → `select(Xxx).order_by(Xxx.created_at.desc())`
+
+Fakes (`tests/fakes.py`) store typed instances too — they mimic the same protocol shape. Some fakes accept `dict` inputs for legacy migration-script compatibility; new tests should always pass typed `XxxCreate` instances.
 
 ## TDD convention
 

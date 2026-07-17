@@ -117,12 +117,12 @@ def test_source_schema_by_id(tmp_path, client):
     c, s_store, _ = client
     data = [{"user_id": 1, "name": "alice"}]
     (tmp_path / "u.json").write_text(json.dumps(data))
-    _run(s_store.save({
-        "id": "s1", "connection_id": "local_fs",
-        "source_type": "filesystem",
-        "config": {"bucket_url": str(tmp_path), "file_glob": "u.json"},
-        "table": "users",
-    }))
+    _run(s_store.save(SourceCreate(
+        id="s1", connection_id="local_fs",
+        source_type="filesystem",
+        config={"bucket_url": str(tmp_path), "file_glob": "u.json"},
+        table="users",
+    )))
     r = c.get("/api/sources/s1/schema")
     assert r.status_code == 200, r.text
     names = {f["name"] for f in r.json()["fields"]}

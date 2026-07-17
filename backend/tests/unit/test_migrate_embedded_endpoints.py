@@ -1,4 +1,5 @@
 import pytest
+from dte.models.pipeline import SourceCreate, DestinationCreate
 from tests.fakes import (
     FakePipelineStore, FakeSourceStore, FakeDestinationStore,
 )
@@ -54,10 +55,10 @@ async def test_id_collision_creates_suffixed_source():
     s_store = FakeSourceStore()
     d_store = FakeDestinationStore()
     # Pre-seed a different source under the same id.
-    await s_store.save({
-        "id": "s1", "source_type": "filesystem",
-        "config": {"bucket_url": "/other"}, "table": "t",
-    })
+    await s_store.save(SourceCreate(
+        id="s1", connection_id="local_fs", source_type="filesystem",
+        config={"bucket_url": "/other"}, table="t",
+    ))
     p = _embedded_pipeline("p1")
     log: list[str] = []
     new_p, _ = await _migrate_pipeline(p, s_store, d_store, log)
@@ -69,10 +70,10 @@ async def test_second_pipeline_gets_suffixed_destination():
     s_store = FakeSourceStore()
     d_store = FakeDestinationStore()
     # Pre-seed a destination that clashes with p1_output.
-    await d_store.save({
-        "id": "p1_output",
-        "config": {"type": "json_file", "path": "/tmp/somewhere-else.json"},
-    })
+    await d_store.save(DestinationCreate(
+        id="p1_output", connection_id="local_fs",
+        config={"type": "json_file", "path": "/tmp/somewhere-else.json"},
+    ))
     p = _embedded_pipeline("p1")
     log: list[str] = []
     new_p, _ = await _migrate_pipeline(p, s_store, d_store, log)

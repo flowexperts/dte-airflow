@@ -7,7 +7,7 @@ from dte.api.deps import (
     get_pipeline_store, get_run_store,
     get_source_store, get_destination_store,
 )
-from dte.models.pipeline import Pipeline
+from dte.models.pipeline import Pipeline, SourceCreate, DestinationCreate
 from tests.fakes import (
     FakePipelineStore, FakeRunStore,
     FakeSourceStore, FakeDestinationStore,
@@ -25,13 +25,14 @@ def client():
     app.dependency_overrides[get_source_store] = lambda: s_store
     app.dependency_overrides[get_destination_store] = lambda: d_store
     # Seed a default source + destination so most tests just work.
-    _run(s_store.save({
-        "id": "s1", "source_type": "filesystem",
-        "config": {"bucket_url": "/tmp"}, "table": "dummy",
-    }))
-    _run(d_store.save({
-        "id": "out1", "config": {"type": "json_file", "path": "/tmp/out.json"},
-    }))
+    _run(s_store.save(SourceCreate(
+        id="s1", connection_id="local_fs", source_type="filesystem",
+        config={"bucket_url": "/tmp"}, table="dummy",
+    )))
+    _run(d_store.save(DestinationCreate(
+        id="out1", connection_id="local_fs",
+        config={"type": "json_file", "path": "/tmp/out.json"},
+    )))
     yield TestClient(app), p_store, r_store, s_store, d_store
     app.dependency_overrides.clear()
 
