@@ -363,25 +363,27 @@ Postgres integration tests (`tests/integration/test_store_postgres.py`) are skip
 
 ### Model + store pattern (SQLModel)
 
-Every Pydantic-modelled persisted entity — `Pipeline`, `Source`, `Destination`, `Connection` — is a triple in `dte/models/pipeline.py`:
+Every Pydantic-modelled persisted entity — `Pipeline`, `Source`, `Destination`, `Connection` — is a **two-class** pair in `dte/models/pipeline.py`:
 
-- `XxxBase(SQLModel)` — API/domain fields + Pydantic validators. No persistence identity.
-- `Xxx(XxxBase, table=True)` — adds `id`, `created_at`, `updated_at`, plus persistence-only columns (e.g. `Connection.credentials_encrypted`, `Destination.dest_type`).
-- `XxxCreate(XxxBase)` — the FastAPI request body. `id: str` is required here; `table=True` bypasses required-field checks so it can't play that role.
+- `XxxBase(SQLModel)` — API/domain fields + Pydantic validators. `id: str` is required here so FastAPI raises 422 on missing. Carries the API-strict Literal types (e.g. `connection_type: ConnectionType`, `source_type: SourceKind`) — Pydantic rejects unknown values at the edge. Routes bind POST/PUT bodies to `XxxBase`.
+- `Xxx(XxxBase, table=True)` — persistence identity (overrides `id: str = SMField(primary_key=True)`), timestamp columns, and Literal overrides to plain `str` (SQLModel 0.0.39 can't map Literal to a SA column). Stores save and return typed `Xxx` instances.
+
+Back-compat aliases `XxxCreate = XxxBase` are kept for one release so existing migration scripts don't break.
+
+**`EncryptedJSON` TypeDecorator** (`dte/secrets/encrypted_json.py`) — used for `Connection.credentials`. Maps the logical Python `dict` to a BYTEA column (`credentials_encrypted`), transparently calling `get_secret_resolver().encrypt()` on write and `.decrypt()` on read. `PostgresConnectionStore` needs no `SecretResolver` injection — encryption happens at the column level. Physical column name unchanged; no migration required.
 
 **SQLModel 0.0.39 gotchas hit by this codebase:**
 
-- `Literal[...]` types on a `table=True` class break the metaclass (it calls `issubclass(Literal, Enum)`). Workaround: type as `str` on `Base` with `sa_column=Column(Text, ...)`, then override with the `Literal` on `Create` for strict API-edge validation. See `ConnectionBase.connection_type` vs `ConnectionCreate.connection_type`.
-- `table=True` maps every inherited field to a column — there's no `sa_column=None` escape. For attributes you want in the API model but *not* persisted (e.g. `Connection.credentials`, plaintext), define them only on `Base` / `Create` and let the store attach them to `Xxx(table=True)` instances as plain Python attributes via `object.__setattr__` after decrypt/hydration. Read via a helper (`Connection.credentials_dict()`).
-- `table=True` construction skips Pydantic validators. For hydrated instances that need post-load massage (e.g. `Destination.config` narrowed from a JSONB dict to the discriminated `OutputTarget` union), the store calls an explicit method — `Destination.narrow_config()` uses `TypeAdapter(OutputTarget).validate_python(...)` — before returning the row. Do NOT rely on validators to fire on ORM hydration.
+- `Literal[...]` types on a `table=True` class break the metaclass (it calls `issubclass(Literal, Enum)`). Workaround: keep the strict `Literal` on `Base` for API validation; override with `str` + an explicit `sa_column=Column(Text, ...)` on the table class. Both classes now live together without a third `Create` class.
+- `table=True` construction skips Pydantic validators. For hydrated instances that need post-load narrowing (e.g. `Destination.config` narrowed from a raw JSONB dict to the discriminated `OutputTarget` union), the store calls an explicit method — `Destination.narrow_config()` uses `TypeAdapter(OutputTarget).validate_python(...)` + `object.__setattr__` to bypass SA instrumentation. Do NOT rely on validators to fire on ORM hydration. `Connection.credentials` no longer needs this because `EncryptedJSON` handles the round-trip at the TypeDecorator level.
 
 **Store shape.** Every `Postgres*Store` (except `PostgresRunStore`) uses the same three-verb ORM template — see `PostgresPipelineStore` as the canonical example:
 
 - `get(id)` → `session.get(Xxx, id)`
-- `save(create)` → `pg_insert(Xxx).values(**create.model_dump(...)).on_conflict_do_update(...)` — the `on_conflict_do_update` form is required (not `session.merge`) because `updated_at` has an `onupdate=func.now()` server default that `merge` won't trigger
+- `save(base)` → `pg_insert(Xxx).values(**base.model_dump(exclude={timestamps})).on_conflict_do_update(...)` — the `on_conflict_do_update` form is required (not `session.merge`) because `updated_at` has an `onupdate=func.now()` server default that `merge` won't trigger
 - `list(...)` → `select(Xxx).order_by(Xxx.created_at.desc())`
 
-Fakes (`tests/fakes.py`) store typed instances too — they mimic the same protocol shape. Some fakes accept `dict` inputs for legacy migration-script compatibility; new tests should always pass typed `XxxCreate` instances.
+Fakes (`tests/fakes.py`) store typed `Xxx` instances and accept `XxxBase | Xxx | dict` at `save()` (dict for legacy migration-script compat). New tests should always pass typed `XxxBase` instances.
 
 ## TDD convention
 

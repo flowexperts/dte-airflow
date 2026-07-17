@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 import ibis.expr.datatypes as dt
 
-from dte.models.pipeline import SourceCreate as Source
+from dte.models.pipeline import SourceBase as Source
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.sources.loader import load_source
 from dte.api.deps import get_connection_store
@@ -53,7 +53,7 @@ async def infer_schema(
         )
     engine = DuckDBEngine()
     try:
-        table = load_source(source, engine.con, conn.credentials_dict())
+        table = load_source(source, engine.con, conn.credentials)
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 

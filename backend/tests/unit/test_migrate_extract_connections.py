@@ -57,7 +57,7 @@ async def test_sql_database_source_url_refines_connection_type():
     updated, _ = await _migrate_source(src, c_store, log=[])
     conn = await c_store.get(updated["connection_id"])
     assert conn.connection_type == "postgres"
-    assert conn.credentials_dict()["url"] == "postgres://u:p@h/d"
+    assert conn.credentials["url"] == "postgres://u:p@h/d"
     assert "credentials" not in updated["config"]
 
 
@@ -74,8 +74,8 @@ async def test_azure_source_normalizes_legacy_field_names():
     updated, _ = await _migrate_source(src, c_store, log=[])
     conn = await c_store.get(updated["connection_id"])
     # Legacy names rewritten to dlt-aligned.
-    assert conn.credentials_dict()["azure_storage_account_name"] == "acct"
-    assert conn.credentials_dict()["azure_storage_account_key"] == "k"
+    assert conn.credentials["azure_storage_account_name"] == "acct"
+    assert conn.credentials["azure_storage_account_key"] == "k"
 
 
 async def test_mongodb_source_extracts_url():
@@ -91,7 +91,7 @@ async def test_mongodb_source_extracts_url():
     updated, _ = await _migrate_source(src, c_store, log=[])
     conn = await c_store.get(updated["connection_id"])
     assert conn.connection_type == "mongodb"
-    assert conn.credentials_dict()["url"] == "mongodb://u:p@h/d"
+    assert conn.credentials["url"] == "mongodb://u:p@h/d"
     assert "connection_url" not in updated["config"]
 
 
@@ -115,7 +115,7 @@ async def test_postgres_destination_extracts_credentials():
     updated, _ = await _migrate_destination(dest, c_store, log=[])
     conn = await c_store.get(updated["connection_id"])
     assert conn.connection_type == "postgres"
-    assert conn.credentials_dict()["url"] == "postgres://u:p@h/d"
+    assert conn.credentials["url"] == "postgres://u:p@h/d"
     assert "credentials" not in updated["config"]
 
 
@@ -146,8 +146,8 @@ async def test_parquet_s3_destination_aliases_fsspec_keys():
     updated, _ = await _migrate_destination(dest, c_store, log=[])
     conn = await c_store.get(updated["connection_id"])
     # fsspec `key/secret` rewritten to dlt-aligned aws_*.
-    assert conn.credentials_dict()["aws_access_key_id"] == "K"
-    assert conn.credentials_dict()["aws_secret_access_key"] == "S"
+    assert conn.credentials["aws_access_key_id"] == "K"
+    assert conn.credentials["aws_secret_access_key"] == "S"
     assert "storage_options" not in updated["config"]
 
 

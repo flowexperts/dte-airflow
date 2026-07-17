@@ -1,7 +1,12 @@
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from dte.models.pipeline import Connection, ConnectionCreate, Destination, DestinationCreate, Pipeline, Source, SourceCreate
+    from dte.models.pipeline import (
+        Connection, ConnectionBase,
+        Destination, DestinationBase,
+        Pipeline, PipelineBase,
+        Source, SourceBase,
+    )
 
 
 @runtime_checkable
@@ -24,7 +29,7 @@ class RunStore(Protocol):
 @runtime_checkable
 class SourceStore(Protocol):
     async def get(self, id: str) -> "Source | None": ...
-    async def save(self, source: "SourceCreate") -> None: ...
+    async def save(self, source: "SourceBase | Source") -> None: ...
     async def list(self, limit: int = 50, offset: int = 0) -> "list[Source]": ...
     async def delete(self, id: str) -> bool: ...
 
@@ -32,23 +37,22 @@ class SourceStore(Protocol):
 @runtime_checkable
 class DestinationStore(Protocol):
     async def get(self, id: str) -> "Destination | None": ...
-    async def save(self, destination: "DestinationCreate") -> None: ...
+    async def save(self, destination: "DestinationBase | Destination") -> None: ...
     async def list(self, limit: int = 50, offset: int = 0) -> "list[Destination]": ...
     async def delete(self, id: str) -> bool: ...
 
 
 @runtime_checkable
 class ConnectionStore(Protocol):
-    """Stores connections with credentials encrypted at rest.
+    """Stores connections with credentials encrypted at rest via EncryptedJSON.
 
-    - `get` returns a `Connection` instance with `credentials` populated
-      from decryption. Callers own not leaking them to the wire.
-    - `list` returns `Connection` instances with `credentials` set to `{}`
-      (masked). Suitable for list views.
-    - `save` accepts a `ConnectionCreate` with plaintext credentials; the
-      implementation encrypts via its injected SecretResolver.
+    - `get` returns a `Connection` with `credentials` (plaintext dict) populated
+      by the TypeDecorator. Callers own not leaking them to the wire.
+    - `list` returns `Connection` instances with `credentials` masked to `{}`.
+    - `save` accepts a `ConnectionBase` or `Connection` with plaintext credentials;
+      the EncryptedJSON TypeDecorator encrypts them at the column level.
     """
     async def get(self, id: str) -> "Connection | None": ...
-    async def save(self, connection: "ConnectionCreate") -> None: ...
+    async def save(self, connection: "ConnectionBase | Connection") -> None: ...
     async def list(self, limit: int = 50, offset: int = 0) -> "list[Connection]": ...
     async def delete(self, id: str) -> bool: ...

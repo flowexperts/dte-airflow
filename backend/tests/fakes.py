@@ -9,7 +9,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from dte.models.pipeline import Connection, ConnectionCreate, Destination, DestinationCreate, Pipeline, Source, SourceCreate
+from dte.models.pipeline import (
+    Connection, ConnectionBase,
+    Destination, DestinationBase,
+    Pipeline, PipelineBase,
+    Source, SourceBase,
+)
 
 
 def _utcnow_iso() -> str:
@@ -87,8 +92,8 @@ class FakeRunStore:
         return len(to_remove)
 
 
-def _make_source(s: "SourceCreate | dict") -> Source:
-    """Build a `Source` ORM instance from a `SourceCreate` or a plain dict.
+def _make_source(s: "SourceBase | Source | dict") -> Source:
+    """Build a `Source` ORM instance from a `SourceBase`, `Source`, or a plain dict.
 
     Uses normal `Source(...)` construction so SQLAlchemy's SA instrumentation
     (`_sa_instance_state`) is properly initialised — `model_construct` bypasses
@@ -122,8 +127,8 @@ def _make_source(s: "SourceCreate | dict") -> Source:
 class FakeSourceStore:
     """In-memory source store for tests. Stores typed `Source` instances.
 
-    `save` accepts `SourceCreate` (the typed API input) or a plain `dict`
-    (for migration scripts and legacy test helpers).
+    `save` accepts `SourceBase` (the typed API input), `Source` (the table
+    class), or a plain `dict` (for migration scripts and legacy test helpers).
     """
 
     def __init__(self):
@@ -132,8 +137,8 @@ class FakeSourceStore:
     async def get(self, id: str) -> Source | None:
         return self._data.get(id)
 
-    async def save(self, source: "SourceCreate | dict") -> None:  # type: ignore[override]
-        source_id = source.id if isinstance(source, SourceCreate) else source["id"]
+    async def save(self, source: "SourceBase | Source | dict") -> None:  # type: ignore[override]
+        source_id = source["id"] if isinstance(source, dict) else source.id
         existing = self._data.get(source_id)
         row = _make_source(source)
         row.created_at = existing.created_at if existing else _utcnow()
@@ -155,10 +160,10 @@ class FakeSourceStore:
         return False
 
 
-def _make_destination(d: "DestinationCreate | dict") -> Destination:
-    """Build a typed `Destination` ORM instance from a `DestinationCreate` or a
-    plain dict, then call `narrow_config()` to ensure `config` is a typed
-    `OutputTarget` union instance.
+def _make_destination(d: "DestinationBase | Destination | dict") -> Destination:
+    """Build a typed `Destination` ORM instance from a `DestinationBase`,
+    `Destination`, or a plain dict, then call `narrow_config()` to ensure
+    `config` is a typed `OutputTarget` union instance.
 
     Uses normal `Destination(...)` construction so SQLAlchemy's SA instrumentation
     (`_sa_instance_state`) is properly initialised. `table=True` bypasses
@@ -178,7 +183,8 @@ def _make_destination(d: "DestinationCreate | dict") -> Destination:
             dest_type=dest_type,
         )
     else:
-        # DestinationCreate — _narrow_config ran, so config is already typed.
+        # DestinationBase / Destination — _narrow_config may have run, so
+        # config might already be typed.
         cfg = d.config
         if hasattr(cfg, "model_dump"):
             config_dict = cfg.model_dump(by_alias=True, exclude_none=True)
@@ -197,8 +203,8 @@ def _make_destination(d: "DestinationCreate | dict") -> Destination:
 class FakeDestinationStore:
     """In-memory destination store for tests. Stores typed `Destination` instances.
 
-    `save` accepts `DestinationCreate` (the typed API input) or a plain `dict`
-    (for migration scripts and legacy test helpers that pre-date the typed store).
+    `save` accepts `DestinationBase` (the typed API input), `Destination` (the
+    table class), or a plain `dict` (for migration scripts and legacy test helpers).
     """
 
     def __init__(self):
@@ -207,8 +213,8 @@ class FakeDestinationStore:
     async def get(self, id: str) -> Destination | None:
         return self._data.get(id)
 
-    async def save(self, destination: "DestinationCreate | dict") -> None:  # type: ignore[override]
-        dest_id = destination.id if isinstance(destination, DestinationCreate) else destination["id"]
+    async def save(self, destination: "DestinationBase | Destination | dict") -> None:  # type: ignore[override]
+        dest_id = destination["id"] if isinstance(destination, dict) else destination.id
         existing = self._data.get(dest_id)
         row = _make_destination(destination)
         row.created_at = existing.created_at if existing else _utcnow()
@@ -230,21 +236,10 @@ class FakeDestinationStore:
         return False
 
 
-def _make_connection(c: ConnectionCreate) -> Connection:
-    """Build a `Connection` ORM instance from a `ConnectionCreate`, attaching
-    `credentials` as a plain attribute (mirrors what the Postgres store does)."""
-    row = Connection(
-        id=c.id,
-        connection_type=c.connection_type,
-        credentials_encrypted=b"",  # fake store doesn't encrypt
-    )
-    object.__setattr__(row, "credentials", c.credentials)
-    return row
-
-
 class FakeConnectionStore:
     """In-memory connection store for tests. Stores typed `Connection`
-    instances; `credentials` live as a plain attribute on each instance."""
+    instances; `credentials` is a real attribute on the Connection (backed
+    by EncryptedJSON in Postgres, plain dict in the fake)."""
 
     def __init__(self):
         self._data: dict[str, Connection] = {}
@@ -252,9 +247,13 @@ class FakeConnectionStore:
     async def get(self, id: str) -> Connection | None:
         return self._data.get(id)
 
-    async def save(self, connection: ConnectionCreate) -> None:
+    async def save(self, connection: "ConnectionBase | Connection") -> None:
         existing = self._data.get(connection.id)
-        row = _make_connection(connection)
+        row = Connection(
+            id=connection.id,
+            connection_type=connection.connection_type,
+            credentials=connection.credentials,
+        )
         # Preserve created_at if already saved (mirrors FakePipelineStore).
         if existing is not None:
             row.created_at = existing.created_at
@@ -269,9 +268,8 @@ class FakeConnectionStore:
             masked_row = Connection(
                 id=c.id,
                 connection_type=c.connection_type,
-                credentials_encrypted=c.credentials_encrypted,
+                credentials={},
             )
-            object.__setattr__(masked_row, "credentials", {})
             masked.append(masked_row)
         return masked
 

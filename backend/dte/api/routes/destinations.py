@@ -1,7 +1,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
 
-from dte.models.pipeline import DestinationCreate
+from dte.models.pipeline import DestinationBase
 from dte.api.deps import get_destination_store, get_pipeline_store
 from dte.store.base import DestinationStore, PipelineStore
 
@@ -10,7 +10,7 @@ router = APIRouter()
 
 @router.post("/destinations", status_code=201)
 async def create_destination(
-    destination: DestinationCreate,
+    destination: DestinationBase,
     store: DestinationStore = Depends(get_destination_store),
 ):
     if await store.get(destination.id):
@@ -36,7 +36,7 @@ async def get_destination(destination_id: str, store: DestinationStore = Depends
 @router.put("/destinations/{destination_id}")
 async def update_destination(
     destination_id: str,
-    destination: DestinationCreate,
+    destination: DestinationBase,
     store: DestinationStore = Depends(get_destination_store),
 ):
     if destination.id != destination_id:

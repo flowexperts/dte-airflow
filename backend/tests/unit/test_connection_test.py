@@ -8,14 +8,12 @@ from dte.sources.connection_test import probe_connection
 
 
 def _make_conn(connection_type: str, credentials: dict) -> Connection:
-    """Build a Connection instance suitable for probe tests (no encryption)."""
-    row = Connection(
+    """Build a Connection instance suitable for probe tests."""
+    return Connection(
         id="test-c",
         connection_type=connection_type,
-        credentials_encrypted=b"",
+        credentials=credentials,
     )
-    object.__setattr__(row, "credentials", credentials)
-    return row
 
 
 def test_local_fs_probe_always_ok():

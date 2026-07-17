@@ -28,13 +28,11 @@ from tests.fakes import (
 
 def _make_local_fs_connection() -> Connection:
     """Build the pre-seeded local_fs Connection instance."""
-    row = Connection(
+    return Connection(
         id="local_fs",
         connection_type="local_fs",
-        credentials_encrypted=b"",
+        credentials={},
     )
-    object.__setattr__(row, "credentials", {})
-    return row
 
 
 @pytest.fixture(autouse=True)

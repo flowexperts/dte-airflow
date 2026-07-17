@@ -1,9 +1,9 @@
-from dte.models.pipeline import Connection, ConnectionCreate
+from dte.models.pipeline import Connection, ConnectionBase
 from tests.fakes import FakeConnectionStore
 
 
-def _conn(cid="c1") -> ConnectionCreate:
-    return ConnectionCreate(
+def _conn(cid="c1") -> ConnectionBase:
+    return ConnectionBase(
         id=cid,
         connection_type="s3",
         credentials={"aws_access_key_id": "AKIA", "aws_secret_access_key": "wow"},
@@ -16,7 +16,7 @@ async def test_save_and_get_returns_plaintext():
     got = await s.get("c1")
     assert isinstance(got, Connection)
     assert got.connection_type == "s3"
-    assert got.credentials_dict()["aws_secret_access_key"] == "wow"
+    assert got.credentials["aws_secret_access_key"] == "wow"
 
 
 async def test_list_masks_credentials():
@@ -25,7 +25,7 @@ async def test_list_masks_credentials():
     listed = await s.list()
     assert len(listed) == 1
     assert isinstance(listed[0], Connection)
-    assert listed[0].credentials_dict() == {}
+    assert listed[0].credentials == {}
 
 
 async def test_delete():

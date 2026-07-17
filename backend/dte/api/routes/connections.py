@@ -1,7 +1,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
 
-from dte.models.pipeline import Connection, ConnectionCreate
+from dte.models.pipeline import Connection, ConnectionBase
 from dte.api.deps import (
     get_connection_store,
     get_source_store,
@@ -15,27 +15,26 @@ router = APIRouter()
 
 def _mask(c: Connection) -> dict:
     """Return a plain dict with credentials values replaced by '***'."""
-    creds = c.credentials_dict()
     return {
         "id": c.id,
         "connection_type": c.connection_type,
-        "credentials": {k: "***" for k in creds},
+        "credentials": {k: "***" for k in c.credentials},
     }
 
 
 @router.post("/connections", status_code=201)
 async def create_connection(
-    connection: ConnectionCreate,
+    connection: ConnectionBase,
     store: ConnectionStore = Depends(get_connection_store),
 ):
     if await store.get(connection.id):
         raise HTTPException(status_code=409, detail=f"Connection '{connection.id}' already exists")
     await store.save(connection)
-    return _mask_create(connection)
+    return _mask_base(connection)
 
 
-def _mask_create(connection: ConnectionCreate) -> dict:
-    """Mask credentials from a ConnectionCreate (used for POST response)."""
+def _mask_base(connection: ConnectionBase) -> dict:
+    """Mask credentials from a ConnectionBase (used for POST/PUT responses)."""
     creds = connection.credentials or {}
     return {
         "id": connection.id,
@@ -66,14 +65,18 @@ async def get_connection(
     if reveal:
         # Reveal path is a deliberate escape hatch (e.g., the UI edit form
         # pre-populating fields). Callers should treat this as sensitive.
-        return c.to_api_dict()
+        return {
+            "id": c.id,
+            "connection_type": c.connection_type,
+            "credentials": c.credentials,
+        }
     return _mask(c)
 
 
 @router.put("/connections/{connection_id}")
 async def update_connection(
     connection_id: str,
-    connection: ConnectionCreate,
+    connection: ConnectionBase,
     store: ConnectionStore = Depends(get_connection_store),
 ):
     if connection.id != connection_id:
@@ -83,14 +86,14 @@ async def update_connection(
         raise HTTPException(status_code=404, detail="Connection not found")
     # If credentials omitted (empty dict) on PUT, keep the existing set.
     if not connection.credentials:
-        existing_creds = existing.credentials_dict()
-        connection = ConnectionCreate(
+        existing_creds = existing.credentials
+        connection = ConnectionBase(
             id=connection.id,
             connection_type=connection.connection_type,
             credentials=existing_creds,
         )
     await store.save(connection)
-    return _mask_create(connection)
+    return _mask_base(connection)
 
 
 @router.post("/connections/{connection_id}/test")
@@ -121,8 +124,8 @@ async def delete_connection(
         if s.connection_id == connection_id
     ]
     ref_dests = [
-        d["id"] for d in await d_store.list(limit=10_000)
-        if d.get("connection_id") == connection_id
+        d.id for d in await d_store.list(limit=10_000)
+        if d.connection_id == connection_id
     ]
     if ref_sources or ref_dests:
         raise HTTPException(
