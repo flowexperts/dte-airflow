@@ -144,6 +144,8 @@ class RoleAdmin(SqlAlchemyModelAdmin):
     }
 
 
-@register(UserRoleLink, sqlalchemy_sessionmaker=_sessionmaker)
-class UserRoleLinkAdmin(SqlAlchemyModelAdmin):
-    list_display = ("user_id", "role_id")
+# NOTE: UserRoleLink is *not* registered. FastAdmin's SQLAlchemy adapter
+# hides every FK column and expects `relationship()` declarations to render
+# a picker; our join model has neither, so the admin page was empty. Role
+# assignment already has a dedicated surface: POST /api/users/{id}/roles
+# (and DELETE for revoke).
