@@ -1,5 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
+from dte.security.permissions import requires
 
 from dte.models.pipeline import Source, SourceBase, SOURCE_CONNECTION_COMPAT
 from dte.engine.duckdb_engine import DuckDBEngine
@@ -34,7 +35,7 @@ async def _validate_connection(source: SourceBase | Source, c_store: ConnectionS
     return conn
 
 
-@router.post("/sources", status_code=201)
+@router.post("/sources", status_code=201, dependencies=[Depends(requires("source:write"))])
 async def create_source(
     source: SourceBase,
     store: SourceStore = Depends(get_source_store),
@@ -47,13 +48,13 @@ async def create_source(
     return source.model_dump()
 
 
-@router.get("/sources")
+@router.get("/sources", dependencies=[Depends(requires("source:read"))])
 async def list_sources(limit: int = 50, offset: int = 0, store: SourceStore = Depends(get_source_store)):
     sources = await store.list(limit=limit, offset=offset)
     return [s.model_dump() for s in sources]
 
 
-@router.get("/sources/{source_id}")
+@router.get("/sources/{source_id}", dependencies=[Depends(requires("source:read"))])
 async def get_source(source_id: str, store: SourceStore = Depends(get_source_store)):
     s = await store.get(source_id)
     if not s:
@@ -61,7 +62,7 @@ async def get_source(source_id: str, store: SourceStore = Depends(get_source_sto
     return s.model_dump()
 
 
-@router.put("/sources/{source_id}")
+@router.put("/sources/{source_id}", dependencies=[Depends(requires("source:write"))])
 async def update_source(
     source_id: str,
     source: SourceBase,
@@ -77,7 +78,7 @@ async def update_source(
     return source.model_dump()
 
 
-@router.delete("/sources/{source_id}", status_code=204)
+@router.delete("/sources/{source_id}", status_code=204, dependencies=[Depends(requires("source:delete"))])
 async def delete_source(
     source_id: str,
     s_store: SourceStore = Depends(get_source_store),
@@ -95,7 +96,7 @@ async def delete_source(
     return Response(status_code=204)
 
 
-@router.get("/sources/{source_id}/schema", response_model=InferSchemaResponse)
+@router.get("/sources/{source_id}/schema", response_model=InferSchemaResponse, dependencies=[Depends(requires("source:read"))])
 async def source_schema(
     source_id: str,
     store: SourceStore = Depends(get_source_store),

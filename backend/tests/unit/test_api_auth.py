@@ -157,7 +157,9 @@ def test_pipelines_route_accepts_valid_token(fake_stores):
     _bypass_off()
     c = TestClient(app)
     r = c.get("/api/pipelines", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200
+    # Auth passes but the new user has no roles → RBAC 403 (plan 023).
+    # This is the expected shape now; a full 200 flow lives in test_rbac.
+    assert r.status_code == 403
 
 
 # ── JWT edge cases ───────────────────────────────────────────────────────────

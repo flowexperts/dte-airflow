@@ -1,5 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
+from dte.security.permissions import requires
 
 from dte.models.pipeline import DestinationBase
 from dte.api.deps import get_destination_store, get_pipeline_store
@@ -8,7 +9,7 @@ from dte.store.base import DestinationStore, PipelineStore
 router = APIRouter()
 
 
-@router.post("/destinations", status_code=201)
+@router.post("/destinations", status_code=201, dependencies=[Depends(requires("destination:write"))])
 async def create_destination(
     destination: DestinationBase,
     store: DestinationStore = Depends(get_destination_store),
@@ -19,13 +20,13 @@ async def create_destination(
     return destination.to_api_dict()
 
 
-@router.get("/destinations")
+@router.get("/destinations", dependencies=[Depends(requires("destination:read"))])
 async def list_destinations(limit: int = 50, offset: int = 0, store: DestinationStore = Depends(get_destination_store)):
     items = await store.list(limit=limit, offset=offset)
     return [d.to_api_dict() for d in items]
 
 
-@router.get("/destinations/{destination_id}")
+@router.get("/destinations/{destination_id}", dependencies=[Depends(requires("destination:read"))])
 async def get_destination(destination_id: str, store: DestinationStore = Depends(get_destination_store)):
     d = await store.get(destination_id)
     if not d:
@@ -33,7 +34,7 @@ async def get_destination(destination_id: str, store: DestinationStore = Depends
     return d.to_api_dict()
 
 
-@router.put("/destinations/{destination_id}")
+@router.put("/destinations/{destination_id}", dependencies=[Depends(requires("destination:write"))])
 async def update_destination(
     destination_id: str,
     destination: DestinationBase,
@@ -47,7 +48,7 @@ async def update_destination(
     return destination.to_api_dict()
 
 
-@router.delete("/destinations/{destination_id}", status_code=204)
+@router.delete("/destinations/{destination_id}", status_code=204, dependencies=[Depends(requires("destination:delete"))])
 async def delete_destination(
     destination_id: str,
     d_store: DestinationStore = Depends(get_destination_store),
