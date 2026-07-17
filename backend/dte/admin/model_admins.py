@@ -126,10 +126,11 @@ class UserAdmin(SqlAlchemyModelAdmin):
                 s.add(UserRoleLink(user_id=user_id, role_id=rid))
             await s.commit()
 
-    async def serialize_obj(self, obj):  # type: ignore[override]
+    async def serialize_obj(self, obj, *args, **kwargs):  # type: ignore[override]
         """Include the user's current role ids so the edit form pre-selects
-        them in the AsyncSelect."""
-        data = await super().serialize_obj(obj)
+        them in the AsyncSelect. Called from both list and change views —
+        accept the extra kwargs FastAdmin passes."""
+        data = await super().serialize_obj(obj, *args, **kwargs)
         async with _sessionmaker() as s:
             links = (await s.execute(
                 select(UserRoleLink).where(UserRoleLink.user_id == obj.id)
