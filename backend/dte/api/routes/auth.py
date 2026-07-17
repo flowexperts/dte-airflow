@@ -41,10 +41,18 @@ class UserPublic(BaseModel):
     id: str
     email: str
     is_active: bool
+    roles: list[str] = []
+    permissions: list[str] = []
 
 
 def _to_public(user: User) -> UserPublic:
-    return UserPublic(id=user.id, email=user.email, is_active=user.is_active)
+    return UserPublic(
+        id=user.id,
+        email=user.email,
+        is_active=user.is_active,
+        roles=sorted(r.id for r in user.roles),
+        permissions=sorted(user.permissions),
+    )
 
 
 def _registration_allowed() -> bool:
@@ -58,9 +66,14 @@ async def register(body: RegisterBody, users: UserStore = Depends(get_user_store
     existing = await users.get_by_email(str(body.email))
     if existing is not None:
         raise HTTPException(status_code=409, detail="Email already registered")
+    # First user bootstraps as admin (plan 023). Subsequent users get no
+    # role and an existing admin promotes them.
+    is_first = (await users.count()) == 0
     new_id = uuid.uuid4().hex
     base = UserBase(id=new_id, email=body.email, is_active=True)
     await users.save(base, password_hash=hash_password(body.password))
+    if is_first:
+        await users.add_role(new_id, "admin")
     saved = await users.get_by_id(new_id)
     return _to_public(saved)
 
