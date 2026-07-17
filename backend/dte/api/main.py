@@ -12,6 +12,7 @@ from dte.api.routes.pipelines import router as pipelines_router
 from dte.api.routes.runs import router as runs_router
 from dte.api.routes.schema import router as schema_router
 from dte.api.routes.sources import router as sources_router
+from dte.api.routes.users import router as users_router
 
 _DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:5173"
 
@@ -43,3 +44,4 @@ app.include_router(sources_router, prefix="/api", dependencies=_auth)
 app.include_router(destinations_router, prefix="/api", dependencies=_auth)
 app.include_router(connections_router, prefix="/api", dependencies=_auth)
 app.include_router(lookup_tables_router, prefix="/api", dependencies=_auth)
+app.include_router(users_router, prefix="/api", dependencies=_auth)

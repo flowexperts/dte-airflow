@@ -22,6 +22,7 @@ from dte.store.postgres import (
     PostgresDestinationStore,
     PostgresLookupTableStore,
     PostgresPipelineStore,
+    PostgresRoleStore,
     PostgresRunStore,
     PostgresSourceStore,
     PostgresUserStore,
@@ -62,6 +63,10 @@ def get_connection_store():
 
 def get_user_store():
     return PostgresUserStore(_session_factory())
+
+
+def get_role_store():
+    return PostgresRoleStore(_session_factory())
 
 
 def get_lookup_table_store():

@@ -28,17 +28,38 @@ export function AppSidebar() {
     router.replace("/login");
   }
 
+  const perms = new Set(user?.permissions ?? []);
+  // Before /auth/me resolves, don't hide anything — otherwise the sidebar
+  // flickers on every page load. Once we have data, gate each item.
+  const can = (perm: string) => (user ? perms.has(perm) : true);
+
   return (
     <Sidebar>
       <Brand version="v0.1" />
       <NavSearch />
       <NavSections>
         <NavGroup>Workspace</NavGroup>
-        <NavItem href="/connections" label="Connections" active={on("/connections")} />
-        <NavItem href="/sources" label="Sources" active={on("/sources")} />
-        <NavItem href="/destinations" label="Destinations" active={on("/destinations")} />
-        <NavItem href="/lookup-tables" label="Lookup tables" active={on("/lookup-tables")} />
-        <NavItem href="/pipelines" label="Pipelines" active={on("/pipelines")} />
+        {can("connection:read") && (
+          <NavItem href="/connections" label="Connections" active={on("/connections")} />
+        )}
+        {can("source:read") && (
+          <NavItem href="/sources" label="Sources" active={on("/sources")} />
+        )}
+        {can("destination:read") && (
+          <NavItem href="/destinations" label="Destinations" active={on("/destinations")} />
+        )}
+        {can("lookup_table:read") && (
+          <NavItem href="/lookup-tables" label="Lookup tables" active={on("/lookup-tables")} />
+        )}
+        {can("pipeline:read") && (
+          <NavItem href="/pipelines" label="Pipelines" active={on("/pipelines")} />
+        )}
+        {can("user:read") && (
+          <>
+            <NavGroup>Admin</NavGroup>
+            <NavItem href="/users" label="Users" active={on("/users")} />
+          </>
+        )}
         <NavGroup>System</NavGroup>
         <NavItem href="/preview" label="Design" active={on("/preview")} />
       </NavSections>

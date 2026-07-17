@@ -220,6 +220,8 @@ export interface CurrentUser {
   id: string;
   email: string;
   is_active: boolean;
+  roles: string[];
+  permissions: string[];
 }
 
 export async function login(email: string, password: string): Promise<string> {
