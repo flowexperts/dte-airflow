@@ -36,7 +36,7 @@ export function emptyStep(op: StepOp, mode?: MapMode): StepShape {
     case "rename":    return { op, mappings: {} };
     case "retype":    return { op, field: "", to_type: "string" };
     case "map":       return mode === "lookup"
-                        ? { op, mode, field: "", table: {}, default: null }
+                        ? { op, mode, field: "", lookup_id: "", output_field: null }
                         : { op, mode: mode ?? "expression", output_field: "", expr: "" };
     case "sort":      return { op, by: [], ascending: true };
     case "aggregate": return { op, group_by: [], aggregations: [] };

@@ -4,7 +4,7 @@ import ibis.expr.datatypes as dt
 import ibis.expr.types as et
 from dte.models.pipeline import (
     Pipeline, FilterStep, RenameStep, RetypeStep,
-    LookupMapStep, ExpressionMapStep, SortStep,
+    LookupMapStep, LookupTable, ExpressionMapStep, SortStep,
     AggregateStep, AggSpec, OutputField, JoinStep, PivotStep,
     SelectStep,
 )
@@ -36,8 +36,10 @@ def compile_pipeline(
     pipeline: Pipeline,
     tables: dict[str, ibis.Table],
     output=None,
+    lookup_tables: dict[str, "LookupTable"] | None = None,
 ) -> ibis.Table:
     registry = dict(tables)
+    lookups = lookup_tables or {}
     current_key = pipeline.sources[0]
 
     for step in pipeline.steps:
@@ -49,7 +51,7 @@ def compile_pipeline(
             current_key = s.output_id
         else:
             table = registry[current_key]
-            table = _dispatch_single_table_step(table, step)
+            table = _dispatch_single_table_step(table, step, lookups)
             registry[current_key] = table
 
     result = registry[current_key]
@@ -59,7 +61,11 @@ def compile_pipeline(
     return result
 
 
-def _dispatch_single_table_step(table: ibis.Table, step: dict) -> ibis.Table:
+def _dispatch_single_table_step(
+    table: ibis.Table,
+    step: dict,
+    lookup_tables: dict[str, "LookupTable"],
+) -> ibis.Table:
     op = step["op"]
     if op == "filter":
         return _apply_filter(table, FilterStep(**step))
@@ -70,7 +76,7 @@ def _dispatch_single_table_step(table: ibis.Table, step: dict) -> ibis.Table:
     elif op == "map":
         mode = step["mode"]
         if mode == "lookup":
-            return _apply_lookup(table, LookupMapStep(**step))
+            return _apply_lookup(table, LookupMapStep(**step), lookup_tables)
         else:
             return _apply_expression(table, ExpressionMapStep(**step))
     elif op == "sort":
@@ -126,14 +132,22 @@ def _apply_retype(table: ibis.Table, step: RetypeStep) -> ibis.Table:
     return table.cast({step.field: ibis_type})
 
 
-def _apply_lookup(table: ibis.Table, step: LookupMapStep) -> ibis.Table:
+def _apply_lookup(
+    table: ibis.Table,
+    step: LookupMapStep,
+    lookup_tables: dict[str, "LookupTable"],
+) -> ibis.Table:
+    lt = lookup_tables[step.lookup_id]  # KeyError → caller surfaces 422
     col = _resolve_field(table, step.field)
-    cases = [(col == k, ibis.literal(v)) for k, v in step.table.items()]
-    default = ibis.literal(step.default) if step.default is not None else None
+    cases = [(col == k, ibis.literal(v)) for k, v in lt.mappings.items()]
+    default = ibis.literal(lt.default) if lt.default is not None else None
     expr = ibis.cases(*cases, else_=default)
     # Struct paths can't be mutated in place; the output column takes the
-    # leaf name at the top level of the resulting table.
-    out_name = step.field.split(".")[-1] if "." in step.field else step.field
+    # leaf name at the top level of the resulting table (unless output_field
+    # is explicitly set).
+    out_name = step.output_field or (
+        step.field.split(".")[-1] if "." in step.field else step.field
+    )
     return table.mutate(**{out_name: expr})
 
 

@@ -23,6 +23,7 @@ from dte.api.deps import (
     get_connection_store,
     get_user_store,
     get_current_user,
+    get_lookup_table_store,
 )
 from dte.models.pipeline import Connection
 from dte.models.user import User, UserBase
@@ -35,6 +36,7 @@ from tests.fakes import (
     FakeDestinationStore,
     FakeConnectionStore,
     FakeUserStore,
+    FakeLookupTableStore,
 )
 
 
@@ -58,13 +60,14 @@ def _fake_test_user() -> User:
 
 @pytest.fixture(autouse=True)
 def fake_stores():
-    p, r, s, d, c, u = (
+    p, r, s, d, c, u, lt = (
         FakePipelineStore(),
         FakeRunStore(),
         FakeSourceStore(),
         FakeDestinationStore(),
         FakeConnectionStore(),
         FakeUserStore(),
+        FakeLookupTableStore(),
     )
     # Every test gets a `local_fs` connection pre-seeded — most sources /
     # destinations use it, tests don't have to re-declare it every time.
@@ -75,6 +78,7 @@ def fake_stores():
     app.dependency_overrides[get_destination_store] = lambda: d
     app.dependency_overrides[get_connection_store] = lambda: c
     app.dependency_overrides[get_user_store] = lambda: u
+    app.dependency_overrides[get_lookup_table_store] = lambda: lt
     # Bypass auth for existing tests — auth-flow tests opt out per-test.
     app.dependency_overrides[get_current_user] = lambda: _fake_test_user()
     yield {
@@ -84,6 +88,7 @@ def fake_stores():
         "destination": d,
         "connection": c,
         "user": u,
+        "lookup_table": lt,
     }
     app.dependency_overrides.clear()
 

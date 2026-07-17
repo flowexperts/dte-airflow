@@ -7,6 +7,7 @@ from dte.api.deps import get_current_user
 from dte.api.routes.auth import router as auth_router
 from dte.api.routes.connections import router as connections_router
 from dte.api.routes.destinations import router as destinations_router
+from dte.api.routes.lookup_tables import router as lookup_tables_router
 from dte.api.routes.pipelines import router as pipelines_router
 from dte.api.routes.runs import router as runs_router
 from dte.api.routes.schema import router as schema_router
@@ -41,3 +42,4 @@ app.include_router(schema_router, prefix="/api", dependencies=_auth)
 app.include_router(sources_router, prefix="/api", dependencies=_auth)
 app.include_router(destinations_router, prefix="/api", dependencies=_auth)
 app.include_router(connections_router, prefix="/api", dependencies=_auth)
+app.include_router(lookup_tables_router, prefix="/api", dependencies=_auth)

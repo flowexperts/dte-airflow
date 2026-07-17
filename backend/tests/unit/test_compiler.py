@@ -2,7 +2,7 @@ import pytest
 import ibis
 import pandas as pd
 from dte.compiler.ibis_compiler import compile_pipeline
-from dte.models.pipeline import Pipeline, JoinStep, PivotStep, JsonFileTarget
+from dte.models.pipeline import Pipeline, JoinStep, PivotStep, JsonFileTarget, LookupTable
 
 
 def _output(output_fields=None):
@@ -19,9 +19,11 @@ def make_pipeline(steps, output_fields=None):
     )
 
 
-def _run(pipeline_and_output, tables):
+def _run(pipeline_and_output, tables, lookup_tables=None):
     pipeline, output = pipeline_and_output
-    return compile_pipeline(pipeline, tables, output=output)
+    return compile_pipeline(
+        pipeline, tables, output=output, lookup_tables=lookup_tables or {},
+    )
 
 
 @pytest.fixture
@@ -87,14 +89,48 @@ def test_retype_step(con):
 def test_lookup_map_step(country_table):
     pipeline = make_pipeline([{
         "op": "map", "mode": "lookup", "field": "country_code",
-        "table": {"US": "United States", "CA": "Canada"},
-        "default": "Unknown"
+        "lookup_id": "country_names",
     }])
-    result = _run(pipeline, {"src": country_table})
+    lookups = {
+        "country_names": LookupTable(
+            id="country_names",
+            mappings={"US": "United States", "CA": "Canada"},
+            default="Unknown",
+        ),
+    }
+    result = _run(pipeline, {"src": country_table}, lookup_tables=lookups)
     df = result.execute()
     assert "United States" in df["country_code"].tolist()
     assert "Canada" in df["country_code"].tolist()
     assert "Unknown" in df["country_code"].tolist()
+
+
+def test_lookup_map_step_with_output_field(country_table):
+    pipeline = make_pipeline([{
+        "op": "map", "mode": "lookup", "field": "country_code",
+        "lookup_id": "country_names", "output_field": "country_name",
+    }])
+    lookups = {
+        "country_names": LookupTable(
+            id="country_names",
+            mappings={"US": "United States"},
+            default=None,
+        ),
+    }
+    result = _run(pipeline, {"src": country_table}, lookup_tables=lookups)
+    df = result.execute()
+    assert "country_name" in df.columns
+    # original column stays untouched
+    assert "country_code" in df.columns
+
+
+def test_lookup_map_step_missing_lookup_raises(country_table):
+    pipeline = make_pipeline([{
+        "op": "map", "mode": "lookup", "field": "country_code",
+        "lookup_id": "not_registered",
+    }])
+    with pytest.raises(KeyError):
+        _run(pipeline, {"src": country_table})
 
 
 def test_expression_map_step(sales_table):

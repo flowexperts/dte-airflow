@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 from fastapi import APIRouter, HTTPException, Depends, Response
-from dte.models.pipeline import Pipeline, PipelineBase, Source, Destination
+from dte.models.pipeline import Pipeline, PipelineBase, Source, Destination, LookupTable
 from dte.compiler.ibis_compiler import compile_pipeline
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.sources.loader import load_source
@@ -12,9 +12,11 @@ from dte.api.deps import (
     get_source_store,
     get_destination_store,
     get_connection_store,
+    get_lookup_table_store,
 )
 from dte.store.base import (
     PipelineStore, RunStore, SourceStore, DestinationStore, ConnectionStore,
+    LookupTableStore,
 )
 
 router = APIRouter()
@@ -98,6 +100,34 @@ async def delete_pipeline(
     return Response(status_code=204)
 
 
+async def _resolve_lookups(
+    pipeline: Pipeline,
+    lt_store: LookupTableStore,
+) -> dict[str, LookupTable]:
+    """Collect every lookup_id referenced by map/lookup steps and fetch the
+    corresponding LookupTable rows. Missing rows → 422 naming what's gone."""
+    ids: set[str] = set()
+    for step in pipeline.steps or []:
+        if step.get("op") == "map" and step.get("mode") == "lookup":
+            lid = step.get("lookup_id")
+            if lid:
+                ids.add(lid)
+    resolved: dict[str, LookupTable] = {}
+    missing: list[str] = []
+    for lid in ids:
+        lt = await lt_store.get(lid)
+        if lt is None:
+            missing.append(lid)
+        else:
+            resolved[lid] = lt
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={"missing_lookup_tables": sorted(missing)},
+        )
+    return resolved
+
+
 async def _resolve(
     pipeline: Pipeline,
     s_store: SourceStore,
@@ -139,15 +169,19 @@ async def preview_pipeline(
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
+    lt_store: LookupTableStore = Depends(get_lookup_table_store),
 ):
     pipeline = await store.get(pipeline_id)
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     try:
         sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
+        lookups = await _resolve_lookups(pipeline, lt_store)
         engine = DuckDBEngine()
         tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
-        compiled = compile_pipeline(pipeline, tables, output=destination.config)
+        compiled = compile_pipeline(
+            pipeline, tables, output=destination.config, lookup_tables=lookups,
+        )
         df = compiled.limit(limit).execute()
     except HTTPException:
         raise
@@ -166,15 +200,19 @@ async def trigger_pipeline(
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
+    lt_store: LookupTableStore = Depends(get_lookup_table_store),
 ):
     pipeline = await p_store.get(pipeline_id)
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     # Fail fast on missing refs before creating a run.
     await _resolve(pipeline, s_store, d_store, c_store)
+    await _resolve_lookups(pipeline, lt_store)
     run_id = await r_store.create(pipeline_id)
     asyncio.create_task(
-        _execute_pipeline(pipeline_id, run_id, p_store, r_store, s_store, d_store, c_store)
+        _execute_pipeline(
+            pipeline_id, run_id, p_store, r_store, s_store, d_store, c_store, lt_store,
+        )
     )
     return {"run_id": run_id}
 
@@ -187,15 +225,19 @@ async def _execute_pipeline(
     s_store: SourceStore,
     d_store: DestinationStore,
     c_store: ConnectionStore,
+    lt_store: LookupTableStore,
 ):
     await r_store.update(run_id, status="running")
     try:
         pipeline = await p_store.get(pipeline_id)
         sources, (destination, dest_creds) = await _resolve(pipeline, s_store, d_store, c_store)
+        lookups = await _resolve_lookups(pipeline, lt_store)
 
         engine = DuckDBEngine()
         tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
-        compiled = compile_pipeline(pipeline, tables, output=destination.config)
+        compiled = compile_pipeline(
+            pipeline, tables, output=destination.config, lookup_tables=lookups,
+        )
         result = engine.execute(compiled, destination.config, credentials=dest_creds)
         await r_store.update(
             run_id,

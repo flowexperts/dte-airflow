@@ -13,6 +13,7 @@ import { useSchemas } from "../schema-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { StepShape } from "./types";
+import { LookupTablePicker } from "../LookupTablePicker";
 
 type Setter = (patch: Partial<StepShape>) => void;
 
@@ -390,32 +391,6 @@ export function RetypeEditor({ step, set }: { step: StepShape; set: Setter }) {
 
 export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter }) {
   const { allFields } = useSchemas();
-  const table = (step.table as Record<string, string>) ?? {};
-
-  const initial = () =>
-    Object.entries(table).map(([k, v]) => ({ k, v }));
-  const [rows, setRows] = useState<{ k: string; v: string }[]>(initial);
-
-  useEffect(() => {
-    const obj: Record<string, string> = {};
-    for (const r of rows) if (r.k) obj[r.k] = r.v;
-    const same =
-      Object.keys(obj).length === Object.keys(table).length &&
-      Object.entries(obj).every(([k, v]) => table[k] === v);
-    if (!same) setRows(initial());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table]);
-
-  const commit = (next: { k: string; v: string }[]) => {
-    setRows(next);
-    const obj: Record<string, string> = {};
-    for (const r of next) if (r.k) obj[r.k] = r.v;
-    set({ table: obj });
-  };
-  const updateRow = (i: number, patch: Partial<{ k: string; v: string }>) =>
-    commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const removeRow = (i: number) => commit(rows.filter((_, j) => j !== i));
-  const addRow = () => commit([...rows, { k: "", v: "" }]);
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-2 gap-3">
@@ -427,51 +402,21 @@ export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter })
             variant="tree"
           />
         </Field>
-        <Field label="Default" hint="value used when no match">
+        <Field
+          label="Output field (optional)"
+          hint="leave blank to overwrite the input column"
+        >
           <Input
-            value={(step.default as string) ?? ""}
-            onChange={(e) => set({ default: e.target.value || null })}
-            placeholder="OTHER"
+            value={(step.output_field as string) ?? ""}
+            onChange={(e) => set({ output_field: e.target.value || null })}
+            placeholder="country_name"
           />
         </Field>
       </div>
-      <Field label="Lookup table" hint="key on the left, replacement value on the right">
-        <div className="space-y-1.5">
-          {rows.map((r, i) => (
-            <div
-              key={i}
-              className="grid grid-cols-[1fr_16px_1fr_28px] gap-2 items-center"
-            >
-              <Input
-                value={r.k}
-                onChange={(e) => updateRow(i, { k: e.target.value })}
-                placeholder="US"
-              />
-              <span className="text-subtle text-center">=</span>
-              <Input
-                value={r.v}
-                onChange={(e) => updateRow(i, { v: e.target.value })}
-                placeholder="north_america"
-              />
-              <button
-                type="button"
-                onClick={() => removeRow(i)}
-                className="text-subtle hover:text-red text-sm"
-                aria-label="Remove entry"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={addRow}
-            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
-          >
-            + Add entry
-          </button>
-        </div>
-      </Field>
+      <LookupTablePicker
+        value={(step.lookup_id as string) ?? ""}
+        onChange={(v) => set({ lookup_id: v })}
+      />
     </div>
   );
 }

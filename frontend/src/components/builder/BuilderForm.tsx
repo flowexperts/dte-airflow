@@ -51,13 +51,20 @@ export function BuilderForm({
       return "Every source slot needs a saved source picked.";
     if (!pipeline.output_id?.trim()) return "Pick or create a destination.";
     for (const [i, step] of (pipeline.steps ?? []).entries()) {
-      const s = step as { op?: string; fields?: unknown[]; drop?: unknown[] };
+      const s = step as {
+        op?: string; mode?: string;
+        fields?: unknown[]; drop?: unknown[];
+        lookup_id?: string;
+      };
       if (
         s.op === "select" &&
         (!s.fields || s.fields.length === 0) &&
         (!s.drop || s.drop.length === 0)
       ) {
         return `Step ${i + 1} (select) needs at least one field to keep or drop. Pick one or remove the step.`;
+      }
+      if (s.op === "map" && s.mode === "lookup" && !s.lookup_id?.trim()) {
+        return `Step ${i + 1} (map · lookup) needs a saved lookup table picked.`;
       }
     }
     return null;

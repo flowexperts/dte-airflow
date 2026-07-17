@@ -292,6 +292,31 @@ export const updateDestination = (id: string, destination: Destination) =>
 export const deleteDestination = (id: string) =>
   apiFetch<void>(`/api/destinations/${encodeURIComponent(id)}`, { method: "DELETE" });
 
+// ---------- Lookup tables ----------
+
+export interface LookupTable {
+  id: string;
+  name?: string | null;
+  mappings: Record<string, string>;
+  default?: string | null;
+}
+
+export const listLookupTables = () => apiFetch<LookupTable[]>(`/api/lookup-tables`);
+export const getLookupTable = (id: string) =>
+  apiFetch<LookupTable>(`/api/lookup-tables/${encodeURIComponent(id)}`);
+export const createLookupTable = (lookup: LookupTable) =>
+  apiFetch<LookupTable>(`/api/lookup-tables`, {
+    method: "POST",
+    body: JSON.stringify(lookup),
+  });
+export const updateLookupTable = (id: string, lookup: LookupTable) =>
+  apiFetch<LookupTable>(`/api/lookup-tables/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(lookup),
+  });
+export const deleteLookupTable = (id: string) =>
+  apiFetch<void>(`/api/lookup-tables/${encodeURIComponent(id)}`, { method: "DELETE" });
+
 // ---------- Connections ----------
 
 export const listConnections = () => apiFetch<Connection[]>(`/api/connections`);

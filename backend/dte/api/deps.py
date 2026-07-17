@@ -20,6 +20,7 @@ from dte.store.base import UserStore
 from dte.store.postgres import (
     PostgresConnectionStore,
     PostgresDestinationStore,
+    PostgresLookupTableStore,
     PostgresPipelineStore,
     PostgresRunStore,
     PostgresSourceStore,
@@ -61,6 +62,10 @@ def get_connection_store():
 
 def get_user_store():
     return PostgresUserStore(_session_factory())
+
+
+def get_lookup_table_store():
+    return PostgresLookupTableStore(_session_factory())
 
 
 # Swagger UI Authorize button wires to this URL.

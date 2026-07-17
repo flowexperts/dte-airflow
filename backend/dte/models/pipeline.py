@@ -470,6 +470,41 @@ SourceCreate = SourceBase
 DltSource = Source
 
 
+# ─── LookupTable ───────────────────────────────────────────────────────────
+# First-class reusable lookup mapping. Referenced from map/lookup steps by id
+# so the same table can be shared across many pipelines. Inline `table` dicts
+# on lookup steps are gone; use `scripts/migrate_extract_lookups.py` to migrate
+# legacy pipelines.
+
+class LookupTableBase(SQLModel):
+    """API/domain fields. `id` required so FastAPI raises 422 on missing."""
+    id: str
+    name: str | None = None
+    mappings: dict[str, str] = SMField(default_factory=dict)
+    default: str | None = None
+
+
+class LookupTable(LookupTableBase, table=True):
+    __tablename__ = "lookup_tables"
+
+    id: str = SMField(primary_key=True)  # type: ignore[override]
+    name: str | None = SMField(default=None, sa_column=Column(Text, nullable=True))
+    mappings: dict = SMField(  # type: ignore[override]
+        default_factory=dict, sa_column=Column(JSONB, nullable=False)
+    )
+    default: str | None = SMField(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime | None = SMField(
+        default=None, sa_column=Column(server_default=func.now())
+    )
+    updated_at: datetime | None = SMField(
+        default=None,
+        sa_column=Column(server_default=func.now(), onupdate=func.now()),
+    )
+
+
+LookupTableCreate = LookupTableBase
+
+
 # ─── Steps ────────────────────────────────────────────────────────────────
 
 class FilterStep(BaseModel):
@@ -498,11 +533,19 @@ class RetypeStep(BaseModel):
 
 
 class LookupMapStep(BaseModel):
+    """Applies a saved LookupTable to a column.
+
+    The mapping table itself lives in the `lookup_tables` store (referenced by
+    `lookup_id`). At compile time the caller resolves the id → LookupTable and
+    passes them to `compile_pipeline(..., lookup_tables=...)`.
+    """
+    model_config = {"extra": "forbid"}
+
     op: Literal["map"]
     mode: Literal["lookup"]
     field: str
-    table: dict[str, str]
-    default: str | None = None
+    lookup_id: str
+    output_field: str | None = None
 
 
 class ExpressionMapStep(BaseModel):

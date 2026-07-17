@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from dte.models.pipeline import (
     Connection, ConnectionBase,
     Destination, DestinationBase,
+    LookupTable, LookupTableBase,
     Pipeline, PipelineBase,
     Source, SourceBase,
 )
@@ -226,6 +227,54 @@ class FakeDestinationStore:
         items = sorted(
             self._data.values(),
             key=lambda d: d.created_at or _utcnow(),
+            reverse=True,
+        )
+        return items[offset:offset + limit]
+
+    async def delete(self, id: str) -> bool:
+        if id in self._data:
+            del self._data[id]
+            return True
+        return False
+
+
+class FakeLookupTableStore:
+    """In-memory lookup table store for tests. Stores typed `LookupTable` instances.
+
+    Accepts `LookupTableBase`, `LookupTable`, or a plain `dict` (for migration
+    scripts) at `save()`.
+    """
+
+    def __init__(self):
+        self._data: dict[str, LookupTable] = {}
+
+    async def get(self, id: str) -> LookupTable | None:
+        return self._data.get(id)
+
+    async def save(self, lookup: "LookupTableBase | LookupTable | dict") -> None:
+        if isinstance(lookup, dict):
+            row = LookupTable(
+                id=lookup["id"],
+                name=lookup.get("name"),
+                mappings=lookup.get("mappings", {}),
+                default=lookup.get("default"),
+            )
+        else:
+            row = LookupTable(
+                id=lookup.id,
+                name=lookup.name,
+                mappings=lookup.mappings,
+                default=lookup.default,
+            )
+        existing = self._data.get(row.id)
+        row.created_at = existing.created_at if existing else _utcnow()
+        row.updated_at = _utcnow()
+        self._data[row.id] = row
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[LookupTable]:
+        items = sorted(
+            self._data.values(),
+            key=lambda lt: lt.created_at or _utcnow(),
             reverse=True,
         )
         return items[offset:offset + limit]
