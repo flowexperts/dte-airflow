@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "dte"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "ibis-framework[duckdb]>=9.0",
     "fastapi>=0.115",
@@ -23,6 +23,10 @@ dependencies = [
     "bcrypt>=4.0",
     "email-validator>=2.1",
     "pyjwt>=2.8",
+    "fastadmin>=0.10",
+    "python-multipart>=0.0.9",
+    # Sync psycopg for FastAdmin (asyncpg is async-only). Postgres SQL only.
+    "psycopg2-binary>=2.9",
 ]
 
 [project.optional-dependencies]
