@@ -1,6 +1,7 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import useSWR from "swr";
 import {
   Sidebar,
   Brand,
@@ -10,13 +11,22 @@ import {
   NavItem,
   NavFooter,
 } from "@/components/ui";
+import { type CurrentUser, clearToken } from "@/lib/api";
 
 export function AppSidebar() {
   const pathname = usePathname() ?? "";
+  const router = useRouter();
   const on = (prefix: string) =>
     prefix === "/"
       ? pathname === "/"
       : pathname === prefix || pathname.startsWith(prefix + "/");
+
+  const { data: user } = useSWR<CurrentUser>("/api/auth/me");
+
+  function onLogout() {
+    clearToken();
+    router.replace("/login");
+  }
 
   return (
     <Sidebar>
@@ -31,6 +41,20 @@ export function AppSidebar() {
         <NavGroup>System</NavGroup>
         <NavItem href="/preview" label="Design" active={on("/preview")} />
       </NavSections>
+      {user ? (
+        <div className="mt-3 mb-2 flex items-center justify-between text-xs px-1">
+          <span className="truncate text-muted font-mono" title={user.email}>
+            {user.email}
+          </span>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="text-subtle hover:text-text font-mono text-[10.5px] uppercase tracking-[0.18em] ml-2"
+          >
+            Sign out
+          </button>
+        </div>
+      ) : null}
       <NavFooter />
     </Sidebar>
   );
