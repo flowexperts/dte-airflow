@@ -13,6 +13,7 @@ from dte.api.routes.runs import router as runs_router
 from dte.api.routes.schema import router as schema_router
 from dte.api.routes.sources import router as sources_router
 from dte.api.routes.users import router as users_router
+from dte.admin import mount_admin
 
 _DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:5173"
 
@@ -45,3 +46,7 @@ app.include_router(destinations_router, prefix="/api", dependencies=_auth)
 app.include_router(connections_router, prefix="/api", dependencies=_auth)
 app.include_router(lookup_tables_router, prefix="/api", dependencies=_auth)
 app.include_router(users_router, prefix="/api", dependencies=_auth)
+
+# Mount FastAdmin at /admin when DTE_ADMIN_ENABLED=true. Off by default so
+# tests and dev without an admin secret keep working.
+mount_admin(app)

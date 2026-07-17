@@ -32,6 +32,10 @@ services:
       # Allow the /api/auth/register endpoint. Plan 023 will move user
       # creation into an admin flow — flip this off in prod when that lands.
       DTE_ALLOW_REGISTRATION: "true"
+      # FastAdmin (plan 023 task 4). Off by default; flip on for /admin.
+      # Signing key for admin sessions — falls back to DTE_JWT_SECRET.
+      DTE_ADMIN_ENABLED: "true"
+      DTE_ADMIN_SECRET_KEY: ${DTE_ADMIN_SECRET_KEY:-${DTE_JWT_SECRET}}
       # Force polling for uvicorn --reload's watchfiles. Native FS events
       # are unstable in arm64 containers on Apple Silicon (SIGILL / exit 132
       # on file change). Polling costs a bit of CPU but is rock solid.
