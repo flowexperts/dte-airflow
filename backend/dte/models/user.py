@@ -88,6 +88,9 @@ class User(UserBase, table=True):
         sa_column=Column(server_default=func.now(), onupdate=func.now()),
     )
 
+    def __str__(self) -> str:
+        return self.email
+
     def narrow_roles(self, roles: list[Role]) -> None:
         """Attach roles fetched by the store. Not a mapped column so SA
         hydration ignores it (mirrors `Destination.narrow_config`)."""

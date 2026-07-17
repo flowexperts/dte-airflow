@@ -7,8 +7,8 @@ Deviations from plan 023 (task 4):
   from a raw-table editor. Pipeline / Source / Destination /
   LookupTable / Run admins can land later without changing this
   wiring; the register calls just get appended.
-- FastAdmin's SQLAlchemy provider is sync-only. We build a sync engine
-  from `DATABASE_URL` by stripping `+asyncpg` (same trick alembic uses).
+- FastAdmin's SQLAlchemy provider is async — we build an `async_sessionmaker`
+  off the same `DATABASE_URL` (asyncpg driver) the app already uses.
 - Login is our own User table: FastAdmin's `authenticate(username, pw)`
   calls into `PostgresUserStore` via a sync session; success requires
   the user to also carry the `user:read` permission so a viewer can't
