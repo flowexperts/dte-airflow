@@ -15,6 +15,7 @@ from dte.models.pipeline import (
     Pipeline, PipelineBase,
     Source, SourceBase,
 )
+from dte.models.user import User, UserBase
 
 
 def _utcnow_iso() -> str:
@@ -272,6 +273,52 @@ class FakeConnectionStore:
             )
             masked.append(masked_row)
         return masked
+
+    async def delete(self, id: str) -> bool:
+        if id in self._data:
+            del self._data[id]
+            return True
+        return False
+
+
+class FakeUserStore:
+    """In-memory user store for tests. Stores typed `User` instances.
+
+    `save` accepts a `UserBase` instance plus a pre-hashed password.
+    Mirrors the `UserStore` Protocol in `dte/store/base.py`.
+    """
+
+    def __init__(self):
+        self._data: dict[str, User] = {}
+
+    async def get_by_id(self, id: str) -> User | None:
+        return self._data.get(id)
+
+    async def get_by_email(self, email: str) -> User | None:
+        for user in self._data.values():
+            if user.email == email:
+                return user
+        return None
+
+    async def save(self, user: "UserBase", password_hash: str) -> None:
+        existing = self._data.get(user.id)
+        row = User(
+            id=user.id,
+            email=str(user.email),
+            is_active=user.is_active,
+            password_hash=password_hash,
+        )
+        row.created_at = existing.created_at if existing else _utcnow()
+        row.updated_at = _utcnow()
+        self._data[user.id] = row
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[User]:
+        items = sorted(
+            self._data.values(),
+            key=lambda u: u.created_at or _utcnow(),
+            reverse=True,
+        )
+        return items[offset:offset + limit]
 
     async def delete(self, id: str) -> bool:
         if id in self._data:
