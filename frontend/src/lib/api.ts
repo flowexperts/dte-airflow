@@ -150,19 +150,50 @@ class ApiError extends Error {
   }
 }
 
+export const TOKEN_STORAGE_KEY = "dte_token";
+export const TOKEN_COOKIE_NAME = "dte_token";
+
+export function readToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function setToken(token: string): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  // Cookie mirror so Next middleware can gate SSR routes. SameSite=Lax
+  // keeps CSRF surface small; not HttpOnly because we also need JS access.
+  document.cookie = `${TOKEN_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
+}
+
+export function clearToken(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  document.cookie = `${TOKEN_COOKIE_NAME}=; Path=/; SameSite=Lax; Max-Age=0`;
+}
+
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
   const url = path.startsWith("http") ? path : `${BASE}${path}`;
+  const token = readToken();
   const res = await fetch(url, {
     ...init,
     headers: {
       "content-type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      // Token expired / invalid — drop it and bounce to login.
+      clearToken();
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+      }
+    }
     let detail = res.statusText;
     try {
       const body = await res.json();
@@ -174,6 +205,24 @@ export async function apiFetch<T>(
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  is_active: boolean;
+}
+
+export async function login(email: string, password: string): Promise<string> {
+  const res = await apiFetch<{ access_token: string; token_type: string }>(
+    "/api/auth/login",
+    { method: "POST", body: JSON.stringify({ email, password }) },
+  );
+  return res.access_token;
+}
+
+export async function getCurrentUser(): Promise<CurrentUser> {
+  return apiFetch<CurrentUser>("/api/auth/me");
 }
 
 export { ApiError };
