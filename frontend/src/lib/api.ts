@@ -172,12 +172,21 @@ export function clearToken(): void {
   document.cookie = `${TOKEN_COOKIE_NAME}=; Path=/; SameSite=Lax; Max-Age=0`;
 }
 
+async function readTokenServer(): Promise<string | null> {
+  // SSR path: token isn't in localStorage — read the `dte_token` cookie the
+  // login flow set (see setToken). Dynamic import so this module still bundles
+  // for the client.
+  const { cookies } = await import("next/headers");
+  const store = await cookies();
+  return store.get(TOKEN_COOKIE_NAME)?.value ?? null;
+}
+
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
   const url = path.startsWith("http") ? path : `${BASE}${path}`;
-  const token = readToken();
+  const token = typeof window === "undefined" ? await readTokenServer() : readToken();
   const res = await fetch(url, {
     ...init,
     headers: {
