@@ -26,6 +26,7 @@ _ALL = [
     "source:read", "source:write", "source:delete",
     "destination:read", "destination:write", "destination:delete",
     "connection:read", "connection:write", "connection:delete", "connection:test",
+    "lookup_table:read", "lookup_table:write", "lookup_table:delete",
     "run:read", "run:delete",
     "user:read", "user:write", "user:delete",
 ]

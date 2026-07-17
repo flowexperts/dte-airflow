@@ -1,5 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
+from dte.security.permissions import requires
 
 from dte.models.pipeline import LookupTable, LookupTableBase
 from dte.api.deps import get_lookup_table_store, get_pipeline_store
@@ -22,7 +23,7 @@ def _referenced_by(pipelines, lookup_id: str) -> list[str]:
     return refs
 
 
-@router.post("/lookup-tables", status_code=201)
+@router.post("/lookup-tables", status_code=201, dependencies=[Depends(requires("lookup_table:write"))])
 async def create_lookup_table(
     lookup: LookupTableBase,
     store: LookupTableStore = Depends(get_lookup_table_store),
@@ -35,7 +36,7 @@ async def create_lookup_table(
     return lookup.model_dump()
 
 
-@router.get("/lookup-tables")
+@router.get("/lookup-tables", dependencies=[Depends(requires("lookup_table:read"))])
 async def list_lookup_tables(
     limit: int = 50,
     offset: int = 0,
@@ -45,7 +46,7 @@ async def list_lookup_tables(
     return [r.model_dump() for r in rows]
 
 
-@router.get("/lookup-tables/{lookup_id}")
+@router.get("/lookup-tables/{lookup_id}", dependencies=[Depends(requires("lookup_table:read"))])
 async def get_lookup_table(
     lookup_id: str,
     store: LookupTableStore = Depends(get_lookup_table_store),
@@ -56,7 +57,7 @@ async def get_lookup_table(
     return row.model_dump()
 
 
-@router.put("/lookup-tables/{lookup_id}")
+@router.put("/lookup-tables/{lookup_id}", dependencies=[Depends(requires("lookup_table:write"))])
 async def update_lookup_table(
     lookup_id: str,
     lookup: LookupTableBase,
@@ -72,7 +73,7 @@ async def update_lookup_table(
     return lookup.model_dump()
 
 
-@router.delete("/lookup-tables/{lookup_id}", status_code=204)
+@router.delete("/lookup-tables/{lookup_id}", status_code=204, dependencies=[Depends(requires("lookup_table:delete"))])
 async def delete_lookup_table(
     lookup_id: str,
     lt_store: LookupTableStore = Depends(get_lookup_table_store),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
+from dte.security.permissions import requires
 
 from dte.models.pipeline import Connection, ConnectionBase
 from dte.api.deps import (
@@ -22,7 +23,7 @@ def _mask(c: Connection) -> dict:
     }
 
 
-@router.post("/connections", status_code=201)
+@router.post("/connections", status_code=201, dependencies=[Depends(requires("connection:write"))])
 async def create_connection(
     connection: ConnectionBase,
     store: ConnectionStore = Depends(get_connection_store),
@@ -43,7 +44,7 @@ def _mask_base(connection: ConnectionBase) -> dict:
     }
 
 
-@router.get("/connections")
+@router.get("/connections", dependencies=[Depends(requires("connection:read"))])
 async def list_connections(
     limit: int = 50,
     offset: int = 0,
@@ -53,7 +54,7 @@ async def list_connections(
     return [_mask(c) for c in connections]
 
 
-@router.get("/connections/{connection_id}")
+@router.get("/connections/{connection_id}", dependencies=[Depends(requires("connection:read"))])
 async def get_connection(
     connection_id: str,
     reveal: bool = False,
@@ -73,7 +74,7 @@ async def get_connection(
     return _mask(c)
 
 
-@router.put("/connections/{connection_id}")
+@router.put("/connections/{connection_id}", dependencies=[Depends(requires("connection:write"))])
 async def update_connection(
     connection_id: str,
     connection: ConnectionBase,
@@ -96,7 +97,7 @@ async def update_connection(
     return _mask_base(connection)
 
 
-@router.post("/connections/{connection_id}/test")
+@router.post("/connections/{connection_id}/test", dependencies=[Depends(requires("connection:test"))])
 async def test_connection(
     connection_id: str,
     store: ConnectionStore = Depends(get_connection_store),
@@ -110,7 +111,7 @@ async def test_connection(
     return probe_connection(c)
 
 
-@router.delete("/connections/{connection_id}", status_code=204)
+@router.delete("/connections/{connection_id}", status_code=204, dependencies=[Depends(requires("connection:delete"))])
 async def delete_connection(
     connection_id: str,
     c_store: ConnectionStore = Depends(get_connection_store),

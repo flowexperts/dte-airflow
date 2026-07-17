@@ -50,12 +50,18 @@ def _make_local_fs_connection() -> Connection:
 
 
 def _fake_test_user() -> User:
-    return User(
+    from dte.models.user import Role
+    from dte.security.permissions import ADMIN_PERMISSIONS
+    u = User(
         id="test-user",
         email="test@example.com",
         is_active=True,
         password_hash="unused-in-tests",
     )
+    # Attach an admin role so autouse tests pass every requires(...) gate.
+    # RBAC-specific tests override get_current_user with a scoped user.
+    u.narrow_roles([Role(id="admin", name="admin", permissions=list(ADMIN_PERMISSIONS))])
+    return u
 
 
 @pytest.fixture(autouse=True)

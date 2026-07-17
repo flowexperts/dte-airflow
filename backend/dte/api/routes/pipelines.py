@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 from fastapi import APIRouter, HTTPException, Depends, Response
+from dte.security.permissions import requires
 from dte.models.pipeline import Pipeline, PipelineBase, Source, Destination, LookupTable
 from dte.compiler.ibis_compiler import compile_pipeline
 from dte.engine.duckdb_engine import DuckDBEngine
@@ -42,7 +43,7 @@ async def _validate_pipeline_refs(
         raise HTTPException(status_code=422, detail=detail)
 
 
-@router.post("/pipelines")
+@router.post("/pipelines", dependencies=[Depends(requires("pipeline:write"))])
 async def create_pipeline(
     pipeline: PipelineBase,
     store: PipelineStore = Depends(get_pipeline_store),
@@ -54,12 +55,12 @@ async def create_pipeline(
     return {"id": pipeline.id}
 
 
-@router.get("/pipelines")
+@router.get("/pipelines", dependencies=[Depends(requires("pipeline:read"))])
 async def list_pipelines(limit: int = 50, offset: int = 0, store: PipelineStore = Depends(get_pipeline_store)) -> list[Pipeline]:
     return await store.list(limit=limit, offset=offset)
 
 
-@router.get("/pipelines/{pipeline_id}")
+@router.get("/pipelines/{pipeline_id}", dependencies=[Depends(requires("pipeline:read"))])
 async def get_pipeline(pipeline_id: str, store: PipelineStore = Depends(get_pipeline_store)) -> Pipeline:
     p = await store.get(pipeline_id)
     if not p:
@@ -67,7 +68,7 @@ async def get_pipeline(pipeline_id: str, store: PipelineStore = Depends(get_pipe
     return p
 
 
-@router.put("/pipelines/{pipeline_id}")
+@router.put("/pipelines/{pipeline_id}", dependencies=[Depends(requires("pipeline:write"))])
 async def update_pipeline(
     pipeline_id: str,
     pipeline: PipelineBase,
@@ -86,7 +87,7 @@ async def update_pipeline(
     return row
 
 
-@router.delete("/pipelines/{pipeline_id}", status_code=204)
+@router.delete("/pipelines/{pipeline_id}", status_code=204, dependencies=[Depends(requires("pipeline:delete"))])
 async def delete_pipeline(
     pipeline_id: str,
     p_store: PipelineStore = Depends(get_pipeline_store),
@@ -161,7 +162,7 @@ async def _resolve(
     return sources, (destination, dest_conn.credentials)
 
 
-@router.get("/pipelines/{pipeline_id}/preview")
+@router.get("/pipelines/{pipeline_id}/preview", dependencies=[Depends(requires("pipeline:read"))])
 async def preview_pipeline(
     pipeline_id: str,
     limit: int = 100,
@@ -192,7 +193,7 @@ async def preview_pipeline(
     return {"rows": rows, "count": len(rows)}
 
 
-@router.post("/pipelines/{pipeline_id}/trigger")
+@router.post("/pipelines/{pipeline_id}/trigger", dependencies=[Depends(requires("pipeline:trigger"))])
 async def trigger_pipeline(
     pipeline_id: str,
     p_store: PipelineStore = Depends(get_pipeline_store),

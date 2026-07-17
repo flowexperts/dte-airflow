@@ -1,5 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends
+from dte.security.permissions import requires
 from pydantic import BaseModel
 import ibis.expr.datatypes as dt
 
@@ -37,7 +38,7 @@ def _walk(name: str, dtype: dt.DataType) -> SchemaFieldNode:
     return SchemaFieldNode(name=name, type=str(dtype))
 
 
-@router.post("/schema/infer", response_model=InferSchemaResponse)
+@router.post("/schema/infer", response_model=InferSchemaResponse, dependencies=[Depends(requires("source:read"))])
 async def infer_schema(
     source: Source,
     c_store: ConnectionStore = Depends(get_connection_store),

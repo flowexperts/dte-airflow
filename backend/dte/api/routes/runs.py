@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends
+from dte.security.permissions import requires
 from dte.api.deps import get_run_store, get_pipeline_store, get_destination_store
 from dte.store.base import RunStore, PipelineStore, DestinationStore
 from dte.models.pipeline import Pipeline
@@ -10,7 +11,7 @@ from dte.models.pipeline import Pipeline
 router = APIRouter()
 
 
-@router.get("/runs/{run_id}")
+@router.get("/runs/{run_id}", dependencies=[Depends(requires("run:read"))])
 async def get_run(run_id: str, store: RunStore = Depends(get_run_store)):
     run = await store.get(run_id)
     if not run:
@@ -18,7 +19,7 @@ async def get_run(run_id: str, store: RunStore = Depends(get_run_store)):
     return run
 
 
-@router.get("/pipelines/{pipeline_id}/runs")
+@router.get("/pipelines/{pipeline_id}/runs", dependencies=[Depends(requires("run:read"))])
 async def list_runs_for_pipeline(
     pipeline_id: str,
     limit: int = 50,
@@ -27,7 +28,7 @@ async def list_runs_for_pipeline(
     return await store.list_for_pipeline(pipeline_id, limit=limit)
 
 
-@router.get("/runs/{run_id}/output")
+@router.get("/runs/{run_id}/output", dependencies=[Depends(requires("run:read"))])
 async def get_run_output(
     run_id: str,
     limit: int = 5,
