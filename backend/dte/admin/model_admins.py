@@ -44,6 +44,38 @@ class UserAdmin(SqlAlchemyModelAdmin):
     # dedicated read-only column later.
     exclude = ("created_at", "updated_at")
 
+    def get_model_fields_with_widget_types(self, with_m2m=None):  # type: ignore[override]
+        """Append a synthetic `roles` multi-select to the User form so
+        the admin can grant/revoke roles without touching a junction
+        table. It maps to UserRoleLink rows on save."""
+        from fastadmin.models.schemas import ModelFieldWidgetSchema
+
+        fields = super().get_model_fields_with_widget_types(with_m2m=with_m2m)
+        # M2M variant returns only m2m fields; we only add ours when
+        # non-m2m fields are being asked for.
+        if with_m2m:
+            return fields
+        roles_field = ModelFieldWidgetSchema(
+            name="roles",
+            column_name="roles",
+            is_m2m=False,
+            is_pk=False,
+            is_immutable=False,
+            form_widget_type=WidgetType.AsyncSelect,
+            form_widget_props={
+                "required": False,
+                "disabled": False,
+                "readOnly": False,
+                "mode": "multiple",
+                "parentModel": "Role",
+                "idField": "id",
+                "labelFields": ("__str__", "id"),
+            },
+            filter_widget_type=WidgetType.Input,
+            filter_widget_props={},
+        )
+        return list(fields) + [roles_field]
+
     # Render `password_hash` as a masked password field so the admin
     # can set/change passwords from the UI. `orm_save_obj` hashes
     # whatever plaintext gets submitted before insert/update.
@@ -69,7 +101,41 @@ class UserAdmin(SqlAlchemyModelAdmin):
         raw_pw = payload.get("password_hash")
         if raw_pw and not raw_pw.startswith("$2"):
             payload = {**payload, "password_hash": hash_password(raw_pw)}
-        return await super().orm_save_obj(id, payload)
+        # Pull `roles` out of the payload so it doesn't reach the User INSERT.
+        # We reconcile UserRoleLink rows after save.
+        role_ids = payload.pop("roles", None) if isinstance(payload, dict) else None
+        obj = await super().orm_save_obj(id, payload)
+        if role_ids is not None:
+            pk = payload.get("id") or (obj.id if hasattr(obj, "id") else id)
+            await self._sync_roles(pk, role_ids)
+        return obj
+
+    async def _sync_roles(self, user_id, role_ids):
+        """Replace the user's role assignments with `role_ids`."""
+        role_ids = [str(r) for r in (role_ids or [])]
+        async with _sessionmaker() as s:
+            existing = (await s.execute(
+                select(UserRoleLink).where(UserRoleLink.user_id == user_id)
+            )).scalars().all()
+            existing_role_ids = {link.role_id for link in existing}
+            wanted = set(role_ids)
+            for link in existing:
+                if link.role_id not in wanted:
+                    await s.delete(link)
+            for rid in wanted - existing_role_ids:
+                s.add(UserRoleLink(user_id=user_id, role_id=rid))
+            await s.commit()
+
+    async def serialize_obj(self, obj):  # type: ignore[override]
+        """Include the user's current role ids so the edit form pre-selects
+        them in the AsyncSelect."""
+        data = await super().serialize_obj(obj)
+        async with _sessionmaker() as s:
+            links = (await s.execute(
+                select(UserRoleLink).where(UserRoleLink.user_id == obj.id)
+            )).scalars().all()
+        data["roles"] = [link.role_id for link in links]
+        return data
 
     async def change_password(self, id, password):  # type: ignore[override]
         # FastAdmin auto-calls this after save whenever a PasswordInput
@@ -144,8 +210,7 @@ class RoleAdmin(SqlAlchemyModelAdmin):
     }
 
 
-# NOTE: UserRoleLink is *not* registered. FastAdmin's SQLAlchemy adapter
-# hides every FK column and expects `relationship()` declarations to render
-# a picker; our join model has neither, so the admin page was empty. Role
-# assignment already has a dedicated surface: POST /api/users/{id}/roles
-# (and DELETE for revoke).
+# NOTE: UserRoleLink is not registered as its own admin page. The composite
+# PK (user_id, role_id) breaks FastAdmin's `session.get(cls, id)` calls, and
+# a raw junction table is a poor UX anyway. Role assignment is exposed as a
+# multi-select on the User admin below (see UserAdmin._sync_roles).
