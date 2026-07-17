@@ -1,8 +1,9 @@
 """FastAdmin ModelAdmins for the RBAC-critical entities.
 
-Uses a **sync** SQLAlchemy engine — FastAdmin's provider is not async.
-Kept as a separate engine from the app's async one; they don't share
-sessions and don't need to.
+Only User / Role / UserRoleLink are registered. Connection is *not* —
+the app UI at /connections owns the safe editing path (creds go through
+the SecretResolver), and a raw table editor would just create two ways
+to change the same row with different guardrails.
 """
 from __future__ import annotations
 
@@ -12,11 +13,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import select
 
-from fastadmin import SqlAlchemyModelAdmin, register
+from fastadmin import SqlAlchemyModelAdmin, WidgetType, register
 
-from dte.models.pipeline import Connection
 from dte.models.user import Role, User, UserRoleLink
 from dte.security.passwords import verify_password
+from dte.security.permissions import ALL_PERMISSIONS
 
 
 def _make_sessionmaker():
@@ -84,21 +85,25 @@ class UserAdmin(SqlAlchemyModelAdmin):
 
 @register(Role, sqlalchemy_sessionmaker=_sessionmaker)
 class RoleAdmin(SqlAlchemyModelAdmin):
+    """Role editor. `permissions` is a Postgres TEXT[] — FastAdmin can't
+    infer a multi-select from that, so we hand it the closed set from
+    the `Permission` enum. Extending the enum (e.g. adding a new
+    resource) auto-populates this dropdown."""
+
     list_display = ("id", "name", "permissions")
     list_display_links = ("id", "name")
+
+    formfield_overrides = {  # type: ignore[assignment]
+        "permissions": (
+            WidgetType.Select,
+            {
+                "mode": "multiple",
+                "options": [{"label": p, "value": p} for p in ALL_PERMISSIONS],
+            },
+        ),
+    }
 
 
 @register(UserRoleLink, sqlalchemy_sessionmaker=_sessionmaker)
 class UserRoleLinkAdmin(SqlAlchemyModelAdmin):
     list_display = ("user_id", "role_id")
-
-
-@register(Connection, sqlalchemy_sessionmaker=_sessionmaker)
-class ConnectionAdmin(SqlAlchemyModelAdmin):
-    """Credentials never surface in the admin — editing them here would
-    bypass EncryptedJSON. Both the logical `credentials` field and the
-    physical `credentials_encrypted` column are excluded."""
-
-    list_display = ("id", "connection_type", "created_at")
-    list_display_links = ("id",)
-    exclude = ("credentials", "credentials_encrypted")
