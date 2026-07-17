@@ -37,14 +37,25 @@ class UserAdmin(SqlAlchemyModelAdmin):
     the same password_hash that the API uses; only users with
     `user:read` permission are allowed into the admin UI."""
 
-    list_display = ("id", "email", "is_active", "created_at")
+    list_display = ("id", "email", "is_active")
     list_display_links = ("id", "email")
+    # Timestamps are set by the DB — hide them from add/edit forms and
+    # from the list. If we ever need to show them in the list, add a
+    # dedicated read-only column later.
+    exclude = ("created_at", "updated_at")
 
     # Render `password_hash` as a masked password field so the admin
     # can set/change passwords from the UI. `orm_save_obj` hashes
     # whatever plaintext gets submitted before insert/update.
+    # `label: "Password"` piggybacks on Ant Design's Form.Item — if
+    # FastAdmin's frontend spreads form_widget_props to the item, this
+    # renames the field; if it doesn't, the fallback name "password_hash"
+    # is at least consistent with the wire.
     formfield_overrides = {  # type: ignore[assignment]
-        "password_hash": (WidgetType.PasswordInput, {"required": True}),
+        "password_hash": (
+            WidgetType.PasswordInput,
+            {"required": True, "label": "Password"},
+        ),
     }
 
     async def orm_save_obj(self, id, payload):  # type: ignore[override]
