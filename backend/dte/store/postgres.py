@@ -10,6 +10,7 @@ from dte.models.pipeline import (
     Pipeline, PipelineBase,
     Source, SourceBase,
 )
+from dte.models.user import User, UserBase
 
 
 class PostgresPipelineStore:
@@ -304,6 +305,67 @@ class PostgresConnectionStore:
     async def delete(self, id: str) -> bool:
         async with self._factory() as s:
             row = await s.get(Connection, id)
+            if row is None:
+                return False
+            await s.delete(row)
+            await s.commit()
+            return True
+
+
+class PostgresUserStore:
+    """ORM-backed user store. Returns typed `User` instances.
+
+    `password_hash` is passed separately to `save` so the caller
+    (the register route) hashes once and the store never receives
+    plaintext. This mirrors the pattern used by all other Postgres
+    stores — `pg_insert(...).on_conflict_do_update(...)` so that
+    `updated_at` fires on re-save.
+    """
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def get_by_id(self, id: str) -> User | None:
+        async with self._factory() as s:
+            return await s.get(User, id)
+
+    async def get_by_email(self, email: str) -> User | None:
+        stmt = select(User).where(User.email == email)
+        async with self._factory() as s:
+            return (await s.execute(stmt)).scalars().first()
+
+    async def save(self, user: "UserBase", password_hash: str) -> None:
+        stmt = pg_insert(User).values(
+            id=user.id,
+            email=str(user.email),
+            is_active=user.is_active,
+            password_hash=password_hash,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[User.id],
+            set_={
+                "email": stmt.excluded.email,
+                "is_active": stmt.excluded.is_active,
+                "password_hash": stmt.excluded.password_hash,
+            },
+        )
+        async with self._factory() as s:
+            await s.execute(stmt)
+            await s.commit()
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[User]:
+        stmt = (
+            select(User)
+            .order_by(User.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        async with self._factory() as s:
+            return list((await s.execute(stmt)).scalars().all())
+
+    async def delete(self, id: str) -> bool:
+        async with self._factory() as s:
+            row = await s.get(User, id)
             if row is None:
                 return False
             await s.delete(row)

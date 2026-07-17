@@ -20,6 +20,8 @@ dependencies = [
     # Pinned <43: 43+ switched to Rust bindings whose wheels SIGILL on
     # Docker Desktop arm64 (Apple Silicon emulation).
     "cryptography>=42.0,<43",
+    "bcrypt>=4.0",
+    "email-validator>=2.1",
 ]
 
 [project.optional-dependencies]
