@@ -49,6 +49,9 @@ class Role(RoleBase, table=True):
         sa_column=Column(server_default=func.now(), onupdate=func.now()),
     )
 
+    def __str__(self) -> str:
+        return self.name
+
 
 class UserRoleLink(SQLModel, table=True):
     __tablename__ = "user_roles"
