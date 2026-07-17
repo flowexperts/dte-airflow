@@ -16,7 +16,7 @@ from dte.models.pipeline import (
     Pipeline, PipelineBase,
     Source, SourceBase,
 )
-from dte.models.user import User, UserBase
+from dte.models.user import Role, User, UserBase
 
 
 def _utcnow_iso() -> str:
@@ -337,16 +337,29 @@ class FakeUserStore:
     Mirrors the `UserStore` Protocol in `dte/store/base.py`.
     """
 
-    def __init__(self):
+    def __init__(self, role_store: "FakeRoleStore | None" = None):
         self._data: dict[str, User] = {}
+        # (user_id, role_id) pairs
+        self._links: set[tuple[str, str]] = set()
+        self._role_store = role_store
+
+    def _attach_roles(self, user: User) -> User:
+        if self._role_store is None:
+            user.narrow_roles([])
+            return user
+        rids = [rid for uid, rid in self._links if uid == user.id]
+        roles = [self._role_store._data[rid] for rid in rids if rid in self._role_store._data]
+        user.narrow_roles(roles)
+        return user
 
     async def get_by_id(self, id: str) -> User | None:
-        return self._data.get(id)
+        u = self._data.get(id)
+        return self._attach_roles(u) if u is not None else None
 
     async def get_by_email(self, email: str) -> User | None:
         for user in self._data.values():
             if user.email == email:
-                return user
+                return self._attach_roles(user)
         return None
 
     async def save(self, user: "UserBase", password_hash: str) -> None:
@@ -367,10 +380,34 @@ class FakeUserStore:
             key=lambda u: u.created_at or _utcnow(),
             reverse=True,
         )
-        return items[offset:offset + limit]
+        return [self._attach_roles(u) for u in items[offset:offset + limit]]
 
     async def delete(self, id: str) -> bool:
         if id in self._data:
             del self._data[id]
+            self._links = {(u, r) for (u, r) in self._links if u != id}
             return True
         return False
+
+    async def count(self) -> int:
+        return len(self._data)
+
+    async def add_role(self, user_id: str, role_id: str) -> None:
+        self._links.add((user_id, role_id))
+
+    async def remove_role(self, user_id: str, role_id: str) -> bool:
+        if (user_id, role_id) in self._links:
+            self._links.discard((user_id, role_id))
+            return True
+        return False
+
+
+class FakeRoleStore:
+    def __init__(self):
+        self._data: dict[str, Role] = {}
+
+    async def get(self, id: str) -> Role | None:
+        return self._data.get(id)
+
+    async def list(self) -> list[Role]:
+        return sorted(self._data.values(), key=lambda r: r.name)
