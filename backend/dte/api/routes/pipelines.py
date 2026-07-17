@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 from fastapi import APIRouter, HTTPException, Depends, Response
-from dte.models.pipeline import Pipeline, PipelineBase, PipelineCreate, Source, Destination, DestinationCreate
+from dte.models.pipeline import Pipeline, PipelineBase, Source, Destination
 from dte.compiler.ibis_compiler import compile_pipeline
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.sources.loader import load_source
@@ -42,7 +42,7 @@ async def _validate_pipeline_refs(
 
 @router.post("/pipelines")
 async def create_pipeline(
-    pipeline: PipelineCreate,
+    pipeline: PipelineBase,
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
@@ -68,7 +68,7 @@ async def get_pipeline(pipeline_id: str, store: PipelineStore = Depends(get_pipe
 @router.put("/pipelines/{pipeline_id}")
 async def update_pipeline(
     pipeline_id: str,
-    pipeline: PipelineCreate,
+    pipeline: PipelineBase,
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
@@ -117,7 +117,7 @@ async def _resolve(
                 status_code=422,
                 detail=f"Source '{sid}' references missing connection '{source.connection_id}'",
             )
-        sources.append((source, conn.credentials_dict()))
+        sources.append((source, conn.credentials))
 
     destination = await d_store.get(pipeline.output_id)
     if not destination:
@@ -128,7 +128,7 @@ async def _resolve(
             status_code=422,
             detail=f"Destination '{destination.id}' references missing connection '{destination.connection_id}'",
         )
-    return sources, (destination, dest_conn.credentials_dict())
+    return sources, (destination, dest_conn.credentials)
 
 
 @router.get("/pipelines/{pipeline_id}/preview")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Depends, Response
 
-from dte.models.pipeline import Source, SourceCreate, SOURCE_CONNECTION_COMPAT
+from dte.models.pipeline import Source, SourceBase, SOURCE_CONNECTION_COMPAT
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.sources.loader import load_source
 from dte.api.deps import (
@@ -13,7 +13,7 @@ from dte.store.base import SourceStore, PipelineStore, ConnectionStore
 router = APIRouter()
 
 
-async def _validate_connection(source: SourceCreate | Source, c_store: ConnectionStore):
+async def _validate_connection(source: SourceBase | Source, c_store: ConnectionStore):
     """Fetch the linked connection and verify its type is compatible with
     `source.source_type`. Raises 422 otherwise. Returns the Connection."""
     conn = await c_store.get(source.connection_id)
@@ -36,7 +36,7 @@ async def _validate_connection(source: SourceCreate | Source, c_store: Connectio
 
 @router.post("/sources", status_code=201)
 async def create_source(
-    source: SourceCreate,
+    source: SourceBase,
     store: SourceStore = Depends(get_source_store),
     c_store: ConnectionStore = Depends(get_connection_store),
 ):
@@ -64,7 +64,7 @@ async def get_source(source_id: str, store: SourceStore = Depends(get_source_sto
 @router.put("/sources/{source_id}")
 async def update_source(
     source_id: str,
-    source: SourceCreate,
+    source: SourceBase,
     store: SourceStore = Depends(get_source_store),
     c_store: ConnectionStore = Depends(get_connection_store),
 ):
@@ -123,7 +123,7 @@ async def source_schema(
         )
     engine = DuckDBEngine()
     try:
-        table = load_source(source, engine.con, conn.credentials_dict())
+        table = load_source(source, engine.con, conn.credentials)
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
     fields = [_walk(name, dtype) for name, dtype in table.schema().items()]

@@ -2,9 +2,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import Column, LargeBinary, Text, func
+from sqlalchemy import Column, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as SMField, SQLModel
+
+from dte.secrets.encrypted_json import EncryptedJSON
 
 
 # ─── Connections ─────────────────────────────────────────────────────────
@@ -73,7 +75,7 @@ class _RestApiSpec:
 
 
 _DLT_CRED_CLASS: dict[str, type | None] = {
-    "local_fs": None,  # no creds              
+    "local_fs": None,  # no creds
     "s3": _DltAws,
     "gcs": _GcsHmacSpec,
     "azure": _DltAzure,
@@ -135,70 +137,25 @@ def _public_fields(instance) -> dict:
     return out
 
 
-# ─── Connection (SQLModel — single class serves API validation + persistence) ──
+# ─── Connection ───────────────────────────────────────────────────────────────
 #
-# `ConnectionBase` holds domain fields. `Connection` (table=True) adds the
-# persistence columns including `credentials_encrypted` (BYTEA). `credentials`
-# lives only on `ConnectionBase`/`ConnectionCreate` — SQLModel cannot map a
-# plain `dict` column without an explicit `sa_column`, so we keep it off the
-# table class and let the store layer decrypt into a dynamic attribute.
-#
-# `ConnectionCreate` is the FastAPI input shape and carries the credential
-# validator — the `table=True` class must not carry it because ORM hydration
-# bypasses Pydantic's required-field checks.
+# Two-class shape:
+#   ConnectionBase — API/domain fields + credential validator.  `id: str`
+#       required here so FastAPI raises 422 on missing.  `connection_type`
+#       uses the strict `ConnectionType` Literal for API-edge validation;
+#       the table class overrides it with `str` because SQLModel 0.0.x
+#       can't map a Literal to a TEXT column.
+#   Connection(table=True) — persistence identity + EncryptedJSON column.
+#       Encryption/decryption happens inside the TypeDecorator; the store
+#       needs NO SecretResolver — `credentials` is a real mapped column.
 
 class ConnectionBase(SQLModel):
-    """Base domain fields — no persistence identity, no encryption.
+    """API/domain fields.  `credentials` is validated against the dlt spec
+    class for the given `connection_type` and stored as a cleaned dict."""
 
-    `connection_type` is typed as `str` here so SQLModel can map it to a TEXT
-    column without tripping on Literal[...] — which SQLModel 0.0.x cannot
-    resolve to a SA type. `ConnectionCreate` overrides it with the Literal for
-    strict validation at the API edge.
-    """
-    connection_type: str = SMField(sa_column=Column(Text, nullable=False))
-
-
-class Connection(ConnectionBase, table=True):
-    """ORM-mapped row. `credentials` is NOT a mapped column — it is set as a
-    plain Python attribute by the store after decryption. `model_dump()` will
-    NOT include it; routes build the response dict manually."""
-    __tablename__ = "connections"
-
-    id: str = SMField(primary_key=True)
-    credentials_encrypted: bytes = SMField(
-        sa_column=Column(LargeBinary, nullable=False)
-    )
-    created_at: datetime | None = SMField(
-        default=None, sa_column=Column(server_default=func.now())
-    )
-    updated_at: datetime | None = SMField(
-        default=None,
-        sa_column=Column(server_default=func.now(), onupdate=func.now()),
-    )
-
-    def credentials_dict(self) -> dict:
-        """Return the `credentials` attribute set by the store, or {} if
-        the store hasn't populated it (e.g. list path masks them)."""
-        return getattr(self, "credentials", {})
-
-    def to_api_dict(self) -> dict:
-        """Serialise for API responses: id + connection_type + credentials."""
-        return {
-            "id": self.id,
-            "connection_type": self.connection_type,
-            "credentials": self.credentials_dict(),
-        }
-
-
-class ConnectionCreate(ConnectionBase):
-    """Strict API input — non-table so required-field checks fire.
-
-    Overrides `connection_type` with the `ConnectionType` Literal so
-    Pydantic rejects unknown types at the API edge.
-    """
     id: str
-    connection_type: ConnectionType  # type: ignore[override]
-    credentials: dict = {}
+    connection_type: ConnectionType  # strict Literal for API validation
+    credentials: dict = SMField(default_factory=dict)
 
     @model_validator(mode="after")
     def _validate_credentials(self):
@@ -214,6 +171,41 @@ class ConnectionCreate(ConnectionBase):
             ) from e
         self.credentials = _public_fields(instance)
         return self
+
+
+class Connection(ConnectionBase, table=True):
+    """ORM-mapped row.
+
+    SQLModel 0.0.39 cannot map Literal[...] to a SA column, so
+    `connection_type` is overridden as plain `str` with an explicit
+    `sa_column`.  `credentials` is backed by `EncryptedJSON` (BYTEA) —
+    encrypt/decrypt happen transparently at the TypeDecorator level.
+    """
+    __tablename__ = "connections"
+
+    # Override id to declare it as the primary key.
+    id: str = SMField(primary_key=True)  # type: ignore[override]
+    # Override: Literal → str for SQLAlchemy mapping.
+    connection_type: str = SMField(  # type: ignore[override]
+        sa_column=Column(Text, nullable=False)
+    )
+    # Real mapped column — replaces the legacy `credentials_encrypted` BYTEA.
+    # Physical column name kept as `credentials_encrypted` so no migration needed.
+    credentials: dict = SMField(  # type: ignore[override]
+        default_factory=dict,
+        sa_column=Column("credentials_encrypted", EncryptedJSON, nullable=False),
+    )
+    created_at: datetime | None = SMField(
+        default=None, sa_column=Column(server_default=func.now())
+    )
+    updated_at: datetime | None = SMField(
+        default=None,
+        sa_column=Column(server_default=func.now(), onupdate=func.now()),
+    )
+
+
+# Back-compat alias — ConnectionCreate was the old 3-class name.
+ConnectionCreate = ConnectionBase
 
 
 # ─── Source configs (per source_type) ─────────────────────────────────────
@@ -365,26 +357,29 @@ def _glob_extension(glob: str) -> str | None:
     return tail[dot:].lower()
 
 
-# ─── Source (SQLModel — single class serves API validation + persistence) ──
+# ─── Source ──────────────────────────────────────────────────────────────────
 #
-# `SourceBase` holds the domain fields with the two existing `@model_validator`
-# methods. Both `Source(table=True)` (used by the store) and `SourceCreate`
-# (used by the API) inherit them so validation fires in both code paths.
-#
-# `source_type` and `format` are typed as `str` / `str | None` on `SourceBase`
-# so SQLModel can map them to TEXT columns without tripping on Literal[...] —
-# SQLModel 0.0.x cannot resolve Literal to a SA column type. `SourceCreate`
-# overrides them with the Literal types for strict validation at the API edge.
-#
-# `table` maps to the DB column `table_name` via sa_column so no migration is
-# needed.
+# Two-class shape:
+#   SourceBase — API/domain fields + validators.  `source_type` uses the
+#       strict `SourceKind` Literal; `format` uses `_FileFormat | None`.
+#       `id: str` required so FastAPI raises 422 on missing.
+#   Source(table=True) — persistence identity + timestamp columns.
+#       `source_type` and `format` are overridden as `str` / `str | None`
+#       so SQLModel maps them to TEXT without tripping on Literal.
+#       `table` maps to `table_name` column (no migration needed).
 
 class SourceBase(SQLModel):
+    """API/domain fields + config validators.
+
+    `source_type` is the strict `SourceKind` Literal for API validation.
+    `format` is the strict `_FileFormat | None` Literal.
+    """
+    id: str
     connection_id: str
-    source_type: str = SMField(sa_column=Column(Text, nullable=False))
-    config: dict = SMField(default_factory=dict, sa_column=Column(JSONB, nullable=False))
-    table: str = SMField(sa_column=Column("table_name", Text, nullable=False))
-    format: str | None = SMField(default=None, sa_column=Column(Text, nullable=True))
+    source_type: SourceKind  # strict Literal for API validation
+    config: dict = SMField(default_factory=dict)
+    table: str
+    format: _FileFormat | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -405,7 +400,7 @@ class SourceBase(SQLModel):
     def _validate_config(self):
         model = _SOURCE_CONFIG_MODELS.get(self.source_type)
         if model is None:
-            # Unknown source_type — let SourceCreate's Literal override catch it.
+            # Unknown source_type — let the Literal type annotation catch it.
             return self
         # Round-trip through the typed model so extras raise + defaults fill in.
         typed = model(**self.config)
@@ -414,8 +409,6 @@ class SourceBase(SQLModel):
 
         # Guardrail: if the user pinned a format AND the glob has an
         # extension that belongs to a different reader family, refuse.
-        # Same-family mismatches (e.g. `.json` file that's actually
-        # NDJSON, `format=jsonl` + `*.json`) pass through.
         if self.format and self.source_type in _FILESYSTEM_KINDS:
             glob = str(self.config.get("file_glob") or "")
             ext = _glob_extension(glob)
@@ -433,15 +426,34 @@ class SourceBase(SQLModel):
 class Source(SourceBase, table=True):
     """ORM-mapped row — persistence identity + timestamp columns.
 
-    `table=True` bypasses Pydantic required-field checks at __init__ so ORM
-    row hydration can populate instances incrementally. The validators on
-    `SourceBase` still fire when a Source is constructed explicitly (e.g.
-    `Source(id=..., source_type=..., ...)`) but NOT when SQLAlchemy hydrates
+    SQLModel 0.0.39 cannot map Literal[...] to a SA column, so
+    `source_type` and `format` are overridden as plain `str` / `str | None`
+    with explicit `sa_column` declarations.  `table` maps to the DB column
+    `table_name` (no migration needed).
+
+    `table=True` bypasses Pydantic required-field checks at __init__ so
+    ORM row hydration can populate instances incrementally.  Validators on
+    `SourceBase` still fire for explicit construction (e.g. in routes that
+    build `Source(**base.model_dump())`), but NOT when SQLAlchemy hydrates
     a row from the DB — that is intentional (data already validated at save).
     """
     __tablename__ = "sources"
 
-    id: str = SMField(primary_key=True)
+    # Override id to declare it as the primary key.
+    id: str = SMField(primary_key=True)  # type: ignore[override]
+    # Override: Literal → str for SQLAlchemy mapping.
+    source_type: str = SMField(  # type: ignore[override]
+        sa_column=Column(Text, nullable=False)
+    )
+    config: dict = SMField(  # type: ignore[override]
+        default_factory=dict, sa_column=Column(JSONB, nullable=False)
+    )
+    table: str = SMField(  # type: ignore[override]
+        sa_column=Column("table_name", Text, nullable=False)
+    )
+    format: str | None = SMField(  # type: ignore[override]
+        default=None, sa_column=Column(Text, nullable=True)
+    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
     )
@@ -451,18 +463,10 @@ class Source(SourceBase, table=True):
     )
 
 
-class SourceCreate(SourceBase):
-    """Strict API input — non-table so required-field checks fire.
+# Back-compat alias — SourceCreate was the old 3-class name.
+SourceCreate = SourceBase
 
-    Overrides `source_type` and `format` with Literal types so Pydantic
-    rejects unknown values at the API edge.
-    """
-    id: str
-    source_type: SourceKind  # type: ignore[override]
-    format: _FileFormat | None = None  # type: ignore[override]
-
-
-# Back-compat alias — deprecated. Delete after plan 015 lands end-to-end.
+# Back-compat alias for callers still importing the old name.
 DltSource = Source
 
 
@@ -651,26 +655,25 @@ OutputTarget = Annotated[
 ]
 
 
-# ─── Destination (SQLModel — single class serves API validation + persistence) ──
+# ─── Destination ─────────────────────────────────────────────────────────────
 #
-# Design choice: `config` is declared as `dict` on `DestinationBase` so SQLModel
-# can map it to a JSONB column without tripping on the discriminated union type.
-# A `@model_validator(mode="after")` narrows it to the typed `OutputTarget` union
-# after construction — so in-memory callers (writers, compiler) get a typed
-# instance with attribute access (`dest.config.path`, `isinstance(dest.config,
-# JsonFileTarget)`). The store saves by serialising back to dict via
-# `config.model_dump(by_alias=True, exclude_none=True)` before the INSERT.
-#
-# `dest_type` is a denormalised TEXT column (migration 004). We keep writing it
-# from `config.type` via the same validator. Dropping it is a follow-up migration.
+# Two-class shape:
+#   DestinationBase — API/domain fields.  `config: dict` declared for JSONB
+#       mapping, narrowed to the typed OutputTarget union by `_narrow_config`
+#       at validation time.  `id: str` required so FastAPI raises 422 on
+#       missing.
+#   Destination(table=True) — persistence identity + timestamp columns.
+#       Validators on Base are bypassed at ORM hydration time (table=True
+#       skips them), so the store calls `narrow_config()` explicitly.
 
 class DestinationBase(SQLModel):
-    """Base domain fields — no persistence identity.
+    """API/domain fields — no persistence identity.
 
     `connection_id` references a Connection row.
     `config` is declared as `dict` for SQLModel JSONB mapping, but is narrowed
     to the typed `OutputTarget` union by `_narrow_config` at validation time.
     """
+    id: str
     connection_id: str
     config: dict = SMField(default_factory=dict, sa_column=Column(JSONB, nullable=False))
 
@@ -688,18 +691,14 @@ class DestinationBase(SQLModel):
         return self
 
     def to_api_dict(self) -> dict:
-        """Serialise for API responses: id + connection_id + config as plain dict.
-
-        Both `Destination` (table=True) and `DestinationCreate` (API input) inherit
-        this so routes have a single serialisation path regardless of which subclass
-        they receive."""
+        """Serialise for API responses: id + connection_id + config as plain dict."""
         cfg = self.config
         if hasattr(cfg, "model_dump"):
             cfg_dict = cfg.model_dump(by_alias=True, exclude_none=True)
         else:
             cfg_dict = cfg  # already a plain dict (edge case)
         return {
-            "id": self.id,  # type: ignore[attr-defined]
+            "id": self.id,
             "connection_id": self.connection_id,
             "config": cfg_dict,
         }
@@ -711,12 +710,15 @@ class Destination(DestinationBase, table=True):
 
     IMPORTANT: SQLModel's `table=True` bypasses Pydantic model validators on
     __init__, so `_narrow_config` does NOT auto-run after ORM hydration. The
-    store calls `row.narrow_config()` explicitly after fetching from the DB —
-    same pattern as `Connection._hydrate()` for credentials.
+    store calls `row.narrow_config()` explicitly after fetching from the DB.
     """
     __tablename__ = "destinations"
 
-    id: str = SMField(primary_key=True)
+    # Override id to declare it as the primary key.
+    id: str = SMField(primary_key=True)  # type: ignore[override]
+    config: dict = SMField(  # type: ignore[override]
+        default_factory=dict, sa_column=Column(JSONB, nullable=False)
+    )
     dest_type: str = SMField(sa_column=Column(Text, nullable=False))
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
@@ -735,42 +737,44 @@ class Destination(DestinationBase, table=True):
             from pydantic import TypeAdapter
             adapter = TypeAdapter(OutputTarget)
             # Use object.__setattr__ to bypass SQLAlchemy's instrumented
-            # attribute machinery — same technique as Connection._hydrate.
+            # attribute machinery.
             object.__setattr__(self, "config", adapter.validate_python(self.config))
         return self
 
-
-class DestinationCreate(DestinationBase):
-    """Strict API input — non-table so required-field checks fire."""
-    id: str
+# Back-compat alias — DestinationCreate was the old 3-class name.
+DestinationCreate = DestinationBase
 
 
-# ─── Pipeline (SQLModel — single class serves API validation + persistence) ──
+# ─── Pipeline ─────────────────────────────────────────────────────────────────
 #
-# `PipelineBase` holds the domain fields with strict Pydantic validation.
-# `Pipeline` (table=True) adds the persistence identity/timestamp columns.
-# `PipelineCreate` is the FastAPI input shape.
-#
-# Why the base + table split: SQLModel's `table=True` classes bypass Pydantic
-# required-field checks at `__init__` so ORM row hydration can populate
-# instances incrementally. That makes a `table=True` class unsafe as a
-# FastAPI request body. `PipelineCreate` keeps validation strict at the edge.
+# Two-class shape:
+#   PipelineBase — API/domain fields.  `id: str` required so FastAPI raises
+#       422 on missing.
+#   Pipeline(table=True) — persistence identity + JSONB columns +
+#       timestamp columns.
 
 class PipelineBase(SQLModel):
+    """API/domain fields. `id: str` is required — FastAPI raises 422 if
+    the client omits it."""
+    id: str
     name: str
-    sources: list[str] = SMField(
-        default_factory=list, sa_column=Column(JSONB, nullable=False)
-    )
-    steps: list[dict] = SMField(
-        default_factory=list, sa_column=Column(JSONB, nullable=False)
-    )
+    sources: list[str] = SMField(default_factory=list)
+    steps: list[dict] = SMField(default_factory=list)
     output_id: str
 
 
 class Pipeline(PipelineBase, table=True):
     __tablename__ = "pipelines"
 
-    id: str = SMField(primary_key=True)
+    # Override id to declare it as the primary key.
+    id: str = SMField(primary_key=True)  # type: ignore[override]
+    # Override list fields with explicit JSONB sa_columns.
+    sources: list[str] = SMField(  # type: ignore[override]
+        default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
+    steps: list[dict] = SMField(  # type: ignore[override]
+        default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
     )
@@ -780,9 +784,8 @@ class Pipeline(PipelineBase, table=True):
     )
 
 
-class PipelineCreate(PipelineBase):
-    """Strict API input — non-table so required-field checks fire."""
-    id: str
+# Back-compat alias — PipelineCreate was the old 3-class name.
+PipelineCreate = PipelineBase
 
 
 # ─── Connection ↔ Source/Destination compatibility ────────────────────────
@@ -807,4 +810,3 @@ DESTINATION_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "postgres": {"postgres"},
     "sql_database": {"mysql", "snowflake", "bigquery"},
 }
- 

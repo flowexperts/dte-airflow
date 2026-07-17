@@ -4,8 +4,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import select
 import uuid
 
-from dte.models.pipeline import Connection, ConnectionCreate, Destination, DestinationCreate, Pipeline, Source, SourceCreate
-from dte.secrets import SecretResolver, get_secret_resolver
+from dte.models.pipeline import (
+    Connection, ConnectionBase,
+    Destination, DestinationBase,
+    Pipeline, PipelineBase,
+    Source, SourceBase,
+)
 
 
 class PostgresPipelineStore:
@@ -118,8 +122,8 @@ class PostgresRunStore:
 class PostgresSourceStore:
     """ORM-backed source store. Returns typed `Source` instances.
 
-    `save` accepts a `SourceCreate` (the strict API input type). The store
-    uses pg_insert upsert so `updated_at` fires on re-save.
+    `save` accepts a `Source` or `SourceBase` instance. The store uses
+    pg_insert upsert so `updated_at` fires on re-save.
     """
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
@@ -129,7 +133,7 @@ class PostgresSourceStore:
         async with self._factory() as s:
             return await s.get(Source, id)
 
-    async def save(self, source: SourceCreate) -> None:
+    async def save(self, source: "SourceBase | Source") -> None:
         values = source.model_dump(exclude={"created_at", "updated_at"})
         stmt = pg_insert(Source).values(**values)
         stmt = stmt.on_conflict_do_update(
@@ -169,11 +173,10 @@ class PostgresSourceStore:
 class PostgresDestinationStore:
     """ORM-backed destination store. Returns typed `Destination` instances.
 
-    `save` accepts a `DestinationCreate` (the strict API input type). The store
+    `save` accepts a `Destination` or `DestinationBase` instance. The store
     uses pg_insert upsert so `updated_at` fires on re-save. `config` is
-    serialised to a plain dict for JSONB storage; on read, `Destination`'s
-    `_narrow_config` validator automatically narrows it back to the typed
-    `OutputTarget` union — no extra work needed in `get`/`list`.
+    serialised to a plain dict for JSONB storage; on read, `narrow_config()`
+    is called explicitly (table=True bypasses validators on hydration).
 
     `dest_type` is a denormalised column kept for backward compat; it is written
     explicitly at save time from `config.type` (drop in a follow-up migration).
@@ -189,7 +192,7 @@ class PostgresDestinationStore:
                 return None
             return row.narrow_config()
 
-    async def save(self, destination: "DestinationCreate") -> None:
+    async def save(self, destination: "DestinationBase | Destination") -> None:
         # Serialise config to a plain dict for JSONB storage. The `config`
         # field is the typed OutputTarget union in memory; model_dump gives
         # back a JSON-serialisable dict. `by_alias=True` so `schema_` → `schema`.
@@ -240,46 +243,36 @@ class PostgresDestinationStore:
 
 
 class PostgresConnectionStore:
-    """Stores connection rows with credentials encrypted at rest via a
-    `SecretResolver` (env-based JSON in dev; Fernet in prod).
+    """Stores connection rows with credentials encrypted at rest via
+    `EncryptedJSON` — the TypeDecorator handles encrypt/decrypt
+    transparently at the column level.  No `SecretResolver` needed here.
 
-    Returns typed `Connection` instances. `credentials` is NOT a mapped
-    column — `get` decrypts and attaches it as a plain Python attribute;
-    `list` attaches an empty dict (masking behaviour stays in the store).
+    Returns typed `Connection` instances. `credentials` is now a real
+    mapped column (not a detached attribute), so `model_dump()` and
+    attribute access both work naturally.
+
+    `list` returns rows with credentials masked to `{}` — masking is done
+    by model_copy so the store never exposes plaintext on the list path.
     """
 
-    def __init__(
-        self,
-        session_factory: async_sessionmaker[AsyncSession],
-        resolver: SecretResolver | None = None,
-    ):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._factory = session_factory
-        self._resolver = resolver or get_secret_resolver()
-
-    def _hydrate(self, row: Connection, credentials: dict) -> Connection:
-        """Attach decrypted credentials as a plain attribute."""
-        object.__setattr__(row, "credentials", credentials)
-        return row
 
     async def get(self, id: str) -> Connection | None:
         async with self._factory() as s:
-            row = await s.get(Connection, id)
-            if row is None:
-                return None
-            credentials = self._resolver.decrypt(bytes(row.credentials_encrypted))
-            return self._hydrate(row, credentials)
+            return await s.get(Connection, id)
 
-    async def save(self, connection: ConnectionCreate) -> None:
-        ciphertext = self._resolver.encrypt(connection.credentials or {})
+    async def save(self, connection: "ConnectionBase | Connection") -> None:
         stmt = pg_insert(Connection).values(
             id=connection.id,
             connection_type=connection.connection_type,
-            credentials_encrypted=ciphertext,
+            credentials=connection.credentials,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[Connection.id],
             set_={
                 "connection_type": stmt.excluded.connection_type,
+                # Physical column name is `credentials_encrypted` (TypeDecorator alias).
                 "credentials_encrypted": stmt.excluded.credentials_encrypted,
             },
         )
@@ -288,7 +281,7 @@ class PostgresConnectionStore:
             await s.commit()
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[Connection]:
-        """Returns rows with credentials masked (empty dict) — never decrypts."""
+        """Returns rows with credentials masked (empty dict) — never exposes plaintext."""
         stmt = (
             select(Connection)
             .order_by(Connection.created_at.desc())
@@ -297,7 +290,16 @@ class PostgresConnectionStore:
         )
         async with self._factory() as s:
             rows = list((await s.execute(stmt)).scalars().all())
-        return [self._hydrate(row, {}) for row in rows]
+        # Return copies with masked credentials so callers never see plaintext.
+        masked = []
+        for row in rows:
+            masked_row = Connection(
+                id=row.id,
+                connection_type=row.connection_type,
+                credentials={},
+            )
+            masked.append(masked_row)
+        return masked
 
     async def delete(self, id: str) -> bool:
         async with self._factory() as s:
