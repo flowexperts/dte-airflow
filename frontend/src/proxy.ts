@@ -6,7 +6,7 @@ const TOKEN_COOKIE = "dte_token";
 
 const PUBLIC_PATHS = ["/login"];
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();

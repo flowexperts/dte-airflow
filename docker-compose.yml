@@ -26,6 +26,12 @@ services:
       # Must be set — put it in `.env` next to docker-compose.yml
       # (untracked). See `.env.example` and README.
       DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:?DTE_SECRETS_KEY must be set — see .env.example}
+      # JWT signing secret. Required in prod. Generate with:
+      #   python -c "import secrets; print(secrets.token_urlsafe(48))"
+      DTE_JWT_SECRET: ${DTE_JWT_SECRET:?DTE_JWT_SECRET must be set — see .env.example}
+      # Allow the /api/auth/register endpoint. Plan 023 will move user
+      # creation into an admin flow — flip this off in prod when that lands.
+      DTE_ALLOW_REGISTRATION: "true"
       # Force polling for uvicorn --reload's watchfiles. Native FS events
       # are unstable in arm64 containers on Apple Silicon (SIGILL / exit 132
       # on file change). Polling costs a bit of CPU but is rock solid.
