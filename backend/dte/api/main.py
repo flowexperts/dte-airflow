@@ -1,8 +1,10 @@
 import os
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from dte.api.deps import get_current_user
+from dte.api.routes.auth import router as auth_router
 from dte.api.routes.connections import router as connections_router
 from dte.api.routes.destinations import router as destinations_router
 from dte.api.routes.pipelines import router as pipelines_router
@@ -26,9 +28,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(pipelines_router, prefix="/api")
-app.include_router(runs_router, prefix="/api")
-app.include_router(schema_router, prefix="/api")
-app.include_router(sources_router, prefix="/api")
-app.include_router(destinations_router, prefix="/api")
-app.include_router(connections_router, prefix="/api")
+# Auth routes stay open (login / register). /auth/me carries its own
+# `Depends(get_current_user)`.
+app.include_router(auth_router, prefix="/api")
+
+# All other data routes are gated at the router level so no route can be
+# added without auth by accident.
+_auth = [Depends(get_current_user)]
+app.include_router(pipelines_router, prefix="/api", dependencies=_auth)
+app.include_router(runs_router, prefix="/api", dependencies=_auth)
+app.include_router(schema_router, prefix="/api", dependencies=_auth)
+app.include_router(sources_router, prefix="/api", dependencies=_auth)
+app.include_router(destinations_router, prefix="/api", dependencies=_auth)
+app.include_router(connections_router, prefix="/api", dependencies=_auth)
