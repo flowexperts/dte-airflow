@@ -4,6 +4,12 @@ Autouse `fake_stores` attaches in-memory `Fake*Store` implementations to
 the FastAPI app for every test. Individual tests that need to inspect or
 seed a store still install their own override in a fixture — the autouse
 just guarantees no test ever hits the real Postgres deps.
+
+Autouse also short-circuits `get_current_user` to a fake user so existing
+tests keep working without threading Authorization headers through every
+request. Tests that specifically exercise the auth flow (login, 401 on
+bad/missing token) opt out via
+`app.dependency_overrides.pop(get_current_user, None)`.
 """
 import json
 import pytest
@@ -15,14 +21,20 @@ from dte.api.deps import (
     get_source_store,
     get_destination_store,
     get_connection_store,
+    get_user_store,
+    get_current_user,
 )
 from dte.models.pipeline import Connection
+from dte.models.user import User, UserBase
+from dte.security.jwt import create_access_token
+from dte.security.passwords import hash_password
 from tests.fakes import (
     FakePipelineStore,
     FakeRunStore,
     FakeSourceStore,
     FakeDestinationStore,
     FakeConnectionStore,
+    FakeUserStore,
 )
 
 
@@ -35,14 +47,24 @@ def _make_local_fs_connection() -> Connection:
     )
 
 
+def _fake_test_user() -> User:
+    return User(
+        id="test-user",
+        email="test@example.com",
+        is_active=True,
+        password_hash="unused-in-tests",
+    )
+
+
 @pytest.fixture(autouse=True)
 def fake_stores():
-    p, r, s, d, c = (
+    p, r, s, d, c, u = (
         FakePipelineStore(),
         FakeRunStore(),
         FakeSourceStore(),
         FakeDestinationStore(),
         FakeConnectionStore(),
+        FakeUserStore(),
     )
     # Every test gets a `local_fs` connection pre-seeded — most sources /
     # destinations use it, tests don't have to re-declare it every time.
@@ -52,8 +74,35 @@ def fake_stores():
     app.dependency_overrides[get_source_store] = lambda: s
     app.dependency_overrides[get_destination_store] = lambda: d
     app.dependency_overrides[get_connection_store] = lambda: c
-    yield {"pipeline": p, "run": r, "source": s, "destination": d, "connection": c}
+    app.dependency_overrides[get_user_store] = lambda: u
+    # Bypass auth for existing tests — auth-flow tests opt out per-test.
+    app.dependency_overrides[get_current_user] = lambda: _fake_test_user()
+    yield {
+        "pipeline": p,
+        "run": r,
+        "source": s,
+        "destination": d,
+        "connection": c,
+        "user": u,
+    }
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_headers(fake_stores):
+    """Return an Authorization header for a freshly-created user.
+
+    Use with `TestClient(app).get(..., headers=auth_headers)` when you
+    need a real JWT (e.g. testing the round-trip). Synchronous to avoid
+    perturbing the event loop that sibling test files reuse."""
+    import asyncio
+    users: FakeUserStore = fake_stores["user"]
+    user = UserBase(id="auth-fixture-user", email="fixture@example.com")
+    asyncio.get_event_loop().run_until_complete(
+        users.save(user, password_hash=hash_password("fixturepass"))
+    )
+    token = create_access_token(user_id=user.id, email=str(user.email))
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
