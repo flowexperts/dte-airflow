@@ -5,14 +5,14 @@ existing user (i.e. the pre-023 `admin@admin.com` account) with the
 `admin` role — otherwise the plan-022 bootstrap user gets locked out
 of every route the moment this migration lands.
 
-Revision ID: 011
-Revises: 010
+Revision ID: 012
+Revises: 011
 Create Date: 2026-07-17
 """
 from alembic import op
 
-revision = "011"
-down_revision = "010"
+revision = "012"
+down_revision = "011"
 branch_labels = None
 depends_on = None
 
