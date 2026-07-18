@@ -1,7 +1,7 @@
-import Link from "next/link";
-import { Button, PageHeader, Topbar } from "@/components/ui";
+import { PageHeader, Topbar } from "@/components/ui";
 import { listPipelines, type Pipeline } from "@/lib/api";
 import { PipelinesTable } from "@/components/pipelines-table";
+import { NewResourceButton } from "@/components/new-resource-button";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +19,7 @@ export default async function PipelinesPage() {
       <Topbar
         crumbs={[{ label: "Workspace", href: "/" }, { label: "Pipelines" }]}
         actions={
-          <Link href="/pipelines/new">
-            <Button variant="primary" size="sm" kbd="N">
-              New pipeline
-            </Button>
-          </Link>
+          <NewResourceButton perm="pipeline:write" href="/pipelines/new" label="New pipeline" />
         }
       />
       <PageHeader

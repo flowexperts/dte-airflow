@@ -1,7 +1,7 @@
-import Link from "next/link";
-import { Button, PageHeader, Topbar } from "@/components/ui";
+import { PageHeader, Topbar } from "@/components/ui";
 import { listDestinations, type Destination } from "@/lib/api";
 import { DestinationsTable } from "@/components/destinations-table";
+import { NewResourceButton } from "@/components/new-resource-button";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +19,7 @@ export default async function DestinationsPage() {
       <Topbar
         crumbs={[{ label: "Workspace", href: "/" }, { label: "Destinations" }]}
         actions={
-          <Link href="/destinations/new">
-            <Button variant="primary" size="sm" kbd="N">
-              New destination
-            </Button>
-          </Link>
+          <NewResourceButton perm="destination:write" href="/destinations/new" label="New destination" />
         }
       />
       <PageHeader

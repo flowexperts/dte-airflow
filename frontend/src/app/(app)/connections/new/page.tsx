@@ -1,4 +1,5 @@
 import { ConnectionForm } from "@/components/connection-form";
+import { RequirePermission } from "@/components/require-permission";
 import type { Connection } from "@/lib/api";
 
 const empty: Connection = {
@@ -8,5 +9,9 @@ const empty: Connection = {
 };
 
 export default function NewConnectionPage() {
-  return <ConnectionForm initial={empty} mode="create" />;
+  return (
+    <RequirePermission perm="connection:write">
+      <ConnectionForm initial={empty} mode="create" />
+    </RequirePermission>
+  );
 }

@@ -7,7 +7,9 @@ import {
   DataTable,
   Field,
   Input,
+  PageHeader,
   Panel,
+  Topbar,
   type Column,
 } from "@/components/ui";
 import {
@@ -17,6 +19,7 @@ import {
   type LookupTable,
 } from "@/lib/api";
 import { LookupMappingsEditor } from "@/components/lookup-mappings-editor";
+import { usePermissions } from "@/lib/use-permissions";
 
 function emptyLookup(id: string): LookupTable {
   return { id, name: null, mappings: {}, default: null };
@@ -95,6 +98,9 @@ export function LookupTablesTable() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { can } = usePermissions();
+  const canWrite = can("lookup_table:write");
+  const canDelete = can("lookup_table:delete");
 
   const openNew = () => {
     setEditing({ draft: emptyLookup(`lookup_${rows.length + 1}`), isNew: true });
@@ -170,7 +176,7 @@ export function LookupTablesTable() {
       header: "",
       width: "100px",
       align: "right",
-      render: (r) => (
+      render: (r) => canDelete ? (
         <button
           type="button"
           onClick={(e) => {
@@ -182,37 +188,48 @@ export function LookupTablesTable() {
         >
           {deletingId === r.id ? "…" : "Delete"}
         </button>
-      ),
+      ) : null,
     },
   ];
 
   return (
-    <div className="space-y-6">
-      {editing ? (
-        <LookupEditorPanel
-          draft={editing.draft}
-          isNew={editing.isNew}
-          busy={busy}
-          err={err}
-          onChange={(d) => setEditing({ ...editing, draft: d })}
-          onCancel={() => setEditing(null)}
-          onSave={save}
-        />
-      ) : (
-        <>
-          <div className="flex justify-end">
-            <Button variant="primary" size="sm" onClick={openNew}>
-              + New lookup table
+    <>
+      <Topbar
+        crumbs={[{ label: "Workspace", href: "/" }, { label: "Lookup tables" }]}
+        actions={
+          !editing && canWrite ? (
+            <Button variant="primary" size="sm" kbd="N" onClick={openNew}>
+              New lookup table
             </Button>
-          </div>
-          <DataTable
-            columns={columns}
-            rows={rows}
-            onRowClick={openEdit}
-            emptyText="No lookup tables yet. Create one to reuse across map/lookup steps."
-          />
-        </>
-      )}
-    </div>
+          ) : undefined
+        }
+      />
+      <PageHeader
+        title="Lookup tables"
+        lede="Reusable key → value maps referenced by map/lookup steps across pipelines."
+      />
+      <div className="px-14 py-8">
+        <div className="space-y-6">
+          {editing ? (
+            <LookupEditorPanel
+              draft={editing.draft}
+              isNew={editing.isNew}
+              busy={busy}
+              err={err}
+              onChange={(d) => setEditing({ ...editing, draft: d })}
+              onCancel={() => setEditing(null)}
+              onSave={save}
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              rows={rows}
+              onRowClick={canWrite ? openEdit : undefined}
+              emptyText="No lookup tables yet. Create one to reuse across map/lookup steps."
+            />
+          )}
+        </div>
+      </div>
+    </>
   );
 }

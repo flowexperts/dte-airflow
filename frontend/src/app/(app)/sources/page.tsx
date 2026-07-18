@@ -1,7 +1,7 @@
-import Link from "next/link";
-import { Button, PageHeader, Topbar } from "@/components/ui";
+import { PageHeader, Topbar } from "@/components/ui";
 import { listSources, type Source } from "@/lib/api";
 import { SourcesTable } from "@/components/sources-table";
+import { NewResourceButton } from "@/components/new-resource-button";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +19,7 @@ export default async function SourcesPage() {
       <Topbar
         crumbs={[{ label: "Workspace", href: "/" }, { label: "Sources" }]}
         actions={
-          <Link href="/sources/new">
-            <Button variant="primary" size="sm" kbd="N">
-              New source
-            </Button>
-          </Link>
+          <NewResourceButton perm="source:write" href="/sources/new" label="New source" />
         }
       />
       <PageHeader

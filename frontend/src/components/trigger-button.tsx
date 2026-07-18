@@ -4,11 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { triggerPipeline } from "@/lib/api";
+import { usePermissions } from "@/lib/use-permissions";
 
 export function TriggerButton({ pipelineId }: { pipelineId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const { can } = usePermissions();
+  if (!can("pipeline:trigger")) return null;
 
   const run = async () => {
     setBusy(true);

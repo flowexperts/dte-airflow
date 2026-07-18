@@ -1,4 +1,5 @@
 import { BuilderForm } from "@/components/builder/BuilderForm";
+import { RequirePermission } from "@/components/require-permission";
 import type { Pipeline } from "@/lib/api";
 
 const empty: Pipeline = {
@@ -10,5 +11,9 @@ const empty: Pipeline = {
 };
 
 export default function NewPipeline() {
-  return <BuilderForm initial={empty} mode="create" />;
+  return (
+    <RequirePermission perm="pipeline:write">
+      <BuilderForm initial={empty} mode="create" />
+    </RequirePermission>
+  );
 }

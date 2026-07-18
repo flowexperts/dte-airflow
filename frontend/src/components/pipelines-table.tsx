@@ -4,10 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DataTable, type Column } from "@/components/ui";
 import { triggerPipeline, type Pipeline } from "@/lib/api";
+import { usePermissions } from "@/lib/use-permissions";
 
 export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  const { can } = usePermissions();
+  const canTrigger = can("pipeline:trigger");
 
   const runPipeline = async (id: string) => {
     if (!id) {
@@ -84,7 +87,7 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
       header: "",
       width: "80px",
       align: "right",
-      render: (r) => (
+      render: (r) => canTrigger ? (
         <button
           type="button"
           onClick={(e) => {
@@ -96,7 +99,7 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
         >
           {busy === r.id ? "…" : "▶ Run"}
         </button>
-      ),
+      ) : null,
     },
   ];
 

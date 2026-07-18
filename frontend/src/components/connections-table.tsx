@@ -4,9 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DataTable, Pill, type Column } from "@/components/ui";
 import { deleteConnection, testConnection, type Connection, type ProbeResult } from "@/lib/api";
+import { usePermissions } from "@/lib/use-permissions";
 
 export function ConnectionsTable({ rows }: { rows: Connection[] }) {
   const router = useRouter();
+  const { can } = usePermissions();
+  const canDelete = can("connection:delete");
+  const canTest = can("connection:test");
+  const canEdit = can("connection:write");
   const [busyDelete, setBusyDelete] = useState<string | null>(null);
   const [busyTest, setBusyTest] = useState<string | null>(null);
   const [probes, setProbes] = useState<Record<string, ProbeResult>>({});
@@ -78,22 +83,26 @@ export function ConnectionsTable({ rows }: { rows: Connection[] }) {
       align: "right",
       render: (r) => (
         <span className="flex gap-3 justify-end">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onTest(r.id); }}
-            disabled={busyTest === r.id}
-            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h disabled:opacity-50"
-          >
-            {busyTest === r.id ? "…" : "Test"}
-          </button>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onDelete(r.id); }}
-            disabled={busyDelete === r.id}
-            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
-          >
-            {busyDelete === r.id ? "…" : "Delete"}
-          </button>
+          {canTest && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onTest(r.id); }}
+              disabled={busyTest === r.id}
+              className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h disabled:opacity-50"
+            >
+              {busyTest === r.id ? "…" : "Test"}
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onDelete(r.id); }}
+              disabled={busyDelete === r.id}
+              className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
+            >
+              {busyDelete === r.id ? "…" : "Delete"}
+            </button>
+          )}
         </span>
       ),
     },
@@ -103,7 +112,11 @@ export function ConnectionsTable({ rows }: { rows: Connection[] }) {
     <DataTable
       columns={columns}
       rows={rows}
-      onRowClick={(r) => router.push(`/connections/${encodeURIComponent(r.id)}/edit`)}
+      onRowClick={
+        canEdit
+          ? (r) => router.push(`/connections/${encodeURIComponent(r.id)}/edit`)
+          : undefined
+      }
       emptyText="No connections yet. Create one to store credentials."
     />
   );

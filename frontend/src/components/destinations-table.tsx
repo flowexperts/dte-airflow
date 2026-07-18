@@ -4,9 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DataTable, type Column } from "@/components/ui";
 import { deleteDestination, type Destination } from "@/lib/api";
+import { usePermissions } from "@/lib/use-permissions";
 
 export function DestinationsTable({ rows }: { rows: Destination[] }) {
   const router = useRouter();
+  const { can } = usePermissions();
+  const canDelete = can("destination:delete");
+  const canEdit = can("destination:write");
   const [busy, setBusy] = useState<string | null>(null);
 
   const onDelete = async (id: string) => {
@@ -52,7 +56,7 @@ export function DestinationsTable({ rows }: { rows: Destination[] }) {
       header: "",
       width: "100px",
       align: "right",
-      render: (r) => (
+      render: (r) => canDelete ? (
         <button
           type="button"
           onClick={(e) => {
@@ -64,7 +68,7 @@ export function DestinationsTable({ rows }: { rows: Destination[] }) {
         >
           {busy === r.id ? "…" : "Delete"}
         </button>
-      ),
+      ) : null,
     },
   ];
 
@@ -72,7 +76,11 @@ export function DestinationsTable({ rows }: { rows: Destination[] }) {
     <DataTable
       columns={columns}
       rows={rows}
-      onRowClick={(r) => router.push(`/destinations/${encodeURIComponent(r.id)}/edit`)}
+      onRowClick={
+        canEdit
+          ? (r) => router.push(`/destinations/${encodeURIComponent(r.id)}/edit`)
+          : undefined
+      }
       emptyText="No destinations yet. Create one to reuse across pipelines."
     />
   );

@@ -4,9 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DataTable, type Column } from "@/components/ui";
 import { deleteSource, type Source } from "@/lib/api";
+import { usePermissions } from "@/lib/use-permissions";
 
 export function SourcesTable({ rows }: { rows: Source[] }) {
   const router = useRouter();
+  const { can } = usePermissions();
+  const canDelete = can("source:delete");
+  const canEdit = can("source:write");
   const [busy, setBusy] = useState<string | null>(null);
 
   const onDelete = async (id: string) => {
@@ -52,7 +56,7 @@ export function SourcesTable({ rows }: { rows: Source[] }) {
       header: "",
       width: "100px",
       align: "right",
-      render: (r) => (
+      render: (r) => canDelete ? (
         <button
           type="button"
           onClick={(e) => {
@@ -64,7 +68,7 @@ export function SourcesTable({ rows }: { rows: Source[] }) {
         >
           {busy === r.id ? "…" : "Delete"}
         </button>
-      ),
+      ) : null,
     },
   ];
 
@@ -72,7 +76,11 @@ export function SourcesTable({ rows }: { rows: Source[] }) {
     <DataTable
       columns={columns}
       rows={rows}
-      onRowClick={(r) => router.push(`/sources/${encodeURIComponent(r.id)}/edit`)}
+      onRowClick={
+        canEdit
+          ? (r) => router.push(`/sources/${encodeURIComponent(r.id)}/edit`)
+          : undefined
+      }
       emptyText="No sources yet. Create one to reuse across pipelines."
     />
   );

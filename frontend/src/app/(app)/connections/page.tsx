@@ -1,7 +1,7 @@
-import Link from "next/link";
-import { Button, PageHeader, Topbar } from "@/components/ui";
+import { PageHeader, Topbar } from "@/components/ui";
 import { listConnections, type Connection } from "@/lib/api";
 import { ConnectionsTable } from "@/components/connections-table";
+import { NewResourceButton } from "@/components/new-resource-button";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +19,7 @@ export default async function ConnectionsPage() {
       <Topbar
         crumbs={[{ label: "Workspace", href: "/" }, { label: "Connections" }]}
         actions={
-          <Link href="/connections/new">
-            <Button variant="primary" size="sm" kbd="N">
-              New connection
-            </Button>
-          </Link>
+          <NewResourceButton perm="connection:write" href="/connections/new" label="New connection" />
         }
       />
       <PageHeader

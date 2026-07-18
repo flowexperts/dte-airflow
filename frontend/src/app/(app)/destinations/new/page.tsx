@@ -1,4 +1,5 @@
 import { DestinationForm } from "@/components/destination-form";
+import { RequirePermission } from "@/components/require-permission";
 import type { Destination } from "@/lib/api";
 
 const empty: Destination = {
@@ -8,5 +9,9 @@ const empty: Destination = {
 };
 
 export default function NewDestinationPage() {
-  return <DestinationForm initial={empty} mode="create" />;
+  return (
+    <RequirePermission perm="destination:write">
+      <DestinationForm initial={empty} mode="create" />
+    </RequirePermission>
+  );
 }
