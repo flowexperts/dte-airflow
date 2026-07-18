@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
 import {
@@ -29,9 +30,9 @@ export function AppSidebar() {
   }
 
   const perms = new Set(user?.permissions ?? []);
-  // Before /auth/me resolves, don't hide anything — otherwise the sidebar
-  // flickers on every page load. Once we have data, gate each item.
   const can = (perm: string) => (user ? perms.has(perm) : true);
+
+  const initial = user?.email?.[0]?.toUpperCase() ?? "?";
 
   return (
     <Sidebar>
@@ -54,30 +55,40 @@ export function AppSidebar() {
         {can("pipeline:read") && (
           <NavItem href="/pipelines" label="Pipelines" active={on("/pipelines")} />
         )}
-        {can("user:read") && (
-          <>
-            <NavGroup>Admin</NavGroup>
-            <NavItem href="/users" label="Users" active={on("/users")} />
-          </>
-        )}
         <NavGroup>System</NavGroup>
         <NavItem href="/preview" label="Design" active={on("/preview")} />
       </NavSections>
+      <NavFooter>
+        <span />
+      </NavFooter>
       {user ? (
-        <div className="mt-3 mb-2 flex items-center justify-between text-xs px-1">
-          <span className="truncate text-muted font-mono" title={user.email}>
-            {user.email}
-          </span>
+        <div className="mt-2 pt-3 border-t border-border flex items-center gap-2">
+          <Link
+            href="/profile"
+            className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 rounded-[var(--radius)] no-underline transition-colors ${
+              on("/profile")
+                ? "bg-[color:var(--accent-tint)] text-text"
+                : "text-muted hover:text-text hover:bg-hover"
+            }`}
+            title="Profile"
+          >
+            <span className="size-6 rounded-full bg-accent text-bg font-mono text-[11px] flex items-center justify-center shrink-0">
+              {initial}
+            </span>
+            <span className="truncate font-mono text-[11.5px]" title={user.email}>
+              {user.email}
+            </span>
+          </Link>
           <button
             type="button"
             onClick={onLogout}
-            className="text-subtle hover:text-text font-mono text-[10.5px] uppercase tracking-[0.18em] ml-2"
+            className="text-subtle hover:text-text font-mono text-[10px] uppercase tracking-[0.18em]"
+            title="Sign out"
           >
-            Sign out
+            Out
           </button>
         </div>
       ) : null}
-      <NavFooter />
     </Sidebar>
   );
 }
