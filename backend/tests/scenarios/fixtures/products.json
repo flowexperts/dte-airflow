@@ -1,0 +1,7 @@
+[
+  {"product_id": "p1", "name": "Widget",   "category": "hardware", "unit_price": 25.0},
+  {"product_id": "p2", "name": "Gadget",   "category": "hardware", "unit_price": 45.0},
+  {"product_id": "p3", "name": "Doohickey","category": "software", "unit_price": 100.0},
+  {"product_id": "p4", "name": "Thingamy", "category": "hardware", "unit_price": 20.0},
+  {"product_id": "p5", "name": "Whatsit",  "category": "software", "unit_price": 15.0}
+]
