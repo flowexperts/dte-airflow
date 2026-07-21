@@ -5,9 +5,13 @@ import { NextResponse, type NextRequest } from "next/server";
 const TOKEN_COOKIE = "dte_token";
 
 const PUBLIC_PATHS = ["/login"];
+const PUBLIC_EXACT = new Set(["/"]);
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  if (PUBLIC_EXACT.has(pathname)) {
+    return NextResponse.next();
+  }
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
