@@ -13,7 +13,7 @@ Usage on a SQLModel field:
 """
 from __future__ import annotations
 
-from sqlalchemy.types import TypeDecorator, LargeBinary
+from sqlalchemy.types import LargeBinary, TypeDecorator
 
 from dte.secrets import get_secret_resolver
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
-import json
+
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import dlt
 import ibis
@@ -88,8 +89,8 @@ def _duckdb_reader_call(paths: list[str], fmt: str) -> str:
 
 def _glob_local(bucket_url: str, file_glob: str) -> list[str]:
     """Expand `bucket_url + file_glob` to a sorted list of local paths."""
-    from pathlib import Path
     import glob as _glob
+    from pathlib import Path
 
     if bucket_url.startswith("file://"):
         root = bucket_url[len("file://"):]

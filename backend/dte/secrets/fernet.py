@@ -8,6 +8,7 @@ Rotating the key requires re-encrypting every Connection row — not
 handled here; a follow-up script will address it if it becomes needed.
 """
 from __future__ import annotations
+
 import json
 
 

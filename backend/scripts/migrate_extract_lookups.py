@@ -18,6 +18,7 @@ Usage:
     uv run python scripts/migrate_extract_lookups.py --write   # persist
 """
 from __future__ import annotations
+
 import argparse
 import asyncio
 import copy
@@ -72,7 +73,7 @@ async def _migrate_pipeline(pipeline, lt_store, log: list[str]) -> tuple[list[di
 
 
 async def main(write: bool) -> None:
-    from dte.api.deps import get_pipeline_store, get_lookup_table_store
+    from dte.api.deps import get_lookup_table_store, get_pipeline_store
     from dte.models.pipeline import Pipeline
     p_store = get_pipeline_store()
     lt_store = get_lookup_table_store()

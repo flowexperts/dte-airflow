@@ -8,8 +8,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "prepare": "husky || true",
     "gen:types": "./scripts/gen-api-types.sh"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,md,css}": "prettier --write"
   },
   "dependencies": {
     "@calcom/embed-react": "^1.5.3",
@@ -23,10 +32,14 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@playwright/test": "^1.48.0",
     "@vitest/ui": "^4.1.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
     "openapi-typescript": "^7.13.0",
+    "prettier": "^3.3.3",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10"

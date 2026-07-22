@@ -3,6 +3,7 @@ resolving any `{env: "VAR_NAME"}` value from `os.environ`. Preserves the
 plan-014 UX so dev without Postgres still works.
 """
 from __future__ import annotations
+
 import json
 import os
 from typing import Any

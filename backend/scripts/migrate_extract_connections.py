@@ -21,12 +21,12 @@ Usage:
     uv run python scripts/migrate_extract_connections.py --write   # persist
 """
 from __future__ import annotations
+
 import argparse
 import asyncio
 import copy
 import hashlib
 import json
-
 
 LOCAL_FS_DEFAULT_ID = "local_fs_default"
 
@@ -214,7 +214,9 @@ async def _migrate_destination(destination: dict, c_store, log: list[str]) -> tu
 
 async def main(write: bool) -> None:
     from dte.api.deps import (
-        get_source_store, get_destination_store, get_connection_store,
+        get_connection_store,
+        get_destination_store,
+        get_source_store,
     )
     s_store = get_source_store()
     d_store = get_destination_store()

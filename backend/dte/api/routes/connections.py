@@ -1,15 +1,16 @@
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException, Depends, Response
-from dte.security.permissions import requires
 
-from dte.models.pipeline import Connection, ConnectionBase
+from fastapi import APIRouter, Depends, HTTPException, Response
+
 from dte.api.deps import (
     get_connection_store,
-    get_source_store,
     get_destination_store,
+    get_source_store,
 )
+from dte.models.pipeline import Connection, ConnectionBase
+from dte.security.permissions import requires
 from dte.sources.connection_test import probe_connection
-from dte.store.base import ConnectionStore, SourceStore, DestinationStore
+from dte.store.base import ConnectionStore, DestinationStore, SourceStore
 
 router = APIRouter()
 

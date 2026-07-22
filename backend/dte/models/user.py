@@ -18,9 +18,9 @@ from __future__ import annotations
 from datetime import datetime
 
 from pydantic import EmailStr
-from sqlalchemy import ARRAY, Column, Text, Boolean, func
-from sqlmodel import Field as SMField, SQLModel
-
+from sqlalchemy import ARRAY, Boolean, Column, Text, func
+from sqlmodel import Field as SMField
+from sqlmodel import SQLModel
 
 # ── Role ─────────────────────────────────────────────────────────────────────
 

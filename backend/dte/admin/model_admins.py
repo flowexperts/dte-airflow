@@ -11,10 +11,9 @@ import os
 import uuid as _uuid
 from uuid import UUID
 
+from fastadmin import SqlAlchemyModelAdmin, WidgetType, register
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import select
-
-from fastadmin import SqlAlchemyModelAdmin, WidgetType, register
 
 from dte.models.user import Role, User, UserRoleLink
 from dte.security.passwords import hash_password, verify_password

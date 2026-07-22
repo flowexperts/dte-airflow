@@ -6,8 +6,9 @@ The UI's "Test" button on `/connections` uses these to give immediate
 feedback before a user wires a Connection into a Source or Destination.
 """
 from __future__ import annotations
+
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from dte.models.pipeline import Connection
 
