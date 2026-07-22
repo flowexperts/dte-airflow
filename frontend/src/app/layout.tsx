@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Outfit, Space_Mono, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/toaster";
 import { SwrProvider } from "@/lib/swr-config";
 
 const outfit = Outfit({
@@ -38,7 +39,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <body suppressHydrationWarning>
         <ThemeProvider>
-          <SwrProvider>{children}</SwrProvider>
+          <Toaster>
+            <SwrProvider>{children}</SwrProvider>
+          </Toaster>
         </ThemeProvider>
       </body>
     </html>

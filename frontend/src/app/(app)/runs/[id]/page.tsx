@@ -5,6 +5,7 @@ import useSWR from "swr";
 import Link from "next/link";
 import {
   Button,
+  InlineCode,
   MetricRow,
   Metric,
   PageHeader,
@@ -13,9 +14,10 @@ import {
   Pill,
   SectionHead,
   Timeline,
+  TimelineRow,
   Topbar,
 } from "@/components/ui";
-import { getDestination, getPipeline, getRun, isTerminal, type Destination, type Pipeline, type Run } from "@/lib/api";
+import { getDestination, getPipeline, getRun, getRunEvents, isTerminal, type Destination, type Pipeline, type Run, type RunEvent } from "@/lib/api";
 import { RunOutputPreview } from "@/components/run-output-preview";
 
 type Params = Promise<{ id: string }>;
@@ -48,6 +50,12 @@ export default function RunDetail({ params }: { params: Params }) {
     pipeline?.output_id ? ["destination", pipeline.output_id] : null,
     () => getDestination(pipeline!.output_id),
   );
+  const { data: eventsResp } = useSWR<{ events: RunEvent[]; count: number }>(
+    ["run-events", id],
+    () => getRunEvents(id),
+    { refreshInterval: (l) => (isTerminal(data?.status) && l?.count ? 0 : 2000) },
+  );
+  const events = eventsResp?.events ?? [];
 
   const pillStatus: "ok" | "running" | "failed" | "pending" =
     data?.status === "completed"
@@ -138,10 +146,43 @@ export default function RunDetail({ params }: { params: Params }) {
                 count="· per-step events"
               />
               <Timeline>
-                <div className="px-4 py-6 text-center text-subtle text-sm">
-                  Per-step events not recorded yet — coming when the compiler
-                  emits events.
-                </div>
+                {events.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-subtle text-sm">
+                    No events yet.
+                  </div>
+                ) : (
+                  events.map((e) => {
+                    const started = e.started_at ? new Date(e.started_at) : null;
+                    const finished = e.finished_at ? new Date(e.finished_at) : null;
+                    const dur =
+                      started && finished
+                        ? `${Math.max(0, finished.getTime() - started.getTime())}ms`
+                        : e.status === "started"
+                          ? "…"
+                          : "—";
+                    const tone: "default" | "warn" | "err" =
+                      e.status === "failed"
+                        ? "err"
+                        : e.status === "started"
+                          ? "warn"
+                          : "default";
+                    return (
+                      <TimelineRow
+                        key={e.step_index}
+                        time={started ? started.toLocaleTimeString() : "—"}
+                        message={
+                          <>
+                            step {e.step_index} <InlineCode>{e.op}</InlineCode>{" "}
+                            {e.status}
+                            {e.message ? ` — ${e.message}` : ""}
+                          </>
+                        }
+                        duration={dur}
+                        tone={tone}
+                      />
+                    );
+                  })
+                )}
               </Timeline>
             </section>
           </>
