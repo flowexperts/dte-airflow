@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 import ibis
+
 from dte.engine.base import BaseEngine
-from dte.engine.writers import write as _write, WriteResult
+from dte.engine.writers import WriteResult
+from dte.engine.writers import write as _write
 
 
 class DuckDBEngine(BaseEngine):

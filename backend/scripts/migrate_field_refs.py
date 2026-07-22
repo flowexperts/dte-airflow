@@ -12,10 +12,10 @@ Usage:
 Picks the active store off `DATABASE_URL` — same rule as `dte.api.deps`.
 """
 from __future__ import annotations
+
 import argparse
 import asyncio
 import copy
-import os
 
 
 def _norm(ref: str) -> str:

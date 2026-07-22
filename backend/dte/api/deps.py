@@ -6,6 +6,7 @@ fallback in production code — tests inject fakes via
 (see `tests/fakes.py`).
 """
 from __future__ import annotations
+
 import os
 from functools import lru_cache
 
@@ -23,6 +24,7 @@ from dte.store.postgres import (
     PostgresLookupTableStore,
     PostgresPipelineStore,
     PostgresRoleStore,
+    PostgresRunEventStore,
     PostgresRunStore,
     PostgresSourceStore,
     PostgresUserStore,
@@ -47,6 +49,10 @@ def get_pipeline_store():
 
 def get_run_store():
     return PostgresRunStore(_session_factory())
+
+
+def get_run_event_store():
+    return PostgresRunEventStore(_session_factory())
 
 
 def get_source_store():

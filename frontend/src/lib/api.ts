@@ -362,6 +362,20 @@ export const getRunOutput = (id: string, limit = 5) =>
     `/api/runs/${encodeURIComponent(id)}/output?limit=${limit}`,
   );
 
+export interface RunEvent {
+  step_index: number;
+  op: string;
+  status: "started" | "completed" | "failed" | "skipped";
+  message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export const getRunEvents = (id: string) =>
+  apiFetch<{ events: RunEvent[]; count: number }>(
+    `/api/runs/${encodeURIComponent(id)}/events`,
+  );
+
 export const inferSchema = (source: Source) =>
   apiFetch<{ fields: SchemaField[] }>(`/api/schema/infer`, {
     method: "POST",

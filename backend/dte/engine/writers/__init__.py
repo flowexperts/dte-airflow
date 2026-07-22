@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 from typing import TypedDict
+
 import ibis
+
 from dte.models.pipeline import (
-    JsonFileTarget,
     CsvFileTarget,
     ExcelFileTarget,
+    JsonFileTarget,
     ParquetS3Target,
     PostgresTarget,
     SqlDatabaseTarget,

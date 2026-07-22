@@ -1,13 +1,15 @@
 from __future__ import annotations
+
 from datetime import datetime
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import Column, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import Field as SMField, SQLModel
+from sqlmodel import Field as SMField
+from sqlmodel import SQLModel
 
 from dte.secrets.encrypted_json import EncryptedJSON
-
 
 # ─── Connections ─────────────────────────────────────────────────────────
 
@@ -38,9 +40,14 @@ ConnectionType = Literal[
 # straight to dlt.destinations.<x>) at call time.
 
 from dataclasses import fields as _dc_fields
+
 from dlt.common.configuration.specs import (
     AwsCredentials as _DltAws,
+)
+from dlt.common.configuration.specs import (
     AzureCredentials as _DltAzure,
+)
+from dlt.common.configuration.specs import (
     ConnectionStringCredentials as _DltConnStr,
 )
 
@@ -584,7 +591,7 @@ class AggregateStep(BaseModel):
 
 class SelectStep(BaseModel):
     op: Literal["select"]
-    fields: list["OutputField"] = []
+    fields: list[OutputField] = []
     drop: list[str] = []
 
     @model_validator(mode="after")
@@ -686,14 +693,7 @@ class SqlDatabaseTarget(BaseModel):
 
 
 OutputTarget = Annotated[
-    Union[
-        JsonFileTarget,
-        CsvFileTarget,
-        ExcelFileTarget,
-        ParquetS3Target,
-        PostgresTarget,
-        SqlDatabaseTarget,
-    ],
+    JsonFileTarget | CsvFileTarget | ExcelFileTarget | ParquetS3Target | PostgresTarget | SqlDatabaseTarget,
     Field(discriminator="type"),
 ]
 
@@ -721,7 +721,7 @@ class DestinationBase(SQLModel):
     config: dict = SMField(default_factory=dict, sa_column=Column(JSONB, nullable=False))
 
     @model_validator(mode="after")
-    def _narrow_config(self) -> "DestinationBase":
+    def _narrow_config(self) -> DestinationBase:
         """Parse raw dict config into the typed OutputTarget discriminated union.
 
         Runs after ORM hydration (where SQLAlchemy gives back a raw dict from JSONB)
@@ -771,7 +771,7 @@ class Destination(DestinationBase, table=True):
         sa_column=Column(server_default=func.now(), onupdate=func.now()),
     )
 
-    def narrow_config(self) -> "Destination":
+    def narrow_config(self) -> Destination:
         """Parse raw dict `config` into the typed OutputTarget union in-place.
 
         Must be called explicitly by the store after ORM hydration because

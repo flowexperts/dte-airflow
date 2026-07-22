@@ -21,6 +21,7 @@ Usage:
 Picks the active stores off `DATABASE_URL` — same rule as `dte.api.deps`.
 """
 from __future__ import annotations
+
 import argparse
 import asyncio
 import copy
@@ -113,7 +114,9 @@ async def _migrate_pipeline(pipeline: dict, s_store, d_store, log: list[str]) ->
 
 async def main(write: bool) -> None:
     from dte.api.deps import (
-        get_pipeline_store, get_source_store, get_destination_store,
+        get_destination_store,
+        get_pipeline_store,
+        get_source_store,
     )
     p_store = get_pipeline_store()
     s_store = get_source_store()

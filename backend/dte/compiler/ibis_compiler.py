@@ -1,12 +1,23 @@
 from __future__ import annotations
+
 import ibis
 import ibis.expr.datatypes as dt
-import ibis.expr.types as et
+
+from dte.errors import CompilerError
 from dte.models.pipeline import (
-    Pipeline, FilterStep, RenameStep, RetypeStep,
-    LookupMapStep, LookupTable, ExpressionMapStep, SortStep,
-    AggregateStep, AggSpec, OutputField, JoinStep, PivotStep,
+    AggregateStep,
+    ExpressionMapStep,
+    FilterStep,
+    JoinStep,
+    LookupMapStep,
+    LookupTable,
+    OutputField,
+    Pipeline,
+    PivotStep,
+    RenameStep,
+    RetypeStep,
     SelectStep,
+    SortStep,
 )
 
 _TYPE_MAP: dict[str, dt.DataType] = {
@@ -29,30 +40,55 @@ def _resolve_field(table: ibis.Table, field_path: str) -> ibis.Expr:
     dlt_name = "__".join(parts)
     if dlt_name in table.columns:
         return table[dlt_name]
-    return table[field_path]
+    if field_path in table.columns:
+        return table[field_path]
+    raise CompilerError(
+        f"unknown field {field_path!r}; available columns: {sorted(table.columns)}"
+    )
 
 
 def compile_pipeline(
     pipeline: Pipeline,
     tables: dict[str, ibis.Table],
     output=None,
-    lookup_tables: dict[str, "LookupTable"] | None = None,
+    lookup_tables: dict[str, LookupTable] | None = None,
+    on_step=None,
 ) -> ibis.Table:
+    """Compile a pipeline into an ibis expression.
+
+    `on_step(step_index, op, status, message=None)` — optional sync callback
+    invoked with `status="started"` before each step and `status="completed"`
+    or `status="failed"` after. Callers use this to persist per-step events
+    without threading async into the compiler.
+    """
     registry = dict(tables)
     lookups = lookup_tables or {}
     current_key = pipeline.sources[0]
 
-    for step in pipeline.steps:
+    def _emit(idx, op, status, msg=None):
+        if on_step is not None:
+            try:
+                on_step(idx, op, status, msg)
+            except Exception:  # never let telemetry crash a run
+                pass
+
+    for idx, step in enumerate(pipeline.steps):
         op = step["op"]
-        if op == "join":
-            s = JoinStep(**step)
-            result = _apply_join(registry[s.left], registry[s.right], s)
-            registry[s.output_id] = result
-            current_key = s.output_id
-        else:
-            table = registry[current_key]
-            table = _dispatch_single_table_step(table, step, lookups)
-            registry[current_key] = table
+        _emit(idx, op, "started")
+        try:
+            if op == "join":
+                s = JoinStep(**step)
+                result = _apply_join(registry[s.left], registry[s.right], s)
+                registry[s.output_id] = result
+                current_key = s.output_id
+            else:
+                table = registry[current_key]
+                table = _dispatch_single_table_step(table, step, lookups)
+                registry[current_key] = table
+        except Exception as e:
+            _emit(idx, op, "failed", str(e))
+            raise
+        _emit(idx, op, "completed")
 
     result = registry[current_key]
     fields = getattr(output, "fields", None)
@@ -64,7 +100,7 @@ def compile_pipeline(
 def _dispatch_single_table_step(
     table: ibis.Table,
     step: dict,
-    lookup_tables: dict[str, "LookupTable"],
+    lookup_tables: dict[str, LookupTable],
 ) -> ibis.Table:
     op = step["op"]
     if op == "filter":
@@ -90,7 +126,7 @@ def _dispatch_single_table_step(
         if s.drop:
             return table.drop(*[c for c in s.drop if c in table.columns])
         return _apply_output_fields(table, s.fields)
-    return table
+    raise CompilerError(f"unknown step op {op!r}")
 
 
 def _apply_join(left: ibis.Table, right: ibis.Table, step: JoinStep) -> ibis.Table:
@@ -106,13 +142,13 @@ def _apply_pivot(table: ibis.Table, step: PivotStep) -> ibis.Table:
     index = ", ".join([step.index] if isinstance(step.index, str) else step.index)
     # con.sql() fails (sqlglot can't subquery PIVOT); dynamic PIVOT can't be a view in DuckDB.
     # Materialise into a temp table via the raw connection, then read back through ibis.
-    con.con.execute("""
+    con.con.execute(f"""
         CREATE OR REPLACE TEMP TABLE _dte_pivot_result AS
         PIVOT _dte_pivot_input
-        ON {columns}
-        USING {agg}({values})
+        ON {step.columns}
+        USING {step.agg}({step.values})
         GROUP BY {index}
-    """.format(columns=step.columns, agg=step.agg, values=step.values, index=index))
+    """)
     return con.table("_dte_pivot_result")
 
 
@@ -128,6 +164,12 @@ def _apply_rename(table: ibis.Table, step: RenameStep) -> ibis.Table:
 
 
 def _apply_retype(table: ibis.Table, step: RetypeStep) -> ibis.Table:
+    # to_type is Literal-validated on RetypeStep, so unknown values never reach
+    # here. Field name isn't — check it and raise a typed error.
+    if step.field not in table.columns:
+        raise CompilerError(
+            f"retype: unknown field {step.field!r}; available columns: {sorted(table.columns)}"
+        )
     ibis_type = _TYPE_MAP[step.to_type]
     return table.cast({step.field: ibis_type})
 
@@ -135,9 +177,11 @@ def _apply_retype(table: ibis.Table, step: RetypeStep) -> ibis.Table:
 def _apply_lookup(
     table: ibis.Table,
     step: LookupMapStep,
-    lookup_tables: dict[str, "LookupTable"],
+    lookup_tables: dict[str, LookupTable],
 ) -> ibis.Table:
-    lt = lookup_tables[step.lookup_id]  # KeyError → caller surfaces 422
+    if step.lookup_id not in lookup_tables:
+        raise CompilerError(f"map/lookup: unknown lookup_id {step.lookup_id!r}")
+    lt = lookup_tables[step.lookup_id]
     col = _resolve_field(table, step.field)
     cases = [(col == k, ibis.literal(v)) for k, v in lt.mappings.items()]
     default = ibis.literal(lt.default) if lt.default is not None else None
@@ -166,7 +210,7 @@ def _apply_sort(table: ibis.Table, step: SortStep) -> ibis.Table:
         ascending = [ascending] * len(step.by)
 
     order_exprs = []
-    for col, asc in zip(step.by, ascending):
+    for col, asc in zip(step.by, ascending, strict=False):
         expr = _resolve_field(table, col)
         order_exprs.append(ibis.asc(expr) if asc else ibis.desc(expr))
 

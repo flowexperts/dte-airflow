@@ -1,15 +1,18 @@
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException, Depends, Response
-from dte.security.permissions import requires
 
-from dte.models.pipeline import Source, SourceBase, SOURCE_CONNECTION_COMPAT
-from dte.engine.duckdb_engine import DuckDBEngine
-from dte.sources.loader import load_source
+from fastapi import APIRouter, Depends, HTTPException, Response
+
 from dte.api.deps import (
-    get_source_store, get_pipeline_store, get_connection_store,
+    get_connection_store,
+    get_pipeline_store,
+    get_source_store,
 )
 from dte.api.routes.schema import InferSchemaResponse, _walk
-from dte.store.base import SourceStore, PipelineStore, ConnectionStore
+from dte.engine.duckdb_engine import DuckDBEngine
+from dte.models.pipeline import SOURCE_CONNECTION_COMPAT, Source, SourceBase
+from dte.security.permissions import requires
+from dte.sources.loader import load_source
+from dte.store.base import ConnectionStore, PipelineStore, SourceStore
 
 router = APIRouter()
 

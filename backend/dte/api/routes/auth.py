@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 import uuid
 
-import jwt as _jwt
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 

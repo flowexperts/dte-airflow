@@ -129,7 +129,8 @@ def test_lookup_map_step_missing_lookup_raises(country_table):
         "op": "map", "mode": "lookup", "field": "country_code",
         "lookup_id": "not_registered",
     }])
-    with pytest.raises(KeyError):
+    from dte.errors import CompilerError
+    with pytest.raises(CompilerError, match="unknown lookup_id"):
         _run(pipeline, {"src": country_table})
 
 

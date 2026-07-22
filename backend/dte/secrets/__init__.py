@@ -1,23 +1,25 @@
 """Secret-resolver factory.
 
-Selection rule (evaluated once at import time):
-- `DTE_SECRETS_KEY` set → FernetSecretResolver.
-- otherwise → EnvSecretResolver (dev default; `{env: X}` refs resolved at
-  decrypt time from `os.environ`).
+Selection rule (evaluated at first call):
+- `DTE_SECRETS_BACKEND=env` → EnvSecretResolver
+- `DTE_SECRETS_BACKEND=fernet` → FernetSecretResolver (requires DTE_SECRETS_KEY)
+- otherwise: DTE_SECRETS_KEY set → Fernet; else Env.
 
-Override via `DTE_SECRETS_BACKEND=env|fernet` if you want to force one.
+Reads via `dte.config.Settings` so overrides survive test env manipulation.
 """
 from __future__ import annotations
-import os
+
 import warnings
 
+from dte.config import get_settings
 from dte.secrets.base import SecretResolver
 from dte.secrets.env import EnvSecretResolver
 
 
 def _build_resolver() -> SecretResolver:
-    backend = os.getenv("DTE_SECRETS_BACKEND")
-    key = os.getenv("DTE_SECRETS_KEY")
+    s = get_settings()
+    backend = s.secrets_backend
+    key = s.secrets_key
 
     if backend == "env":
         return EnvSecretResolver()
@@ -33,8 +35,7 @@ def _build_resolver() -> SecretResolver:
         from dte.secrets.fernet import FernetSecretResolver
         return FernetSecretResolver(key)
 
-    # Prod signal: encourage setting a key. In dev it's fine to fall through.
-    if os.getenv("DATABASE_URL"):
+    if s.database_url:
         warnings.warn(
             "DTE_SECRETS_KEY unset while DATABASE_URL is set — connection "
             "credentials will be stored as unencrypted JSON. Generate a key "
@@ -56,4 +57,15 @@ def get_secret_resolver() -> SecretResolver:
     return _resolver
 
 
-__all__ = ["SecretResolver", "EnvSecretResolver", "get_secret_resolver"]
+def reset_secret_resolver() -> None:
+    """Test hook — force a rebuild on next `get_secret_resolver()` call."""
+    global _resolver
+    _resolver = None
+
+
+__all__ = [
+    "SecretResolver",
+    "EnvSecretResolver",
+    "get_secret_resolver",
+    "reset_secret_resolver",
+]

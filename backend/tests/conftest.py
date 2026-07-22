@@ -17,6 +17,7 @@ import pytest
 from dte.api.main import app
 from dte.api.deps import (
     get_pipeline_store,
+    get_run_event_store,
     get_run_store,
     get_source_store,
     get_destination_store,
@@ -32,6 +33,7 @@ from dte.security.jwt import create_access_token
 from dte.security.passwords import hash_password
 from tests.fakes import (
     FakePipelineStore,
+    FakeRunEventStore,
     FakeRunStore,
     FakeSourceStore,
     FakeDestinationStore,
@@ -79,9 +81,10 @@ def fake_stores():
     role_store._data["editor"] = Role(id="editor", name="editor", permissions=list(EDITOR_PERMISSIONS))
     role_store._data["viewer"] = Role(id="viewer", name="viewer", permissions=list(VIEWER_PERMISSIONS))
 
-    p, r, s, d, c, u, lt = (
+    p, r, re, s, d, c, u, lt = (
         FakePipelineStore(),
         FakeRunStore(),
+        FakeRunEventStore(),
         FakeSourceStore(),
         FakeDestinationStore(),
         FakeConnectionStore(),
@@ -93,6 +96,7 @@ def fake_stores():
     c._data["local_fs"] = _make_local_fs_connection()
     app.dependency_overrides[get_pipeline_store] = lambda: p
     app.dependency_overrides[get_run_store] = lambda: r
+    app.dependency_overrides[get_run_event_store] = lambda: re
     app.dependency_overrides[get_source_store] = lambda: s
     app.dependency_overrides[get_destination_store] = lambda: d
     app.dependency_overrides[get_connection_store] = lambda: c
@@ -104,6 +108,7 @@ def fake_stores():
     yield {
         "pipeline": p,
         "run": r,
+        "run_event": re,
         "source": s,
         "destination": d,
         "connection": c,

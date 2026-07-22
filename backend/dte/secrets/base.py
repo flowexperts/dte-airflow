@@ -11,6 +11,7 @@ encryption. External adapters (Vault, AWS SM) can slot in later without
 touching loaders or writers.
 """
 from __future__ import annotations
+
 from typing import Protocol, runtime_checkable
 
 

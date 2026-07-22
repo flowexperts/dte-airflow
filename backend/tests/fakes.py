@@ -94,6 +94,43 @@ class FakeRunStore:
         return len(to_remove)
 
 
+class FakeRunEventStore:
+    def __init__(self):
+        self._data: dict[tuple[str, int], dict] = {}
+
+    async def record(
+        self,
+        run_id: str,
+        step_index: int,
+        op: str,
+        status: str,
+        message: str | None = None,
+    ) -> None:
+        key = (run_id, step_index)
+        now = _utcnow_iso()
+        existing = self._data.get(key)
+        if existing is None:
+            self._data[key] = {
+                "step_index": step_index,
+                "op": op,
+                "status": status,
+                "message": message,
+                "started_at": now,
+                "finished_at": now if status in ("completed", "failed", "skipped") else None,
+            }
+        else:
+            existing["status"] = status
+            existing["message"] = message
+            if status in ("completed", "failed", "skipped"):
+                existing["finished_at"] = now
+
+    async def list_for_run(self, run_id: str) -> list[dict]:
+        return [
+            v for (rid, _), v in sorted(self._data.items(), key=lambda x: x[0][1])
+            if rid == run_id
+        ]
+
+
 def _make_source(s: "SourceBase | Source | dict") -> Source:
     """Build a `Source` ORM instance from a `SourceBase`, `Source`, or a plain dict.
 

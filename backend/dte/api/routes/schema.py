@@ -1,13 +1,14 @@
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException, Depends
-from dte.security.permissions import requires
-from pydantic import BaseModel
-import ibis.expr.datatypes as dt
 
-from dte.models.pipeline import SourceBase as Source
-from dte.engine.duckdb_engine import DuckDBEngine
-from dte.sources.loader import load_source
+import ibis.expr.datatypes as dt
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
 from dte.api.deps import get_connection_store
+from dte.engine.duckdb_engine import DuckDBEngine
+from dte.models.pipeline import SourceBase as Source
+from dte.security.permissions import requires
+from dte.sources.loader import load_source
 from dte.store.base import ConnectionStore
 
 router = APIRouter()
@@ -21,7 +22,7 @@ class SchemaFieldNode(BaseModel):
     """
     name: str
     type: str
-    children: list["SchemaFieldNode"] | None = None
+    children: list[SchemaFieldNode] | None = None
 
 
 class InferSchemaResponse(BaseModel):

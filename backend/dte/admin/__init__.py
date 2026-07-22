@@ -17,7 +17,6 @@ Deviations from plan 023 (task 4):
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from fastapi import FastAPI
 

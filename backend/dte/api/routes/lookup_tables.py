@@ -1,9 +1,10 @@
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException, Depends, Response
-from dte.security.permissions import requires
 
-from dte.models.pipeline import LookupTable, LookupTableBase
+from fastapi import APIRouter, Depends, HTTPException, Response
+
 from dte.api.deps import get_lookup_table_store, get_pipeline_store
+from dte.models.pipeline import LookupTableBase
+from dte.security.permissions import requires
 from dte.store.base import LookupTableStore, PipelineStore
 
 router = APIRouter()

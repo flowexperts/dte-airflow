@@ -1,7 +1,9 @@
 from __future__ import annotations
-import ibis
+
 import fsspec
+import ibis
 import pyarrow.parquet as pq
+
 from dte.models.pipeline import ParquetS3Target
 
 
@@ -24,8 +26,33 @@ def write(
     con: ibis.BaseBackend | None = None,
     credentials: dict | None = None,
 ) -> dict:
-    arrow_table = table.to_pyarrow()
+    """Stream Arrow record batches into Parquet.
+
+    Previous implementation buffered the whole result set via `to_pyarrow()`.
+    Now: `to_pyarrow_batches()` iterates without holding it all at once, and
+    `ParquetWriter.write_batch` flushes each batch to the fsspec-backed sink.
+    """
     storage_options = _fsspec_storage_options(credentials or {})
+    batches = table.to_pyarrow_batches()
+    # Peek the first batch to learn the schema; ParquetWriter needs it up front.
+    try:
+        first = next(iter(batches))
+    except StopIteration:
+        # Empty result — write an empty file so `location` still points at
+        # something readable.
+        first = None
+    rows = 0
     with fsspec.open(target.bucket_url, "wb", **storage_options) as f:
-        pq.write_table(arrow_table, f)
-    return {"rows_written": arrow_table.num_rows, "location": target.bucket_url}
+        if first is None:
+            # No batches → write a zero-row Parquet with just the schema.
+            empty_schema = table.schema().to_pyarrow()
+            with pq.ParquetWriter(f, empty_schema):
+                pass
+        else:
+            with pq.ParquetWriter(f, first.schema) as w:
+                w.write_batch(first)
+                rows += first.num_rows
+                for batch in batches:
+                    w.write_batch(batch)
+                    rows += batch.num_rows
+    return {"rows_written": rows, "location": target.bucket_url}

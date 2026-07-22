@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
+    "pydantic-settings>=2.4",
     "dlt[duckdb]>=1.4",
     "httpx>=0.27",
     "asyncpg>=0.29",
@@ -25,6 +26,9 @@ dependencies = [
     "pyjwt>=2.8",
     "fastadmin>=0.10",
     "python-multipart>=0.0.9",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +39,7 @@ dev = [
     "httpx>=0.27",
     "mongomock>=4.1",
     "requests-mock>=1.11",
+    "ruff>=0.6",
 ]
 parquet = ["pyarrow>=15", "fsspec>=2024.6"]
 s3 = ["s3fs>=2024.6"]
@@ -55,3 +60,21 @@ addopts = "--ignore=tests/scenarios"
 markers = [
     "scenario: per-op end-to-end scenarios that drive the real API in-process (opt-in)",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["alembic/versions", ".venv", "worktrees"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = [
+    "E501",  # line-length — enforced by black-ish formatting, not linting
+    "B008",  # FastAPI Depends() in defaults is idiomatic
+    "B904",  # raise-from noise; tackle incrementally
+    "E402",  # dte/models/pipeline.py loads dlt specs lazily on purpose
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B", "E402"]
+"scripts/**" = ["B", "E402"]
