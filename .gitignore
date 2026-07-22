@@ -5,7 +5,12 @@ __pycache__/
 .pytest_cache/
 dist/
 .coverage
-worktrees
+worktrees/
 .pnpm-store
+node_modules/
+.next/
+**/pgdata
 .env
+.env.local
 !.env.example
+!.env.local.example
