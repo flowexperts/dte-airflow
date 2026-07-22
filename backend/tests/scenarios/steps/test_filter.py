@@ -56,6 +56,27 @@ async def test_filter_string_equality(client, scenario_ids, fixtures_dir, out_di
     assert {r["order_id"] for r in rows} == {"o06", "o14"}
 
 
+async def test_filter_advanced_raw_sql(client, scenario_ids, fixtures_dir, out_dir):
+    """Advanced-mode filters pass raw DuckDB SQL through unchanged. Use a
+    function the Basic-mode composer wouldn't emit (LIKE + length()) — if
+    the expr reaches DuckDB it evaluates fine."""
+    src_id, dst_id, out_path = await _seed_orders(
+        client, scenario_ids, fixtures_dir, out_dir, "filter_adv.json"
+    )
+    pipe_id = scenario_ids("pipeline")
+    # `status IN ('refunded', 'pending')` has length > 6 → 5 rows.
+    # o03 (pending), o06 (refunded), o10 (pending), o14 (refunded), o18 (pending).
+    await create_pipeline(
+        client, id=pipe_id, sources=[src_id],
+        steps=[{"op": "filter", "expr": "length(status) > 6 AND status LIKE '%e%'"}],
+        output_id=dst_id,
+    )
+    run = await trigger_and_wait(client, pipe_id)
+    assert run["status"] == "completed", run
+    rows = read_output_file(out_path)
+    assert {r["order_id"] for r in rows} == {"o03", "o06", "o10", "o14", "o18"}
+
+
 async def test_filter_compound_expr(client, scenario_ids, fixtures_dir, out_dir):
     src_id, dst_id, out_path = await _seed_orders(
         client, scenario_ids, fixtures_dir, out_dir, "filter_and.json"
