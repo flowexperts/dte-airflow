@@ -73,11 +73,6 @@ async def test_retype_string_to_int_with_bad_content_fails_run(
     assert run["error"], "expected non-empty error string"
 
 
-@pytest.mark.xfail(
-    reason="bug: Pipeline.steps is list[dict]; per-step Pydantic validators "
-    "(SelectStep._check_exclusive) don't run at pipeline save time, so an "
-    "empty-fields select passes 422 and fails only at trigger-time compile."
-)
 async def test_select_empty_fields_and_empty_drop_rejected(
     client, scenario_ids, fixtures_dir, out_dir
 ):
