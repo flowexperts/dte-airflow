@@ -23,12 +23,12 @@ services:
       DATABASE_URL: postgresql+asyncpg://dte:dte@postgres:5432/dte
       DTE_CORS_ORIGINS: http://localhost:3000
       # Fernet key for Connection.credentials encryption at rest.
-      # Must be set — put it in `.env` next to docker-compose.yml
-      # (untracked). See `.env.example` and README.
-      DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:?DTE_SECRETS_KEY must be set — see .env.example}
-      # JWT signing secret. Required in prod. Generate with:
-      #   python -c "import secrets; print(secrets.token_urlsafe(48))"
-      DTE_JWT_SECRET: ${DTE_JWT_SECRET:?DTE_JWT_SECRET must be set — see .env.example}
+      # Run `./scripts/bootstrap.sh` to generate. If unset, the backend
+      # falls back to EnvSecretResolver (dev-only) and logs a warning.
+      DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:-}
+      # JWT signing secret. Run `./scripts/bootstrap.sh` to generate. If
+      # unset, the backend uses an insecure dev fallback and logs a warning.
+      DTE_JWT_SECRET: ${DTE_JWT_SECRET:-}
       # Allow the /api/auth/register endpoint. Plan 023 will move user
       # creation into an admin flow — flip this off in prod when that lands.
       DTE_ALLOW_REGISTRATION: "true"
