@@ -796,6 +796,21 @@ DestinationCreate = DestinationBase
 #   Pipeline(table=True) — persistence identity + JSONB columns +
 #       timestamp columns.
 
+_STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
+    ("filter", None): FilterStep,
+    ("rename", None): RenameStep,
+    ("retype", None): RetypeStep,
+    ("map", "lookup"): LookupMapStep,
+    ("map", "expression"): ExpressionMapStep,
+    ("map", "calculation"): ExpressionMapStep,
+    ("sort", None): SortStep,
+    ("aggregate", None): AggregateStep,
+    ("select", None): SelectStep,
+    ("join", None): JoinStep,
+    ("pivot", None): PivotStep,
+}
+
+
 class PipelineBase(SQLModel):
     """API/domain fields. `id: str` is required — FastAPI raises 422 if
     the client omits it."""
@@ -804,6 +819,24 @@ class PipelineBase(SQLModel):
     sources: list[str] = SMField(default_factory=list)
     steps: list[dict] = SMField(default_factory=list)
     output_id: str
+
+    @model_validator(mode="after")
+    def _validate_steps(self):
+        # steps is list[dict] (map's mode-discriminator prevents a typed Union).
+        # Dispatch each step through its op-specific model so per-step validators
+        # (e.g. SelectStep._check_exclusive) fire at API save time instead of at
+        # trigger-time compile.
+        for i, step in enumerate(self.steps):
+            if not isinstance(step, dict) or "op" not in step:
+                raise ValueError(f"steps[{i}]: missing 'op' key")
+            key = (step["op"], step.get("mode") if step["op"] == "map" else None)
+            model = _STEP_MODELS.get(key)
+            if model is None:
+                raise ValueError(
+                    f"steps[{i}]: unknown op/mode combination {key!r}"
+                )
+            model.model_validate(step)
+        return self
 
 
 class Pipeline(PipelineBase, table=True):
