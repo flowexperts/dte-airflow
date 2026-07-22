@@ -1,0 +1,9 @@
+[
+  {"order_id": "n01", "customer": {"id": "c1", "name": "Alice",  "region": "NA"}, "amount": 100},
+  {"order_id": "n02", "customer": {"id": "c1", "name": "Alice",  "region": "NA"}, "amount": 200},
+  {"order_id": "n03", "customer": {"id": "c2", "name": "Bob",    "region": "EU"}, "amount": 150},
+  {"order_id": "n04", "customer": {"id": "c3", "name": "Carol",  "region": "EU"}, "amount": 300},
+  {"order_id": "n05", "customer": {"id": "c4", "name": "Dan",    "region": "APAC"}, "amount": 75},
+  {"order_id": "n06", "customer": {"id": "c5", "name": "Eve",    "region": "NA"}, "amount": 400},
+  {"order_id": "n07", "customer": {"id": "c2", "name": "Bob",    "region": "EU"}, "amount": 50}
+]

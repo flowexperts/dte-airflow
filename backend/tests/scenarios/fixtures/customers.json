@@ -1,0 +1,8 @@
+[
+  {"customer_id": "c1", "name": "Alice",   "region": "north"},
+  {"customer_id": "c2", "name": "Bob",     "region": "south"},
+  {"customer_id": "c3", "name": "Carol",   "region": "north"},
+  {"customer_id": "c4", "name": "Dave",    "region": "east"},
+  {"customer_id": "c5", "name": "Eve",     "region": "west"},
+  {"customer_id": "c6", "name": "Frank",   "region": "south"}
+]

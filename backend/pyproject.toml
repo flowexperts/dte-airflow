@@ -49,3 +49,9 @@ packages = ["dte"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Scenario suite is opt-in — it spins up the real API in-process and is
+# slower than unit tests. Run explicitly: `pytest tests/scenarios -m scenario`.
+addopts = "--ignore=tests/scenarios"
+markers = [
+    "scenario: per-op end-to-end scenarios that drive the real API in-process (opt-in)",
+]
