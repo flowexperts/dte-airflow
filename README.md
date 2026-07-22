@@ -9,6 +9,7 @@ dte is a batch data transformation engine: a visual pipeline builder on top of a
 ```bash
 git clone https://github.com/bhavaniravi/dte.git
 cd dte
+./scripts/bootstrap.sh     # writes .env with fresh secrets
 docker compose up -d --build
 ```
 
