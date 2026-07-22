@@ -2,11 +2,15 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from dte.models.pipeline import (
-        Connection, ConnectionBase,
-        Destination, DestinationBase,
-        LookupTable, LookupTableBase,
-        Pipeline, PipelineBase,
-        Source, SourceBase,
+        Connection,
+        ConnectionBase,
+        Destination,
+        DestinationBase,
+        LookupTable,
+        LookupTableBase,
+        Pipeline,
+        Source,
+        SourceBase,
     )
     from dte.models.user import Role, User, UserBase
 
@@ -26,6 +30,26 @@ class RunStore(Protocol):
     async def update(self, id: str, **fields) -> None: ...
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]: ...
     async def delete_for_pipeline(self, pipeline_id: str) -> int: ...
+
+
+@runtime_checkable
+class RunEventStore(Protocol):
+    """Per-step events emitted during pipeline runs.
+
+    `record` inserts or updates the terminal row (started → completed/failed)
+    keyed on (run_id, step_index). `list_for_run` returns them in step order
+    for the /api/runs/{id}/events endpoint that feeds the Timeline UI.
+    """
+
+    async def record(
+        self,
+        run_id: str,
+        step_index: int,
+        op: str,
+        status: str,
+        message: str | None = None,
+    ) -> None: ...
+    async def list_for_run(self, run_id: str) -> list[dict]: ...
 
 
 @runtime_checkable

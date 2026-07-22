@@ -1,18 +1,23 @@
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlmodel import select
 import uuid
 
+from sqlalchemy import func as sa_func
+from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlmodel import select
+
 from dte.models.pipeline import (
-    Connection, ConnectionBase,
-    Destination, DestinationBase,
-    LookupTable, LookupTableBase,
-    Pipeline, PipelineBase,
-    Source, SourceBase,
+    Connection,
+    ConnectionBase,
+    Destination,
+    DestinationBase,
+    LookupTable,
+    LookupTableBase,
+    Pipeline,
+    Source,
+    SourceBase,
 )
 from dte.models.user import Role, User, UserBase, UserRoleLink
-from sqlalchemy import func as sa_func
 
 
 class PostgresPipelineStore:
@@ -120,6 +125,62 @@ class PostgresRunStore:
             )
             await s.commit()
             return result.rowcount
+
+
+class PostgresRunEventStore:
+    """Postgres-backed run events. Uses ON CONFLICT to upsert per (run, step)."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def record(
+        self,
+        run_id: str,
+        step_index: int,
+        op: str,
+        status: str,
+        message: str | None = None,
+    ) -> None:
+        # Deterministic id so "started" and later "completed"/"failed" for the
+        # same step upsert onto one row.
+        row_id = f"{run_id}:{step_index}"
+        async with self._factory() as s:
+            await s.execute(
+                text("""
+                    INSERT INTO run_events (id, run_id, step_index, op, status, message,
+                                            started_at, finished_at)
+                    VALUES (:id, :rid, :idx, :op, :status, :msg,
+                            NOW(),
+                            CASE WHEN :status IN ('completed','failed','skipped')
+                                 THEN NOW() ELSE NULL END)
+                    ON CONFLICT (id) DO UPDATE SET
+                        status = EXCLUDED.status,
+                        message = EXCLUDED.message,
+                        finished_at = EXCLUDED.finished_at
+                """),
+                {
+                    "id": row_id, "rid": run_id, "idx": step_index,
+                    "op": op, "status": status, "msg": message,
+                },
+            )
+            await s.commit()
+
+    async def list_for_run(self, run_id: str) -> list[dict]:
+        async with self._factory() as s:
+            result = await s.execute(
+                text(
+                    "SELECT step_index, op, status, message, started_at, finished_at "
+                    "FROM run_events WHERE run_id = :rid ORDER BY step_index, started_at"
+                ),
+                {"rid": run_id},
+            )
+            rows = []
+            for row in result.mappings().fetchall():
+                d = dict(row)
+                d["started_at"] = d["started_at"].isoformat() if d.get("started_at") else None
+                d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
+                rows.append(d)
+            return rows
 
 
 class PostgresSourceStore:

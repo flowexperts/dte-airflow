@@ -1,26 +1,40 @@
 from __future__ import annotations
+
 import asyncio
 import json
-from fastapi import APIRouter, HTTPException, Depends, Response
-from dte.security.permissions import requires
-from dte.models.pipeline import Pipeline, PipelineBase, Source, Destination, LookupTable
-from dte.compiler.ibis_compiler import compile_pipeline
-from dte.engine.duckdb_engine import DuckDBEngine
-from dte.sources.loader import load_source
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+
+from dte import runs as run_registry
 from dte.api.deps import (
+    get_connection_store,
+    get_destination_store,
+    get_lookup_table_store,
     get_pipeline_store,
+    get_run_event_store,
     get_run_store,
     get_source_store,
-    get_destination_store,
-    get_connection_store,
-    get_lookup_table_store,
 )
+from dte.compiler.ibis_compiler import compile_pipeline
+from dte.config import get_settings
+from dte.engine.duckdb_engine import DuckDBEngine
+from dte.logging import get_logger, run_id_var
+from dte.models.pipeline import Destination, LookupTable, Pipeline, PipelineBase, Source
+from dte.security.permissions import requires
+from dte.sources.loader import load_source
 from dte.store.base import (
-    PipelineStore, RunStore, SourceStore, DestinationStore, ConnectionStore,
+    ConnectionStore,
+    DestinationStore,
     LookupTableStore,
+    PipelineStore,
+    RunEventStore,
+    RunStore,
+    SourceStore,
 )
+from dte.tracing import tracer
 
 router = APIRouter()
+_log = get_logger("dte.pipelines")
 
 
 async def _validate_pipeline_refs(
@@ -198,6 +212,7 @@ async def trigger_pipeline(
     pipeline_id: str,
     p_store: PipelineStore = Depends(get_pipeline_store),
     r_store: RunStore = Depends(get_run_store),
+    re_store: RunEventStore = Depends(get_run_event_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
@@ -210,12 +225,42 @@ async def trigger_pipeline(
     await _resolve(pipeline, s_store, d_store, c_store)
     await _resolve_lookups(pipeline, lt_store)
     run_id = await r_store.create(pipeline_id)
-    asyncio.create_task(
+    task = asyncio.create_task(
         _execute_pipeline(
-            pipeline_id, run_id, p_store, r_store, s_store, d_store, c_store, lt_store,
+            pipeline_id, run_id, p_store, r_store, re_store,
+            s_store, d_store, c_store, lt_store,
         )
     )
+    run_registry.register(run_id, task)
     return {"run_id": run_id}
+
+
+@router.get("/runs/{run_id}/events", dependencies=[Depends(requires("run:read"))])
+async def list_run_events(
+    run_id: str,
+    r_store: RunStore = Depends(get_run_store),
+    re_store: RunEventStore = Depends(get_run_event_store),
+):
+    if not await r_store.get(run_id):
+        raise HTTPException(status_code=404, detail="Run not found")
+    events = await re_store.list_for_run(run_id)
+    return {"events": events, "count": len(events)}
+
+
+@router.post("/runs/{run_id}/cancel", dependencies=[Depends(requires("pipeline:trigger"))])
+async def cancel_run(run_id: str, r_store: RunStore = Depends(get_run_store)):
+    run = await r_store.get(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.get("status") not in ("pending", "running"):
+        raise HTTPException(status_code=409, detail=f"Run is already {run.get('status')}")
+    cancelled = run_registry.cancel(run_id)
+    if not cancelled:
+        # No local task — likely a stale run from a previous worker. Best-effort
+        # mark it cancelled so operators can move on.
+        await r_store.update(run_id, status="failed", error="cancelled (no local task)")
+        return {"cancelled": False, "detail": "no live task on this worker"}
+    return {"cancelled": True}
 
 
 async def _execute_pipeline(
@@ -223,32 +268,99 @@ async def _execute_pipeline(
     run_id: str,
     p_store: PipelineStore,
     r_store: RunStore,
+    re_store: RunEventStore,
     s_store: SourceStore,
     d_store: DestinationStore,
     c_store: ConnectionStore,
     lt_store: LookupTableStore,
 ):
+    settings = get_settings()
+    token = run_id_var.set(run_id)
     await r_store.update(run_id, status="running")
+    _log.info("run started", extra={"pipeline_id": pipeline_id})
     try:
-        pipeline = await p_store.get(pipeline_id)
-        sources, (destination, dest_creds) = await _resolve(pipeline, s_store, d_store, c_store)
-        lookups = await _resolve_lookups(pipeline, lt_store)
-
-        engine = DuckDBEngine()
-        tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
-        compiled = compile_pipeline(
-            pipeline, tables, output=destination.config, lookup_tables=lookups,
+        await asyncio.wait_for(
+            _run_body(
+                pipeline_id, run_id, p_store, r_store, re_store,
+                s_store, d_store, c_store, lt_store,
+            ),
+            timeout=settings.run_timeout_seconds,
         )
-        result = engine.execute(compiled, destination.config, credentials=dest_creds)
-        await r_store.update(
-            run_id,
-            status="completed",
-            rows_written=result["rows_written"],
-            location=result["location"],
-        )
-    except Exception as e:
+    except TimeoutError:
+        _log.warning("run timed out", extra={"pipeline_id": pipeline_id})
         await r_store.update(
             run_id,
             status="failed",
-            error=str(e),
+            error=f"run exceeded timeout of {settings.run_timeout_seconds}s",
         )
+    except asyncio.CancelledError:
+        _log.info("run cancelled", extra={"pipeline_id": pipeline_id})
+        await r_store.update(run_id, status="failed", error="cancelled")
+    except Exception as e:
+        _log.exception("run failed", extra={"pipeline_id": pipeline_id})
+        await r_store.update(run_id, status="failed", error=str(e))
+    finally:
+        run_id_var.reset(token)
+
+
+async def _run_body(
+    pipeline_id: str,
+    run_id: str,
+    p_store: PipelineStore,
+    r_store: RunStore,
+    re_store: RunEventStore,
+    s_store: SourceStore,
+    d_store: DestinationStore,
+    c_store: ConnectionStore,
+    lt_store: LookupTableStore,
+):
+    settings = get_settings()
+    tr = tracer()
+    with tr.start_as_current_span("run") as run_span:
+        run_span.set_attribute("pipeline_id", pipeline_id)
+        run_span.set_attribute("run_id", run_id)
+
+        with tr.start_as_current_span("resolve"):
+            pipeline = await p_store.get(pipeline_id)
+            sources, (destination, dest_creds) = await _resolve(
+                pipeline, s_store, d_store, c_store,
+            )
+            lookups = await _resolve_lookups(pipeline, lt_store)
+
+        with tr.start_as_current_span("load_sources") as span:
+            engine = DuckDBEngine()
+            tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
+            span.set_attribute("source_count", len(tables))
+
+        with tr.start_as_current_span("compile"):
+            # Compiler emits synchronously; buffer here and flush async.
+            events_buf: list[tuple[int, str, str, str | None]] = []
+
+            def _cb(idx, op, status, msg=None):
+                events_buf.append((idx, op, status, msg))
+
+            try:
+                compiled = compile_pipeline(
+                    pipeline, tables,
+                    output=destination.config, lookup_tables=lookups,
+                    on_step=_cb,
+                )
+            finally:
+                for idx, op, status, msg in events_buf:
+                    await re_store.record(run_id, idx, op, status, msg)
+            compiled = compiled.limit(settings.run_max_rows)
+
+        with tr.start_as_current_span("write") as span:
+            span.set_attribute("destination_type", destination.config.type)
+            result = engine.execute(compiled, destination.config, credentials=dest_creds)
+            span.set_attribute("rows_written", result["rows_written"])
+    await r_store.update(
+        run_id,
+        status="completed",
+        rows_written=result["rows_written"],
+        location=result["location"],
+    )
+    _log.info(
+        "run completed",
+        extra={"pipeline_id": pipeline_id, "rows_written": result["rows_written"]},
+    )
