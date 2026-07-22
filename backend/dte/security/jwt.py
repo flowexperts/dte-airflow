@@ -1,27 +1,27 @@
 """JWT encode/decode helpers.
 
-HS256 signing. Secret from `DTE_JWT_SECRET`; TTL from `DTE_JWT_TTL_SECONDS`
-(default 24h). Startup hard-fail if secret is missing when `DATABASE_URL`
-is set (production signal); dev falls back to a deterministic placeholder
-with a warning.
+HS256 signing. Secret + TTL sourced from `dte.config.Settings`. Production
+signal: when `DATABASE_URL` is set but `DTE_JWT_SECRET` is missing, hard-fail
+at first use; dev falls back to a deterministic placeholder with a warning.
 """
 from __future__ import annotations
 
-import os
 import time
 import warnings
 
 import jwt as _jwt
+
+from dte.config import get_settings
 
 _ALGO = "HS256"
 _DEV_FALLBACK_SECRET = "dte-dev-insecure-jwt-secret-do-not-use-in-prod"
 
 
 def _secret() -> str:
-    s = os.getenv("DTE_JWT_SECRET")
-    if s:
-        return s
-    if os.getenv("DATABASE_URL"):
+    s = get_settings()
+    if s.jwt_secret:
+        return s.jwt_secret
+    if s.database_url:
         raise RuntimeError(
             "DTE_JWT_SECRET must be set when DATABASE_URL is set (production). "
             "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(48))'"
@@ -35,7 +35,7 @@ def _secret() -> str:
 
 
 def _ttl_seconds() -> int:
-    return int(os.getenv("DTE_JWT_TTL_SECONDS", str(24 * 60 * 60)))
+    return get_settings().jwt_ttl_seconds
 
 
 def create_access_token(*, user_id: str, email: str) -> str:
