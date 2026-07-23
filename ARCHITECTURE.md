@@ -1,0 +1,285 @@
+# DTE Architecture
+
+This document describes how the Data Transformation Engine (DTE) is put together. It is aimed at engineers evaluating the project or joining the team, and at reviewers who want to understand the shape of the system without reading the whole codebase. Agent-facing conventions and workflow rules live in `CLAUDE.md`; roadmap and status live under `plans/`.
+
+## Overview
+
+DTE is a batch data transformation engine. A user defines a **Pipeline** — one or more sources, an ordered list of transform steps, and a destination — and the engine executes it end-to-end against DuckDB, streaming rows through Ibis expressions and writing the result to a file or a database. The product is aimed at data engineers and analytics teams who want a single, versioned specification for "how does raw source X become curated output Y", without operating a distributed cluster or writing bespoke Python for every new pipeline.
+
+The engine is deliberately embedded and single-node today. DuckDB is the runtime; Ibis is the expression language; dlt handles a small number of API-shaped sources where its pagination and normalisation earn their keep. Everything else — filesystem globs, SQL databases, cloud object stores — goes through DuckDB extensions directly, because that is significantly faster and involves fewer moving parts than routing through dlt.
+
+The UI is a Next.js 16 app that lets users compose pipelines visually, preview them against sample rows, and monitor runs. The backend is a FastAPI service backed by Postgres. Everything ships together in a Docker Compose stack.
+
+## Data flow
+
+A pipeline run flows through five hops:
+
+```
+Source configs (Pipeline.sources: [id, id, ...])
+    |
+    v
+SourceStore.get(id)  -->  Source model
+    |
+    v
+loader.load_source(source, ibis_con)  -->  ibis.Table per source
+    |                                       (all bound to one shared DuckDB connection)
+    v
+compile_pipeline(pipeline, tables, output)  -->  ibis.Table (transformed)
+    |
+    v
+DuckDBEngine.execute(table, target)  -->  writer  -->  output file / DB
+    |
+    v
+RunStore.update(status, rows_written, finished_at)
+```
+
+Each hop has a single responsibility:
+
+1. **Resolve.** The API route looks up every source id in `SourceStore` and the destination id in `DestinationStore`. A missing id returns 422 naming what was missing before any execution starts.
+2. **Load.** `dte.sources.loader.load_source(source, ibis_con)` returns an `ibis.Table` bound to a shared DuckDB connection. Loaders never open a second connection; they always attach or create a view on the connection the engine will use.
+3. **Compile.** `compile_pipeline` walks the ordered step list, dispatches on `op` (and `mode` for `map` steps), and returns a single `ibis.Table` representing the final projection. The compiler never executes — it only builds an expression tree.
+4. **Execute.** `DuckDBEngine.execute(table, target)` hands the expression to the appropriate writer under `dte/engine/writers/`. Writers own how bytes hit disk / the target database, including format-specific concerns like the DuckDB `excel` extension or the JSON `default=str` decimal coercion.
+5. **Record.** The API route persists the row count, terminal status, and (via a Postgres trigger) `finished_at`. Per-step events are captured through the compiler's `on_step` callback so the future `Timeline` UI has data to render.
+
+## API surface
+
+The HTTP API is a thin CRUD layer over the stores, plus two execution endpoints (`trigger`, `preview`) and one inspection endpoint (`schema/infer`). All routes are gated by JWT auth at the router level; only `/api/health` and `/api/auth/*` are open.
+
+```
+POST   /api/pipelines                     create pipeline (validates source/dest ids exist)
+GET    /api/pipelines                     list pipelines
+GET    /api/pipelines/{id}                get pipeline
+PUT    /api/pipelines/{id}                update pipeline
+DELETE /api/pipelines/{id}                delete pipeline
+POST   /api/pipelines/{id}/trigger        start async run -> {run_id}
+GET    /api/pipelines/{id}/preview?limit  compile + execute on sample rows
+GET    /api/pipelines/{id}/runs?limit     run history per pipeline
+GET    /api/runs/{run_id}                 poll run status
+GET    /api/runs/{run_id}/output?limit    peek at the run's output file
+GET    /api/runs/{run_id}/events          per-step events for the Timeline UI
+POST   /api/schema/infer                  field tree from an in-flight Source body
+POST   /api/sources                       create source (409 on id collision)
+GET    /api/sources                       list sources
+GET    /api/sources/{id}                  get source
+PUT    /api/sources/{id}                  update source
+DELETE /api/sources/{id}                  409 with {referenced_by: [...]} if any pipeline uses it
+GET    /api/sources/{id}/schema           field tree for a saved source (id-only)
+POST   /api/destinations                  create destination
+GET    /api/destinations                  list / read / update / delete destinations
+POST   /api/connections                   create connection (409 on id collision; creds encrypted at rest)
+GET    /api/connections                   list connections (credentials masked)
+GET    /api/connections/{id}              read (?reveal=true for plaintext creds)
+PUT    /api/connections/{id}              update (empty credentials keeps existing)
+DELETE /api/connections/{id}              409 with {referenced_by: {sources, destinations}} if in use
+POST   /api/connections/{id}/test         connectivity probe -> {ok, elapsed_ms, detail}
+```
+
+Delete endpoints are protective: they return 409 with a `referenced_by` payload if anything else in the system points at the entity, so a user cannot accidentally orphan a pipeline by deleting its source.
+
+## Core concepts
+
+### Pipeline
+
+A `Pipeline` is a Pydantic model with three top-level fields: `sources: list[str]` (source ids), `steps: list[dict]` (ordered transforms), and `output_id: str` (destination id). Pipelines carry no credentials and no file paths of their own — everything lives in the entities they reference.
+
+`steps` is intentionally `list[dict]` rather than a typed discriminated union. The `map` op branches on both `op` and `mode`, and Pydantic's discriminated union cannot express a sub-discriminator sharing the same key. The compiler is the single place that knows how to parse a step dict into the right op-specific model.
+
+### Source
+
+A `Source` describes _where_ data comes from and _which slice_ of it to read. Fields: `id`, `source_type`, `config` (kind-specific dict), `table`, `format`. It references a `Connection` for credentials. `source_type` is a strict `Literal` (`filesystem`, `s3`, `gcs`, `azure`, `sql_database`, `mongodb`, `rest_api`) so unknown values are rejected at the API edge.
+
+### Destination
+
+A `Destination` wraps an `OutputTarget` — a Pydantic discriminated union over `type` with six variants: `json_file`, `csv_file`, `excel_file`, `parquet_s3`, `postgres`, `sql_database`. File-shaped targets validate that the on-disk extension matches the target family (a `json_file` at `orders.csv` is rejected at save).
+
+### Connection (three-tier model)
+
+Credentials are separated from the entities that use them:
+
+```
+Connection (credentials only)
+    ^
+    |
+Source / Destination (references connection_id + carries the "where inside the target" bits)
+    ^
+    |
+Pipeline (references source ids + destination id)
+```
+
+Credentials never live inside a `Source.config` or `Destination.config`. They live in `Connection.credentials`, an opaque encrypted blob on the wire and at rest. Local file targets bind to a singleton `local_fs_default` connection so every source and destination has exactly one connection to point at.
+
+Connection credentials are validated at model-parse time by instantiating dlt's matching `@configspec` class (`AwsCredentials`, `ConnectionStringCredentials`, etc.). We do not inherit — that would drag in dlt's config-provider machinery — we call the class, extract public fields, and store the result as a plain dict. Compatibility maps (`SOURCE_CONNECTION_COMPAT`, `DESTINATION_CONNECTION_COMPAT`) reject impossible pairings such as an s3 source bound to a postgres connection with a 422.
+
+### Run
+
+A `Run` records one execution of a pipeline. Fields: `id`, `pipeline_id`, `status` (`pending` / `running` / `completed` / `failed`), `error`, `rows_written`, `started_at`, `finished_at`. Terminal transitions stamp `finished_at` via a Postgres `BEFORE UPDATE` trigger installed by migration `003`, so the API code never has to remember to set it.
+
+### Step ops
+
+The compiler dispatches on `op`:
+
+- `filter` — SQL predicate applied via a raw-SQL escape hatch.
+- `rename` — column renames (Ibis's rename direction is `{new: old}`, opposite of intuition).
+- `retype` — column type casts routed through `_TYPE_MAP`.
+- `map` — synthesises a new column. Three modes: `lookup` (join to a `LookupTable`), `expression` (raw SQL fragment), `calculation` (Ibis arithmetic).
+- `sort` — ordering, with optional per-column direction.
+- `aggregate` — group-by with an aggregation list.
+- `join` — multi-source combination; writes into the registry under `output_id`.
+- `pivot` — DuckDB dynamic PIVOT, materialised as a TEMP TABLE (see compiler notes).
+- `select` — final projection, with keep/drop semantics.
+
+## Module layout
+
+```
+backend/dte/
+    api/         FastAPI routes, dependency wiring, error handlers, middleware
+    compiler/    ibis_compiler.py — pipeline -> ibis.Table
+    models/      pipeline.py — Pydantic + SQLModel two-class models
+    store/       Protocols in base.py; PostgresStore implementations in postgres.py
+    sources/     loader.py — dispatch by source_type; connection_test.py — probes
+    engine/      duckdb_engine.py + writers/ — expression -> output
+    secrets/     Pluggable secret resolver + EncryptedJSON TypeDecorator
+    security/    JWT, password hashing, permission checks
+    schema/      Schema inference for the field-picker UI
+    admin/       Optional FastAdmin mount at /admin
+    runs.py      Background run execution wrapper (guardrails)
+```
+
+`config.py`, `errors.py`, `logging.py`, and `tracing.py` sit at the package root. Alembic lives in `backend/alembic/`. Tests are `backend/tests/{unit,integration,scenarios}/`.
+
+## Compiler design
+
+`compile_pipeline(pipeline, tables, output=None, lookup_tables=None, on_step=None)` maintains a **named registry** — `dict[str, ibis.Table]` — rather than a rolling variable. Each step reads from and writes back to the registry via `current_key`. Join steps write their result under `output_id` and update `current_key`. This model naturally supports multi-source pipelines: sources start out in the registry keyed by their id; a join fuses two of them under a new key; subsequent single-table steps operate on that key.
+
+Dispatch is a plain `if op == "join"` / `else` branch. Non-join ops route through `_dispatch_single_table_step(table, step, lookups)`, which parses the step dict into the right op-specific Pydantic model (`FilterStep`, `RenameStep`, `RetypeStep`, `LookupMapStep`, `ExpressionMapStep`, etc.) and calls the corresponding `_apply_*` function.
+
+Two ops escape to raw SQL because Ibis has no SQL string parser:
+
+- `filter` and expression-mode `map` write the current table as a view (`con.create_view("_filter_input", table, overwrite=True)`) and then `con.sql(f"SELECT * FROM _filter_input WHERE {expr}")`. This is the seam through which raw predicate SQL enters the expression tree. Future distributed backends (Spark, Trino) would plug in here.
+- `pivot` uses `con.con.execute("CREATE OR REPLACE TEMP TABLE ... AS PIVOT ...")`. Dynamic PIVOT cannot be a view in DuckDB, and `con.sql()` fails because sqlglot cannot subquery a PIVOT node.
+
+Field references use dot syntax on the wire: `order.amount`, `user.address.city`. `_resolve_field()` splits on `.` and traverses STRUCT members. If the head isn't a top-level column it falls back to the joined `__` name, so `mongodb` / `rest_api` sources — which still flatten via dlt — keep working. Legacy `parent__child` references are auto-normalised on read; a script in `backend/scripts/migrate_field_refs.py` migrates saved pipelines persistently.
+
+Ibis version notes worth pinning down before touching the compiler:
+
+- ibis >= 9 uses `ibis.cases(*[(cond, val), ...], else_=default)`, not `ibis.case()`.
+- `table.rename({new_name: old_name})` is reversed from most people's expectation.
+
+The compiler accepts an optional `on_step(idx, op, status, message=None)` callback. It is invoked with `status="started"` before each step and `"completed"` / `"failed"` after. This is how per-step run events are recorded without threading async into the compiler; the callback is wrapped in a try/except so telemetry failures never crash a run.
+
+## Source loading
+
+`dte.sources.loader.load_source(source, ibis_con)` dispatches on `source.source_type`. Not every source goes through dlt — the choice is deliberate:
+
+- **`filesystem`** — DuckDB TVFs. `read_json_auto` / `read_csv_auto` / `read_parquet` / `read_xlsx`, materialised via `CREATE OR REPLACE VIEW`. No dlt. Nested JSON comes through as native STRUCT columns. Format is detected by extension (`.json`, `.jsonl`, `.ndjson`, `.csv`, `.tsv`, `.parquet`, `.xlsx`); `config["format"]` overrides. `.xlsx` uses the `excel` extension (lazy `INSTALL excel; LOAD excel;`) and reads only the first sheet.
+- **`sql_database`** — DuckDB scanner extensions. `INSTALL sqlite|postgres|mysql; ATTACH ... (TYPE ..., READ_ONLY); CREATE VIEW`. Scheme detected from the SQLAlchemy-style credentials URL. No dlt.
+- **`s3`, `gcs`, `azure`** — DuckDB native remote reads. `s3` and `gcs` go through the `httpfs` extension; `azure` through the `azure` extension. Each loader installs the extension, emits `CREATE OR REPLACE SECRET <scoped-name> (TYPE ..., ...)`, then materialises `bucket_url + file_glob` via `read_*_auto` in a view. GCS auth is HMAC-only. Azure accepts a connection string (preferred) or account name + key.
+- **`mongodb`, `rest_api`** — dlt (`@dlt.resource` + `dlt.sources.rest_api.rest_api_source`). Kept because dlt's pagination and normalisation earn their keep for real APIs. Columns come through with `__` flattening.
+
+The single-connection rule matters: every loader must attach or create a view on the DuckDB connection the engine already holds. Two connections cannot see each other's views, so a source loaded on a fresh connection is invisible to the compiler.
+
+## Persistence
+
+DTE is **Postgres-only** in production. `DATABASE_URL` must be set; the dependency getters in `dte/api/deps.py` raise `RuntimeError` if it is missing. There is no in-memory store shipped in the package. Tests inject `Fake*Store` implementations from `tests/fakes.py` via `app.dependency_overrides`.
+
+Under Docker Compose the backend service runs `alembic upgrade head` (using a synced URL derived by stripping `+asyncpg`) and then execs uvicorn. Pipelines and runs survive `docker compose restart` via the `pgdata` volume.
+
+### Store protocols
+
+`dte/store/base.py` defines a `Protocol` for each persisted entity: `PipelineStore`, `SourceStore`, `DestinationStore`, `ConnectionStore`, `LookupTableStore`, `RunStore`, `RunEventStore`, `UserStore`, `RoleStore`. The one production backend implementing them all is `postgres.py`. The active backend is wired in `dte/api/deps.py` and injected into routes via FastAPI `Depends()`. Stores hold a session factory (not a live session) so the singleton is safe across FastAPI requests and the background `asyncio.create_task` in `trigger_pipeline`.
+
+### Model + store pattern (SQLModel)
+
+Every Pydantic-modelled persisted entity — `Pipeline`, `Source`, `Destination`, `Connection`, `LookupTable`, `User` — is a two-class pair in `dte/models/pipeline.py`:
+
+- `XxxBase(SQLModel)` — API/domain fields, Pydantic validators, and strict Literal types (`ConnectionType`, `SourceKind`) that reject unknown values at the edge. Routes bind POST/PUT bodies to `XxxBase`.
+- `Xxx(XxxBase, table=True)` — persistence identity (primary key, timestamp columns) with Literals overridden to plain `str` because SQLModel 0.0.39 cannot map `Literal` to a SQLAlchemy column. Stores save and return typed `Xxx` instances.
+
+`table=True` construction skips Pydantic validators. Any hydrated instance that needs post-load narrowing (e.g. `Destination.config` narrowed from raw JSONB to the discriminated `OutputTarget` union) calls an explicit method that uses `TypeAdapter(...).validate_python(...)` and `object.__setattr__` to bypass SA instrumentation.
+
+Every `Postgres*Store` (except `PostgresRunStore`, which still hand-writes SQL) uses the same three-verb ORM template: `session.get(Xxx, id)` for reads, `pg_insert(Xxx).on_conflict_do_update(...)` for saves (`session.merge` will not fire the `updated_at` `onupdate` server default), and `select(Xxx).order_by(Xxx.created_at.desc())` for lists.
+
+### Secrets
+
+`Connection.credentials` is stored via an `EncryptedJSON` TypeDecorator that maps a Python `dict` to a `BYTEA` column, transparently encrypting on write and decrypting on read. The active `SecretResolver` is chosen at process start:
+
+- `EnvSecretResolver` — dev default. Stores plaintext JSON; resolves `{env: "X"}` values from `os.environ`.
+- `FernetSecretResolver` — production. Symmetric encryption via `cryptography.fernet.Fernet`, key from `DTE_SECRETS_KEY`.
+
+External adapters (Vault, AWS Secrets Manager, GCP Secret Manager) plug in as new `SecretResolver` implementations without touching loaders or writers.
+
+### Migrations
+
+Alembic. `DATABASE_URL` must be a sync driver (e.g. `postgresql://`) for migrations; asyncpg is stripped when the compose command runs `alembic upgrade head`. Migrations live in `backend/alembic/versions/`; each numbered file corresponds to one shape change. Notable migrations:
+
+- `003` — installs the `runs.finished_at` `BEFORE UPDATE` trigger.
+- `004` — first-class `sources` and `destinations` tables.
+- `009` — `sources.format` column for filesystem-family reader override.
+
+One-off data migrations (rather than schema migrations) live under `backend/scripts/`. They are idempotent by convention: `migrate_field_refs.py` rewrites `parent__child` field references to dot syntax; `migrate_extract_connections.py` pulls inline credentials out of legacy source/destination configs into `Connection` rows; `migrate_embedded_endpoints.py` splits pipelines with embedded source/destination configs into the three-tier model.
+
+## Execution and observability
+
+`POST /api/pipelines/{id}/trigger` returns a `run_id` immediately. The heavy lifting runs as an `asyncio.create_task` — the caller polls `GET /api/runs/{run_id}` until `status` reaches `completed` or `failed`. The background task is the point at which guardrails (max-rows, timeout, cancellation) attach.
+
+Structured logging is configured in `dte.logging`. Every request goes through `RequestContextMiddleware`, which binds a request id into the log record. Runs log with their `run_id` so log queries filter cleanly.
+
+Tracing is opt-in via `DTE_TRACING_ENABLED=1`. When enabled, `configure_tracing()` wires OpenTelemetry and `FastAPIInstrumentor.instrument_app(app)` auto-instruments the HTTP layer. The compiler's `on_step` callback is the seam for per-step spans; the current implementation persists step events through `RunEventStore` but does not yet emit spans.
+
+Per-step events are recorded in the `run_events` table via `RunEventStore.record`, keyed on `(run_id, step_index)`. The frontend `Timeline` component reads these through `/api/runs/{id}/events`. The `finished_at` column on `runs` is not set by the API code — a `BEFORE UPDATE` trigger from migration `003` stamps it when `status` transitions to `completed` or `failed`. Adding a new terminal status means extending both the trigger and any fake stores that mirror the rule.
+
+### Guardrails
+
+Long-running pipelines are constrained by three levers, applied in `dte/runs.py` around the compile/execute call:
+
+- **Timeout.** A per-run wall-clock deadline; exceeding it cancels the underlying task and marks the run `failed` with a timeout error.
+- **Max rows.** A hard cap on rows written before the writer aborts. Prevents a mis-configured `join` from filling a disk.
+- **Cancellation.** `asyncio.CancelledError` from the task is caught, translated into a `failed` status with a cancellation message, and any partial output is cleaned up.
+
+Guardrails default off in dev but are wired to environment / settings knobs so production deployments can turn them on without code changes.
+
+### Preview
+
+`GET /api/pipelines/{id}/preview?limit=N` is the interactive-debugging seam. It resolves sources and destination like `trigger`, runs `compile_pipeline`, and executes with a `LIMIT` pushed onto the final expression. It writes to a temp path (not the real destination), returns the sample rows inline, and never records a `Run`. Compile-time errors — the most common class of pipeline bug — surface here in a fraction of a second, which is much faster than the trigger/poll loop.
+
+## Frontend
+
+The UI is a Next.js 16 app under `frontend/` — App Router with Turbopack, React 19, Tailwind v4, pnpm. Routes live under `src/app/(app)/`: pipeline list, pipeline detail, pipeline edit, run detail, and a component-gallery preview page. Data fetching is SWR-based, with a hand-written `apiFetch<T>` wrapper over a generated `api-types.ts` (regenerated from the backend's `/openapi.json`). Run pages poll `/api/runs/{id}` every 2s until the run is terminal, then stop.
+
+The design system in `src/components/ui/` is intentionally self-contained (imports only itself and a `cn.ts` helper) so it can be ported to other projects. DTE-specific composition lives in `src/components/builder/`. The full frontend playbook — server-vs-client discipline, the `FieldPicker` portal, the discriminated `output` union, step editors — is documented in `CLAUDE.md` and `frontend/AGENTS.md`.
+
+## Testing tiers
+
+The backend test suite is layered so contributors run only what the change touches:
+
+- **Unit** (`backend/tests/unit/`) — compiler and model tests. No HTTP, no I/O, no database. Collected by default `pytest`. Fast enough to run on every save.
+- **Integration** (`backend/tests/integration/`) — hits real Postgres via `DATABASE_URL`; auto-skips when unset. Marker: `integration`. These are the tests that exercise `on_conflict_do_update` semantics, the `finished_at` trigger, and the JSONB round-trip.
+- **Scenarios** (`backend/tests/scenarios/`) — end-to-end user flows over the real HTTP API using `httpx.AsyncClient(ASGITransport)`. One file per step op under `steps/`, plus error paths, nested fields, and preview coverage. Marker: `scenario`. Excluded from the default run via `addopts = "--ignore=tests/scenarios"` in `pyproject.toml`; opt in with `pytest tests/scenarios -m scenario`.
+
+Scenario tests use a small DSL in `tests/scenarios/helpers.py` (`create_connection`, `create_source`, `create_destination`, `create_pipeline`, `trigger_and_wait`, `read_output_file`) and hand-crafted deterministic fixtures (`orders.json`, `products.json`, etc.) so assertions can be exact row-set comparisons rather than fuzzy shape checks.
+
+## Non-goals
+
+DTE deliberately does not:
+
+- **Stream.** Everything is batch. Real-time / CDC / streaming ingestion is a P4 concern in the roadmap and would require a different execution model — likely a separate service, not a compiler variant.
+- **Distribute.** Single-node DuckDB is the runtime. Scaling to Spark / Trino / a warehouse is a P2 concern; the raw-SQL escape hatches in the compiler are where a distributed backend would eventually plug in.
+- **Ship a plugin marketplace.** New source and destination kinds are code changes: a `SourceKind` literal, a loader dispatch, a compatibility map entry, an editor in the builder. This is a conscious choice — every integration is code-reviewed and tested.
+- **Orchestrate.** DTE runs pipelines on trigger; it does not schedule them, chain them, or manage dependencies between them. That is an Airflow / Prefect / Dagster job.
+- **Version pipelines automatically.** Pipelines are Pydantic models stored in Postgres. Change history is a P1 / P2 concern; today, edits overwrite.
+
+## Deployment
+
+The reference deployment is Docker Compose: a Postgres container, a backend container running uvicorn against `dte.api.main:app`, and a frontend container running `pnpm dev` (in dev) or a Next production build (in prod). Ports are `3000` for the frontend, `8001` for the backend, and `5432` for Postgres.
+
+Dev mode mounts `./backend/dte` and `./backend/alembic` into the backend container and `./frontend` into the frontend container, so both sides hot-reload. Production images are built from the same Dockerfiles with dev volumes stripped. The backend service runs `alembic upgrade head` before execing uvicorn, so a fresh database self-migrates on first boot.
+
+CORS origins are read from `DTE_CORS_ORIGINS` (default `http://localhost:3000`). Secrets backend is chosen at process start based on `DTE_SECRETS_BACKEND` and `DTE_SECRETS_KEY`. Tracing is opt-in via `DTE_TRACING_ENABLED=1`. Auth is JWT-based; the first registered user becomes an admin.
+
+## Where to look next
+
+- **`CLAUDE.md`** — day-to-day conventions, coding rules, test tiers, worktree workflow. Read this before making a code change.
+- **`plans/`** — numbered design docs. One per feature. Every non-trivial change starts here.
+- **`plans/027-p0-p4-status-ladder.md`** — the current P0-through-P4 roadmap and honest status ladder.
+- **`backend/tests/scenarios/`** — end-to-end user flows over the real HTTP API. The best place to see what the engine actually does with a given pipeline shape.
+- **`frontend/AGENTS.md`** — Next.js 16 gotchas and frontend-only conventions.
