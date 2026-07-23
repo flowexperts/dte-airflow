@@ -1,0 +1,43 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["before 6am on monday"],
+  "automerge": false,
+  "packageRules": [
+    {
+      "description": "Group Python minor-version bumps",
+      "matchManagers": ["pip_requirements", "pyproject", "uv"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "python-minor",
+      "labels": ["dependencies", "python"]
+    },
+    {
+      "description": "Group Python patch-version bumps",
+      "matchManagers": ["pip_requirements", "pyproject", "uv"],
+      "matchUpdateTypes": ["patch"],
+      "groupName": "python-patch",
+      "labels": ["dependencies", "python"]
+    },
+    {
+      "description": "Group pnpm / Node.js dependency bumps",
+      "matchManagers": ["npm"],
+      "groupName": "pnpm",
+      "labels": ["dependencies", "frontend"]
+    },
+    {
+      "description": "Security updates get high priority label",
+      "matchDepTypes": ["dependencies", "devDependencies"],
+      "isVulnerabilityAlert": true,
+      "labels": ["security", "dependencies"],
+      "prPriority": 10,
+      "automerge": false
+    },
+    {
+      "description": "Keep cryptography <43 — 43+ switched to Rust bindings whose wheels SIGILL on Docker Desktop arm64 (Apple Silicon emulation). Disable major bumps.",
+      "matchPackageNames": ["cryptography"],
+      "allowedVersions": "<43",
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}
