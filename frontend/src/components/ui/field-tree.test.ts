@@ -60,13 +60,13 @@ describe("buildTree from backend children[]", () => {
       },
     ]);
     expect(tree).toHaveLength(3);
-    expect(tree[1].children).toHaveLength(2);
-    expect(tree[1].children![0]).toMatchObject({
+    expect(tree[1]!.children).toHaveLength(2);
+    expect(tree[1]!.children![0]).toMatchObject({
       name: "amount",
       wire: "order.amount",
       path: ["order", "amount"],
     });
-    const city = tree[2].children![0].children![0];
+    const city = tree[2]!.children![0]!.children![0];
     expect(city).toMatchObject({
       name: "city",
       wire: "user.address.city",
@@ -86,9 +86,9 @@ describe("buildTree from flat list (legacy)", () => {
       { name: "order.currency", type: "string" },
     ]);
     expect(tree).toHaveLength(1);
-    expect(tree[0].name).toBe("order");
-    expect(tree[0].children).toHaveLength(2);
-    expect(tree[0].children![0]).toMatchObject({
+    expect(tree[0]!.name).toBe("order");
+    expect(tree[0]!.children).toHaveLength(2);
+    expect(tree[0]!.children![0]).toMatchObject({
       name: "amount",
       wire: "order.amount",
     });
@@ -98,8 +98,8 @@ describe("buildTree from flat list (legacy)", () => {
     const tree = buildTree([
       { name: "_dlt_id", type: "string" },
     ]);
-    expect(tree[0].children).toBeUndefined();
-    expect(tree[0].wire).toBe("_dlt_id");
+    expect(tree[0]!.children).toBeUndefined();
+    expect(tree[0]!.wire).toBe("_dlt_id");
   });
 });
 

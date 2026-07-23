@@ -61,7 +61,8 @@ export function LandingPage() {
     let i = 1;
     const t = setInterval(() => {
       i = (i + 1) % states.length;
-      setPill(states[i]);
+      const next = states[i];
+      if (next !== undefined) setPill(next);
     }, 2400);
     return () => clearInterval(t);
   }, []);

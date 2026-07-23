@@ -93,8 +93,9 @@ function ruleToSql(r: FilterRule): string {
     }
     case "BETWEEN": {
       const parts = r.value.split(",").map((s) => s.trim()).filter(Boolean);
-      if (parts.length !== 2) return "";
-      return `${f} BETWEEN ${safeLiteral(parts[0])} AND ${safeLiteral(parts[1])}`;
+      const [lo, hi] = parts;
+      if (parts.length !== 2 || lo === undefined || hi === undefined) return "";
+      return `${f} BETWEEN ${safeLiteral(lo)} AND ${safeLiteral(hi)}`;
     }
     case "LIKE":
       return `${f} LIKE ${safeLiteral(r.value)}`;
@@ -492,8 +493,10 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
   const aggs = (step.aggregations as AggSpec[]) ?? [];
 
   const updateAgg = (i: number, patch: Partial<AggSpec>) => {
+    const current = aggs[i];
+    if (!current) return;
     const next = [...aggs];
-    next[i] = { ...next[i], ...patch };
+    next[i] = { ...current, ...patch };
     set({ aggregations: next });
   };
   const addAgg = () =>

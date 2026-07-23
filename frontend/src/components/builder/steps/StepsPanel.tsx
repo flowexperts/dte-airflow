@@ -15,8 +15,10 @@ export function StepsPanel({
   const [addOpen, setAddOpen] = useState(false);
 
   const update = (i: number, patch: Partial<StepShape>) => {
+    const current = steps[i];
+    if (!current) return;
     const copy = [...steps];
-    copy[i] = { ...copy[i], ...patch };
+    copy[i] = { ...current, ...patch };
     onChange(copy);
   };
   const remove = (i: number) =>
@@ -24,8 +26,12 @@ export function StepsPanel({
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir;
     if (j < 0 || j >= steps.length) return;
+    const a = steps[i];
+    const b = steps[j];
+    if (!a || !b) return;
     const copy = [...steps];
-    [copy[i], copy[j]] = [copy[j], copy[i]];
+    copy[i] = b;
+    copy[j] = a;
     onChange(copy);
   };
   const add = (op: string, mode?: string) => {

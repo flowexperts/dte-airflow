@@ -83,6 +83,7 @@ export function buildTree(fields: FieldInput[]): FieldNode[] {
     let acc: string[] = [];
     for (let i = 0; i < path.length; i++) {
       const seg = path[i];
+      if (seg === undefined) continue;
       acc = [...acc, seg];
       const isLeaf = i === path.length - 1;
       let node = index.get(seg);
@@ -98,9 +99,10 @@ export function buildTree(fields: FieldInput[]): FieldNode[] {
         node.type = f.type;
         node.wire = acc.join(SEP);
       } else {
-        siblings = node.children!;
+        const kids = node.children ?? (node.children = []);
+        siblings = kids;
         const nextIndex = new Map<string, FieldNode>();
-        for (const c of siblings) nextIndex.set(c.name, c);
+        for (const c of kids) nextIndex.set(c.name, c);
         index = nextIndex;
       }
     }
