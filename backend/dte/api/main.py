@@ -1,3 +1,5 @@
+import os
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -25,17 +27,11 @@ _settings = get_settings()
 
 app = FastAPI(title="DTE API")
 
-# FastAPI auto-instrumentation is opt-in via DTE_TRACING_ENABLED to keep tests
-# quiet. Guarded so it also works if OTel deps happen to be absent.
-try:
-    import os as _os
+# FastAPI auto-instrumentation is opt-in via DTE_TRACING_ENABLED. Off in tests.
+if os.getenv("DTE_TRACING_ENABLED", "0") == "1":
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-    if _os.getenv("DTE_TRACING_ENABLED", "0") == "1":
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
-        FastAPIInstrumentor.instrument_app(app)
-except Exception:  # pragma: no cover
-    pass
+    FastAPIInstrumentor.instrument_app(app)
 
 app.add_middleware(RequestContextMiddleware)
 

@@ -160,6 +160,12 @@ def _apply_filter(table: ibis.Table, step: FilterStep) -> ibis.Table:
 
 
 def _apply_rename(table: ibis.Table, step: RenameStep) -> ibis.Table:
+    unknown = [old for old in step.mappings if old not in table.columns]
+    if unknown:
+        raise CompilerError(
+            f"rename: unknown source field(s) {unknown!r}; "
+            f"available columns: {sorted(table.columns)}"
+        )
     return table.rename({v: k for k, v in step.mappings.items()})
 
 

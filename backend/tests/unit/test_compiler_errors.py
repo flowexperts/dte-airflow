@@ -78,6 +78,16 @@ def test_aggregate_unknown_field_raises(people):
         _compile(p, {"src": people}).execute()
 
 
+def test_rename_unknown_source_field_raises(people):
+    """Regression: two renames of the same source used to leak IbisTypeError."""
+    p = _pipeline([
+        {"op": "rename", "mappings": {"age": "years"}},
+        {"op": "rename", "mappings": {"age": "years"}},
+    ])
+    with pytest.raises(CompilerError, match="rename: unknown source field"):
+        _compile(p, {"src": people}).execute()
+
+
 def test_lookup_missing_lookup_id_raises(people):
     p = _pipeline([{
         "op": "map", "mode": "lookup",

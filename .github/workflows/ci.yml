@@ -39,8 +39,8 @@ jobs:
         run: uv run ruff check dte
       - name: Migrate
         run: DATABASE_URL=postgresql://dte:dte@localhost:5432/dte uv run alembic upgrade head
-      - name: Unit + compiler tests
-        run: uv run pytest tests/unit -q
+      - name: Unit + compiler tests (with coverage floor)
+        run: uv run pytest tests/unit -q --cov=dte --cov-report=term --cov-fail-under=70
       - name: Scenario tests
         run: uv run pytest tests/scenarios -m scenario -q
 
