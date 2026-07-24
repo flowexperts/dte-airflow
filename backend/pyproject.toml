@@ -41,6 +41,7 @@ dev = [
     "requests-mock>=1.11,<2.0",
     "ruff>=0.6,<1.0",
     "hypothesis>=6.100,<7.0",
+    "mutmut>=2.5,<4.0",
 ]
 parquet = ["pyarrow>=15,<20", "fsspec>=2024.6,<2026.0"]
 s3 = ["s3fs>=2024.6,<2026.0"]
@@ -76,6 +77,11 @@ exclude_lines = [
 markers = [
     "scenario: per-op end-to-end scenarios that drive the real API in-process (opt-in)",
 ]
+
+[tool.mutmut]
+paths_to_mutate = "dte/compiler/"
+tests_dir = "tests/unit/"
+runner = "uv run pytest tests/unit -x -q --no-cov"
 
 [tool.ruff]
 line-length = 100
