@@ -1,10 +1,14 @@
 import os
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from dte.admin import mount_admin
 from dte.api.deps import get_current_user
+from dte.api.limiter import limiter
 from dte.api.error_handlers import register as register_error_handlers
 from dte.api.middleware import RequestContextMiddleware
 from dte.api.routes.auth import router as auth_router
@@ -26,6 +30,8 @@ configure_tracing()
 _settings = get_settings()
 
 app = FastAPI(title="DTE API")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # FastAPI auto-instrumentation is opt-in via DTE_TRACING_ENABLED. Off in tests.
 if os.getenv("DTE_TRACING_ENABLED", "0") == "1":
@@ -33,6 +39,7 @@ if os.getenv("DTE_TRACING_ENABLED", "0") == "1":
 
     FastAPIInstrumentor.instrument_app(app)
 
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(RequestContextMiddleware)
 
 app.add_middleware(
