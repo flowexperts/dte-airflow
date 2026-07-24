@@ -21,10 +21,10 @@ interface FieldPickerProps {
   value: string;
   onChange: (v: string) => void;
   options: FieldOption[];
-  placeholder?: string;
-  className?: string;
-  disabled?: boolean;
-  variant?: "flat" | "tree";
+  placeholder?: string | undefined;
+  className?: string | undefined;
+  disabled?: boolean | undefined;
+  variant?: "flat" | "tree" | undefined;
 }
 
 /**

@@ -26,9 +26,9 @@ type Mode = "single" | "multi";
 
 interface CommonProps {
   options: FieldOption[];
-  placeholder?: string;
-  className?: string;
-  disabled?: boolean;
+  placeholder?: string | undefined;
+  className?: string | undefined;
+  disabled?: boolean | undefined;
 }
 
 interface SingleProps extends CommonProps {

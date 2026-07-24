@@ -17,7 +17,7 @@ export function Field({
   hint?: ReactNode;
   error?: ReactNode;
   children: ReactNode;
-  className?: string;
+  className?: string | undefined;
 }) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
