@@ -9,10 +9,11 @@ from __future__ import annotations
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 
 from dte.api.deps import get_current_user, get_user_store
+from dte.api.limiter import limiter
 from dte.models.user import User, UserBase
 from dte.security.jwt import create_access_token
 from dte.security.passwords import hash_password, verify_password
@@ -59,7 +60,10 @@ def _registration_allowed() -> bool:
 
 
 @router.post("/auth/register", response_model=UserPublic, status_code=201)
-async def register(body: RegisterBody, users: UserStore = Depends(get_user_store)) -> UserPublic:
+@limiter.limit("5/minute")
+async def register(
+    request: Request, body: RegisterBody, users: UserStore = Depends(get_user_store)
+) -> UserPublic:
     if not _registration_allowed():
         raise HTTPException(status_code=403, detail="Registration is disabled")
     existing = await users.get_by_email(str(body.email))
@@ -78,7 +82,10 @@ async def register(body: RegisterBody, users: UserStore = Depends(get_user_store
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-async def login(body: LoginBody, users: UserStore = Depends(get_user_store)) -> TokenResponse:
+@limiter.limit("5/minute")
+async def login(
+    request: Request, body: LoginBody, users: UserStore = Depends(get_user_store)
+) -> TokenResponse:
     user = await users.get_by_email(str(body.email))
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
