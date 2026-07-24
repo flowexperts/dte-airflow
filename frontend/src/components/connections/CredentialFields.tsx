@@ -14,11 +14,11 @@ function StringField({
   type = "text",
 }: {
   label: string;
-  hint?: string;
+  hint?: string | undefined;
   value: unknown;
   onChange: (v: string) => void;
-  placeholder?: string;
-  type?: "text" | "password";
+  placeholder?: string | undefined;
+  type?: "text" | "password" | undefined;
 }) {
   return (
     <Field label={label} hint={hint}>

@@ -20,9 +20,9 @@ export function DataTable<T>({
 }: {
   columns: Column<T>[];
   rows: T[];
-  onRowClick?: (row: T, i: number) => void;
-  emptyText?: string;
-  className?: string;
+  onRowClick?: ((row: T, i: number) => void) | undefined;
+  emptyText?: string | undefined;
+  className?: string | undefined;
 }) {
   const gridTemplate = columns.map((c) => c.width ?? "1fr").join(" ");
   const gridStyle: CSSProperties = { gridTemplateColumns: gridTemplate };

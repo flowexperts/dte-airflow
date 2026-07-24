@@ -2,8 +2,8 @@ export interface FieldNode {
   name: string;
   wire: string;
   path: string[];
-  type?: string;
-  children?: FieldNode[];
+  type?: string | undefined;
+  children?: FieldNode[] | undefined;
 }
 
 export interface FieldRef {
