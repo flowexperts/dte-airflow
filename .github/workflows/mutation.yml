@@ -1,0 +1,58 @@
+name: Mutation Testing
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutmut:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dte
+          POSTGRES_PASSWORD: dte
+          POSTGRES_DB: dte
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dte"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://dte:dte@localhost:5432/dte
+      DTE_JWT_SECRET: ci-jwt-secret-do-not-reuse
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run mutmut
+        # || true: surviving mutants are reported but do not fail the workflow
+        # at this stage. Tighten to a threshold once a baseline is established.
+        run: uv run mutmut run --max-children 4 || true
+
+      - name: Print mutmut results
+        run: uv run mutmut results
+
+      - name: Upload mutmut cache
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutmut-results
+          path: backend/.mutmut-cache
+          retention-days: 30
