@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,13 +25,23 @@ from dte.api.routes.sources import router as sources_router
 from dte.api.routes.users import router as users_router
 from dte.config import get_settings
 from dte.logging import configure_logging
+from dte.sources.pools import mongo as mongo_pool
 from dte.tracing import configure_tracing
 
 configure_logging()
 configure_tracing()
 _settings = get_settings()
 
-app = FastAPI(title="DTE API")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # startup — nothing to eagerly warm
+    yield
+    # shutdown — close all pooled Mongo clients
+    await mongo_pool.close_all()
+
+
+app = FastAPI(title="DTE API", lifespan=_lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

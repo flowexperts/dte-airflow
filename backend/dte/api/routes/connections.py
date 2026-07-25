@@ -11,6 +11,7 @@ from dte.logging import decrypt_context_var
 from dte.models.pipeline import Connection, ConnectionBase
 from dte.security.permissions import requires
 from dte.sources.connection_test import probe_connection
+from dte.sources.pools import mongo as mongo_pool
 from dte.store.base import ConnectionStore, DestinationStore, SourceStore
 
 router = APIRouter()
@@ -97,6 +98,7 @@ async def update_connection(
             credentials=existing_creds,
         )
     await store.save(connection)
+    await mongo_pool.evict(connection_id)
     return _mask_base(connection)
 
 
@@ -138,4 +140,5 @@ async def delete_connection(
             detail={"referenced_by": {"sources": ref_sources, "destinations": ref_dests}},
         )
     await c_store.delete(connection_id)
+    await mongo_pool.evict(connection_id)
     return Response(status_code=204)
