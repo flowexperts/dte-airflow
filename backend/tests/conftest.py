@@ -26,6 +26,7 @@ from dte.api.deps import (
     get_user_store,
     get_role_store,
     get_current_user,
+    get_current_tenant_id,
     get_lookup_table_store,
 )
 from dte.models.pipeline import Connection
@@ -67,6 +68,8 @@ def _fake_test_user() -> User:
     # Attach an admin role so autouse tests pass every requires(...) gate.
     # RBAC-specific tests override get_current_user with a scoped user.
     u.narrow_roles([Role(id="admin", name="admin", permissions=list(ADMIN_PERMISSIONS))])
+    # Embed the default tenant so multi-tenant deps work in tests.
+    object.__setattr__(u, "_tenant_id", "default")
     return u
 
 
@@ -109,6 +112,8 @@ def fake_stores():
     app.dependency_overrides[get_pipeline_revision_store] = lambda: pr
     # Bypass auth for existing tests — auth-flow tests opt out per-test.
     app.dependency_overrides[get_current_user] = lambda: _fake_test_user()
+    # Bypass tenant_id dep — tests always use the "default" tenant.
+    app.dependency_overrides[get_current_tenant_id] = lambda: "default"
     yield {
         "pipeline": p,
         "run": r,

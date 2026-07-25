@@ -163,6 +163,7 @@ class ConnectionBase(SQLModel):
     id: str
     connection_type: ConnectionType  # strict Literal for API validation
     credentials: dict = SMField(default_factory=dict)
+    tenant_id: str = "default"
 
     @model_validator(mode="after")
     def _validate_credentials(self):
@@ -201,6 +202,9 @@ class Connection(ConnectionBase, table=True):
     credentials: dict = SMField(  # type: ignore[override]
         default_factory=dict,
         sa_column=Column("credentials_encrypted", EncryptedJSON, nullable=False),
+    )
+    tenant_id: str = SMField(  # type: ignore[override]
+        default="default", sa_column=Column(Text, nullable=False, server_default="default")
     )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
@@ -387,6 +391,7 @@ class SourceBase(SQLModel):
     config: dict = SMField(default_factory=dict)
     table: str
     format: _FileFormat | None = None
+    tenant_id: str = "default"
 
     @model_validator(mode="before")
     @classmethod
@@ -461,6 +466,9 @@ class Source(SourceBase, table=True):
     format: str | None = SMField(  # type: ignore[override]
         default=None, sa_column=Column(Text, nullable=True)
     )
+    tenant_id: str = SMField(  # type: ignore[override]
+        default="default", sa_column=Column(Text, nullable=False, server_default="default")
+    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
     )
@@ -489,6 +497,7 @@ class LookupTableBase(SQLModel):
     name: str | None = None
     mappings: dict[str, str] = SMField(default_factory=dict)
     default: str | None = None
+    tenant_id: str = "default"
 
 
 class LookupTable(LookupTableBase, table=True):
@@ -500,6 +509,9 @@ class LookupTable(LookupTableBase, table=True):
         default_factory=dict, sa_column=Column(JSONB, nullable=False)
     )
     default: str | None = SMField(default=None, sa_column=Column(Text, nullable=True))
+    tenant_id: str = SMField(  # type: ignore[override]
+        default="default", sa_column=Column(Text, nullable=False, server_default="default")
+    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
     )
@@ -719,6 +731,7 @@ class DestinationBase(SQLModel):
     id: str
     connection_id: str
     config: dict = SMField(default_factory=dict, sa_column=Column(JSONB, nullable=False))
+    tenant_id: str = "default"
 
     @model_validator(mode="after")
     def _narrow_config(self) -> DestinationBase:
@@ -763,6 +776,9 @@ class Destination(DestinationBase, table=True):
         default_factory=dict, sa_column=Column(JSONB, nullable=False)
     )
     dest_type: str = SMField(sa_column=Column(Text, nullable=False))
+    tenant_id: str = SMField(  # type: ignore[override]
+        default="default", sa_column=Column(Text, nullable=False, server_default="default")
+    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
     )
@@ -819,6 +835,7 @@ class PipelineBase(SQLModel):
     sources: list[str] = SMField(default_factory=list)
     steps: list[dict] = SMField(default_factory=list)
     output_id: str
+    tenant_id: str = "default"
 
     @model_validator(mode="after")
     def _validate_steps(self):
@@ -850,6 +867,9 @@ class Pipeline(PipelineBase, table=True):
     )
     steps: list[dict] = SMField(  # type: ignore[override]
         default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
+    tenant_id: str = SMField(  # type: ignore[override]
+        default="default", sa_column=Column(Text, nullable=False, server_default="default")
     )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())

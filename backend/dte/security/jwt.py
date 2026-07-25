@@ -38,11 +38,20 @@ def _ttl_seconds() -> int:
     return get_settings().jwt_ttl_seconds
 
 
-def create_access_token(*, user_id: str, email: str) -> str:
+def create_access_token(
+    *, user_id: str, email: str, tenant_id: str = "default"
+) -> str:
+    """Encode a JWT with `sub`, `email`, and `tenant` claims.
+
+    The `tenant` claim identifies the tenant the token is scoped to.
+    Legacy tokens without this claim are treated as belonging to the
+    `"default"` tenant in `get_current_tenant_id`.
+    """
     now = int(time.time())
     payload = {
         "sub": user_id,
         "email": email,
+        "tenant": tenant_id,
         "iat": now,
         "exp": now + _ttl_seconds(),
     }
