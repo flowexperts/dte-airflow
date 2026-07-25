@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
@@ -17,6 +18,7 @@ from dte.api.deps import (
 )
 from dte.compiler.ibis_compiler import compile_pipeline
 from dte.config import get_settings
+from dte import metrics
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.logging import decrypt_context_var, get_logger, run_id_var
 from dte.models.pipeline import Destination, LookupTable, Pipeline, PipelineBase, Source
@@ -281,6 +283,9 @@ async def _execute_pipeline(
     decrypt_context_var.set("pipeline_run")
     await r_store.update(run_id, status="running")
     _log.info("run started", extra={"pipeline_id": pipeline_id})
+    metrics.active_runs.inc()
+    started = time.monotonic()
+    final_status = "failed"  # pessimistic default; success path sets "completed"
     try:
         await asyncio.wait_for(
             _run_body(
@@ -289,6 +294,7 @@ async def _execute_pipeline(
             ),
             timeout=settings.run_timeout_seconds,
         )
+        final_status = "completed"
     except TimeoutError:
         _log.warning("run timed out", extra={"pipeline_id": pipeline_id})
         await r_store.update(
@@ -299,11 +305,25 @@ async def _execute_pipeline(
     except asyncio.CancelledError:
         _log.info("run cancelled", extra={"pipeline_id": pipeline_id})
         await r_store.update(run_id, status="failed", error="cancelled")
+        final_status = "cancelled"
     except Exception as e:
         _log.exception("run failed", extra={"pipeline_id": pipeline_id})
         await r_store.update(run_id, status="failed", error=str(e))
     finally:
         run_id_var.reset(token)
+        metrics.active_runs.dec()
+        metrics.pipeline_runs_total.labels(status=final_status).inc()
+        # Best-effort source_type label: pick the pipeline's first source kind.
+        # Multi-source runs still surface via HTTP RED metrics on trigger.
+        try:
+            pipeline = await p_store.get(pipeline_id)
+            first_src = await s_store.get(pipeline.sources[0]) if pipeline and pipeline.sources else None
+            src_type = first_src.source_type if first_src else "unknown"
+        except Exception:  # noqa — metric emission must never mask a run error
+            src_type = "unknown"
+        metrics.pipeline_run_duration_seconds.labels(source_type=src_type).observe(
+            time.monotonic() - started
+        )
 
 
 async def _run_body(
