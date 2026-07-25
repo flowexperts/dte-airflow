@@ -18,7 +18,7 @@ from dte.api.deps import (
 from dte.compiler.ibis_compiler import compile_pipeline
 from dte.config import get_settings
 from dte.engine.duckdb_engine import DuckDBEngine
-from dte.logging import get_logger, run_id_var
+from dte.logging import decrypt_context_var, get_logger, run_id_var
 from dte.models.pipeline import Destination, LookupTable, Pipeline, PipelineBase, Source
 from dte.security.permissions import requires
 from dte.sources.loader import load_source
@@ -189,6 +189,7 @@ async def preview_pipeline(
     pipeline = await store.get(pipeline_id)
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
+    decrypt_context_var.set("pipeline_preview")
     try:
         sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
@@ -222,6 +223,7 @@ async def trigger_pipeline(
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     # Fail fast on missing refs before creating a run.
+    decrypt_context_var.set("pipeline_run")
     await _resolve(pipeline, s_store, d_store, c_store)
     await _resolve_lookups(pipeline, lt_store)
     run_id = await r_store.create(pipeline_id)
@@ -276,6 +278,7 @@ async def _execute_pipeline(
 ):
     settings = get_settings()
     token = run_id_var.set(run_id)
+    decrypt_context_var.set("pipeline_run")
     await r_store.update(run_id, status="running")
     _log.info("run started", extra={"pipeline_id": pipeline_id})
     try:

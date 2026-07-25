@@ -16,6 +16,8 @@ from dte.config import get_settings
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 run_id_var: ContextVar[str | None] = ContextVar("run_id", default=None)
+user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
+decrypt_context_var: ContextVar[str | None] = ContextVar("decrypt_context", default=None)
 
 _CONFIGURED = False
 
