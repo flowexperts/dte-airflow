@@ -22,6 +22,7 @@ from dte.store.postgres import (
     PostgresConnectionStore,
     PostgresDestinationStore,
     PostgresLookupTableStore,
+    PostgresPipelineRevisionStore,
     PostgresPipelineStore,
     PostgresRoleStore,
     PostgresRunEventStore,
@@ -45,6 +46,10 @@ def _session_factory():
 
 def get_pipeline_store():
     return PostgresPipelineStore(_session_factory())
+
+
+def get_pipeline_revision_store():
+    return PostgresPipelineRevisionStore(_session_factory())
 
 
 def get_run_store():

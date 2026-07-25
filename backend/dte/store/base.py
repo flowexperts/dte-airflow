@@ -9,6 +9,8 @@ if TYPE_CHECKING:
         LookupTable,
         LookupTableBase,
         Pipeline,
+        PipelineRevision,
+        PipelineRevisionBase,
         Source,
         SourceBase,
     )
@@ -26,10 +28,24 @@ class PipelineStore(Protocol):
 @runtime_checkable
 class RunStore(Protocol):
     async def get(self, id: str) -> dict | None: ...
-    async def create(self, pipeline_id: str) -> str: ...
+    async def create(self, pipeline_id: str, revision_id: str | None = None) -> str: ...
     async def update(self, id: str, **fields) -> None: ...
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]: ...
     async def delete_for_pipeline(self, pipeline_id: str) -> int: ...
+
+
+@runtime_checkable
+class PipelineRevisionStore(Protocol):
+    """Append-only history of pipeline edits. `save` writes a new immutable
+    row per call — no upsert. `latest_for_pipeline` returns the most-recent
+    revision id (used to pin runs at trigger time)."""
+
+    async def save(self, revision: "PipelineRevisionBase | PipelineRevision") -> None: ...
+    async def get(self, id: str) -> "PipelineRevision | None": ...
+    async def list_for_pipeline(
+        self, pipeline_id: str, limit: int = 100
+    ) -> "list[PipelineRevision]": ...
+    async def latest_for_pipeline(self, pipeline_id: str) -> "PipelineRevision | None": ...
 
 
 @runtime_checkable

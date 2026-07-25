@@ -864,6 +864,31 @@ class Pipeline(PipelineBase, table=True):
 PipelineCreate = PipelineBase
 
 
+class PipelineRevisionBase(SQLModel):
+    """One immutable snapshot of a pipeline. Written after every accepted
+    POST/PUT on `/api/pipelines*`. `config` is the full serialised
+    `PipelineBase.model_dump()` at write time — enough to reconstruct the
+    exact spec a run was compiled against.
+    """
+    id: str
+    pipeline_id: str
+    config: dict = SMField(default_factory=dict)
+    changed_by: str | None = None
+    summary: str | None = None
+
+
+class PipelineRevision(PipelineRevisionBase, table=True):
+    __tablename__ = "pipeline_revisions"
+
+    id: str = SMField(primary_key=True)  # type: ignore[override]
+    config: dict = SMField(  # type: ignore[override]
+        default_factory=dict, sa_column=Column(JSONB, nullable=False)
+    )
+    changed_at: datetime | None = SMField(
+        default=None, sa_column=Column(server_default=func.now())
+    )
+
+
 # ─── Connection ↔ Source/Destination compatibility ────────────────────────
 # Which connection_types a given source_type / destination type may bind to.
 # Enforced in the API save layer (needs the connection lookup).
