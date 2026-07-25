@@ -115,6 +115,7 @@ export type RunStatus = "pending" | "running" | "completed" | "failed";
 export interface Run {
   id: string;
   pipeline_id: string;
+  revision_id?: string | null;
   status: RunStatus;
   error: string | null;
   rows_written: number | null;
@@ -277,6 +278,63 @@ export const previewPipeline = (id: string, limit = 100) =>
 export const listPipelineRuns = (id: string, limit = 50) =>
   apiFetch<Run[]>(
     `/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}`,
+  );
+
+// ---------- Pipeline revisions (plan 037) ----------
+
+export interface PipelineRevision {
+  id: string;
+  pipeline_id: string;
+  config: Pipeline;
+  changed_by: string | null;
+  changed_at: string | null;
+  summary: string | null;
+}
+
+export interface StepChange {
+  index: number;
+  kind: "added" | "removed" | "changed";
+  op: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+}
+
+export interface PipelineDiff {
+  name_changed: boolean;
+  name_before: string | null;
+  name_after: string | null;
+  sources_added: string[];
+  sources_removed: string[];
+  output_id_changed: boolean;
+  output_id_before: string | null;
+  output_id_after: string | null;
+  steps: StepChange[];
+}
+
+export interface RevisionDiffResponse {
+  from: { id: string; changed_at: string | null; changed_by: string | null };
+  to: { id: string; changed_at: string | null; changed_by: string | null };
+  diff: PipelineDiff;
+  summary: string;
+}
+
+export const listPipelineRevisions = (id: string, limit = 100) =>
+  apiFetch<PipelineRevision[]>(
+    `/api/pipelines/${encodeURIComponent(id)}/revisions?limit=${limit}`,
+  );
+
+export const getPipelineRevision = (pipelineId: string, revisionId: string) =>
+  apiFetch<PipelineRevision>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/revisions/${encodeURIComponent(revisionId)}`,
+  );
+
+export const diffPipelineRevisions = (
+  pipelineId: string,
+  fromId: string,
+  toId: string,
+) =>
+  apiFetch<RevisionDiffResponse>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/diff?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`,
   );
 
 // ---------- Sources ----------
