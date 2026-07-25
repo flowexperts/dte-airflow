@@ -70,6 +70,7 @@ class UserBase(SQLModel):
         sa_column=Column(Text, unique=True, nullable=False, index=True)
     )
     is_active: bool = True
+    tenant_id: str = "default"
 
 
 class User(UserBase, table=True):
@@ -81,6 +82,9 @@ class User(UserBase, table=True):
         default=True, sa_column=Column(Boolean, nullable=False, server_default="true")
     )
     password_hash: str = SMField(sa_column=Column(Text, nullable=False))
+    tenant_id: str = SMField(  # type: ignore[override]
+        default="default", sa_column=Column(Text, nullable=False, server_default="default")
+    )
 
     created_at: datetime | None = SMField(
         default=None,

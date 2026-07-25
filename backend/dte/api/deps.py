@@ -107,4 +107,22 @@ async def get_current_user(
     user = await users.get_by_id(user_id)
     if user is None or not user.is_active:
         raise creds_error
+    # Embed the JWT tenant claim on the user object so downstream deps can
+    # read it without re-decoding the token. Legacy tokens without the
+    # `tenant` claim fall back to `"default"`.
+    tenant_id = payload.get("tenant", "default") or "default"
+    object.__setattr__(user, "_tenant_id", tenant_id)
     return user
+
+
+async def get_current_tenant_id(
+    current_user: User = Depends(get_current_user),
+) -> str:
+    """Extract the tenant_id from the authenticated user's JWT claim.
+
+    Routes that need to scope a query to the caller's tenant inject this
+    via `Depends(get_current_tenant_id)`. When `DTE_MULTI_TENANT_ENABLED`
+    is off (the default) the value is always `"default"`, so existing
+    single-tenant behaviour is unchanged.
+    """
+    return getattr(current_user, "_tenant_id", "default") or "default"

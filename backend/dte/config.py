@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = False  # default False in dev; set true in prod
 
+    # Multi-tenancy (plan 030). Off by default — ship migrations first, flip
+    # the flag only after CI is green for two consecutive weeks.
+    # When off: tenant_id is always "default", RLS session var is not set,
+    # and fake stores don't filter by tenant.
+    multi_tenant_enabled: bool = False
+
+    # Root key for wrapping per-tenant Fernet keys (plan 030).
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    root_key: str | None = None
+
     @field_validator("cors_origins")
     @classmethod
     def _strip_cors(cls, v: str) -> str:

@@ -32,8 +32,13 @@ class FakePipelineStore:
     def __init__(self):
         self._data: dict[str, Pipeline] = {}
 
-    async def get(self, id: str) -> Pipeline | None:
-        return self._data.get(id)
+    async def get(self, id: str, tenant_id: str | None = None) -> Pipeline | None:
+        row = self._data.get(id)
+        if row is None:
+            return None
+        if tenant_id is not None and row.tenant_id != tenant_id:
+            return None
+        return row
 
     async def save(self, pipeline: Pipeline) -> None:
         existing = self._data.get(pipeline.id)
@@ -41,19 +46,21 @@ class FakePipelineStore:
         pipeline.updated_at = _utcnow()
         self._data[pipeline.id] = pipeline
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[Pipeline]:
-        items = sorted(
-            self._data.values(),
-            key=lambda p: p.created_at or _utcnow(),
-            reverse=True,
-        )
+    async def list(self, limit: int = 50, offset: int = 0, tenant_id: str | None = None) -> list[Pipeline]:
+        items = list(self._data.values())
+        if tenant_id is not None:
+            items = [p for p in items if p.tenant_id == tenant_id]
+        items = sorted(items, key=lambda p: p.created_at or _utcnow(), reverse=True)
         return items[offset:offset + limit]
 
-    async def delete(self, id: str) -> bool:
-        if id in self._data:
-            del self._data[id]
-            return True
-        return False
+    async def delete(self, id: str, tenant_id: str | None = None) -> bool:
+        row = self._data.get(id)
+        if row is None:
+            return False
+        if tenant_id is not None and row.tenant_id != tenant_id:
+            return False
+        del self._data[id]
+        return True
 
 
 _TERMINAL_STATUSES = frozenset({
@@ -215,6 +222,7 @@ def _make_source(s: "SourceBase | Source | dict") -> Source:
             config=s.get("config", {}),
             table=s.get("table", ""),
             format=s.get("format"),
+            tenant_id=s.get("tenant_id", "default"),
         )
     return Source(
         id=s.id,
@@ -223,6 +231,7 @@ def _make_source(s: "SourceBase | Source | dict") -> Source:
         config=s.config,
         table=s.table,
         format=s.format,
+        tenant_id=getattr(s, "tenant_id", "default"),
     )
 
 
@@ -236,8 +245,13 @@ class FakeSourceStore:
     def __init__(self):
         self._data: dict[str, Source] = {}
 
-    async def get(self, id: str) -> Source | None:
-        return self._data.get(id)
+    async def get(self, id: str, tenant_id: str | None = None) -> Source | None:
+        row = self._data.get(id)
+        if row is None:
+            return None
+        if tenant_id is not None and row.tenant_id != tenant_id:
+            return None
+        return row
 
     async def save(self, source: "SourceBase | Source | dict") -> None:  # type: ignore[override]
         source_id = source["id"] if isinstance(source, dict) else source.id
@@ -247,19 +261,21 @@ class FakeSourceStore:
         row.updated_at = _utcnow()
         self._data[source_id] = row
 
-    async def list(self, limit: int = 50, offset: int = 0) -> list[Source]:
-        items = sorted(
-            self._data.values(),
-            key=lambda src: src.created_at or _utcnow(),
-            reverse=True,
-        )
+    async def list(self, limit: int = 50, offset: int = 0, tenant_id: str | None = None) -> list[Source]:
+        items = list(self._data.values())
+        if tenant_id is not None:
+            items = [s for s in items if s.tenant_id == tenant_id]
+        items = sorted(items, key=lambda src: src.created_at or _utcnow(), reverse=True)
         return items[offset:offset + limit]
 
-    async def delete(self, id: str) -> bool:
-        if id in self._data:
-            del self._data[id]
-            return True
-        return False
+    async def delete(self, id: str, tenant_id: str | None = None) -> bool:
+        row = self._data.get(id)
+        if row is None:
+            return False
+        if tenant_id is not None and row.tenant_id != tenant_id:
+            return False
+        del self._data[id]
+        return True
 
 
 def _make_destination(d: "DestinationBase | Destination | dict") -> Destination:
@@ -469,6 +485,7 @@ class FakeUserStore:
             email=str(user.email),
             is_active=user.is_active,
             password_hash=password_hash,
+            tenant_id=getattr(user, "tenant_id", "default") or "default",
         )
         row.created_at = existing.created_at if existing else _utcnow()
         row.updated_at = _utcnow()
