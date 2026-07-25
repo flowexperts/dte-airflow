@@ -14,6 +14,8 @@ from dte.models.pipeline import (
     LookupTable,
     LookupTableBase,
     Pipeline,
+    PipelineRevision,
+    PipelineRevisionBase,
     Source,
     SourceBase,
 )
@@ -73,7 +75,7 @@ class PostgresRunStore:
     async def get(self, id: str) -> dict | None:
         async with self._factory() as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE id = :id"),
+                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE id = :id"),
                 {"id": id}
             )
             row = result.mappings().fetchone()
@@ -84,12 +86,13 @@ class PostgresRunStore:
             d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
             return d
 
-    async def create(self, pipeline_id: str) -> str:
+    async def create(self, pipeline_id: str, revision_id: str | None = None) -> str:
         run_id = str(uuid.uuid4())
         async with self._factory() as s:
             await s.execute(text("""
-                INSERT INTO runs (id, pipeline_id, status) VALUES (:id, :pipeline_id, 'pending')
-            """), {"id": run_id, "pipeline_id": pipeline_id})
+                INSERT INTO runs (id, pipeline_id, revision_id, status)
+                VALUES (:id, :pipeline_id, :revision_id, 'pending')
+            """), {"id": run_id, "pipeline_id": pipeline_id, "revision_id": revision_id})
             await s.commit()
         return run_id
 
@@ -107,7 +110,7 @@ class PostgresRunStore:
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
         async with self._factory() as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
+                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
                 {"pid": pipeline_id, "limit": limit}
             )
             rows = []
@@ -125,6 +128,52 @@ class PostgresRunStore:
             )
             await s.commit()
             return result.rowcount
+
+
+class PostgresPipelineRevisionStore:
+    """Append-only history of pipeline configs. One row per accepted
+    POST/PUT. Never upserts — the `id` is generated per-write."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def save(self, revision: "PipelineRevisionBase | PipelineRevision") -> None:
+        stmt = pg_insert(PipelineRevision).values(
+            id=revision.id,
+            pipeline_id=revision.pipeline_id,
+            config=revision.config,
+            changed_by=revision.changed_by,
+            summary=revision.summary,
+        )
+        async with self._factory() as s:
+            await s.execute(stmt)
+            await s.commit()
+
+    async def get(self, id: str) -> PipelineRevision | None:
+        async with self._factory() as s:
+            return await s.get(PipelineRevision, id)
+
+    async def list_for_pipeline(
+        self, pipeline_id: str, limit: int = 100
+    ) -> list[PipelineRevision]:
+        stmt = (
+            select(PipelineRevision)
+            .where(PipelineRevision.pipeline_id == pipeline_id)
+            .order_by(PipelineRevision.changed_at.desc())
+            .limit(limit)
+        )
+        async with self._factory() as s:
+            return list((await s.execute(stmt)).scalars().all())
+
+    async def latest_for_pipeline(self, pipeline_id: str) -> PipelineRevision | None:
+        stmt = (
+            select(PipelineRevision)
+            .where(PipelineRevision.pipeline_id == pipeline_id)
+            .order_by(PipelineRevision.changed_at.desc())
+            .limit(1)
+        )
+        async with self._factory() as s:
+            return (await s.execute(stmt)).scalars().first()
 
 
 class PostgresRunEventStore:

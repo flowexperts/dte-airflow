@@ -9,8 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from dte import runs as run_registry
 from dte.api.deps import (
     get_connection_store,
+    get_current_user,
     get_destination_store,
     get_lookup_table_store,
+    get_pipeline_revision_store,
     get_pipeline_store,
     get_run_event_store,
     get_run_store,
@@ -21,13 +23,22 @@ from dte.config import get_settings
 from dte import metrics
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.logging import decrypt_context_var, get_logger, run_id_var
-from dte.models.pipeline import Destination, LookupTable, Pipeline, PipelineBase, Source
+from dte.models.pipeline import (
+    Destination,
+    LookupTable,
+    Pipeline,
+    PipelineBase,
+    PipelineRevisionBase,
+    Source,
+)
+from dte.models.user import User
 from dte.security.permissions import requires
 from dte.sources.loader import load_source
 from dte.store.base import (
     ConnectionStore,
     DestinationStore,
     LookupTableStore,
+    PipelineRevisionStore,
     PipelineStore,
     RunEventStore,
     RunStore,
@@ -37,6 +48,25 @@ from dte.tracing import tracer
 
 router = APIRouter()
 _log = get_logger("dte.pipelines")
+
+
+async def _record_revision(
+    pipeline: PipelineBase,
+    rev_store: PipelineRevisionStore,
+    user: User | None,
+) -> str:
+    """Persist an immutable snapshot of the pipeline after every accepted
+    POST/PUT. Returns the new revision id."""
+    import uuid as _uuid
+    rev = PipelineRevisionBase(
+        id=str(_uuid.uuid4()),
+        pipeline_id=pipeline.id,
+        config=pipeline.model_dump(),
+        changed_by=user.id if user else None,
+        summary=None,  # populated in branch 2 alongside diff helper
+    )
+    await rev_store.save(rev)
+    return rev.id
 
 
 async def _validate_pipeline_refs(
@@ -65,9 +95,12 @@ async def create_pipeline(
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
+    rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
+    user: User = Depends(get_current_user),
 ):
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     await store.save(Pipeline(**pipeline.model_dump()))
+    await _record_revision(pipeline, rev_store, user)
     return {"id": pipeline.id}
 
 
@@ -91,6 +124,8 @@ async def update_pipeline(
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
+    rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
+    user: User = Depends(get_current_user),
 ) -> Pipeline:
     if pipeline.id != pipeline_id:
         raise HTTPException(status_code=400, detail="Pipeline id in path and body must match")
@@ -100,6 +135,7 @@ async def update_pipeline(
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     row = Pipeline(**pipeline.model_dump())
     await store.save(row)
+    await _record_revision(pipeline, rev_store, user)
     return row
 
 
@@ -220,6 +256,7 @@ async def trigger_pipeline(
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
     lt_store: LookupTableStore = Depends(get_lookup_table_store),
+    rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
 ):
     pipeline = await p_store.get(pipeline_id)
     if not pipeline:
@@ -228,7 +265,9 @@ async def trigger_pipeline(
     decrypt_context_var.set("pipeline_run")
     await _resolve(pipeline, s_store, d_store, c_store)
     await _resolve_lookups(pipeline, lt_store)
-    run_id = await r_store.create(pipeline_id)
+    latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
+    revision_id = latest_rev.id if latest_rev else None
+    run_id = await r_store.create(pipeline_id, revision_id=revision_id)
     task = asyncio.create_task(
         _execute_pipeline(
             pipeline_id, run_id, p_store, r_store, re_store,

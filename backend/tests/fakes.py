@@ -14,6 +14,7 @@ from dte.models.pipeline import (
     Destination, DestinationBase,
     LookupTable, LookupTableBase,
     Pipeline, PipelineBase,
+    PipelineRevision, PipelineRevisionBase,
     Source, SourceBase,
 )
 from dte.models.user import Role, User, UserBase
@@ -62,11 +63,12 @@ class FakeRunStore:
     async def get(self, id: str) -> dict | None:
         return self._data.get(id)
 
-    async def create(self, pipeline_id: str) -> str:
+    async def create(self, pipeline_id: str, revision_id: str | None = None) -> str:
         run_id = str(uuid.uuid4())
         self._data[run_id] = {
             "id": run_id,
             "pipeline_id": pipeline_id,
+            "revision_id": revision_id,
             "status": "pending",
             "error": None,
             "rows_written": None,
@@ -92,6 +94,38 @@ class FakeRunStore:
         for rid in to_remove:
             del self._data[rid]
         return len(to_remove)
+
+
+class FakePipelineRevisionStore:
+    """Append-only in-memory revision store for tests."""
+
+    def __init__(self):
+        self._data: dict[str, PipelineRevision] = {}
+
+    async def save(self, revision: "PipelineRevisionBase | PipelineRevision") -> None:
+        row = PipelineRevision(
+            id=revision.id,
+            pipeline_id=revision.pipeline_id,
+            config=revision.config,
+            changed_by=revision.changed_by,
+            summary=revision.summary,
+        )
+        row.changed_at = _utcnow()
+        self._data[row.id] = row
+
+    async def get(self, id: str) -> PipelineRevision | None:
+        return self._data.get(id)
+
+    async def list_for_pipeline(
+        self, pipeline_id: str, limit: int = 100
+    ) -> list[PipelineRevision]:
+        items = [r for r in self._data.values() if r.pipeline_id == pipeline_id]
+        items.sort(key=lambda r: r.changed_at or _utcnow(), reverse=True)
+        return items[:limit]
+
+    async def latest_for_pipeline(self, pipeline_id: str) -> PipelineRevision | None:
+        items = await self.list_for_pipeline(pipeline_id, limit=1)
+        return items[0] if items else None
 
 
 class FakeRunEventStore:
