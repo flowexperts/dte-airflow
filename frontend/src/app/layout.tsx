@@ -5,10 +5,15 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/toaster";
 import { SwrProvider } from "@/lib/swr-config";
 
+// Font weight/style audit (plan 033 close-out, P2 #26):
+// - Outfit 300 (`font-light`): grepped, zero uses in src/ — dropped.
+// - Cormorant Garamond `style: "normal"`: only italic is used (see sidebar.tsx
+//   Brand wordmark) — dropped. Cormorant is reserved for the `dt·e` wordmark
+//   per CLAUDE.md; do not add non-italic usages without revisiting this list.
 const outfit = Outfit({
   variable: "--font-outfit",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700"],
 });
 
 const spaceMono = Space_Mono({
@@ -21,7 +26,7 @@ const cormorant = Cormorant_Garamond({
   variable: "--font-cormorant",
   subsets: ["latin"],
   weight: ["500"],
-  style: ["italic", "normal"],
+  style: ["italic"],
 });
 
 export const metadata: Metadata = {
