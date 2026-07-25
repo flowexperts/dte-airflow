@@ -3,7 +3,7 @@ import { listSources, type Source } from "@/lib/api";
 import { SourcesTable } from "@/components/sources-table";
 import { NewResourceButton } from "@/components/new-resource-button";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30; // list/detail shell — SWR handles freshness client-side (P2 #26)
 
 export default async function SourcesPage() {
   let sources: Source[] = [];

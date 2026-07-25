@@ -3,7 +3,7 @@ import { listConnections, type Connection } from "@/lib/api";
 import { ConnectionsTable } from "@/components/connections-table";
 import { NewResourceButton } from "@/components/new-resource-button";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30; // list/detail shell — SWR handles freshness client-side (P2 #26)
 
 export default async function ConnectionsPage() {
   let connections: Connection[] = [];

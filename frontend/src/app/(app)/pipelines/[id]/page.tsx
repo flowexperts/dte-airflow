@@ -24,7 +24,7 @@ import { TriggerButton } from "@/components/trigger-button";
 import { RunsTable } from "@/components/runs-table";
 import { PipelinePreview } from "@/components/pipeline-preview";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30; // list/detail shell — SWR handles freshness client-side (P2 #26)
 
 type Params = Promise<{ id: string }>;
 
