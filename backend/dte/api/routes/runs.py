@@ -29,6 +29,23 @@ async def list_runs_for_pipeline(
     return await store.list_for_pipeline(pipeline_id, limit=limit)
 
 
+@router.get("/runs/{run_id}/quality", dependencies=[Depends(requires("run:read"))])
+async def get_run_quality(
+    run_id: str,
+    r_store: RunStore = Depends(get_run_store),
+):
+    """Return the quality contract results for a run."""
+    run = await r_store.get(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    results = await r_store.get_quality(run_id)
+    serialised = [
+        r.model_dump() if hasattr(r, "model_dump") else r
+        for r in results
+    ]
+    return {"results": serialised, "count": len(serialised)}
+
+
 @router.get("/runs/{run_id}/output", dependencies=[Depends(requires("run:read"))])
 async def get_run_output(
     run_id: str,

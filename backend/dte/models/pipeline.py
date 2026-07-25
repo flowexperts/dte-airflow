@@ -819,6 +819,7 @@ class PipelineBase(SQLModel):
     sources: list[str] = SMField(default_factory=list)
     steps: list[dict] = SMField(default_factory=list)
     output_id: str
+    quality_contracts: list = SMField(default_factory=list)  # list[Contract] — typed by validator
 
     @model_validator(mode="after")
     def _validate_steps(self):
@@ -838,6 +839,23 @@ class PipelineBase(SQLModel):
             model.model_validate(step)
         return self
 
+    @model_validator(mode="after")
+    def _validate_quality_contracts(self):
+        """Parse quality_contracts dicts into typed Contract instances."""
+        if not self.quality_contracts:
+            return self
+        from pydantic import TypeAdapter
+        from dte.models.quality import Contract
+        ta = TypeAdapter(list[Contract])  # type: ignore[type-arg]
+        raw = self.quality_contracts
+        # If entries are already typed instances (e.g. from test construction), keep them.
+        if all(hasattr(c, "type") and not isinstance(c, dict) for c in raw):
+            return self
+        # Otherwise validate from dicts.
+        parsed = ta.validate_python([c if isinstance(c, dict) else c.model_dump() for c in raw])
+        object.__setattr__(self, "quality_contracts", parsed)
+        return self
+
 
 class Pipeline(PipelineBase, table=True):
     __tablename__ = "pipelines"
@@ -850,6 +868,9 @@ class Pipeline(PipelineBase, table=True):
     )
     steps: list[dict] = SMField(  # type: ignore[override]
         default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
+    quality_contracts: list = SMField(  # type: ignore[override]
+        default_factory=list, sa_column=Column(JSONB, nullable=False, server_default="'[]'::jsonb")
     )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())

@@ -1,6 +1,22 @@
 import importlib
 
+import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def _restore_main_module():
+    """test_api_cors.py reloads dte.api.main to pick up a new
+    DTE_CORS_ORIGINS. That reload swaps `app` for a fresh FastAPI()
+    instance, but conftest.py holds a module-level reference to the
+    ORIGINAL app and installs its autouse dep overrides on it. If we
+    leave the reloaded module active, every downstream test attaches
+    overrides to a dead app. Save the original `app` and restore it
+    on the module after each test in this file."""
+    import dte.api.main as main_module
+    original_app = main_module.app
+    yield
+    main_module.app = original_app
 
 
 def _build_client(monkeypatch, origins: str | None):
