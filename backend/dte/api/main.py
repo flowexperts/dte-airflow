@@ -43,11 +43,13 @@ if os.getenv("DTE_TRACING_ENABLED", "0") == "1":
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(RequestContextMiddleware)
 
-# Prometheus /metrics endpoint exposing the domain metrics defined in
-# dte.metrics (emitted from _execute_pipeline). HTTP RED metrics
-# (request rate + latency + status) are TODO — prometheus-fastapi-instrumentator
-# 7.1.0 crashes on FastAPI 0.115+ _IncludedRouter; revisit when upstream fixes.
-# See plan 031.
+# HTTP RED metrics + domain metrics via Prometheus /metrics. Uses a
+# hand-rolled middleware (dte/api/http_metrics.py) because
+# prometheus-fastapi-instrumentator 7.1.0 crashes on FastAPI 0.115+
+# _IncludedRouter. See plan 031.
+from dte.api.http_metrics import HttpMetricsMiddleware  # noqa: E402
+
+app.add_middleware(HttpMetricsMiddleware)
 app.mount("/metrics", make_asgi_app())
 
 app.add_middleware(
