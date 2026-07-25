@@ -60,10 +60,10 @@ Each item wants a dedicated `plans/<N>-*.md` before code.
 
 | # | Item | Status | Notes |
 | - | - | - | - |
-| 22 | Connection pooling (Mongo / dlt / DuckDB scanner) | ⬜ plan | `plans/028-connection-pooling.md` |
-| 23 | Data-quality contracts | ⬜ plan | `plans/029-data-quality-contracts.md` |
-| 24 | Multi-tenant isolation review | ⬜ plan | `plans/030-multi-tenant-isolation.md` (RLS + per-tenant Fernet) |
-| 25 | Distributed execution seam (Spark / Trino backend) | ⬜ plan | `plans/034-distributed-execution-seam.md` (Trino MVP) |
+| 22 | Connection pooling (Mongo / dlt / DuckDB scanner) | ✅ | `dte/sources/pools/{mongo,engine}.py` — keyed pool, evicted on connection PUT/DELETE, closed via FastAPI lifespan. dlt-pipeline pool carried as follow-up in plan 028. |
+| 23 | Data-quality contracts | ✅ | `dte/models/quality.py` + `dte/quality/evaluator.py`. Contracts: row_count_between, column_not_null, column_unique, column_in_range, column_matches. New terminal statuses `completed_with_warnings` / `failed_quality`. `GET /api/runs/{id}/quality`. Plan: `plans/029`. |
+| 24 | Multi-tenant isolation review | ✅ | migrations `015_tenant_id.py` + `016_rls_policies.py` + `017_tenant_secret_keys.py`. `tenant_id` on every tenant-scoped model + fake, JWT `tenant` claim, `get_current_tenant_id` dep, per-tenant Fernet keys via `tenant_secret_keys`. `DTE_MULTI_TENANT_ENABLED` gates route-side enforcement (follow-up: wire `SET LOCAL dte.tenant_id` in Postgres store sessions). Plan: `plans/030`. |
+| 25 | Distributed execution seam (Spark / Trino backend) | ✅ | `dte/engine/{base,trino_engine,registry}.py`; `Pipeline.engine: Literal["duckdb","trino"]`, dispatched via `get_engine()` and gated behind `DTE_TRINO_ENABLED`. Raw-SQL escape hatches raise `TrinoRawSqlNotSupported`; pivot xfailed with reason. Plan: `plans/034`. |
 | 26 | Frontend perf pass | ✅ | `@next/bundle-analyzer` wired (`pnpm analyze`); 6 list/detail routes retired `force-dynamic` for `revalidate = 30`; edit pages kept dynamic; font audit landed (dropped Outfit weight 300 + Cormorant `normal` style — both unused). Baseline first-load JS measurement carried in `plans/033-frontend-perf-pass.md` — run `pnpm analyze` before/after next FE landing to record numbers. |
 | 27 | `exactOptionalPropertyTypes` (next TS strictness flag) | ✅ | `frontend/tsconfig.json` flipped, 8 errors → 0. Widened `?: T` → `?: T \| undefined` on DataTable, FieldPicker, FieldTreePicker, Field, FieldNode, and CredentialFields.StringField primitives. |
 
