@@ -811,6 +811,9 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
 }
 
 
+EngineChoice = Literal["duckdb", "trino"]
+
+
 class PipelineBase(SQLModel):
     """API/domain fields. `id: str` is required — FastAPI raises 422 if
     the client omits it."""
@@ -819,6 +822,9 @@ class PipelineBase(SQLModel):
     sources: list[str] = SMField(default_factory=list)
     steps: list[dict] = SMField(default_factory=list)
     output_id: str
+    # Engine dispatch — plan-034.  Defaults to "duckdb".  Set to "trino"
+    # only when DTE_TRINO_ENABLED=true and the cluster is reachable.
+    engine: EngineChoice = "duckdb"
 
     @model_validator(mode="after")
     def _validate_steps(self):
@@ -850,6 +856,11 @@ class Pipeline(PipelineBase, table=True):
     )
     steps: list[dict] = SMField(  # type: ignore[override]
         default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
+    # SQLModel 0.0.39 can't map Literal[...] to a TEXT column — override
+    # with plain str + explicit sa_column.  Strict Literal stays on Base.
+    engine: str = SMField(  # type: ignore[override]
+        default="duckdb", sa_column=Column(Text, nullable=False, server_default="duckdb")
     )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
