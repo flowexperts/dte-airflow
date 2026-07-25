@@ -1,0 +1,97 @@
+# Distroless production image for the DTE backend.
+#
+# Build:  docker build -f Dockerfile.prod -t dte-backend:prod ./backend
+# Run:    docker run -e DATABASE_URL=... -p 8001:8001 dte-backend:prod
+#
+# Design decisions:
+# - Builder: python:3.12-slim — has apt, build tools, shell.
+# - Runtime: gcr.io/distroless/python3-debian12:nonroot — no shell, no apt,
+#   fixed nonroot uid 65532. Dramatically reduces attack surface and CVE count.
+# - libpq closure: distroless ships glibc but not libpq5 or its transitive
+#   deps (libgssapi_krb5, libkrb5, libk5crypto, libcom_err, libkrb5support,
+#   libkeyutils, libgssapi, libldap, libssl, libcrypto).  We COPY the exact
+#   set identified by `ldd` on psycopg2 inside the builder (see
+#   docker/distroless-libs.txt for the closure catalogue).
+# - Entrypoint: dte/docker/entrypoint.py (pure Python; replaces
+#   docker/backend-entrypoint.sh which needs /bin/sh).
+# - Alembic: lives in /usr/local/bin/alembic inside the Python env copied
+#   from the builder; the entrypoint calls it via subprocess before execvp.
+
+# ── Builder ──────────────────────────────────────────────────────────────────
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+COPY dte ./dte
+COPY alembic ./alembic
+COPY alembic.ini ./
+
+# Install into the system site-packages so the distroless stage can copy a
+# single predictable path (/usr/local/lib/python3.12).
+RUN pip install --no-cache-dir -e . && pip install --no-cache-dir "psycopg2-binary>=2.9"
+
+# Pre-own everything so the distroless nonroot uid (65532) can read it.
+RUN chown -R 65532:65532 /app /usr/local/lib/python3.12 /usr/local/bin
+
+# ── Runtime (distroless) ──────────────────────────────────────────────────────
+# gcr.io/distroless/python3-debian12:nonroot
+#   - python 3.12 interpreter at /usr/bin/python3
+#   - uid/gid 65532 ("nonroot")
+#   - no shell, no apt, no curl — minimal attack surface
+FROM gcr.io/distroless/python3-debian12:nonroot AS runtime
+
+# Python standard library + installed packages from builder.
+COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+
+# Console scripts (uvicorn, alembic, …).
+COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
+COPY --from=builder /usr/local/bin/alembic /usr/local/bin/alembic
+
+# Application source + alembic migrations.
+COPY --from=builder --chown=65532:65532 /app /app
+
+# libpq closure ─────────────────────────────────────────────────────────────
+# Identified via: docker run --rm <builder> ldd $(python -c
+#   "import psycopg2._psycopg as m; print(m.__file__)")
+# Only libs absent from the distroless base are copied.
+# Full catalogue: backend/docker/distroless-libs.txt
+COPY --from=builder \
+    /usr/lib/x86_64-linux-gnu/libpq.so.5 \
+    /usr/lib/x86_64-linux-gnu/libpq.so.5.16 \
+    /usr/lib/x86_64-linux-gnu/
+COPY --from=builder \
+    /usr/lib/x86_64-linux-gnu/libgssapi_krb5.so.2 \
+    /usr/lib/x86_64-linux-gnu/libkrb5.so.3 \
+    /usr/lib/x86_64-linux-gnu/libk5crypto.so.3 \
+    /usr/lib/x86_64-linux-gnu/libcom_err.so.2 \
+    /usr/lib/x86_64-linux-gnu/libkrb5support.so.0 \
+    /usr/lib/x86_64-linux-gnu/libkeyutils.so.1 \
+    /usr/lib/x86_64-linux-gnu/
+COPY --from=builder \
+    /usr/lib/x86_64-linux-gnu/libldap-2.5.so.0 \
+    /usr/lib/x86_64-linux-gnu/liblber-2.5.so.0 \
+    /usr/lib/x86_64-linux-gnu/libsasl2.so.2 \
+    /usr/lib/x86_64-linux-gnu/
+
+# psycopg2-binary bundles its own libpq; the system libpq is a belt-and-
+# suspenders copy in case any other dep resolves it at runtime.
+
+WORKDIR /app
+
+# distroless nonroot uid
+USER nonroot
+
+EXPOSE 8001
+
+# HEALTHCHECK uses Python's urllib — no curl/wget in distroless.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
+    CMD ["python3", "-c", \
+         "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/healthz', timeout=2).status==200 else 1)"]
+
+# Shell-free entrypoint: runs alembic then exec-s uvicorn.
+ENTRYPOINT ["python3", "-m", "dte.docker.entrypoint"]

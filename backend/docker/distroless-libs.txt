@@ -1,0 +1,29 @@
+# libpq closure for gcr.io/distroless/python3-debian12:nonroot
+#
+# Capture method:
+#   docker run --rm <builder-image> \
+#     ldd $(python3 -c "import psycopg2._psycopg as m; print(m.__file__)")
+#
+# The distroless nonroot image includes glibc, libssl (via libcrypto) and a few
+# base libs.  The following are absent and must be COPYed from the builder stage:
+#
+# Library                               From package
+# ─────────────────────────────────────────────────────
+# libpq.so.5                            libpq5
+# libgssapi_krb5.so.2                   libgssapi-krb5-2
+# libkrb5.so.3                          libkrb5-3
+# libk5crypto.so.3                      libk5crypto3
+# libcom_err.so.2                       libcom-err2
+# libkrb5support.so.0                   libkrb5support0
+# libkeyutils.so.1                      libkeyutils1
+# libldap-2.5.so.0                      libldap-2.5-0
+# liblber-2.5.so.0                      liblber-2.5-0
+# libsasl2.so.2                         libsasl2-2
+#
+# Note: psycopg2-binary bundles its own libpq at
+#   .../psycopg2/.libs/libpq.so.5.*
+# The system libpq copy above is belt-and-suspenders for any other consumer.
+#
+# Re-verify after any base image bump or Debian point release:
+#   docker build --target builder -f Dockerfile.prod -t dte-builder-tmp .
+#   docker run --rm dte-builder-tmp ldd /usr/local/lib/python3.12/site-packages/psycopg2/_psycopg.cpython-312-x86_64-linux-gnu.so
