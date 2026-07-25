@@ -7,6 +7,7 @@ from dte.api.deps import (
     get_destination_store,
     get_source_store,
 )
+from dte.logging import decrypt_context_var
 from dte.models.pipeline import Connection, ConnectionBase
 from dte.security.permissions import requires
 from dte.sources.connection_test import probe_connection
@@ -61,6 +62,7 @@ async def get_connection(
     reveal: bool = False,
     store: ConnectionStore = Depends(get_connection_store),
 ):
+    decrypt_context_var.set("reveal_api" if reveal else "connection_read")
     c = await store.get(connection_id)
     if not c:
         raise HTTPException(status_code=404, detail="Connection not found")
@@ -106,6 +108,7 @@ async def test_connection(
     """Lightweight connectivity probe. Returns
     `{ok: bool, elapsed_ms: int, detail: str}`. Does not raise on probe
     failure — the UI shows detail either way."""
+    decrypt_context_var.set("connection_test")
     c = await store.get(connection_id)
     if not c:
         raise HTTPException(status_code=404, detail="Connection not found")
