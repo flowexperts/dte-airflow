@@ -51,6 +51,9 @@ postgres-writer = ["dlt[postgres]>=1.4,<2.0", "psycopg[binary]>=3.1,<4.0"]
 mysql-writer = ["dlt[mysql]>=1.4,<2.0"]
 snowflake-writer = ["dlt[snowflake]>=1.4,<2.0"]
 bigquery-writer = ["dlt[bigquery]>=1.4,<2.0"]
+# Trino engine — plan-034 distributed execution seam.
+# Install with: pip install "dte[trino]"
+trino = ["ibis-framework[trino]>=9.0,<12.0", "trino>=0.329,<1.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["dte"]

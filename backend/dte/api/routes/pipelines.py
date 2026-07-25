@@ -22,7 +22,8 @@ from dte.compiler.ibis_compiler import compile_pipeline
 from dte.pipelines.diff import diff_pipeline, summarise_diff
 from dte.config import get_settings
 from dte import metrics
-from dte.engine.duckdb_engine import DuckDBEngine
+from dte.engine.duckdb_engine import DuckDBEngine  # noqa: F401 — still used as type hint fallback
+from dte.engine.registry import get_engine
 from dte.logging import decrypt_context_var, get_logger, run_id_var
 from dte.models.pipeline import (
     Destination,
@@ -293,6 +294,8 @@ async def preview_pipeline(
     try:
         sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
+        # Preview always runs on DuckDB — Trino preview costs are unpredictable
+        # (plan-034: "Preview endpoint stays DuckDB-only for now").
         engine = DuckDBEngine()
         tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
         compiled = compile_pipeline(
@@ -452,9 +455,13 @@ async def _run_body(
             lookups = await _resolve_lookups(pipeline, lt_store)
 
         with tr.start_as_current_span("load_sources") as span:
-            engine = DuckDBEngine()
+            # Dispatch to the engine requested by the pipeline (plan-034).
+            # DuckDB is the default; Trino requires DTE_TRINO_ENABLED=true.
+            _engine_name = getattr(pipeline, "engine", None) or "duckdb"
+            engine = get_engine(_engine_name)
             tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
             span.set_attribute("source_count", len(tables))
+            span.set_attribute("engine", _engine_name)
 
         with tr.start_as_current_span("compile"):
             # Compiler emits synchronously; buffer here and flush async.
@@ -468,6 +475,7 @@ async def _run_body(
                     pipeline, tables,
                     output=destination.config, lookup_tables=lookups,
                     on_step=_cb,
+                    engine=engine,
                 )
             finally:
                 for idx, op, status, msg in events_buf:

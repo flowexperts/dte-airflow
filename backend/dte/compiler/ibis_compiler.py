@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import ibis
 import ibis.expr.datatypes as dt
 
@@ -19,6 +21,9 @@ from dte.models.pipeline import (
     SelectStep,
     SortStep,
 )
+
+if TYPE_CHECKING:
+    from dte.engine.base import BaseEngine
 
 _TYPE_MAP: dict[str, dt.DataType] = {
     "string": dt.String(),
@@ -53,6 +58,7 @@ def compile_pipeline(
     output=None,
     lookup_tables: dict[str, LookupTable] | None = None,
     on_step=None,
+    engine: BaseEngine | None = None,
 ) -> ibis.Table:
     """Compile a pipeline into an ibis expression.
 
@@ -60,6 +66,13 @@ def compile_pipeline(
     invoked with `status="started"` before each step and `status="completed"`
     or `status="failed"` after. Callers use this to persist per-step events
     without threading async into the compiler.
+
+    `engine` — optional engine instance (plan-034).  When supplied, raw-SQL
+    escape hatches (filter / expression-map) are routed through
+    ``engine.apply_filter_sql`` / ``engine.apply_expression_sql`` so the
+    engine can apply backend-specific behaviour (e.g. Trino rejecting raw
+    DuckDB SQL).  When ``None`` (default) the existing ``table._find_backend()``
+    path is used — backwards-compatible for all existing callers.
     """
     registry = dict(tables)
     lookups = lookup_tables or {}
@@ -83,7 +96,7 @@ def compile_pipeline(
                 current_key = s.output_id
             else:
                 table = registry[current_key]
-                table = _dispatch_single_table_step(table, step, lookups)
+                table = _dispatch_single_table_step(table, step, lookups, engine=engine)
                 registry[current_key] = table
         except Exception as e:
             _emit(idx, op, "failed", str(e))
@@ -101,10 +114,11 @@ def _dispatch_single_table_step(
     table: ibis.Table,
     step: dict,
     lookup_tables: dict[str, LookupTable],
+    engine: BaseEngine | None = None,
 ) -> ibis.Table:
     op = step["op"]
     if op == "filter":
-        return _apply_filter(table, FilterStep(**step))
+        return _apply_filter(table, FilterStep(**step), engine=engine)
     elif op == "rename":
         return _apply_rename(table, RenameStep(**step))
     elif op == "retype":
@@ -114,7 +128,7 @@ def _dispatch_single_table_step(
         if mode == "lookup":
             return _apply_lookup(table, LookupMapStep(**step), lookup_tables)
         else:
-            return _apply_expression(table, ExpressionMapStep(**step))
+            return _apply_expression(table, ExpressionMapStep(**step), engine=engine)
     elif op == "sort":
         return _apply_sort(table, SortStep(**step))
     elif op == "aggregate":
@@ -152,7 +166,21 @@ def _apply_pivot(table: ibis.Table, step: PivotStep) -> ibis.Table:
     return con.table("_dte_pivot_result")
 
 
-def _apply_filter(table: ibis.Table, step: FilterStep) -> ibis.Table:
+def _apply_filter(
+    table: ibis.Table,
+    step: FilterStep,
+    engine: BaseEngine | None = None,
+) -> ibis.Table:
+    """Apply a raw SQL WHERE-clause fragment.
+
+    When *engine* is supplied the call routes through
+    ``engine.apply_filter_sql`` so each backend can handle portability
+    (e.g. Trino raises ``TrinoRawSqlNotSupported``).  Without an engine
+    the legacy ``table._find_backend()`` path is used — no behaviour change
+    for existing DuckDB-only callers.
+    """
+    if engine is not None:
+        return engine.apply_filter_sql(table, step.expr)
     con = table._find_backend()
     view_name = "_dte_filter_input"
     con.create_view(view_name, table, overwrite=True)
@@ -201,7 +229,19 @@ def _apply_lookup(
     return table.mutate(**{out_name: expr})
 
 
-def _apply_expression(table: ibis.Table, step: ExpressionMapStep) -> ibis.Table:
+def _apply_expression(
+    table: ibis.Table,
+    step: ExpressionMapStep,
+    engine: BaseEngine | None = None,
+) -> ibis.Table:
+    """Add a computed column via raw SQL expression.
+
+    When *engine* is supplied the call routes through
+    ``engine.apply_expression_sql`` so each backend can handle portability.
+    Without an engine the legacy ``table._find_backend()`` path is used.
+    """
+    if engine is not None:
+        return engine.apply_expression_sql(table, step.output_field, step.expr)
     con = table._find_backend()
     view_name = "_dte_expr_input"
     con.create_view(view_name, table, overwrite=True)
