@@ -2,6 +2,7 @@ import os
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import make_asgi_app
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -41,6 +42,13 @@ if os.getenv("DTE_TRACING_ENABLED", "0") == "1":
 
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(RequestContextMiddleware)
+
+# Prometheus /metrics endpoint exposing the domain metrics defined in
+# dte.metrics (emitted from _execute_pipeline). HTTP RED metrics
+# (request rate + latency + status) are TODO — prometheus-fastapi-instrumentator
+# 7.1.0 crashes on FastAPI 0.115+ _IncludedRouter; revisit when upstream fixes.
+# See plan 031.
+app.mount("/metrics", make_asgi_app())
 
 app.add_middleware(
     CORSMiddleware,
