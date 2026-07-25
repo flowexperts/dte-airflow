@@ -56,12 +56,33 @@ class FakePipelineStore:
         return False
 
 
+_TERMINAL_STATUSES = frozenset({
+    "completed", "failed", "completed_with_warnings", "failed_quality", "cancelled"
+})
+
+
+def _quality_summary(results: list) -> dict:
+    """Compute {passed, failed, warned} counts from a list of QualityResult."""
+    passed = sum(1 for r in results if r.passed)
+    warned = sum(1 for r in results if not r.passed and r.severity == "warn")
+    failed = sum(1 for r in results if not r.passed and r.severity == "fail")
+    return {"passed": passed, "failed": failed, "warned": warned}
+
+
 class FakeRunStore:
     def __init__(self):
         self._data: dict[str, dict] = {}
+        self._quality: dict[str, list] = {}  # run_id → list[QualityResult]
 
     async def get(self, id: str) -> dict | None:
-        return self._data.get(id)
+        run = self._data.get(id)
+        if run is None:
+            return None
+        # Return a copy with the quality summary embedded.
+        run = dict(run)
+        quality_results = self._quality.get(id, [])
+        run["quality"] = _quality_summary(quality_results)
+        return run
 
     async def create(self, pipeline_id: str, revision_id: str | None = None) -> str:
         run_id = str(uuid.uuid4())
@@ -83,7 +104,7 @@ class FakeRunStore:
             return
         self._data[id].update(fields)
         run = self._data[id]
-        if run.get("status") in ("completed", "failed") and run.get("finished_at") is None:
+        if run.get("status") in _TERMINAL_STATUSES and run.get("finished_at") is None:
             run["finished_at"] = _utcnow_iso()
 
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
@@ -94,6 +115,14 @@ class FakeRunStore:
         for rid in to_remove:
             del self._data[rid]
         return len(to_remove)
+
+    async def set_quality(self, run_id: str, results: list) -> None:
+        """Store QualityResult list for a run."""
+        self._quality[run_id] = list(results)
+
+    async def get_quality(self, run_id: str) -> list:
+        """Return QualityResult list for a run (empty list if none recorded)."""
+        return list(self._quality.get(run_id, []))
 
 
 class FakePipelineRevisionStore:
