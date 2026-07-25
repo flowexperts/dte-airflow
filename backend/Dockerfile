@@ -1,11 +1,9 @@
-# TODO (plan 027 P1 #18): consider switching to distroless/python for a smaller
-# attack surface once the base-image change is scoped separately.
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev curl \
+    build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
@@ -16,13 +14,16 @@ COPY alembic.ini ./
 RUN pip install --no-cache-dir -e . && pip install --no-cache-dir "psycopg2-binary>=2.9"
 
 # Runtime stage — run as a non-root user for defence-in-depth.
+# Distroless is deferred to plans/036-distroless-runtime.md; requires
+# entrypoint rewrite from shell → Python and manual libpq copy.
 FROM python:3.12-slim AS runtime
 
 RUN groupadd --system dte && useradd --system --gid dte --no-create-home dte
 
-# Install runtime system deps (libpq only — no build tools).
+# Runtime system deps: only libpq5. No curl, no build tools.
+# HEALTHCHECK uses Python's urllib, not curl, so we don't need it here.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 curl \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -32,7 +33,6 @@ COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app /app
 
-# Hand ownership of the app dir to the dte user.
 RUN chown -R dte:dte /app
 
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
@@ -41,5 +41,10 @@ RUN chmod +x /usr/local/bin/backend-entrypoint.sh
 USER dte
 
 EXPOSE 8001
+
+# Standalone HEALTHCHECK (compose has its own too — both agree on /healthz).
+# Uses Python because curl isn't installed.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=5 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/healthz', timeout=2).status==200 else 1)"
 
 ENTRYPOINT ["backend-entrypoint.sh"]
