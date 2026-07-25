@@ -125,6 +125,18 @@ export default function RunDetail({ params }: { params: Params }) {
               />
             </MetricRow>
 
+            {data.revision_id && data.pipeline_id && (
+              <div className="text-[12px] text-subtle font-mono">
+                Compiled from revision{" "}
+                <Link
+                  href={`/pipelines/${encodeURIComponent(data.pipeline_id)}`}
+                  className="text-accent hover:underline"
+                >
+                  {data.revision_id.slice(0, 8)}
+                </Link>
+              </div>
+            )}
+
             {data.status === "failed" && data.error && (
               <Panel>
                 <PanelHead label="Error" />
