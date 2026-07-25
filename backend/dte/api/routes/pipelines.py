@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from dte import runs as run_registry
 from dte.api.deps import (
@@ -19,6 +19,7 @@ from dte.api.deps import (
     get_source_store,
 )
 from dte.compiler.ibis_compiler import compile_pipeline
+from dte.pipelines.diff import diff_pipeline, summarise_diff
 from dte.config import get_settings
 from dte import metrics
 from dte.engine.duckdb_engine import DuckDBEngine
@@ -56,14 +57,20 @@ async def _record_revision(
     user: User | None,
 ) -> str:
     """Persist an immutable snapshot of the pipeline after every accepted
-    POST/PUT. Returns the new revision id."""
+    POST/PUT. Returns the new revision id. Populates `summary` from the
+    diff against the prior revision (None for the first revision)."""
     import uuid as _uuid
+    new_config = pipeline.model_dump()
+    prior = await rev_store.latest_for_pipeline(pipeline.id)
+    summary: str | None = None
+    if prior is not None:
+        summary = summarise_diff(diff_pipeline(prior.config, new_config))
     rev = PipelineRevisionBase(
         id=str(_uuid.uuid4()),
         pipeline_id=pipeline.id,
-        config=pipeline.model_dump(),
+        config=new_config,
         changed_by=user.id if user else None,
-        summary=None,  # populated in branch 2 alongside diff helper
+        summary=summary,
     )
     await rev_store.save(rev)
     return rev.id
@@ -151,6 +158,61 @@ async def delete_pipeline(
     await r_store.delete_for_pipeline(pipeline_id)
     await p_store.delete(pipeline_id)
     return Response(status_code=204)
+
+
+@router.get(
+    "/pipelines/{pipeline_id}/revisions",
+    dependencies=[Depends(requires("pipeline:read"))],
+)
+async def list_pipeline_revisions(
+    pipeline_id: str,
+    limit: int = 100,
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
+):
+    if not await p_store.get(pipeline_id):
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return await rev_store.list_for_pipeline(pipeline_id, limit=limit)
+
+
+@router.get(
+    "/pipelines/{pipeline_id}/revisions/{revision_id}",
+    dependencies=[Depends(requires("pipeline:read"))],
+)
+async def get_pipeline_revision(
+    pipeline_id: str,
+    revision_id: str,
+    rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
+):
+    rev = await rev_store.get(revision_id)
+    if rev is None or rev.pipeline_id != pipeline_id:
+        raise HTTPException(status_code=404, detail="Revision not found")
+    return rev
+
+
+@router.get(
+    "/pipelines/{pipeline_id}/diff",
+    dependencies=[Depends(requires("pipeline:read"))],
+)
+async def diff_pipeline_revisions(
+    pipeline_id: str,
+    from_: str = Query(..., alias="from"),
+    to: str = Query(...),
+    rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
+):
+    a = await rev_store.get(from_)
+    b = await rev_store.get(to)
+    if a is None or a.pipeline_id != pipeline_id:
+        raise HTTPException(status_code=404, detail=f"Revision not found: {from_}")
+    if b is None or b.pipeline_id != pipeline_id:
+        raise HTTPException(status_code=404, detail=f"Revision not found: {to}")
+    diff = diff_pipeline(a.config, b.config)
+    return {
+        "from": {"id": a.id, "changed_at": a.changed_at, "changed_by": a.changed_by},
+        "to": {"id": b.id, "changed_at": b.changed_at, "changed_by": b.changed_by},
+        "diff": diff,
+        "summary": summarise_diff(diff),
+    }
 
 
 async def _resolve_lookups(
