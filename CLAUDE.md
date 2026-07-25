@@ -364,6 +364,10 @@ Under Docker Compose, `DATABASE_URL=postgresql+asyncpg://dte:dte@postgres:5432/d
 
 Postgres integration tests (`tests/integration/test_store_postgres.py`) are skipped automatically when `DATABASE_URL` is unset. When enabled, they use an `async_sessionmaker` fixture and pass it to the store constructors — mirror this pattern in any new integration test.
 
+### Alembic backfills
+
+Any backfill that could touch > 100k rows **must** use `dte.alembic_util.batched_update` — never a bare `UPDATE ... SET ...` or a `for row in session.query(...)` loop inside a migration. The helper runs each batch in its own AUTOCOMMIT transaction so a killed migration leaves committed batches on disk, and uses `FOR UPDATE SKIP LOCKED` to coexist with concurrent OLTP writers. See `plans/032-batched-alembic-backfills.md`.
+
 ### Model + store pattern (SQLModel)
 
 Every Pydantic-modelled persisted entity — `Pipeline`, `Source`, `Destination`, `Connection` — is a **two-class** pair in `dte/models/pipeline.py`:
