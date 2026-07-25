@@ -15,7 +15,8 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
     "prepare": "husky || true",
-    "gen:types": "./scripts/gen-api-types.sh"
+    "gen:types": "./scripts/gen-api-types.sh",
+    "analyze": "ANALYZE=true next build"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,json,md,css}": "prettier --write"
@@ -32,6 +33,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@next/bundle-analyzer": "16.2.10",
     "@playwright/test": "^1.48.0",
     "@vitest/ui": "^4.1.10",
     "eslint": "^9",
