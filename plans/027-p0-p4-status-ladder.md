@@ -84,7 +84,7 @@ Wanted once >2 engineers ship weekly and customer volumes matter.
 | 34 | Alembic backfill pattern with batched UPDATEs | ✅ | `backend/dte/alembic_util.py::batched_update` (AUTOCOMMIT + FOR UPDATE SKIP LOCKED); CLAUDE.md now mandates for backfills > 100k rows. Spec: `plans/032-batched-alembic-backfills.md` |
 | 35 | ARCHITECTURE.md + deployment runbook (outside CLAUDE.md) | ✅ | `ARCHITECTURE.md` at repo root (285 lines) |
 | 36 | Audit log for credential decrypts | ✅ | `EncryptedJSON.process_result_value` emits `event=credential_decrypt` on `dte.audit.credentials` logger with request_id + user_id + decrypt_context (`reveal_api` / `connection_read` / `connection_test` / `pipeline_preview` / `pipeline_run` / `unknown`). Persistence-table variant deferred; log platform is authoritative for MVP. |
-| 37 | Rate limiting on auth endpoints | ✅ | slowapi @ 5/minute per-IP on `/api/auth/login` + `/api/auth/register`; shared limiter in `backend/dte/api/limiter.py`; tests in `tests/unit/test_rate_limit.py` |
+| 37 | Rate limiting on auth endpoints | ✅ | slowapi per-IP on `/api/auth/login` (5/min) + `/api/auth/register` (3/min); configurable via `DTE_AUTH_LOGIN_RATE_LIMIT` / `DTE_AUTH_REGISTER_RATE_LIMIT`; disabled via `DTE_AUTH_RATE_LIMIT_ENABLED=false`; shared limiter in `backend/dte/api/limiter.py`; tests in `backend/tests/unit/test_rate_limit.py` |
 
 ---
 

@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     jwt_ttl_seconds: int = 60 * 60 * 24
     allow_registration: bool = True
 
+    # Rate limiting on auth endpoints.
+    # Set auth_rate_limit_enabled=False in test environments so serial unit
+    # tests don't accidentally trip the per-IP window.
+    auth_rate_limit_enabled: bool = True
+    auth_login_rate_limit: str = "5/minute"
+    auth_register_rate_limit: str = "3/minute"
+
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 

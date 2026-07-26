@@ -14,6 +14,7 @@ bad/missing token) opt out via
 import json
 import pytest
 
+from dte.api.limiter import limiter
 from dte.api.main import app
 from dte.api.deps import (
     get_pipeline_revision_store,
@@ -71,6 +72,20 @@ def _fake_test_user() -> User:
     # Embed the default tenant so multi-tenant deps work in tests.
     object.__setattr__(u, "_tenant_id", "default")
     return u
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limiter():
+    """Disable the global slowapi limiter for every test.
+
+    Unit tests that call login/register multiple times in sequence would
+    otherwise trip the per-IP window. ``test_rate_limit.py`` re-enables the
+    limiter explicitly inside its own fixture so the 429 path is testable.
+    """
+    original = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = original
 
 
 @pytest.fixture(autouse=True)
