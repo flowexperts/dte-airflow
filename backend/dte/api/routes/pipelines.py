@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import time
 
@@ -333,12 +334,29 @@ async def trigger_pipeline(
     latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
     revision_id = latest_rev.id if latest_rev else None
     run_id = await r_store.create(pipeline_id, revision_id=revision_id)
-    task = asyncio.create_task(
-        _execute_pipeline(
-            pipeline_id, run_id, p_store, r_store, re_store,
-            s_store, d_store, c_store, lt_store,
-        )
-    )
+    # asyncio.create_task in CPython 3.7+ already copies the current context
+    # into the new task, so the dte_tenant_id contextvar set by
+    # TenantContextMiddleware is automatically available inside _execute_pipeline.
+    # We capture copy_context() here explicitly so the intent is searchable
+    # and auditable — grep for copy_context to find all tenant-propagation sites.
+    _ctx = contextvars.copy_context()
+
+    async def _task_with_context():
+        # Re-apply the captured context vars inside the coroutine.
+        # This is belt-and-suspenders: create_task already propagates them, but
+        # explicit is better than implicit for security-critical code.
+        from dte.tenancy import tenant_context_var, get_current_tenant
+        _tid = _ctx.run(get_current_tenant)
+        tok = tenant_context_var.set(_tid)
+        try:
+            await _execute_pipeline(
+                pipeline_id, run_id, p_store, r_store, re_store,
+                s_store, d_store, c_store, lt_store,
+            )
+        finally:
+            tenant_context_var.reset(tok)
+
+    task = asyncio.create_task(_task_with_context())
     run_registry.register(run_id, task)
     return {"run_id": run_id}
 
