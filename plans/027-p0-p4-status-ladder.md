@@ -76,7 +76,7 @@ Wanted once >2 engineers ship weekly and customer volumes matter.
 | # | Item | Status | Where |
 | - | - | - | - |
 | 28 | SLO/SLI definitions + Grafana/Datadog dashboards | ✅ | `docs/observability/slos.md` — 4 SLOs (99.5% run success, <60s p95 run, 99.9% API availability, <300ms API p95) with Prom expressions + error-budget policy |
-| 29 | On-call runbook, top-5 failure-mode playbook | ✅ | `docs/runbooks/oncall/{README,pipeline-stuck-running,postgres-unreachable,duckdb-oom,source-auth-spike,fernet-key-mismatch}.md` |
+| 29 | On-call runbook, top-5 failure-mode playbook | ✅ | `docs/runbooks/on-call.md` |
 | 30 | Prometheus RED metrics on HTTP + domain metrics (rows/min, load-time by source_type) | ✅ | Domain metrics ✅ (`dte/metrics.py`); HTTP RED metrics via hand-rolled `dte/api/http_metrics.py::HttpMetricsMiddleware` (route template resolved from Starlette router; sidesteps `prometheus-fastapi-instrumentator` FastAPI 0.115+ crash). Both surface on `/metrics`. |
 | 31 | Mutation testing (mutmut) on compiler | ✅ | `[tool.mutmut]` in `backend/pyproject.toml`; `.github/workflows/mutation.yml` (push-to-main only, non-blocking); `docs/testing/mutation.md` local usage doc |
 | 32 | Dependency pinning + lockfile + Renovate/dependabot | ✅ | upper bounds on all direct deps in `backend/pyproject.toml`; root `uv.lock` committed; `backend/uv.lock` deleted (workspace uses root lock); `.github/renovate.json` |
