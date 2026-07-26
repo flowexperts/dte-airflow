@@ -12,7 +12,7 @@ from dte.admin import mount_admin
 from dte.api.deps import get_current_user
 from dte.api.limiter import limiter
 from dte.api.error_handlers import register as register_error_handlers
-from dte.api.middleware import RequestContextMiddleware
+from dte.api.middleware import RequestContextMiddleware, TenantContextMiddleware
 from dte.api.routes.auth import router as auth_router
 from dte.api.routes.connections import router as connections_router
 from dte.api.routes.destinations import router as destinations_router
@@ -52,7 +52,13 @@ if os.getenv("DTE_TRACING_ENABLED", "0") == "1":
     FastAPIInstrumentor.instrument_app(app)
 
 app.add_middleware(SlowAPIMiddleware)
+# TenantContextMiddleware must run before RequestContextMiddleware so the
+# tenant contextvar is set before the request-ID log line fires.  Starlette
+# adds middleware in LIFO order, so the last `add_middleware` call runs first.
+# Add TenantContext before RequestContext so that execution order is:
+#   TenantContext → RequestContext → route handler
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(TenantContextMiddleware)
 
 # HTTP RED metrics + domain metrics via Prometheus /metrics. Uses a
 # hand-rolled middleware (dte/api/http_metrics.py) because

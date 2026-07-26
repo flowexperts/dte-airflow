@@ -1,4 +1,5 @@
 import uuid
+from contextlib import asynccontextmanager
 
 from sqlalchemy import func as sa_func
 from sqlalchemy import text
@@ -20,6 +21,33 @@ from dte.models.pipeline import (
     SourceBase,
 )
 from dte.models.user import Role, User, UserBase, UserRoleLink
+from dte.tenancy import get_current_tenant
+
+
+@asynccontextmanager
+async def _open_tenant_session(factory: async_sessionmaker[AsyncSession]):
+    """Context manager that opens a Postgres session and immediately emits
+    ``SET LOCAL dte.tenant_id = '<tid>'`` so the RLS policy on every
+    tenant-scoped table filters to the current request's tenant.
+
+    Why here and not in a SQLAlchemy event hook?
+      An ``after_begin`` hook fires on the *connection* (not the session),
+      requires synchronous execution, and would affect every connection in the
+      pool — not just the current request.  A tiny async context manager is
+      easier to audit, test, and reason about, and has zero pool blast radius.
+
+    Usage::
+
+        async with _open_tenant_session(self._factory) as s:
+            ...
+
+    The SET LOCAL is scoped to the transaction, so it is reset automatically
+    when the session commits or rolls back — no explicit cleanup needed.
+    """
+    async with factory() as session:
+        tid = get_current_tenant()
+        await session.execute(text("SET LOCAL dte.tenant_id = :tid"), {"tid": tid})
+        yield session
 
 
 class PostgresPipelineStore:
