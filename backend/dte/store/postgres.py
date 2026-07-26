@@ -55,7 +55,7 @@ class PostgresPipelineStore:
         self._factory = session_factory
 
     async def get(self, id: str) -> Pipeline | None:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return await s.get(Pipeline, id)
 
     async def save(self, pipeline: Pipeline) -> None:
@@ -72,7 +72,7 @@ class PostgresPipelineStore:
                 "output_id": stmt.excluded.output_id,
             },
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(stmt)
             await s.commit()
 
@@ -83,11 +83,11 @@ class PostgresPipelineStore:
             .limit(limit)
             .offset(offset)
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return list((await s.execute(stmt)).scalars().all())
 
     async def delete(self, id: str) -> bool:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             row = await s.get(Pipeline, id)
             if row is None:
                 return False
@@ -101,7 +101,7 @@ class PostgresRunStore:
         self._factory = session_factory
 
     async def get(self, id: str) -> dict | None:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
                 text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE id = :id"),
                 {"id": id}
@@ -116,7 +116,7 @@ class PostgresRunStore:
 
     async def create(self, pipeline_id: str, revision_id: str | None = None) -> str:
         run_id = str(uuid.uuid4())
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(text("""
                 INSERT INTO runs (id, pipeline_id, revision_id, status)
                 VALUES (:id, :pipeline_id, :revision_id, 'pending')
@@ -128,7 +128,7 @@ class PostgresRunStore:
         if not fields:
             return
         set_clause = ", ".join(f"{k} = :{k}" for k in fields)
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(
                 text(f"UPDATE runs SET {set_clause} WHERE id = :id"),
                 {"id": id, **fields}
@@ -136,7 +136,7 @@ class PostgresRunStore:
             await s.commit()
 
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
                 text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
                 {"pid": pipeline_id, "limit": limit}
@@ -150,7 +150,7 @@ class PostgresRunStore:
             return rows
 
     async def delete_for_pipeline(self, pipeline_id: str) -> int:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
                 text("DELETE FROM runs WHERE pipeline_id = :pid"), {"pid": pipeline_id}
             )
@@ -173,12 +173,12 @@ class PostgresPipelineRevisionStore:
             changed_by=revision.changed_by,
             summary=revision.summary,
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(stmt)
             await s.commit()
 
     async def get(self, id: str) -> PipelineRevision | None:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return await s.get(PipelineRevision, id)
 
     async def list_for_pipeline(
@@ -190,7 +190,7 @@ class PostgresPipelineRevisionStore:
             .order_by(PipelineRevision.changed_at.desc())
             .limit(limit)
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return list((await s.execute(stmt)).scalars().all())
 
     async def latest_for_pipeline(self, pipeline_id: str) -> PipelineRevision | None:
@@ -200,7 +200,7 @@ class PostgresPipelineRevisionStore:
             .order_by(PipelineRevision.changed_at.desc())
             .limit(1)
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return (await s.execute(stmt)).scalars().first()
 
 
@@ -221,7 +221,7 @@ class PostgresRunEventStore:
         # Deterministic id so "started" and later "completed"/"failed" for the
         # same step upsert onto one row.
         row_id = f"{run_id}:{step_index}"
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(
                 text("""
                     INSERT INTO run_events (id, run_id, step_index, op, status, message,
@@ -243,7 +243,7 @@ class PostgresRunEventStore:
             await s.commit()
 
     async def list_for_run(self, run_id: str) -> list[dict]:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
                 text(
                     "SELECT step_index, op, status, message, started_at, finished_at "
@@ -271,7 +271,7 @@ class PostgresSourceStore:
         self._factory = session_factory
 
     async def get(self, id: str) -> Source | None:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return await s.get(Source, id)
 
     async def save(self, source: "SourceBase | Source") -> None:
@@ -287,7 +287,7 @@ class PostgresSourceStore:
                 "format": stmt.excluded.format,
             },
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(stmt)
             await s.commit()
 
@@ -298,11 +298,11 @@ class PostgresSourceStore:
             .limit(limit)
             .offset(offset)
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return list((await s.execute(stmt)).scalars().all())
 
     async def delete(self, id: str) -> bool:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             row = await s.get(Source, id)
             if row is None:
                 return False
@@ -327,7 +327,7 @@ class PostgresDestinationStore:
         self._factory = session_factory
 
     async def get(self, id: str) -> Destination | None:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             row = await s.get(Destination, id)
             if row is None:
                 return None
@@ -358,7 +358,7 @@ class PostgresDestinationStore:
                 "dest_type": stmt.excluded.dest_type,
             },
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(stmt)
             await s.commit()
 
@@ -369,12 +369,12 @@ class PostgresDestinationStore:
             .limit(limit)
             .offset(offset)
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             rows = list((await s.execute(stmt)).scalars().all())
         return [row.narrow_config() for row in rows]
 
     async def delete(self, id: str) -> bool:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             row = await s.get(Destination, id)
             if row is None:
                 return False
@@ -390,7 +390,7 @@ class PostgresLookupTableStore:
         self._factory = session_factory
 
     async def get(self, id: str) -> LookupTable | None:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return await s.get(LookupTable, id)
 
     async def save(self, lookup: "LookupTableBase | LookupTable") -> None:
@@ -409,7 +409,7 @@ class PostgresLookupTableStore:
                 "default": stmt.excluded.default,
             },
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(stmt)
             await s.commit()
 
@@ -420,11 +420,11 @@ class PostgresLookupTableStore:
             .limit(limit)
             .offset(offset)
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return list((await s.execute(stmt)).scalars().all())
 
     async def delete(self, id: str) -> bool:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             row = await s.get(LookupTable, id)
             if row is None:
                 return False
@@ -450,7 +450,7 @@ class PostgresConnectionStore:
         self._factory = session_factory
 
     async def get(self, id: str) -> Connection | None:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return await s.get(Connection, id)
 
     async def save(self, connection: "ConnectionBase | Connection") -> None:
@@ -467,7 +467,7 @@ class PostgresConnectionStore:
                 "credentials_encrypted": stmt.excluded.credentials_encrypted,
             },
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(stmt)
             await s.commit()
 
@@ -479,7 +479,7 @@ class PostgresConnectionStore:
             .limit(limit)
             .offset(offset)
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             rows = list((await s.execute(stmt)).scalars().all())
         # Return copies with masked credentials so callers never see plaintext.
         masked = []
@@ -493,7 +493,7 @@ class PostgresConnectionStore:
         return masked
 
     async def delete(self, id: str) -> bool:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             row = await s.get(Connection, id)
             if row is None:
                 return False
@@ -525,7 +525,7 @@ class PostgresUserStore:
         user.narrow_roles(roles)
 
     async def get_by_id(self, id: str) -> User | None:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             row = await s.get(User, id)
             if row is not None:
                 await self._load_roles(s, row)
@@ -533,7 +533,7 @@ class PostgresUserStore:
 
     async def get_by_email(self, email: str) -> User | None:
         stmt = select(User).where(User.email == email)
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             row = (await s.execute(stmt)).scalars().first()
             if row is not None:
                 await self._load_roles(s, row)
@@ -554,7 +554,7 @@ class PostgresUserStore:
                 "password_hash": stmt.excluded.password_hash,
             },
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(stmt)
             await s.commit()
 
@@ -565,14 +565,14 @@ class PostgresUserStore:
             .limit(limit)
             .offset(offset)
         )
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             rows = list((await s.execute(stmt)).scalars().all())
             for row in rows:
                 await self._load_roles(s, row)
             return rows
 
     async def delete(self, id: str) -> bool:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             row = await s.get(User, id)
             if row is None:
                 return False
@@ -581,18 +581,18 @@ class PostgresUserStore:
             return True
 
     async def count(self) -> int:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             return int((await s.execute(select(sa_func.count()).select_from(User))).scalar_one())
 
     async def add_role(self, user_id: str, role_id: str) -> None:
         stmt = pg_insert(UserRoleLink).values(user_id=user_id, role_id=role_id)
         stmt = stmt.on_conflict_do_nothing(index_elements=[UserRoleLink.user_id, UserRoleLink.role_id])
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             await s.execute(stmt)
             await s.commit()
 
     async def remove_role(self, user_id: str, role_id: str) -> bool:
-        async with self._factory() as s:
+        async with _open_tenant_session(self._factory) as s:
             link = await s.get(UserRoleLink, (user_id, role_id))
             if link is None:
                 return False
@@ -602,13 +602,16 @@ class PostgresUserStore:
 
 
 class PostgresRoleStore:
+    # `roles` and `user_roles` are NOT in the RLS-protected table list
+    # (migration 016 explicitly excludes them — they are tenant-agnostic RBAC
+    # tables).  These methods intentionally bypass _open_tenant_session.
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         self._factory = session_factory
 
     async def get(self, id: str) -> Role | None:
-        async with self._factory() as s:
+        async with self._factory() as s:  # no tenant context — RBAC table, not RLS-protected
             return await s.get(Role, id)
 
     async def list(self) -> list[Role]:
-        async with self._factory() as s:
+        async with self._factory() as s:  # no tenant context — RBAC table, not RLS-protected
             return list((await s.execute(select(Role).order_by(Role.name))).scalars().all())
