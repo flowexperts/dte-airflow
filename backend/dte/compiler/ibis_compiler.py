@@ -138,7 +138,9 @@ def _dispatch_single_table_step(
     elif op == "select":
         s = SelectStep(**step)
         if s.drop:
-            return table.drop(*[c for c in s.drop if c in table.columns])
+            drop_set = set(s.drop)
+            keep = [c for c in table.columns if c not in drop_set]
+            return table.select(keep)
         return _apply_output_fields(table, s.fields)
     raise CompilerError(f"unknown step op {op!r}")
 
