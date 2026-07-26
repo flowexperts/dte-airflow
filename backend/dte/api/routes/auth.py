@@ -3,6 +3,11 @@
 Registration is gated by `DTE_ALLOW_REGISTRATION` — set truthy in dev/
 docker-compose to bootstrap the first user. Plan 023 will move user
 creation into the admin flow and this env flag can be flipped off in prod.
+
+Rate limits are configurable via DTE_AUTH_LOGIN_RATE_LIMIT and
+DTE_AUTH_REGISTER_RATE_LIMIT (defaults: 5/minute and 3/minute). Setting
+DTE_AUTH_RATE_LIMIT_ENABLED=false disables enforcement entirely, which is
+the test default so serial unit tests don't trip the per-IP window.
 """
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ from pydantic import BaseModel, EmailStr
 
 from dte.api.deps import get_current_user, get_user_store
 from dte.api.limiter import limiter
+from dte.config import get_settings
 from dte.models.user import User, UserBase
 from dte.security.jwt import create_access_token
 from dte.security.passwords import hash_password, verify_password
@@ -59,8 +65,18 @@ def _registration_allowed() -> bool:
     return os.getenv("DTE_ALLOW_REGISTRATION", "").lower() in ("1", "true", "yes")
 
 
+def _login_limit() -> str:
+    """Return the configured login rate-limit string, read fresh each call."""
+    return get_settings().auth_login_rate_limit
+
+
+def _register_limit() -> str:
+    """Return the configured register rate-limit string, read fresh each call."""
+    return get_settings().auth_register_rate_limit
+
+
 @router.post("/auth/register", response_model=UserPublic, status_code=201)
-@limiter.limit("5/minute")
+@limiter.limit(_register_limit)
 async def register(
     request: Request, body: RegisterBody, users: UserStore = Depends(get_user_store)
 ) -> UserPublic:
@@ -82,7 +98,7 @@ async def register(
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-@limiter.limit("5/minute")
+@limiter.limit(_login_limit)
 async def login(
     request: Request, body: LoginBody, users: UserStore = Depends(get_user_store)
 ) -> TokenResponse:
