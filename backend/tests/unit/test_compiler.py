@@ -235,6 +235,47 @@ def test_select_step_drop_only_keeps_remaining_columns(people_table):
     assert set(df.columns) == {"name", "age"}
 
 
+def test_select_step_drop_on_view_backed_table(con):
+    """Regression: ibis.drop() compiles to SELECT * which resolves to the
+    underlying view at execution time, re-including dropped columns.
+    The compiler must use explicit column selection instead.
+    """
+    import pandas as pd
+    df = pd.DataFrame([
+        {"id": 1, "name": "alice", "ssn": "111", "email": "a@x"},
+        {"id": 2, "name": "bob", "ssn": "222", "email": "b@x"},
+    ])
+    # Create a view (not a table) to reproduce the bug path.
+    base = con.create_table("_drop_test_base", df, overwrite=True)
+    view = con.create_view("_drop_test_view", base, overwrite=True)
+
+    pipeline = make_pipeline([{"op": "select", "drop": ["ssn"]}])
+    result = _run(pipeline, {"src": view})
+    out_df = result.execute()
+    assert "ssn" not in out_df.columns
+    assert set(out_df.columns) >= {"id", "name", "email"}
+
+
+def test_select_step_drop_unknown_column_is_noop(people_table):
+    """Dropping a column that doesn't exist in the table is silently ignored."""
+    pipeline = make_pipeline([
+        {"op": "select", "drop": ["nonexistent_column"]}
+    ])
+    result = _run(pipeline, {"src": people_table})
+    df = result.execute()
+    # All original columns remain; the unknown drop target was ignored.
+    assert set(df.columns) == {"name", "age", "score"}
+
+
+def test_select_step_drop_empty_list_is_disallowed():
+    """SelectStep requires either fields or drop — empty drop raises at model level."""
+    from pydantic import ValidationError
+    import pytest
+    with pytest.raises(ValidationError, match="one of `fields` or `drop` is required"):
+        from dte.models.pipeline import SelectStep
+        SelectStep(op="select", drop=[])
+
+
 def test_select_step_composes_with_later_steps(people_table):
     pipeline = make_pipeline([
         {"op": "select", "fields": [{"field": "name"}, {"field": "age"}]},
