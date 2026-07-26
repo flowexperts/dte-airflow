@@ -30,11 +30,11 @@ jobs:
       DTE_JWT_SECRET: ci-jwt-secret-do-not-reuse
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: Install
-        run: uv venv && uv pip install -e ".[dev]"
+      - name: Install (frozen from uv.lock)
+        run: uv sync --frozen --extra dev
       - name: Lint (ruff)
         run: uv run ruff check dte
       - name: Migrate

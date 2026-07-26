@@ -1,28 +1,43 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "schedule": ["before 6am on monday"],
+  "extends": ["config:base"],
+  "schedule": ["before 6am on Saturday", "before 6am on Sunday"],
   "automerge": false,
   "packageRules": [
     {
       "description": "Group Python minor-version bumps",
       "matchManagers": ["pip_requirements", "pyproject", "uv"],
-      "matchUpdateTypes": ["minor"],
-      "groupName": "python-minor",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "python-minor-patch",
       "labels": ["dependencies", "python"]
     },
     {
-      "description": "Group Python patch-version bumps",
+      "description": "Python major bumps are separate PRs — do not group",
       "matchManagers": ["pip_requirements", "pyproject", "uv"],
-      "matchUpdateTypes": ["patch"],
-      "groupName": "python-patch",
-      "labels": ["dependencies", "python"]
+      "matchUpdateTypes": ["major"],
+      "groupName": "python-major",
+      "labels": ["dependencies", "python", "major"]
     },
     {
-      "description": "Group pnpm / Node.js dependency bumps",
+      "description": "Group pnpm / Node.js minor and patch updates",
       "matchManagers": ["npm"],
-      "groupName": "pnpm",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "pnpm-minor-patch",
       "labels": ["dependencies", "frontend"]
+    },
+    {
+      "description": "npm major bumps are separate PRs",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "pnpm-major",
+      "labels": ["dependencies", "frontend", "major"]
+    },
+    {
+      "description": "Group GitHub Actions minor + patch updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "github-actions",
+      "labels": ["dependencies", "ci"]
     },
     {
       "description": "Security updates get high priority label",
