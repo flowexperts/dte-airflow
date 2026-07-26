@@ -34,7 +34,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install (frozen from uv.lock)
-        run: uv sync --frozen --extra dev
+        run: uv sync --frozen --extra dev --extra trino
       - name: Lint (ruff)
         run: uv run ruff check dte
       - name: Migrate
