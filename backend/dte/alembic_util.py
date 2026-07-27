@@ -47,42 +47,88 @@ def batched_update(
     ``FOR UPDATE SKIP LOCKED`` lets concurrent OLTP writers coexist —
     rows locked by app queries are skipped this batch and picked up next.
     """
-    conn = op.get_bind().execution_options(isolation_level="AUTOCOMMIT")
+    # We need AUTOCOMMIT so each batch is committed independently — a killed
+    # migration leaves already-committed batches on disk.
+    # op.get_bind() returns the connection inside the enclosing Alembic
+    # transaction; calling .execution_options() on it raises InvalidRequestError
+    # because a transaction is already open (autobegin or explicit).
+    # We open a separate AUTOCOMMIT connection via the engine instead.
+    #
+    # IMPORTANT CAVEAT: if the calling migration has un-committed DDL (e.g.
+    # ALTER TABLE … ADD COLUMN run earlier in the same alembic step), the new
+    # AUTOCOMMIT connection won't see those changes because transactional DDL
+    # hasn't committed yet.  In that case we fall back to running the UPDATE
+    # inside the existing Alembic transaction (no per-batch isolation guarantee,
+    # but correct for fresh databases where the rows to update are zero anyway).
+    alembic_conn = op.get_bind()
+    engine = alembic_conn.engine
+
+    # Probe: can a fresh connection see the target table?
+    def _table_visible_on_new_conn() -> bool:
+        try:
+            with engine.connect() as probe:
+                probe.execute(
+                    text(f"SELECT 1 FROM {table} LIMIT 0")
+                )
+            return True
+        except Exception:
+            return False
+
+    if _table_visible_on_new_conn():
+        raw_conn = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+        conn = raw_conn
+        _owns_conn = True
+    else:
+        # DDL not yet committed — fall back to the existing Alembic connection.
+        # Batches won't be individually committed, but this path is only hit
+        # when the table was just created in this migration (zero rows to update).
+        log.info(
+            "batched_update %s: table not yet visible on new connection "
+            "(DDL uncommitted); running within existing Alembic transaction.",
+            table,
+        )
+        conn = alembic_conn
+        _owns_conn = False
+
     total = 0
     batch = 0
     started = time.monotonic()
 
-    while True:
-        if max_batches is not None and batch >= max_batches:
-            log.info("batched_update %s: hit max_batches=%s", table, max_batches)
-            break
+    try:
+        while True:
+            if max_batches is not None and batch >= max_batches:
+                log.info("batched_update %s: hit max_batches=%s", table, max_batches)
+                break
 
-        result = conn.execute(
-            text(
-                f"UPDATE {table} "
-                f"SET {set_clause} "
-                f"WHERE {key_column} IN ("
-                f"  SELECT {key_column} FROM {table} "
-                f"  WHERE {where_clause} "
-                f"  LIMIT :batch_size "
-                f"  FOR UPDATE SKIP LOCKED"
-                f")"
-            ),
-            {"batch_size": batch_size},
-        )
+            result = conn.execute(
+                text(
+                    f"UPDATE {table} "
+                    f"SET {set_clause} "
+                    f"WHERE {key_column} IN ("
+                    f"  SELECT {key_column} FROM {table} "
+                    f"  WHERE {where_clause} "
+                    f"  LIMIT :batch_size "
+                    f"  FOR UPDATE SKIP LOCKED"
+                    f")"
+                ),
+                {"batch_size": batch_size},
+            )
 
-        n = result.rowcount or 0
-        if n == 0:
-            break
-        total += n
-        batch += 1
-        log.info(
-            "batched_update %s: batch %d wrote %d rows (total %d)",
-            table,
-            batch,
-            n,
-            total,
-        )
+            n = result.rowcount or 0
+            if n == 0:
+                break
+            total += n
+            batch += 1
+            log.info(
+                "batched_update %s: batch %d wrote %d rows (total %d)",
+                table,
+                batch,
+                n,
+                total,
+            )
+    finally:
+        if _owns_conn:
+            raw_conn.close()
 
     elapsed = time.monotonic() - started
     log.info(
