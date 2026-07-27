@@ -207,6 +207,31 @@ curl -X DELETE http://localhost:8001/api/pipelines/<PIPELINE_ID>
 
 **Root-cause.** Streaming writers landed in P1 #16 — a pipeline still OOMing likely uses a raw-SQL step or a pivot (which materialises via `CREATE TEMP TABLE`). Reproduce with `GET /api/pipelines/<id>/preview?limit=1000` and watch `docker stats`. If innocent, revisit the container ceiling and the `run_max_rows` guard.
 
+### 5b. Fresh operator locked out (no admin role)
+
+**Symptoms.** Operator registers a user on a new deploy but `/api/pipelines` returns 403 `missing permission: pipeline:write`. First-user-becomes-admin failed because the users table was not empty (residual test users from an earlier attempt on the same `dte_pgdata` volume).
+
+**Diagnose.**
+
+```bash
+docker compose exec postgres psql -U dte -d dte -c \
+  "SELECT u.email, array_agg(ur.role_id) FROM users u LEFT JOIN user_roles ur ON u.id = ur.user_id GROUP BY u.email;"
+```
+
+If the target email has no rows: it's locked out.
+
+**Mitigate.**
+
+```bash
+cd backend
+DATABASE_URL=postgresql+asyncpg://dte:dte@localhost:5432/dte \
+  uv run python scripts/promote_admin.py --email <operator@example.com>
+```
+
+**Root cause.** `POST /api/auth/register` grants `admin` only when `users.count() == 0`. On a shared / reused DB this branch never fires. The register handler is intentionally single-shot; use `promote_admin.py` to recover.
+
+---
+
 ### 5. Alembic migration failure at deploy
 
 **Symptoms.** Backend container never reaches `uvicorn` line. Entrypoint logs show `alembic.util.exc.CommandError` / `sqlalchemy.exc.ProgrammingError`. `docker compose ps backend` shows `Exit N` on repeat.
