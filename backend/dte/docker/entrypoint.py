@@ -23,7 +23,11 @@ def main() -> int:  # pragma: no cover — integration-only path
         alembic_url = db_url.replace("+asyncpg", "")
         env = {**os.environ, "DATABASE_URL": alembic_url}
         print("Running alembic migrations…", flush=True)
-        result = subprocess.run(["alembic", "upgrade", "head"], env=env, check=False)
+        result = subprocess.run(
+            [sys.executable, "-c", "from alembic.config import main; main(['upgrade', 'head'])"],
+            env=env,
+            check=False,
+        )
         if result.returncode != 0:
             print(
                 f"alembic upgrade head failed (exit {result.returncode})", file=sys.stderr
@@ -31,9 +35,11 @@ def main() -> int:  # pragma: no cover — integration-only path
             return result.returncode
 
     # execvp replaces the current process — no return after this call.
-    os.execvp(
-        "uvicorn",
+    os.execv(
+        sys.executable,
         [
+            sys.executable,
+            "-m",
             "uvicorn",
             "dte.api.main:app",
             "--host",

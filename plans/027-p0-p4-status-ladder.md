@@ -45,7 +45,7 @@ Snapshot commit: main after merges of P1 #18, P1 #21, P3 #32, P3 #33, P3 #35 (20
 | 15 | Per-step run events + Timeline UI | ✅ | migration `013_run_events.py`, `RunEventStore`, `GET /api/runs/{id}/events`, Timeline wired in `runs/[id]/page.tsx` |
 | 16 | Streaming writers (json / csv / parquet / excel) | ✅ | all four now stream via DuckDB `COPY` or PyArrow `ParquetWriter` batches |
 | 17 | Playwright smoke suite | ✅ scaffold + e2e CI job | `frontend/playwright.config.ts`, `frontend/e2e/smoke.spec.ts`. Not yet executed against a live stack. |
-| 18 | Docker productionisation | ✅ | healthcheck ✅ · non-root `dte` user ✅ · CPU/mem limits ✅ (all three services) · Trivy scan ✅ (dev + prod stages) · `curl` removed ✅ · in-Dockerfile HEALTHCHECK ✅ · distroless runtime ✅ (`backend/Dockerfile.prod`, `dte/docker/entrypoint.py`, `docker/distroless-libs.txt`). |
+| 18 | Docker productionisation | ✅ | healthcheck ✅ · non-root `dte` user ✅ · CPU/mem limits ✅ (all three services) · Trivy scan ✅ (dev + prod stages) · `curl` removed ✅ · in-Dockerfile HEALTHCHECK ✅ · distroless runtime ✅ (`backend/Dockerfile.prod`, `dte/docker/entrypoint.py`, `docker/distroless-libs.txt`). verified end-to-end 2026-07-27 |
 | 19 | Hypothesis property tests on compiler | ✅ | `test_compiler_hypothesis.py`; 1 property (random rename/select/sort composition). Caught real rename-validation bug. |
 | 20 | `noUncheckedIndexedAccess` sweep | ✅ | `frontend/tsconfig.json` flipped, 30 errors → 0 |
 | 21 | Secrets rotation runbook (docs) | ✅ | `docs/runbooks/secrets-rotation.md` (163 lines); references `backend/scripts/rotate_secrets_key.py` from P0 #12 |
