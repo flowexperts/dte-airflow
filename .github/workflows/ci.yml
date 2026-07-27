@@ -44,6 +44,41 @@ jobs:
       - name: Scenario tests
         run: uv run pytest tests/scenarios -m scenario -q
 
+  integration:
+    runs-on: ubuntu-latest
+    needs: [backend]
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dte
+          POSTGRES_PASSWORD: dte
+          POSTGRES_DB: dte
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dte"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://dte:dte@localhost:5432/dte
+      DTE_JWT_SECRET: ci-jwt-secret-do-not-reuse
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install (frozen from uv.lock)
+        run: uv sync --frozen --extra dev --extra trino
+      - name: Migrate
+        run: DATABASE_URL=postgresql://dte:dte@localhost:5432/dte uv run alembic upgrade head
+      - name: Integration tests (Postgres store + RLS enforcement)
+        run: uv run pytest tests/integration -m integration -v
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -67,7 +102,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
+    needs: [backend, integration, frontend]
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4

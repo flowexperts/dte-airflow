@@ -7,6 +7,8 @@ from dte.compiler.ibis_compiler import compile_pipeline
 from dte.models.pipeline import Pipeline, Source, Destination, DestinationCreate, JsonFileTarget
 from dte.sources.loader import load_source
 
+pytestmark = pytest.mark.integration
+
 
 def make_pipeline(source_ids, steps, output_id="out1"):
     return Pipeline(

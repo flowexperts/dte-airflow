@@ -1,9 +1,10 @@
 import os
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("DATABASE_URL"), reason="requires DATABASE_URL"
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="requires DATABASE_URL"),
+]
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from dte.store.postgres import PostgresPipelineStore, PostgresRunStore, PostgresSourceStore, PostgresDestinationStore

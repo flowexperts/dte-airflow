@@ -63,7 +63,13 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 # Scenario suite is opt-in — it spins up the real API in-process and is
 # slower than unit tests. Run explicitly: `pytest tests/scenarios -m scenario`.
-addopts = "--ignore=tests/scenarios"
+# Integration suite requires a live Postgres (DATABASE_URL). Run explicitly:
+# `pytest tests/integration -m integration`.
+addopts = "--ignore=tests/scenarios --ignore=tests/integration"
+markers = [
+    "scenario: per-op end-to-end scenarios that drive the real API in-process (opt-in)",
+    "integration: tests that require a live Postgres DATABASE_URL (opt-in)",
+]
 
 [tool.coverage.run]
 source = ["dte"]
@@ -78,9 +84,6 @@ exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
-]
-markers = [
-    "scenario: per-op end-to-end scenarios that drive the real API in-process (opt-in)",
 ]
 
 [tool.mutmut]
