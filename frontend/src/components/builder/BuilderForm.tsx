@@ -49,6 +49,11 @@ export function BuilderForm({
       return "Add at least one source.";
     if ((pipeline.sources ?? []).some((s) => !s))
       return "Every source slot needs a saved source picked.";
+    const seen = new Set<string>();
+    for (const s of pipeline.sources ?? []) {
+      if (seen.has(s)) return "Each source can only be added to a pipeline once.";
+      seen.add(s);
+    }
     if (!pipeline.output_id?.trim()) return "Pick or create a destination.";
     for (const [i, step] of (pipeline.steps ?? []).entries()) {
       const s = step as {
