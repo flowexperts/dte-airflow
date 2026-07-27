@@ -42,7 +42,7 @@ const API = process.env.E2E_API_URL ?? "http://localhost:8001";
 // Unique suffix — avoids id collisions across parallel runs / reruns.
 const RUN_SUFFIX = `${Date.now()}`;
 
-const TEST_EMAIL = `e2e-${RUN_SUFFIX}@dte.test`;
+const TEST_EMAIL = `e2e-${RUN_SUFFIX}@example.com`;
 const TEST_PASSWORD = "e2eTestPw!1";
 
 const CONN_ID = `e2e-conn-${RUN_SUFFIX}`;

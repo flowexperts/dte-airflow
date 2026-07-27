@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -24,6 +25,18 @@ import httpx
 
 BASE = "http://localhost:8001"
 HEADERS = {"Content-Type": "application/json"}
+_TOKEN = os.environ.get("DTE_LOAD_TEST_TOKEN")
+_TOKEN_FILE = os.environ.get("DTE_LOAD_TEST_TOKEN_FILE") or "/tmp/dte_login.json"
+if not _TOKEN and _TOKEN_FILE and os.path.exists(_TOKEN_FILE):
+    _TOKEN = Path(_TOKEN_FILE).read_text().strip()
+    # Accept a raw JWT or a login-response JSON.
+    if _TOKEN.startswith("{"):
+        try:
+            _TOKEN = json.loads(_TOKEN)["access_token"]
+        except Exception:
+            pass
+if _TOKEN:
+    HEADERS["Authorization"] = f"Bearer {_TOKEN}"
 
 # IDs — use load_test_ prefix so they're easy to spot/clean up
 CONN_ID = "load_test_local_fs"
@@ -47,7 +60,7 @@ def _put(client: httpx.Client, path: str, body: dict) -> dict:
 
 
 def _get(client: httpx.Client, path: str) -> dict:
-    r = client.get(f"{BASE}{path}", timeout=30)
+    r = client.get(f"{BASE}{path}", headers=HEADERS, timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -83,13 +96,13 @@ def setup_resources(client: httpx.Client, jsonl_abs: str, out_abs: str, rows: in
             f"/api/sources/{SOURCE_ID}",
             {
                 "id": SOURCE_ID,
-                "name": f"load_test_orders_{rows}",
                 "source_type": "filesystem",
                 "connection_id": CONN_ID,
+                "table": "orders",
+                "format": "jsonl",
                 "config": {
                     "bucket_url": str(Path(jsonl_abs).parent),
-                    "file_glob": "orders.jsonl",
-                    "format": "jsonl",
+                    "file_glob": Path(jsonl_abs).name,
                 },
             },
         )
@@ -102,13 +115,13 @@ def setup_resources(client: httpx.Client, jsonl_abs: str, out_abs: str, rows: in
                 "/api/sources",
                 {
                     "id": SOURCE_ID,
-                    "name": f"load_test_orders_{rows}",
                     "source_type": "filesystem",
                     "connection_id": CONN_ID,
+                    "table": "orders",
+                    "format": "jsonl",
                     "config": {
                         "bucket_url": str(Path(jsonl_abs).parent),
-                        "file_glob": "orders.jsonl",
-                        "format": "jsonl",
+                        "file_glob": Path(jsonl_abs).name,
                     },
                 },
                 allow_409=True,
@@ -127,7 +140,6 @@ def setup_resources(client: httpx.Client, jsonl_abs: str, out_abs: str, rows: in
             "/api/destinations",
             {
                 "id": DEST_ID,
-                "name": "load_test_output",
                 "connection_id": CONN_ID,
                 "config": {
                     "type": "json_file",
@@ -204,15 +216,29 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rows", type=int, default=1_000_000)
     parser.add_argument("--host", default="http://localhost:8001")
+    parser.add_argument(
+        "--input",
+        default=None,
+        help="Absolute path to the input JSONL (must exist on backend container mount too)",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Absolute path for the output JSON",
+    )
     args = parser.parse_args()
 
     global BASE
     BASE = args.host
 
-    script_dir = Path(__file__).parent
-    repo_root = script_dir.parent.parent
-    jsonl_abs = str(repo_root / "data" / "load_test" / "orders.jsonl")
-    out_abs = str(repo_root / "data" / "load_test" / "output.json")
+    if args.input:
+        jsonl_abs = args.input
+        out_abs = args.output or str(Path(jsonl_abs).with_name("load_test_output.json"))
+    else:
+        script_dir = Path(__file__).parent
+        repo_root = script_dir.parent.parent
+        jsonl_abs = str(repo_root / "data" / "load_test" / "orders.jsonl")
+        out_abs = str(repo_root / "data" / "load_test" / "output.json")
 
     if not Path(jsonl_abs).exists():
         print(
