@@ -16,9 +16,9 @@ test("healthz is green", async ({ request }) => {
 
 test("app shell renders and routes to /pipelines", async ({ page }) => {
   await page.goto("/");
-  // Root redirects to /pipelines.
-  await expect(page).toHaveURL(/\/pipelines$|\/login/);
-  // Either the pipelines list or the login page renders; both prove the app
-  // shell (fonts, providers, theme) mounted without a client-side error.
+  // Root serves the marketing landing page for anonymous visitors and
+  // redirects authenticated users to /pipelines; login lives at /login.
+  await expect(page).toHaveURL(/\/$|\/pipelines$|\/login/);
+  // The app shell (fonts, providers, theme) must mount without a client-side error.
   await expect(page.locator("body")).toBeVisible();
 });

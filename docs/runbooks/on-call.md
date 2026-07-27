@@ -281,7 +281,108 @@ docker inspect --format='{{json .State.Health}}' dte-backend-1 | jq
 
 ---
 
-## Escalation matrix
+## Postgres backup and restore
+
+### Current state (honest assessment)
+
+As of 2026-07-27 there is **no automated backup**. The only durable copy of Postgres data is the Docker named volume `dte_pgdata` on the host running the compose stack. If that host's disk is lost — or the volume is accidentally deleted with `docker compose down -v` — all pipeline definitions, source configs, connection credentials, and run history are gone.
+
+This is inadequate for real customer data. The immediate mitigation is to run the manual snapshot command below on a cron schedule (e.g. daily at 03:00 UTC) and copy the file to off-host storage (S3, GCS, or NAS) before any customer goes live.
+
+---
+
+### Manual snapshot (pg_dump)
+
+```bash
+# Run from the compose host. Produces a compressed SQL dump named by date.
+docker compose exec postgres pg_dump -U dte dte \
+  | gzip > backup-$(date +%F).sql.gz
+
+# Verify the dump is non-empty (should be > a few KB for a live system)
+ls -lh backup-$(date +%F).sql.gz
+
+# Store off-host immediately — example: copy to S3
+aws s3 cp backup-$(date +%F).sql.gz s3://<your-bucket>/dte-backups/
+```
+
+The `pg_dump` output is a plain SQL file. It is safe to run against a live database; it takes a consistent snapshot without locking writes.
+
+---
+
+### Restore from pg_dump backup
+
+```bash
+# 1. Stop the backend so no writes arrive during restore
+docker compose stop backend
+
+# 2. Drop and recreate the target database (Postgres must still be running)
+docker compose exec postgres psql -U dte -c "DROP DATABASE IF EXISTS dte;"
+docker compose exec postgres psql -U dte -c "CREATE DATABASE dte;"
+
+# 3. Pipe the dump in (- flag reads from stdin; no shell variable expansion issues)
+zcat backup-<DATE>.sql.gz \
+  | docker compose exec -T postgres psql -U dte -d dte
+
+# 4. Verify row counts look right
+docker compose exec postgres psql -U dte -d dte \
+  -c "SELECT 'pipelines' AS tbl, count(*) FROM pipelines
+      UNION ALL SELECT 'runs', count(*) FROM runs
+      UNION ALL SELECT 'sources', count(*) FROM sources;"
+
+# 5. Restart backend (runs alembic upgrade head on entry, which is idempotent)
+docker compose up -d backend
+```
+
+If the restore is going to a fresh host with a new compose stack, run `docker compose up -d postgres` first, wait for it to be healthy, then follow steps 2–5.
+
+---
+
+### Volume snapshot (faster for large databases)
+
+A filesystem-level tarball of the `pgdata` volume is faster to create than pg_dump for large databases (no SQL serialisation) but is Postgres-version-sensitive — you must restore it on the same major version.
+
+```bash
+# Snapshot (postgres must be stopped cleanly first to avoid partial page writes)
+docker compose stop postgres
+docker run --rm \
+  -v dte_pgdata:/data \
+  -v $(pwd):/backup \
+  alpine \
+  tar czf /backup/pgdata-$(date +%F).tgz -C /data .
+docker compose start postgres
+
+# Restore (wipes the target volume entirely — destructive)
+docker compose down
+docker volume rm dte_pgdata
+docker volume create dte_pgdata
+docker run --rm \
+  -v dte_pgdata:/data \
+  -v $(pwd):/backup \
+  alpine \
+  tar xzf /backup/pgdata-<DATE>.tgz -C /data
+docker compose up -d
+```
+
+Verify with `/api/readyz` after restart.
+
+---
+
+### Recovery time and point objectives
+
+| Metric | Current state | Minimum acceptable for GA |
+| --- | --- | --- |
+| **RPO** (data loss window) | Unbounded — no automated backup | 24 hours (daily backup) |
+| **RTO** (time to restore service) | 4–8 hours manual (operator available, backup on hand) | < 4 hours automated |
+
+These figures are inadequate for real customer data. Recommended actions before scaled launch:
+
+1. **Add daily cron backup to S3** — a `pg_dump | gzip | aws s3 cp` job scheduled at 03:00 UTC on the compose host reduces RPO to 24 hours. Cost: negligible (SQL dump of DTE metadata is typically < 500 MB even for thousands of pipelines).
+2. **Retain 7 daily + 4 weekly snapshots** — use S3 lifecycle rules or a simple rotation script to avoid unbounded storage growth.
+3. **Test the restore** — run through the restore steps above in a staging environment before relying on them in an incident.
+4. **Enable Postgres WAL archiving** for RPO < 1 hour — requires `wal_level = replica` and an archiver like pgBackRest or Barman; deferred to a dedicated plan.
+5. **Never run `docker compose down -v`** in production — the `-v` flag destroys named volumes including `dte_pgdata`. This is the most common accidental data-loss path. Treat it as a destructive operation equivalent to `DROP DATABASE`.
+
+---
 
 | Sev | Definition                                                                                                    | Response                                     |
 | --- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
