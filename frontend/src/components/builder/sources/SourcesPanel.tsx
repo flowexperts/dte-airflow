@@ -36,6 +36,8 @@ export function SourcesPanel({
   const [err, setErr] = useState<string | null>(null);
 
   const setSlot = (i: number, id: string) => {
+    const otherSlots = sources.filter((_, j) => j !== i);
+    if (id && otherSlots.includes(id)) return;
     if (i >= sources.length) {
       onChange([...sources, id]);
       return;
@@ -90,13 +92,21 @@ export function SourcesPanel({
       {[...sources, ""].map((id, i) => {
         const isTrailing = i === sources.length;
         const info = available.find((s) => s.id === id);
+        const otherSelected = new Set(sources.filter((_, j) => j !== i && !!_));
+        const isDuplicate = !!id && otherSelected.has(id);
         const opts: DropdownOption<string>[] = [
           { kind: "action", label: "+ Create new source…", onSelect: () => openNewAtSlot(i) },
           ...(available.length > 0 ? ([{ kind: "divider" }] as DropdownOption<string>[]) : []),
           ...available.map<DropdownOption<string>>((s) => {
             const cfg = (s.config ?? {}) as Record<string, string>;
             const meta = cfg.bucket_url ?? cfg.connection_url ?? s.source_type;
-            return { value: s.id, label: s.id, meta };
+            const used = otherSelected.has(s.id);
+            return {
+              value: s.id,
+              label: s.id,
+              meta: used ? "Already added" : meta,
+              disabled: used,
+            };
           }),
           ...(id && !info
             ? ([{ value: id, label: `${id} (missing)`, disabled: true }] as DropdownOption<string>[])
@@ -164,6 +174,11 @@ export function SourcesPanel({
                 </button>
               )}
             </div>
+            {isDuplicate && (
+              <div className="mt-2 font-mono text-[11.5px] text-red">
+                Already added to this pipeline.
+              </div>
+            )}
             {id && info && schemas[id]?.error && (
               <div className="mt-2 font-mono text-[11.5px] text-red break-all whitespace-pre-wrap">
                 {schemas[id]!.error}
