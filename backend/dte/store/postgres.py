@@ -46,7 +46,13 @@ async def _open_tenant_session(factory: async_sessionmaker[AsyncSession]):
     """
     async with factory() as session:
         tid = get_current_tenant()
-        await session.execute(text("SET LOCAL dte.tenant_id = :tid"), {"tid": tid})
+        # Postgres does not accept bind parameters for SET LOCAL, so use
+        # set_config(name, value, is_local=true) — same effect, and it
+        # does accept parameters, keeping tid safely out of the SQL text.
+        await session.execute(
+            text("SELECT set_config('dte.tenant_id', :tid, true)"),
+            {"tid": tid},
+        )
         yield session
 
 
