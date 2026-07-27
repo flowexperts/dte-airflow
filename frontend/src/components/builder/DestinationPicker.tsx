@@ -22,9 +22,12 @@ function emptyDestination(id: string): Destination {
 export function DestinationPicker({
   outputId,
   onChange,
+  error,
 }: {
   outputId: string;
   onChange: (next: string) => void;
+  /** Validation error to display beneath the panel. */
+  error?: string | undefined;
 }) {
   const { data: available = [], mutate } = useSWR<Destination[]>("/api/destinations");
   const [editing, setEditing] = useState<{ draft: Destination; isNew: boolean } | null>(null);
@@ -165,6 +168,9 @@ export function DestinationPicker({
         </div>
       )}
 
+      {error && (
+        <div className="px-3 pb-2 font-mono text-[11.5px] text-red">{error}</div>
+      )}
     </Panel>
   );
 }

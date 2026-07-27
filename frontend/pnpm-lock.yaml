@@ -23,6 +23,9 @@ importers:
       swr:
         specifier: ^2.4.2
         version: 2.4.2(react@19.2.4)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@next/bundle-analyzer':
         specifier: 16.2.10

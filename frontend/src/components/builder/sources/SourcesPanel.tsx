@@ -21,9 +21,12 @@ import { useSchemas } from "../schema-context";
 export function SourcesPanel({
   sources,
   onChange,
+  error,
 }: {
   sources: string[];
   onChange: (next: string[]) => void;
+  /** Validation error to display beneath the panel. */
+  error?: string | undefined;
 }) {
   const { data: available = [], mutate } = useSWR<Source[]>("/api/sources");
   const { schemas, refreshById } = useSchemas();
@@ -232,6 +235,9 @@ export function SourcesPanel({
         </div>
       )}
 
+      {error && (
+        <div className="px-3 pb-2 font-mono text-[11.5px] text-red">{error}</div>
+      )}
     </Panel>
   );
 }

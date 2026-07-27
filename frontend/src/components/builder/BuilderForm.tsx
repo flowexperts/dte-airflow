@@ -13,6 +13,7 @@ import { StepsPanel } from "./steps/StepsPanel";
 import type { StepShape } from "./steps/types";
 import { DestinationPicker } from "./DestinationPicker";
 import { SchemaProvider, useSchemas } from "./schema-context";
+import { validateField, validatePipelineForm } from "@/lib/validation";
 
 function AutoInferSchemas({ sourceIds }: { sourceIds: string[] }) {
   const { schemas, refreshById } = useSchemas();
@@ -39,52 +40,75 @@ export function BuilderForm({
   const router = useRouter();
   const [pipeline, setPipeline] = useState<Pipeline>(initial);
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [submitErr, setSubmitErr] = useState<string | null>(null);
 
-  const validate = (): string | null => {
-    const id = pipeline.id.trim();
-    if (!id) return "Pipeline id is required.";
-    if (!/^[a-zA-Z0-9_-]+$/.test(id))
-      return "Pipeline id may only contain letters, numbers, '_' and '-'.";
-    if (!pipeline.name.trim()) return "Pipeline name is required.";
-    if (!(pipeline.sources?.length ?? 0))
-      return "Add at least one source.";
-    if ((pipeline.sources ?? []).some((s) => !s))
-      return "Every source slot needs a saved source picked.";
-    const seen = new Set<string>();
-    for (const s of pipeline.sources ?? []) {
-      if (seen.has(s)) return "Each source can only be added to a pipeline once.";
-      seen.add(s);
-    }
-    if (!pipeline.output_id?.trim()) return "Pick or create a destination.";
-    for (const [i, step] of (pipeline.steps ?? []).entries()) {
-      const s = step as {
-        op?: string; mode?: string;
-        fields?: unknown[]; drop?: unknown[];
-        lookup_id?: string;
-      };
-      if (
-        s.op === "select" &&
-        (!s.fields || s.fields.length === 0) &&
-        (!s.drop || s.drop.length === 0)
-      ) {
-        return `Step ${i + 1} (select) needs at least one field to keep or drop. Pick one or remove the step.`;
+  // Field-level errors: shown after blur (text inputs) or change (pickers),
+  // cleared as soon as the value becomes valid.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  /**
+   * Validate a single field and show (or clear) its error.
+   * Used on blur for text inputs and on change for picker fields.
+   */
+  const touchField = (
+    field: "id" | "name" | "sources" | "output_id",
+    value: unknown,
+  ) => {
+    const msg = validateField(field, value);
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      if (msg) {
+        next[field] = msg;
+      } else {
+        delete next[field];
       }
-      if (s.op === "map" && s.mode === "lookup" && !s.lookup_id?.trim()) {
-        return `Step ${i + 1} (map · lookup) needs a saved lookup table picked.`;
+      return next;
+    });
+  };
+
+  /**
+   * Re-validate a field on every onChange only when an error is already
+   * displayed for it — this clears the error as soon as the value becomes
+   * valid without triggering errors on every keystroke before first blur.
+   */
+  const revalidateField = (
+    field: "id" | "name" | "sources" | "output_id",
+    value: unknown,
+  ) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev; // no error shown yet; wait for blur
+      const msg = validateField(field, value);
+      if (!msg) {
+        const next = { ...prev };
+        delete next[field];
+        return next;
       }
-    }
-    return null;
+      if (prev[field] === msg) return prev;
+      return { ...prev, [field]: msg };
+    });
   };
 
   const save = async () => {
-    const problem = validate();
-    if (problem) {
-      setErr(problem);
+    const errors = validatePipelineForm({
+      id: pipeline.id,
+      name: pipeline.name,
+      sources: pipeline.sources ?? [],
+      output_id: pipeline.output_id ?? "",
+      steps: (pipeline.steps ?? []) as unknown[],
+    });
+
+    if (Object.keys(errors).length > 0) {
+      // Surface all field errors so every broken field is highlighted.
+      setFieldErrors(errors);
+      // Also show a top-level banner for the first error (backwards compat).
+      const first = Object.values(errors)[0];
+      setSubmitErr(first ?? "Please fix the errors above before saving.");
       return;
     }
+
     setSaving(true);
-    setErr(null);
+    setSubmitErr(null);
+    setFieldErrors({});
     try {
       if (mode === "create") {
         await createPipeline(pipeline);
@@ -93,10 +117,42 @@ export function BuilderForm({
       }
       router.push(`/pipelines/${encodeURIComponent(pipeline.id)}`);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setSubmitErr(e instanceof Error ? e.message : String(e));
       setSaving(false);
     }
   };
+
+  // Shared field grid used in both the split-pane and single-column layouts.
+  const fieldGrid = (
+    <div className="grid grid-cols-2 gap-3">
+      <Field
+        label="Pipeline id"
+        hint="stable identifier; can't change after create"
+        error={fieldErrors.id}
+      >
+        <Input
+          value={pipeline.id}
+          onChange={(e) => {
+            setPipeline({ ...pipeline, id: e.target.value });
+            revalidateField("id", e.target.value);
+          }}
+          onBlur={(e) => touchField("id", e.target.value)}
+          disabled={mode === "edit"}
+        />
+      </Field>
+      <Field label="Name" error={fieldErrors.name}>
+        <Input
+          value={pipeline.name}
+          onChange={(e) => {
+            setPipeline({ ...pipeline, name: e.target.value });
+            revalidateField("name", e.target.value);
+          }}
+          onBlur={(e) => touchField("name", e.target.value)}
+          placeholder="Orders — nightly cohort"
+        />
+      </Field>
+    </div>
+  );
 
   return (
     <SchemaProvider>
@@ -141,34 +197,27 @@ export function BuilderForm({
         >
           <div className="overflow-y-auto border-r border-border">
             <div className="px-8 py-8 space-y-6">
-              {err && (
+              {submitErr && (
                 <div className="p-3 border border-red rounded bg-code-bg text-red font-mono text-[12.5px]">
-                  {err}
+                  {submitErr}
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Pipeline id" hint="stable identifier; can't change after create">
-                  <Input
-                    value={pipeline.id}
-                    onChange={(e) => setPipeline({ ...pipeline, id: e.target.value })}
-                    disabled={mode === "edit"}
-                  />
-                </Field>
-                <Field label="Name">
-                  <Input
-                    value={pipeline.name}
-                    onChange={(e) => setPipeline({ ...pipeline, name: e.target.value })}
-                    placeholder="Orders — nightly cohort"
-                  />
-                </Field>
-              </div>
+              {fieldGrid}
               <SourcesPanel
                 sources={pipeline.sources ?? []}
-                onChange={(sources) => setPipeline({ ...pipeline, sources })}
+                onChange={(sources) => {
+                  setPipeline({ ...pipeline, sources });
+                  touchField("sources", sources);
+                }}
+                error={fieldErrors.sources}
               />
               <DestinationPicker
                 outputId={pipeline.output_id ?? ""}
-                onChange={(output_id) => setPipeline({ ...pipeline, output_id })}
+                onChange={(output_id) => {
+                  setPipeline({ ...pipeline, output_id });
+                  touchField("output_id", output_id);
+                }}
+                error={fieldErrors.output_id}
               />
               <StepsPanel
                 steps={(pipeline.steps ?? []) as StepShape[]}
@@ -182,37 +231,30 @@ export function BuilderForm({
         </div>
       ) : (
         <div className="px-14 py-8 space-y-6">
-          {err && (
+          {submitErr && (
             <div className="p-3 border border-red rounded bg-code-bg text-red font-mono text-[12.5px]">
-              {err}
+              {submitErr}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Pipeline id" hint="stable identifier; can't change after create">
-              <Input
-                value={pipeline.id}
-                onChange={(e) => setPipeline({ ...pipeline, id: e.target.value })}
-                disabled={mode === "edit"}
-              />
-            </Field>
-            <Field label="Name">
-              <Input
-                value={pipeline.name}
-                onChange={(e) => setPipeline({ ...pipeline, name: e.target.value })}
-                placeholder="Orders — nightly cohort"
-              />
-            </Field>
-          </div>
+          {fieldGrid}
 
           <SourcesPanel
             sources={pipeline.sources ?? []}
-            onChange={(sources) => setPipeline({ ...pipeline, sources })}
+            onChange={(sources) => {
+              setPipeline({ ...pipeline, sources });
+              touchField("sources", sources);
+            }}
+            error={fieldErrors.sources}
           />
 
           <DestinationPicker
             outputId={pipeline.output_id ?? ""}
-            onChange={(output_id) => setPipeline({ ...pipeline, output_id })}
+            onChange={(output_id) => {
+              setPipeline({ ...pipeline, output_id });
+              touchField("output_id", output_id);
+            }}
+            error={fieldErrors.output_id}
           />
 
           <StepsPanel
