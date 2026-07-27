@@ -106,7 +106,7 @@ function ruleToSql(r: FilterRule): string {
 
 function rulesToSql(rules: FilterRule[]): string {
   const parts: string[] = [];
-  rules.forEach((r, i) => {
+  rules.forEach((r) => {
     const sql = ruleToSql(r);
     if (!sql) return;
     if (parts.length === 0) parts.push(sql);
@@ -115,19 +115,200 @@ function rulesToSql(rules: FilterRule[]): string {
   return parts.join(" ");
 }
 
+/**
+ * Attempt to parse a simple SQL WHERE clause (as produced by rulesToSql) back
+ * into a FilterRule list. Handles AND-combined (or OR-combined) predicates of
+ * the forms:
+ *   "col" = 'value'       "col" > 5          "col" IS NULL
+ *   "col" IN (a, b, c)    "col" BETWEEN x AND y
+ *   "col" LIKE 'pat%'
+ *
+ * Returns null if the SQL is too complex to round-trip cleanly — callers
+ * should leave Basic empty and keep the raw Advanced text intact.
+ */
+function tryParseBasicSql(sql: string): FilterRule[] | null {
+  const trimmed = sql.trim();
+  if (!trimmed) return [];
+
+  // Unquote a DuckDB string literal: 'val' → val, '' inside → '
+  function unquoteString(s: string): string {
+    return s.slice(1, -1).replace(/''/g, "'");
+  }
+
+  // Parse one quoted identifier (possibly dot-chained): "a"."b" → a.b
+  // Returns [fieldName, remainingStr] or null.
+  function parseIdent(s: string): [string, string] | null {
+    const parts: string[] = [];
+    let rest = s.trimStart();
+    while (rest.startsWith('"')) {
+      // Consume "...""..." — internal doubled-quotes are escaped
+      let i = 1;
+      while (i < rest.length) {
+        if (rest[i] === '"') {
+          if (rest[i + 1] === '"') { i += 2; continue; }
+          break;
+        }
+        i++;
+      }
+      if (rest[i] !== '"') return null; // unclosed quote
+      // Unquote: strip outer quotes and unescape ""
+      parts.push(rest.slice(1, i).replace(/""/g, '"'));
+      rest = rest.slice(i + 1);
+      if (rest.startsWith(".")) { rest = rest.slice(1); continue; }
+      break;
+    }
+    if (parts.length === 0) return null;
+    return [parts.join("."), rest.trimStart()];
+  }
+
+  // Parse a single value literal (number, boolean, 'string').
+  // Returns [displayValue, remainingStr] or null.
+  function parseLiteral(s: string): [string, string] | null {
+    const rest = s.trimStart();
+    if (rest.startsWith("'")) {
+      // Find matching close quote ('' is an escaped single quote)
+      let i = 1;
+      while (i < rest.length) {
+        if (rest[i] === "'") {
+          if (rest[i + 1] === "'") { i += 2; continue; }
+          break;
+        }
+        i++;
+      }
+      if (rest[i] !== "'") return null; // unclosed
+      return [unquoteString(rest.slice(0, i + 1)), rest.slice(i + 1).trimStart()];
+    }
+    // Unquoted number
+    const numMatch = rest.match(/^(-?\d+(?:\.\d+)?)(.*)/s);
+    if (numMatch) return [numMatch[1]!, numMatch[2]!.trimStart()];
+    // Unquoted boolean (TRUE/FALSE as emitted by safeLiteral)
+    const boolMatch = rest.match(/^(TRUE|FALSE)(.*)/si);
+    if (boolMatch) return [boolMatch[1]!.toLowerCase(), boolMatch[2]!.trimStart()];
+    return null;
+  }
+
+  // Parse one predicate starting from `s`.
+  // Returns [partialRule, remainingStr] or null.
+  function parsePredicate(s: string): [Omit<FilterRule, "join">, string] | null {
+    const identResult = parseIdent(s);
+    if (!identResult) return null;
+    const [field, afterIdent] = identResult;
+
+    // IS NULL / IS NOT NULL
+    const isNullMatch = afterIdent.match(/^IS\s+(NOT\s+)?NULL(.*)/si);
+    if (isNullMatch) {
+      const op: FilterOp = isNullMatch[1] ? "IS NOT NULL" : "IS NULL";
+      return [{ field, op, value: "" }, isNullMatch[2]!.trimStart()];
+    }
+
+    // LIKE
+    const likeMatch = afterIdent.match(/^LIKE\s+(.*)/si);
+    if (likeMatch) {
+      const litResult = parseLiteral(likeMatch[1]!);
+      if (!litResult) return null;
+      const [value, rest] = litResult;
+      return [{ field, op: "LIKE", value }, rest];
+    }
+
+    // IN (...)
+    const inMatch = afterIdent.match(/^IN\s*\((.*)/si);
+    if (inMatch) {
+      let inside = inMatch[1]!;
+      const items: string[] = [];
+      while (true) {
+        inside = inside.trimStart();
+        if (inside.startsWith(")")) { inside = inside.slice(1).trimStart(); break; }
+        if (items.length > 0) {
+          if (!inside.startsWith(",")) return null;
+          inside = inside.slice(1).trimStart();
+        }
+        const litResult = parseLiteral(inside);
+        if (!litResult) return null;
+        items.push(litResult[0]!);
+        inside = litResult[1]!;
+      }
+      return [{ field, op: "IN", value: items.join(", ") }, inside];
+    }
+
+    // BETWEEN x AND y
+    const betweenMatch = afterIdent.match(/^BETWEEN\s+(.*)/si);
+    if (betweenMatch) {
+      const lo = parseLiteral(betweenMatch[1]!);
+      if (!lo) return null;
+      const andMatch = lo[1].match(/^AND\s+(.*)/si);
+      if (!andMatch) return null;
+      const hi = parseLiteral(andMatch[1]!);
+      if (!hi) return null;
+      return [{ field, op: "BETWEEN", value: `${lo[0]}, ${hi[0]}` }, hi[1]];
+    }
+
+    // Comparison operators (!=, >=, <=, >, <, =)
+    const compMatch = afterIdent.match(/^(!=|>=|<=|>|<|=)\s*(.*)/s);
+    if (compMatch) {
+      const op = compMatch[1] as FilterOp;
+      const litResult = parseLiteral(compMatch[2]!);
+      if (!litResult) return null;
+      const [value, rest] = litResult;
+      return [{ field, op, value }, rest];
+    }
+
+    return null;
+  }
+
+  const rules: FilterRule[] = [];
+  let remaining = trimmed;
+  let isFirst = true;
+
+  while (remaining.length > 0) {
+    let join: "AND" | "OR" = "AND";
+
+    if (!isFirst) {
+      const joinMatch = remaining.match(/^(AND|OR)\s+(.*)/si);
+      if (!joinMatch) return null; // unexpected token — SQL is too complex
+      join = joinMatch[1]!.toUpperCase() as "AND" | "OR";
+      remaining = joinMatch[2]!;
+    }
+
+    const predResult = parsePredicate(remaining);
+    if (!predResult) return null;
+    const [pred, rest] = predResult;
+    rules.push({ ...pred, join });
+    remaining = rest.trimStart();
+    isFirst = false;
+  }
+
+  return rules.length > 0 ? rules : null;
+}
+
 export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   const { allFields } = useSchemas();
 
   // Mode is local UI state — not persisted on the step. On first mount, if
-  // there's an existing expr, default to Advanced (we don't try to parse
-  // arbitrary SQL back into structured rules).
+  // there's an existing expr, default to Advanced.
   const initialMode: "basic" | "advanced" = step.expr ? "advanced" : "basic";
   const [mode, setMode] = useState<"basic" | "advanced">(initialMode);
-  const [rules, setRules] = useState<FilterRule[]>([]);
+
+  // Each tab keeps its own independent local state so switching tabs never
+  // destroys content the user typed on the other tab.
+  //
+  // `rules`        — source of truth for the Basic tab.
+  // `advancedText` — source of truth for the Advanced tab.
+  //
+  // On first mount we try to pre-populate Basic by parsing the existing expr
+  // so a round-trippable expression shows up immediately in Basic mode.
+  const [rules, setRules] = useState<FilterRule[]>(() => {
+    if (step.expr) return tryParseBasicSql(step.expr as string) ?? [];
+    return [];
+  });
+  const [advancedText, setAdvancedText] = useState<string>(
+    (step.expr as string) ?? "",
+  );
 
   const commitRules = (next: FilterRule[]) => {
     setRules(next);
-    set({ expr: rulesToSql(next) });
+    // Only push the generated SQL to parent when Basic tab is active — the
+    // Advanced tab owns the wire value while it is displayed.
+    if (mode === "basic") set({ expr: rulesToSql(next) });
   };
 
   const addRule = () =>
@@ -140,7 +321,41 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   const removeRule = (i: number) =>
     commitRules(rules.filter((_, j) => j !== i));
 
-  const previewExpr = mode === "basic" ? rulesToSql(rules) : ((step.expr as string) ?? "");
+  const handleAdvancedChange = (text: string) => {
+    setAdvancedText(text);
+    set({ expr: text });
+  };
+
+  const switchToBasic = () => {
+    // Try to parse the current Advanced SQL into structured rules.
+    const parsed = tryParseBasicSql(advancedText);
+    if (parsed !== null) {
+      // Successfully round-tripped — populate Basic and keep expr in sync.
+      setRules(parsed);
+      set({ expr: rulesToSql(parsed) });
+    }
+    // If too complex: leave Basic empty (`rules` stays as-is from previous
+    // Basic session or []) and keep `advancedText` intact so the user can
+    // switch back to Advanced without losing their SQL.
+    setMode("basic");
+  };
+
+  const switchToAdvanced = () => {
+    // If the user has never typed in Advanced yet, pre-populate it with
+    // whatever Basic currently generates, so they have a starting point.
+    if (advancedText === "") {
+      const basicSql = rulesToSql(rules);
+      if (basicSql) {
+        setAdvancedText(basicSql);
+        set({ expr: basicSql });
+      }
+    }
+    // Otherwise: Advanced already has content (user typed there before) —
+    // leave it exactly as-is.
+    setMode("advanced");
+  };
+
+  const previewExpr = mode === "basic" ? rulesToSql(rules) : advancedText;
 
   return (
     <div className="grid gap-3">
@@ -151,12 +366,8 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
               key={m}
               type="button"
               onClick={() => {
-                if (m === "basic" && mode === "advanced") {
-                  // Switching from Advanced back to Basic: clear rules so the
-                  // user can rebuild. We do not attempt to parse arbitrary SQL.
-                  commitRules([]);
-                }
-                setMode(m);
+                if (m === "basic" && mode === "advanced") switchToBasic();
+                else if (m === "advanced" && mode === "basic") switchToAdvanced();
               }}
               className={cn(
                 "px-3 py-1 text-[12.5px] font-medium rounded-[3px] transition-colors capitalize",
@@ -267,8 +478,8 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
           hint="raw DuckDB WHERE clause. You are responsible for quoting — for safe, structured input use Basic."
         >
           <Textarea
-            value={(step.expr as string) ?? ""}
-            onChange={(e) => set({ expr: e.target.value })}
+            value={advancedText}
+            onChange={(e) => handleAdvancedChange(e.target.value)}
             placeholder="amount > 0 AND status = 'completed'"
           />
         </Field>
