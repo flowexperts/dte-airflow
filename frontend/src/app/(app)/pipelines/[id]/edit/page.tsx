@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { BuilderForm } from "@/components/builder/BuilderForm";
+import { PipelinePreview } from "@/components/pipeline-preview";
 import { RequirePermission } from "@/components/require-permission";
 import { getPipeline, ApiError } from "@/lib/api";
 
@@ -13,7 +14,11 @@ export default async function EditPipeline({ params }: { params: Params }) {
     const pipeline = await getPipeline(id);
     return (
       <RequirePermission perm="pipeline:write">
-        <BuilderForm initial={pipeline} mode="edit" />
+        <BuilderForm
+          initial={pipeline}
+          mode="edit"
+          preview={<PipelinePreview pipelineId={pipeline.id} />}
+        />
       </RequirePermission>
     );
   } catch (e) {
