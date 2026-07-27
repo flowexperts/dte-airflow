@@ -47,7 +47,14 @@ def batched_update(
     ``FOR UPDATE SKIP LOCKED`` lets concurrent OLTP writers coexist —
     rows locked by app queries are skipped this batch and picked up next.
     """
-    conn = op.get_bind().execution_options(isolation_level="AUTOCOMMIT")
+    # Run inside Alembic's bound transaction. AUTOCOMMIT on a fresh
+    # connection deadlocks when the same migration holds table-level
+    # locks (e.g. ADD COLUMN's ACCESS EXCLUSIVE), so we batch within the
+    # migration transaction. Crash-safety across batches is lost, but
+    # the migration is atomic anyway — the whole thing rolls back on
+    # failure. FOR UPDATE SKIP LOCKED is dropped for the same reason:
+    # inside the migration's own tx, our lock is already the strongest.
+    conn = op.get_bind()
     total = 0
     batch = 0
     started = time.monotonic()
@@ -64,8 +71,7 @@ def batched_update(
                 f"WHERE {key_column} IN ("
                 f"  SELECT {key_column} FROM {table} "
                 f"  WHERE {where_clause} "
-                f"  LIMIT :batch_size "
-                f"  FOR UPDATE SKIP LOCKED"
+                f"  LIMIT :batch_size"
                 f")"
             ),
             {"batch_size": batch_size},
