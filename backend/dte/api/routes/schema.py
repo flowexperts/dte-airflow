@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from dte.api.deps import get_connection_store
+from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.models.pipeline import SourceBase as Source
 from dte.security.permissions import requires
@@ -54,8 +55,9 @@ async def infer_schema(
             detail=f"Connection '{source.connection_id}' does not exist",
         )
     engine = DuckDBEngine()
+    registry = BackendRegistry(duckdb_con=engine.con)
     try:
-        table = load_source(source, engine.con, conn.credentials)
+        table = load_source(source, registry, conn, conn.credentials)
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 

@@ -7,7 +7,10 @@ name = "dte"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "ibis-framework[duckdb]>=9.0,<12.0",
+    # `mysql` intentionally omitted from core — pulls mysqlclient which needs
+    # libmysqlclient at build time (breaks fresh installs on macOS/Docker).
+    # Enable with the `mysql-source` extra when needed.
+    "ibis-framework[duckdb,postgres,sqlite]>=9.0,<12.0",
     "fastapi>=0.115,<1.0",
     "uvicorn[standard]>=0.30,<1.0",
     "pydantic>=2.7,<3.0",
@@ -54,6 +57,11 @@ bigquery-writer = ["dlt[bigquery]>=1.4,<2.0"]
 # Trino engine — plan-034 distributed execution seam.
 # Install with: pip install "dte[trino]"
 trino = ["ibis-framework[trino]>=9.0,<12.0", "trino>=0.329,<1.0"]
+# Native ibis backends kept optional to avoid heavy or system-level build
+# deps (mysqlclient, google-cloud-bigquery, snowflake-connector-python).
+mysql-source = ["ibis-framework[mysql]>=9.0,<12.0"]
+bigquery-source = ["ibis-framework[bigquery]>=9.0,<12.0"]
+snowflake-source = ["ibis-framework[snowflake]>=9.0,<12.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["dte"]

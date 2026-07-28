@@ -8,6 +8,7 @@ from dte.api.deps import (
     get_source_store,
 )
 from dte.api.routes.schema import InferSchemaResponse, _walk
+from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.models.pipeline import SOURCE_CONNECTION_COMPAT, Source, SourceBase
 from dte.security.permissions import requires
@@ -126,8 +127,9 @@ async def source_schema(
             detail=f"Source '{source_id}' references missing connection '{source.connection_id}'",
         )
     engine = DuckDBEngine()
+    registry = BackendRegistry(duckdb_con=engine.con)
     try:
-        table = load_source(source, engine.con, conn.credentials)
+        table = load_source(source, registry, conn, conn.credentials)
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
     fields = [_walk(name, dtype) for name, dtype in table.schema().items()]

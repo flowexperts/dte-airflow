@@ -26,7 +26,9 @@ from dte import metrics
 from dte.engine.duckdb_engine import DuckDBEngine  # noqa: F401 — still used as type hint fallback
 from dte.engine.registry import get_engine
 from dte.logging import decrypt_context_var, get_logger, run_id_var
+from dte.engine.backend_registry import BackendRegistry
 from dte.models.pipeline import (
+    Connection,
     Destination,
     LookupTable,
     Pipeline,
@@ -98,16 +100,90 @@ async def _validate_pipeline_refs(
         raise HTTPException(status_code=422, detail=detail)
 
 
+async def _validate_engine_compat(
+    pipeline: PipelineBase,
+    s_store: SourceStore,
+    d_store: DestinationStore,
+    c_store: ConnectionStore,
+) -> str:
+    """Resolve pipeline.engine (handling "auto") and reject 422 if the
+    engine can't read every source or write the destination.
+
+    Returns the resolved engine name so callers can pass it forward to
+    ``get_engine`` without re-computing.  Assumes _validate_pipeline_refs
+    has already verified source/destination ids exist.
+    """
+    from dte.engine.registry import trino_enabled
+    from dte.models.pipeline import (
+        EngineIncompatible,
+        resolve_pipeline_engine,
+        validate_pipeline_engine_compat,
+    )
+
+    src_types: list[tuple[str, str]] = []
+    for sid in pipeline.sources:
+        source = await s_store.get(sid)
+        if not source:
+            continue  # already caught by _validate_pipeline_refs
+        conn = await c_store.get(source.connection_id)
+        if not conn:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Source '{sid}' references missing connection '{source.connection_id}'",
+            )
+        src_types.append((sid, conn.connection_type))
+
+    destination = await d_store.get(pipeline.output_id)
+    if not destination:
+        raise HTTPException(status_code=422, detail=f"Destination not found: {pipeline.output_id}")
+    dest_conn = await c_store.get(destination.connection_id)
+    if not dest_conn:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Destination '{destination.id}' references missing connection '{destination.connection_id}'",
+        )
+
+    engine_choice = getattr(pipeline, "engine", None) or "auto"
+    resolved = resolve_pipeline_engine(engine_choice, [ct for _, ct in src_types])
+
+    if resolved == "trino" and not trino_enabled():
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "trino_not_enabled",
+                "engine": "trino",
+                "message": (
+                    "Trino engine is not enabled on this deployment. "
+                    "Set DTE_TRINO_ENABLED=true and configure DTE_TRINO_* env "
+                    "vars, or choose a different engine."
+                ),
+            },
+        )
+
+    try:
+        validate_pipeline_engine_compat(
+            engine=resolved,
+            sources=src_types,  # type: ignore[arg-type]
+            destination=(destination.id, dest_conn.connection_type),
+        )
+    except EngineIncompatible as e:
+        raise HTTPException(status_code=422, detail=e.payload()) from e
+
+    return resolved
+
+
 @router.post("/pipelines", dependencies=[Depends(requires("pipeline:write"))])
 async def create_pipeline(
     pipeline: PipelineBase,
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
+    c_store: ConnectionStore = Depends(get_connection_store),
     rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
     user: User = Depends(get_current_user),
 ):
     await _validate_pipeline_refs(pipeline, s_store, d_store)
+    await _validate_engine_compat(pipeline, s_store, d_store, c_store)
     await store.save(Pipeline(**pipeline.model_dump()))
     await _record_revision(pipeline, rev_store, user)
     return {"id": pipeline.id}
@@ -133,6 +209,7 @@ async def update_pipeline(
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
+    c_store: ConnectionStore = Depends(get_connection_store),
     rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
     user: User = Depends(get_current_user),
 ) -> Pipeline:
@@ -142,6 +219,7 @@ async def update_pipeline(
     if not existing:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     await _validate_pipeline_refs(pipeline, s_store, d_store)
+    await _validate_engine_compat(pipeline, s_store, d_store, c_store)
     row = Pipeline(**pipeline.model_dump())
     await store.save(row)
     await _record_revision(pipeline, rev_store, user)
@@ -250,10 +328,10 @@ async def _resolve(
     s_store: SourceStore,
     d_store: DestinationStore,
     c_store: ConnectionStore,
-) -> tuple[list[tuple[Source, dict]], tuple[Destination, dict]]:
-    """Resolve pipeline id refs to (Source, credentials) tuples and
-    (Destination, credentials). Missing anything → 422 naming what's gone."""
-    sources: list[tuple[Source, dict]] = []
+) -> tuple[list[tuple[Source, "Connection", dict]], tuple[Destination, dict]]:
+    """Resolve pipeline id refs to (Source, Connection, credentials) tuples
+    and (Destination, credentials). Missing anything → 422 naming what's gone."""
+    sources: list[tuple[Source, "Connection", dict]] = []
     for sid in pipeline.sources:
         source = await s_store.get(sid)
         if not source:
@@ -264,7 +342,7 @@ async def _resolve(
                 status_code=422,
                 detail=f"Source '{sid}' references missing connection '{source.connection_id}'",
             )
-        sources.append((source, conn.credentials))
+        sources.append((source, conn, conn.credentials))
 
     destination = await d_store.get(pipeline.output_id)
     if not destination:
@@ -305,10 +383,12 @@ async def _compile_body_pipeline(
         sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
         engine = DuckDBEngine()
-        tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
+        registry = BackendRegistry(duckdb_con=engine.con)
+        tables = {s.id: load_source(s, registry, conn, creds) for s, conn, creds in sources}
         compiled = compile_pipeline(
             pipeline, tables, output=destination.config,
             lookup_tables=lookups, on_step_schema=on_step_schema,
+            engine=engine,
         )
     except HTTPException:
         raise
@@ -397,12 +477,16 @@ async def preview_pipeline(
     try:
         sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
-        # Preview always runs on DuckDB — Trino preview costs are unpredictable
-        # (plan-034: "Preview endpoint stays DuckDB-only for now").
+        # Preview runs against whichever backend each source resolves to
+        # (postgres source → postgres pushdown). DuckDBEngine here is just
+        # the writer glue + raw-SQL rejection helper; the actual per-source
+        # execution locus is picked by BackendRegistry.
         engine = DuckDBEngine()
-        tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
+        registry = BackendRegistry(duckdb_con=engine.con)
+        tables = {s.id: load_source(s, registry, conn, creds) for s, conn, creds in sources}
         compiled = compile_pipeline(
             pipeline, tables, output=destination.config, lookup_tables=lookups,
+            engine=engine,
         )
         df = compiled.limit(limit).execute()
     except HTTPException:
@@ -433,6 +517,10 @@ async def trigger_pipeline(
     decrypt_context_var.set("pipeline_run")
     await _resolve(pipeline, s_store, d_store, c_store)
     await _resolve_lookups(pipeline, lt_store)
+    # Engine compatibility: catches cases where a pipeline was saved before
+    # the engine matrix existed, or a source's connection type changed
+    # since save.
+    await _validate_engine_compat(pipeline, s_store, d_store, c_store)
     latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
     revision_id = latest_rev.id if latest_rev else None
     run_id = await r_store.create(pipeline_id, revision_id=revision_id)
@@ -575,11 +663,22 @@ async def _run_body(
             lookups = await _resolve_lookups(pipeline, lt_store)
 
         with tr.start_as_current_span("load_sources") as span:
-            # Dispatch to the engine requested by the pipeline (plan-034).
-            # DuckDB is the default; Trino requires DTE_TRINO_ENABLED=true.
-            _engine_name = getattr(pipeline, "engine", None) or "duckdb"
+            # Resolve `engine="auto"` from the source composition so
+            # pushdown happens for single-source DB pipelines.  The engine
+            # instance returned by get_engine is the local orchestrator +
+            # writer glue; the *actual* execution locus for each source
+            # comes from BackendRegistry (ibis-native backend per
+            # connection_type).
+            from dte.models.pipeline import resolve_pipeline_engine
+            _engine_choice = getattr(pipeline, "engine", None) or "auto"
+            _src_ctypes = [conn.connection_type for _, conn, _ in sources]
+            _engine_name = resolve_pipeline_engine(_engine_choice, _src_ctypes)
             engine = get_engine(_engine_name)
-            tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
+            registry = BackendRegistry(duckdb_con=engine.con)
+            tables = {
+                s.id: load_source(s, registry, conn, creds)
+                for s, conn, creds in sources
+            }
             span.set_attribute("source_count", len(tables))
             span.set_attribute("engine", _engine_name)
 
