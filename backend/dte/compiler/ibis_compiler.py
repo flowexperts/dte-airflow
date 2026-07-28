@@ -26,6 +26,28 @@ from dte.models.pipeline import (
 if TYPE_CHECKING:
     from dte.engine.base import BaseEngine
 
+
+class MixedBackendError(CompilerError):
+    """Raised when a pipeline's source tables span multiple ibis backends.
+
+    Ibis can't execute a join across two live backends without materialising
+    one side.  In the DTE architecture, sources on the same Connection.id
+    share a backend (via :class:`BackendRegistry`), so a pipeline with two
+    postgres tables on the same connection is fine, but joining a postgres
+    table with a filesystem CSV (or with a bigquery table) trips this
+    error.  Fix: split into two pipelines, or opt into ``engine="trino"``
+    to federate.
+    """
+
+    def __init__(self, source_backends: dict[str, str]):
+        self.source_backends = source_backends
+        engines = sorted(set(source_backends.values()))
+        super().__init__(
+            f"Pipeline sources span multiple ibis backends ({engines}). "
+            "Cross-backend joins aren't supported without a federator. "
+            "Split into single-backend pipelines, or set engine='trino'."
+        )
+
 _TYPE_MAP: dict[str, dt.DataType] = {
     "string": dt.String(),
     "int": dt.Int64(),
@@ -34,6 +56,25 @@ _TYPE_MAP: dict[str, dt.DataType] = {
     "date": dt.Date(),
     "timestamp": dt.Timestamp(),
 }
+
+
+def _check_single_backend(tables: dict[str, ibis.Table]) -> None:
+    """Reject pipelines whose source tables live on more than one ibis
+    backend.  See :class:`MixedBackendError` for the rationale.
+
+    Tables from the same connection share a backend instance (BackendRegistry
+    guarantees this by caching), so identity comparison via ``id(backend)`` is
+    reliable — no false positives from two DuckDB connections that look alike.
+    """
+    if not tables:
+        return
+    per_source: dict[str, tuple[int, str]] = {}
+    for sid, tbl in tables.items():
+        backend = tbl._find_backend()
+        per_source[sid] = (id(backend), type(backend).__name__)
+    unique = {bid for bid, _ in per_source.values()}
+    if len(unique) > 1:
+        raise MixedBackendError({sid: name for sid, (_, name) in per_source.items()})
 
 
 def _resolve_field(table: ibis.Table, field_path: str) -> ibis.Expr:
@@ -83,6 +124,7 @@ def compile_pipeline(
     outputs downstream (plan 038 item 7).
     """
     registry = dict(tables)
+    _check_single_backend(registry)
     lookups = lookup_tables or {}
     current_key = pipeline.sources[0]
 
