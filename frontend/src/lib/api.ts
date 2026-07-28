@@ -285,7 +285,7 @@ export const dryRunPipeline = (pipeline: Pipeline, limit = 20) =>
 /** Per-step schema map for an unsaved pipeline body (plan 038 item 7).
  *  Keys are string-indexed step numbers to match JSON transport. */
 export const pipelineStepSchemas = (pipeline: Pipeline) =>
-  apiFetch<{ step_schemas: Record<string, string[]> }>(
+  apiFetch<{ step_schemas: Record<string, string[]>; error: string | null }>(
     `/api/pipelines/step-schemas`,
     { method: "POST", body: JSON.stringify(pipeline) },
   );

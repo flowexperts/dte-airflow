@@ -335,11 +335,23 @@ async def step_schemas_pipeline(
     def _capture(idx: int, cols: list[str]):
         schemas[idx] = cols
 
-    await _compile_body_pipeline(
-        body, s_store, d_store, c_store, lt_store, on_step_schema=_capture,
-    )
+    # A partially-configured pipeline (e.g. aggregate with no aggregations yet)
+    # will 422 mid-compile. We still want to return the schemas captured up to
+    # the failing step so downstream editors see fresh columns from earlier
+    # steps the user just edited — otherwise field autocomplete stays stuck
+    # on stale results until the whole pipeline compiles cleanly.
+    error: str | None = None
+    try:
+        await _compile_body_pipeline(
+            body, s_store, d_store, c_store, lt_store, on_step_schema=_capture,
+        )
+    except HTTPException as e:
+        error = str(e.detail)
     # JSON keys are strings; matches how the frontend will look them up.
-    return {"step_schemas": {str(k): v for k, v in schemas.items()}}
+    return {
+        "step_schemas": {str(k): v for k, v in schemas.items()},
+        "error": error,
+    }
 
 
 @router.post("/pipelines/dry-run", dependencies=[Depends(requires("pipeline:read"))])
