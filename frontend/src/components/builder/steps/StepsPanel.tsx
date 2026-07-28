@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Panel, PanelHead } from "@/components/ui";
 import { STEP_OPS, emptyStep, labelFor, type StepShape } from "./types";
 import { StepEditor } from "./editors";
+import { StepIndexProvider } from "../schema-context";
 
 export function StepsPanel({
   steps,
@@ -79,7 +80,9 @@ export function StepsPanel({
                   >×</button>
                 </div>
               </div>
-              <StepEditor step={step} set={(patch) => update(i, patch)} />
+              <StepIndexProvider index={i}>
+                <StepEditor step={step} set={(patch) => update(i, patch)} />
+              </StepIndexProvider>
             </div>
             <div />
           </div>

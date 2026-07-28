@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Field, Input, PageHeader, Topbar } from "@/components/ui";
 import {
   createPipeline,
+  pipelineStepSchemas,
   updatePipeline,
   type Pipeline,
 } from "@/lib/api";
@@ -26,6 +27,45 @@ function AutoInferSchemas({ sourceIds }: { sourceIds: string[] }) {
       refreshById(id);
     }
   }, [sourceIds, schemas, refreshById]);
+  return null;
+}
+
+/** Debounced /step-schemas fetch so downstream editors see the columns
+ *  produced by earlier steps (plan 038 item 7). Runs whenever the pipeline
+ *  spec changes; silently drops results on compile errors so the builder
+ *  stays responsive. */
+function AutoStepSchemas({ pipeline }: { pipeline: Pipeline }) {
+  const { setPerStepSchemas } = useSchemas();
+  const seq = useRef(0);
+  const key = JSON.stringify(pipeline);
+  useEffect(() => {
+    if (
+      !pipeline.sources ||
+      pipeline.sources.length === 0 ||
+      !pipeline.output_id ||
+      (pipeline.steps ?? []).length === 0
+    ) {
+      setPerStepSchemas({});
+      return;
+    }
+    const my = ++seq.current;
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await pipelineStepSchemas(pipeline);
+        if (seq.current !== my) return;
+        const numeric: Record<number, string[]> = {};
+        for (const [k, v] of Object.entries(res.step_schemas)) {
+          numeric[Number(k)] = v;
+        }
+        setPerStepSchemas(numeric);
+      } catch {
+        // A partially-typed pipeline compile-errors; keep the last-known
+        // step schemas so autocomplete doesn't flicker.
+      }
+    }, 500);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` captures pipeline
+  }, [key, setPerStepSchemas]);
   return null;
 }
 
@@ -166,6 +206,7 @@ export function BuilderForm({
   return (
     <SchemaProvider>
       <AutoInferSchemas sourceIds={pipeline.sources ?? []} />
+      <AutoStepSchemas pipeline={pipeline} />
       <Topbar
         crumbs={[
           { label: "Workspace", href: "/" },

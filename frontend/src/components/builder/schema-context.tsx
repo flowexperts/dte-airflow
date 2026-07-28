@@ -26,12 +26,30 @@ interface SchemaState {
   refresh: (source: Source) => Promise<void>;
   refreshById: (id: string) => Promise<void>;
   allFields: SchemaField[];
+  /** Column names produced at each step index (plan 038 item 7).
+   *  Keys are numeric step indexes; values are the columns *output* by
+   *  that step. Populated by callers via `setPerStepSchemas` — typically
+   *  from `POST /api/pipelines/step-schemas`. */
+  perStepSchemas: Record<number, string[]>;
+  setPerStepSchemas: (next: Record<number, string[]>) => void;
+  /** Fields visible to the editor at step index N.
+   *
+   *  - N === 0: only source fields (allFields).
+   *  - N >= 1: fields produced by step index-1 if known, else fall back
+   *    to allFields so autocomplete never disappears completely.
+   *
+   *  Returns `SchemaField[]` shape so it drops into `FieldPicker` /
+   *  `FieldMultiSelect` wherever `allFields` was used. */
+  fieldsAtStep: (index: number) => SchemaField[];
 }
 
 const SchemaContext = createContext<SchemaState | null>(null);
 
 export function SchemaProvider({ children }: { children: ReactNode }) {
   const [schemas, setSchemas] = useState<Record<string, SchemaEntry>>({});
+  const [perStepSchemas, setPerStepSchemas] = useState<
+    Record<number, string[]>
+  >({});
 
   const _apply = useCallback((id: string, fn: () => Promise<{ fields: SchemaField[] }>) => {
     setSchemas((prev) => ({
@@ -90,11 +108,67 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
     return Array.from(seen.values());
   }, [schemas]);
 
+  const fieldsAtStep = useCallback(
+    (index: number): SchemaField[] => {
+      if (index <= 0) return allFields;
+      const cols = perStepSchemas[index - 1];
+      if (!cols || cols.length === 0) return allFields;
+      // Preserve the type hint from allFields when the column name matches
+      // a source field (e.g. group_by columns pass through unchanged); new
+      // aggregation aliases fall back to "unknown".
+      const typeByName = new Map(allFields.map((f) => [f.name, f.type]));
+      return cols.map((name) => ({
+        name,
+        type: typeByName.get(name) ?? "unknown",
+      }));
+    },
+    [allFields, perStepSchemas],
+  );
+
   return (
-    <SchemaContext.Provider value={{ schemas, refresh, refreshById, allFields }}>
+    <SchemaContext.Provider
+      value={{
+        schemas,
+        refresh,
+        refreshById,
+        allFields,
+        perStepSchemas,
+        setPerStepSchemas,
+        fieldsAtStep,
+      }}
+    >
       {children}
     </SchemaContext.Provider>
   );
+}
+
+/* ---------------- Step index context (plan 038 item 7) ----------------
+ *
+ * StepsPanel wraps each step's editor in <StepIndexContext value={i}> so
+ * downstream `useStepFields()` can pick the right field set without every
+ * editor threading `stepIndex` through its props.
+ */
+const StepIndexContext = createContext<number>(0);
+
+export function StepIndexProvider({
+  index,
+  children,
+}: {
+  index: number;
+  children: ReactNode;
+}) {
+  return (
+    <StepIndexContext.Provider value={index}>{children}</StepIndexContext.Provider>
+  );
+}
+
+/** Fields available to the editor at the current step index. Falls back
+ *  to `allFields` when no per-step schema is known (e.g. the pipeline
+ *  hasn't been dry-run yet). */
+export function useStepFields(): SchemaField[] {
+  const idx = useContext(StepIndexContext);
+  const { fieldsAtStep } = useSchemas();
+  return fieldsAtStep(idx);
 }
 
 export function useSchemas() {

@@ -284,6 +284,8 @@ async def _compile_body_pipeline(
     d_store: DestinationStore,
     c_store: ConnectionStore,
     lt_store: LookupTableStore,
+    *,
+    on_step_schema=None,
 ):
     """Shared plumbing for endpoints that compile an unsaved pipeline body.
 
@@ -291,6 +293,9 @@ async def _compile_body_pipeline(
     body, loads sources into a fresh DuckDBEngine, then compiles.  Returns
     `(compiled_table, destination)` — caller decides how to consume it.
     Compile errors bubble up as `HTTPException(422, str(e))`.
+
+    `on_step_schema` is forwarded to :func:`compile_pipeline` (plan 038
+    item 7).
     """
     # Cast the PipelineBase body to Pipeline so downstream code that expects
     # `.sources`, `.output_id`, `.steps` all works — validators already fired.
@@ -302,13 +307,39 @@ async def _compile_body_pipeline(
         engine = DuckDBEngine()
         tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
         compiled = compile_pipeline(
-            pipeline, tables, output=destination.config, lookup_tables=lookups,
+            pipeline, tables, output=destination.config,
+            lookup_tables=lookups, on_step_schema=on_step_schema,
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
     return compiled, destination
+
+
+@router.post("/pipelines/step-schemas", dependencies=[Depends(requires("pipeline:read"))])
+async def step_schemas_pipeline(
+    body: PipelineBase,
+    s_store: SourceStore = Depends(get_source_store),
+    d_store: DestinationStore = Depends(get_destination_store),
+    c_store: ConnectionStore = Depends(get_connection_store),
+    lt_store: LookupTableStore = Depends(get_lookup_table_store),
+):
+    """Return `{step_schemas: {index: [columns]}}` for the given unsaved
+    pipeline body (plan 038 item 7).  The frontend uses this so downstream
+    editors (filter after aggregate, pivot outputs, etc.) can offer
+    autocomplete on newly-materialised columns.
+    """
+    schemas: dict[int, list[str]] = {}
+
+    def _capture(idx: int, cols: list[str]):
+        schemas[idx] = cols
+
+    await _compile_body_pipeline(
+        body, s_store, d_store, c_store, lt_store, on_step_schema=_capture,
+    )
+    # JSON keys are strings; matches how the frontend will look them up.
+    return {"step_schemas": {str(k): v for k, v in schemas.items()}}
 
 
 @router.post("/pipelines/dry-run", dependencies=[Depends(requires("pipeline:read"))])

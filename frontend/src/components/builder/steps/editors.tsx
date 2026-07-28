@@ -9,7 +9,7 @@ import {
   Segmented,
   Textarea,
 } from "@/components/ui";
-import { useSchemas } from "../schema-context";
+import { useStepFields } from "../schema-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { StepShape, GroupByEntry, DatePart } from "./types";
@@ -281,7 +281,7 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
 }
 
 export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const { allFields } = useSchemas();
+  const allFields = useStepFields();
 
   // Mode is local UI state — not persisted on the step. On first mount, if
   // there's an existing expr, default to Advanced.
@@ -494,7 +494,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
  * a plain object; we sync in one direction from the local list.
  */
 export function RenameEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const { allFields } = useSchemas();
+  const allFields = useStepFields();
   const mappings = (step.mappings as Record<string, string>) ?? {};
 
   const initial = () =>
@@ -575,7 +575,7 @@ export function RenameEditor({ step, set }: { step: StepShape; set: Setter }) {
 const RETYPE_OPTIONS = ["string", "int", "float", "boolean", "date", "timestamp"];
 
 export function RetypeEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const { allFields } = useSchemas();
+  const allFields = useStepFields();
   return (
     <div className="grid grid-cols-2 gap-3">
       <Field label="Field">
@@ -602,7 +602,7 @@ export function RetypeEditor({ step, set }: { step: StepShape; set: Setter }) {
 }
 
 export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const { allFields } = useSchemas();
+  const allFields = useStepFields();
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-2 gap-3">
@@ -667,7 +667,7 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
 }
 
 export function SortEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const { allFields } = useSchemas();
+  const allFields = useStepFields();
   const by = (step.by as string[]) ?? [];
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -718,7 +718,7 @@ function isTemporalType(t: string | undefined): boolean {
 }
 
 export function AggregateEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const { allFields } = useSchemas();
+  const allFields = useStepFields();
   const group_by = (step.group_by as GroupByEntry[]) ?? [];
   const aggs = (step.aggregations as AggSpec[]) ?? [];
 
@@ -886,7 +886,7 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
 }
 
 export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const { allFields } = useSchemas();
+  const allFields = useStepFields();
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-3 gap-3">
@@ -928,7 +928,7 @@ export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
 const PIVOT_AGG = ["sum", "count", "avg", "min", "max"];
 
 export function PivotEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const { allFields } = useSchemas();
+  const allFields = useStepFields();
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-3 gap-3">
@@ -956,7 +956,7 @@ export function PivotEditor({ step, set }: { step: StepShape; set: Setter }) {
 interface SelectField { field: string; alias?: string | null }
 
 export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const { allFields } = useSchemas();
+  const allFields = useStepFields();
   const fields = (step.fields as SelectField[]) ?? [];
   const dropped = (step.drop as string[]) ?? [];
   const knownNames = allFields.map((f) => f.name);

@@ -60,6 +60,7 @@ def compile_pipeline(
     lookup_tables: dict[str, LookupTable] | None = None,
     on_step=None,
     engine: BaseEngine | None = None,
+    on_step_schema=None,
 ) -> ibis.Table:
     """Compile a pipeline into an ibis expression.
 
@@ -74,6 +75,12 @@ def compile_pipeline(
     engine can apply backend-specific behaviour (e.g. Trino rejecting raw
     DuckDB SQL).  When ``None`` (default) the existing ``table._find_backend()``
     path is used — backwards-compatible for all existing callers.
+
+    `on_step_schema(step_index, columns)` — optional sync callback fired
+    after each step compiles successfully with the list of column names
+    on the current-key table.  Feeds ``/api/pipelines/step-schemas`` so
+    the frontend can offer autocomplete on aggregation aliases and pivot
+    outputs downstream (plan 038 item 7).
     """
     registry = dict(tables)
     lookups = lookup_tables or {}
@@ -103,6 +110,12 @@ def compile_pipeline(
             _emit(idx, op, "failed", str(e))
             raise
         _emit(idx, op, "completed")
+        if on_step_schema is not None:
+            try:
+                cols = list(registry[current_key].columns)
+                on_step_schema(idx, cols)
+            except Exception:  # never let telemetry crash a run
+                pass
 
     result = registry[current_key]
     fields = getattr(output, "fields", None)
