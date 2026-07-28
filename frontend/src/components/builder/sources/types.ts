@@ -26,7 +26,7 @@ export const SOURCE_CONNECTION_COMPAT: Record<SourceKind, ConnectionType[]> = {
   s3:           ["s3"],
   gcs:          ["gcs"],
   azure:        ["azure"],
-  sql_database: ["postgres", "mysql", "sqlite"],
+  sql_database: ["postgres", "mysql", "sqlite", "bigquery", "snowflake"],
   mongodb:      ["mongodb"],
   rest_api:     ["rest_api"],
 };

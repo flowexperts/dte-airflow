@@ -4,6 +4,94 @@
  */
 
 export interface paths {
+    "/healthz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Healthz */
+        get: operations["healthz_healthz_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/readyz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readyz
+         * @description Ready when we can round-trip a query against Postgres.
+         */
+        get: operations["readyz_readyz_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register */
+        post: operations["register_api_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_api_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pipelines": {
         parameters: {
             query?: never;
@@ -36,6 +124,104 @@ export interface paths {
         post?: never;
         /** Delete Pipeline */
         delete: operations["delete_pipeline_api_pipelines__pipeline_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pipelines/{pipeline_id}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pipeline Revisions */
+        get: operations["list_pipeline_revisions_api_pipelines__pipeline_id__revisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pipelines/{pipeline_id}/revisions/{revision_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pipeline Revision */
+        get: operations["get_pipeline_revision_api_pipelines__pipeline_id__revisions__revision_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pipelines/{pipeline_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Diff Pipeline Revisions */
+        get: operations["diff_pipeline_revisions_api_pipelines__pipeline_id__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pipelines/step-schemas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Step Schemas Pipeline
+         * @description Return `{step_schemas: {index: [columns]}}` for the given unsaved
+         *     pipeline body (plan 038 item 7).  The frontend uses this so downstream
+         *     editors (filter after aggregate, pivot outputs, etc.) can offer
+         *     autocomplete on newly-materialised columns.
+         */
+        post: operations["step_schemas_pipeline_api_pipelines_step_schemas_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pipelines/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Run Pipeline
+         * @description Compile + sample an unsaved pipeline body (plan 038 item 6).
+         *
+         *     Mirrors `GET /pipelines/{id}/preview` but the pipeline definition rides
+         *     in the POST body.  Used by the builder split-pane so the preview updates
+         *     as the user edits, before hitting Save.
+         */
+        post: operations["dry_run_pipeline_api_pipelines_dry_run_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -75,6 +261,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Run Events */
+        get: operations["list_run_events_api_runs__run_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Run */
+        post: operations["cancel_run_api_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -101,6 +321,26 @@ export interface paths {
         };
         /** List Runs For Pipeline */
         get: operations["list_runs_for_pipeline_api_pipelines__pipeline_id__runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Quality
+         * @description Return the quality contract results for a run.
+         */
+        get: operations["get_run_quality_api_runs__run_id__quality_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -298,17 +538,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lookup-tables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Lookup Tables */
+        get: operations["list_lookup_tables_api_lookup_tables_get"];
+        put?: never;
+        /** Create Lookup Table */
+        post: operations["create_lookup_table_api_lookup_tables_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lookup-tables/{lookup_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Lookup Table */
+        get: operations["get_lookup_table_api_lookup_tables__lookup_id__get"];
+        /** Update Lookup Table */
+        put: operations["update_lookup_table_api_lookup_tables__lookup_id__put"];
+        post?: never;
+        /** Delete Lookup Table */
+        delete: operations["delete_lookup_table_api_lookup_tables__lookup_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Users */
+        get: operations["list_users_api_users_get"];
+        put?: never;
+        /** Create User */
+        post: operations["create_user_api_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get User */
+        get: operations["get_user_api_users__user_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete User */
+        delete: operations["delete_user_api_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/{user_id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assign Role */
+        post: operations["assign_role_api_users__user_id__roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/{user_id}/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Role */
+        delete: operations["revoke_role_api_users__user_id__roles__role_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Roles */
+        get: operations["list_roles_api_roles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AssignRoleBody */
+        AssignRoleBody: {
+            /** Role Id */
+            role_id: string;
+        };
         /**
-         * Connection
-         * @description Reusable credential bundle. `credentials` is validated per
-         *     `connection_type` against dlt's `@configspec` classes — see
-         *     `_DLT_CRED_CLASS`.
+         * ConnectionBase
+         * @description API/domain fields.  `credentials` is validated against the dlt spec
+         *     class for the given `connection_type` and stored as a cleaned dict.
          */
-        Connection: {
+        ConnectionBase: {
             /** Id */
             id: string;
             /**
@@ -316,52 +684,48 @@ export interface components {
              * @enum {string}
              */
             connection_type: "local_fs" | "s3" | "gcs" | "azure" | "postgres" | "mysql" | "sqlite" | "mongodb" | "rest_api" | "snowflake" | "bigquery";
-            /**
-             * Credentials
-             * @default {}
-             */
-            credentials: {
+            /** Credentials */
+            credentials?: {
                 [key: string]: unknown;
             };
-        };
-        /** CsvFileTarget */
-        CsvFileTarget: {
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * Tenant Id
+             * @default default
              */
-            type: "csv_file";
-            /** Path */
-            path: string;
-            /**
-             * Fields
-             * @default []
-             */
-            fields: components["schemas"]["OutputField"][];
+            tenant_id: string;
         };
-        /** Destination */
-        Destination: {
+        /** CreateUserBody */
+        CreateUserBody: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /**
+         * DestinationBase
+         * @description API/domain fields — no persistence identity.
+         *
+         *     `connection_id` references a Connection row.
+         *     `config` is declared as `dict` for SQLModel JSONB mapping, but is narrowed
+         *     to the typed `OutputTarget` union by `_narrow_config` at validation time.
+         */
+        DestinationBase: {
             /** Id */
             id: string;
             /** Connection Id */
             connection_id: string;
             /** Config */
-            config: components["schemas"]["JsonFileTarget"] | components["schemas"]["CsvFileTarget"] | components["schemas"]["ExcelFileTarget"] | components["schemas"]["ParquetS3Target"] | components["schemas"]["PostgresTarget"] | components["schemas"]["SqlDatabaseTarget"];
-        };
-        /** ExcelFileTarget */
-        ExcelFileTarget: {
+            config?: {
+                [key: string]: unknown;
+            };
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * Tenant Id
+             * @default default
              */
-            type: "excel_file";
-            /** Path */
-            path: string;
-            /**
-             * Fields
-             * @default []
-             */
-            fields: components["schemas"]["OutputField"][];
+            tenant_id: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -373,40 +737,41 @@ export interface components {
             /** Fields */
             fields: components["schemas"]["SchemaFieldNode"][];
         };
-        /** JsonFileTarget */
-        JsonFileTarget: {
+        /** LoginBody */
+        LoginBody: {
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * Email
+             * Format: email
              */
-            type: "json_file";
-            /** Path */
-            path: string;
-            /**
-             * Fields
-             * @default []
-             */
-            fields: components["schemas"]["OutputField"][];
+            email: string;
+            /** Password */
+            password: string;
         };
-        /** OutputField */
-        OutputField: {
-            /** Field */
-            field: string;
-            /** Alias */
-            alias?: string | null;
-        };
-        /** ParquetS3Target */
-        ParquetS3Target: {
+        /**
+         * LookupTableBase
+         * @description API/domain fields. `id` required so FastAPI raises 422 on missing.
+         */
+        LookupTableBase: {
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Mappings */
+            mappings?: {
+                [key: string]: string;
+            };
+            /** Default */
+            default?: string | null;
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * Tenant Id
+             * @default default
              */
-            type: "parquet_s3";
-            /** Bucket Url */
-            bucket_url: string;
+            tenant_id: string;
         };
         /** Pipeline */
         Pipeline: {
+            /** Id */
+            id: string;
             /** Name */
             name: string;
             /** Sources */
@@ -417,18 +782,31 @@ export interface components {
             }[];
             /** Output Id */
             output_id: string;
-            /** Id */
-            id: string;
+            /**
+             * Engine
+             * @default duckdb
+             */
+            engine: string;
+            /** Quality Contracts */
+            quality_contracts?: unknown[];
+            /**
+             * Tenant Id
+             * @default default
+             */
+            tenant_id: string;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
             updated_at?: string | null;
         };
         /**
-         * PipelineCreate
-         * @description Strict API input — non-table so required-field checks fire.
+         * PipelineBase
+         * @description API/domain fields. `id: str` is required — FastAPI raises 422 if
+         *     the client omits it.
          */
-        PipelineCreate: {
+        PipelineBase: {
+            /** Id */
+            id: string;
             /** Name */
             name: string;
             /** Sources */
@@ -439,26 +817,38 @@ export interface components {
             }[];
             /** Output Id */
             output_id: string;
+            /**
+             * Engine
+             * @default auto
+             * @enum {string}
+             */
+            engine: "auto" | "duckdb" | "postgres" | "mysql" | "sqlite" | "bigquery" | "snowflake" | "trino";
+            /** Quality Contracts */
+            quality_contracts?: unknown[];
+            /**
+             * Tenant Id
+             * @default default
+             */
+            tenant_id: string;
+        };
+        /** RegisterBody */
+        RegisterBody: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** RolePublic */
+        RolePublic: {
             /** Id */
             id: string;
-        };
-        /** PostgresTarget */
-        PostgresTarget: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "postgres";
-            /** Schema */
-            schema: string;
-            /** Table */
-            table: string;
-            /**
-             * Write Disposition
-             * @default replace
-             * @enum {string}
-             */
-            write_disposition: "replace" | "append" | "merge";
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions: string[];
         };
         /**
          * SchemaFieldNode
@@ -475,8 +865,14 @@ export interface components {
             /** Children */
             children?: components["schemas"]["SchemaFieldNode"][] | null;
         };
-        /** Source */
-        Source: {
+        /**
+         * SourceBase
+         * @description API/domain fields + config validators.
+         *
+         *     `source_type` is the strict `SourceKind` Literal for API validation.
+         *     `format` is the strict `_FileFormat | None` Literal.
+         */
+        SourceBase: {
             /** Id */
             id: string;
             /** Connection Id */
@@ -487,36 +883,47 @@ export interface components {
              */
             source_type: "filesystem" | "s3" | "gcs" | "azure" | "sql_database" | "mongodb" | "rest_api";
             /** Config */
-            config: {
+            config?: {
                 [key: string]: unknown;
             };
             /** Table */
             table: string;
             /** Format */
             format?: ("json" | "jsonl" | "ndjson" | "csv" | "parquet" | "excel") | null;
+            /**
+             * Tenant Id
+             * @default default
+             */
+            tenant_id: string;
         };
-        /** SqlDatabaseTarget */
-        SqlDatabaseTarget: {
+        /** TokenResponse */
+        TokenResponse: {
+            /** Access Token */
+            access_token: string;
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * Token Type
+             * @default bearer
              */
-            type: "sql_database";
+            token_type: string;
+        };
+        /** UserPublic */
+        UserPublic: {
+            /** Id */
+            id: string;
+            /** Email */
+            email: string;
+            /** Is Active */
+            is_active: boolean;
             /**
-             * Dialect
-             * @enum {string}
+             * Roles
+             * @default []
              */
-            dialect: "mysql" | "snowflake" | "bigquery";
-            /** Schema */
-            schema: string;
-            /** Table */
-            table: string;
+            roles: string[];
             /**
-             * Write Disposition
-             * @default replace
-             * @enum {string}
+             * Permissions
+             * @default []
              */
-            write_disposition: "replace" | "append" | "merge";
+            permissions: string[];
         };
         /** ValidationError */
         ValidationError: {
@@ -540,6 +947,132 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    healthz_healthz_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    readyz_readyz_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    register_api_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_api_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+        };
+    };
     list_pipelines_api_pipelines_get: {
         parameters: {
             query?: {
@@ -581,7 +1114,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PipelineCreate"];
+                "application/json": components["schemas"]["PipelineBase"];
             };
         };
         responses: {
@@ -647,7 +1180,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PipelineCreate"];
+                "application/json": components["schemas"]["PipelineBase"];
             };
         };
         responses: {
@@ -700,6 +1233,173 @@ export interface operations {
             };
         };
     };
+    list_pipeline_revisions_api_pipelines__pipeline_id__revisions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pipeline_revision_api_pipelines__pipeline_id__revisions__revision_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pipeline_id: string;
+                revision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diff_pipeline_revisions_api_pipelines__pipeline_id__diff_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path: {
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    step_schemas_pipeline_api_pipelines_step_schemas_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineBase"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_run_pipeline_api_pipelines_dry_run_post: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineBase"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     preview_pipeline_api_pipelines__pipeline_id__preview_get: {
         parameters: {
             query?: {
@@ -739,6 +1439,68 @@ export interface operations {
             header?: never;
             path: {
                 pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_run_events_api_runs__run_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
             };
             cookie?: never;
         };
@@ -828,6 +1590,37 @@ export interface operations {
             };
         };
     };
+    get_run_quality_api_runs__run_id__quality_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_run_output_api_runs__run_id__output_get: {
         parameters: {
             query?: {
@@ -870,7 +1663,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Source"];
+                "application/json": components["schemas"]["SourceBase"];
             };
         };
         responses: {
@@ -935,7 +1728,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Source"];
+                "application/json": components["schemas"]["SourceBase"];
             };
         };
         responses: {
@@ -1001,7 +1794,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Source"];
+                "application/json": components["schemas"]["SourceBase"];
             };
         };
         responses: {
@@ -1126,7 +1919,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Destination"];
+                "application/json": components["schemas"]["DestinationBase"];
             };
         };
         responses: {
@@ -1192,7 +1985,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Destination"];
+                "application/json": components["schemas"]["DestinationBase"];
             };
         };
         responses: {
@@ -1286,7 +2079,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Connection"];
+                "application/json": components["schemas"]["ConnectionBase"];
             };
         };
         responses: {
@@ -1354,7 +2147,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Connection"];
+                "application/json": components["schemas"]["ConnectionBase"];
             };
         };
         responses: {
@@ -1434,6 +2227,376 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_lookup_tables_api_lookup_tables_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_lookup_table_api_lookup_tables_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookupTableBase"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lookup_table_api_lookup_tables__lookup_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lookup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_lookup_table_api_lookup_tables__lookup_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lookup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookupTableBase"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_lookup_table_api_lookup_tables__lookup_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lookup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_users_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_user_api_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUserBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_api_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_role_api_users__user_id__roles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignRoleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_role_api_users__user_id__roles__role_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_roles_api_roles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RolePublic"][];
                 };
             };
         };
