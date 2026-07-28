@@ -840,7 +840,10 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
 }
 
 
-EngineChoice = Literal["duckdb", "trino"]
+EngineChoice = Literal[
+    "auto",
+    "duckdb", "postgres", "mysql", "sqlite", "bigquery", "snowflake", "trino",
+]
 
 
 class PipelineBase(SQLModel):
@@ -851,9 +854,12 @@ class PipelineBase(SQLModel):
     sources: list[str] = SMField(default_factory=list)
     steps: list[dict] = SMField(default_factory=list)
     output_id: str
-    # Engine dispatch — plan-034.  Defaults to "duckdb".  Set to "trino"
-    # only when DTE_TRINO_ENABLED=true and the cluster is reachable.
-    engine: EngineChoice = "duckdb"
+    # Engine dispatch.  Default "auto" derives the engine from the pipeline's
+    # source composition: single-source postgres → runs in postgres,
+    # filesystem-only → DuckDB, mixed → DuckDB (or 422 with hint to use
+    # trino when DuckDB can't federate).  Legacy values "duckdb"/"trino"
+    # remain accepted as explicit overrides.
+    engine: EngineChoice = "auto"
     quality_contracts: list = SMField(default_factory=list)  # list[Contract] — typed by validator
     tenant_id: str = "default"
 
@@ -963,7 +969,7 @@ SOURCE_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "s3": {"s3"},
     "gcs": {"gcs"},
     "azure": {"azure"},
-    "sql_database": {"postgres", "mysql", "sqlite"},
+    "sql_database": {"postgres", "mysql", "sqlite", "snowflake", "bigquery"},
     "mongodb": {"mongodb"},
     "rest_api": {"rest_api"},
 }
@@ -974,5 +980,183 @@ DESTINATION_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "excel_file": {"local_fs"},
     "parquet_s3": {"s3"},
     "postgres": {"postgres"},
+    # Shape-level: `sql_database` destinations *may* bind to any SQL-family
+    # connection. Runtime-level: whether the active engine has a writer for
+    # that specific dialect is enforced by ENGINE_WRITE_SUPPORT below.
     "sql_database": {"mysql", "snowflake", "bigquery"},
 }
+
+
+# ─── Engine × connection-type capability matrix ──────────────────────────
+# Which connection types each engine can READ and WRITE.  Enforced by
+# `validate_pipeline_engine_compat` at pipeline create/update/trigger.
+#
+# The rows here are grounded in what the code actually implements today:
+# - `duckdb` reads filesystem-family via native readers, and mongodb /
+#   rest_api via dlt hops that land in DuckDB.  It does NOT natively read
+#   postgres/mysql/sqlite anymore — those route through their own ibis
+#   backends (see `BackendRegistry.for_connection`).
+# - `postgres`/`mysql`/`sqlite`/`bigquery`/`snowflake` are "pushdown"
+#   engines — a single-source pipeline whose source is one of those
+#   connection types runs entirely in that source database.
+# - `trino` federates across many connectors; useful when a pipeline mixes
+#   sources that ibis can't join natively (e.g. snowflake ⨝ filesystem).
+
+EngineName = Literal[
+    "duckdb", "postgres", "mysql", "sqlite", "bigquery", "snowflake", "trino",
+]
+
+ENGINE_READ_SUPPORT: dict[EngineName, set[ConnectionType]] = {
+    "duckdb":    {"local_fs", "s3", "gcs", "azure", "mongodb", "rest_api"},
+    "postgres":  {"postgres"},
+    "mysql":     {"mysql"},
+    "sqlite":    {"sqlite"},
+    "bigquery":  {"bigquery"},
+    "snowflake": {"snowflake"},
+    "trino":     {"postgres", "mysql", "sqlite", "snowflake", "bigquery",
+                  "s3", "gcs", "azure"},
+}
+
+# Writers currently implemented in `dte/engine/writers/*.py`:
+# - local_fs: json_file / csv_file / excel_file
+# - s3: parquet_s3
+# - postgres: postgres writer (via dlt[postgres])
+# - mysql / snowflake / bigquery: dlt writer extras (optional)
+ENGINE_WRITE_SUPPORT: dict[EngineName, set[ConnectionType]] = {
+    "duckdb":    {"local_fs", "s3", "postgres", "mysql"},
+    "postgres":  {"postgres", "local_fs"},
+    "mysql":     {"mysql", "local_fs"},
+    "sqlite":    {"sqlite", "local_fs"},
+    "bigquery":  {"bigquery", "local_fs"},
+    "snowflake": {"snowflake", "local_fs"},
+    "trino":     {"postgres", "mysql", "snowflake", "bigquery",
+                  "s3", "gcs", "azure"},
+}
+
+
+def resolve_pipeline_engine(
+    engine_choice: str,
+    source_connection_types: list[ConnectionType],
+) -> EngineName:
+    """Resolve an ``engine`` field value to a concrete engine name.
+
+    Rules:
+
+    1. Explicit engine (`"duckdb"`, `"trino"`, `"postgres"` …) → return as-is.
+    2. `"auto"` (or missing) →
+       - all sources land on DuckDB-family (filesystem, s3, gcs, azure,
+         mongodb, rest_api) → ``duckdb``
+       - all sources share a single non-DuckDB connection type (e.g. every
+         source is postgres) → that engine (pushdown)
+       - mixed → ``duckdb`` if every source can be read by DuckDB, else the
+         caller must switch to Trino explicitly.  This function returns
+         ``duckdb`` optimistically; the compatibility validator raises when
+         DuckDB can't actually read every source.
+    """
+    if engine_choice and engine_choice != "auto":
+        return engine_choice  # type: ignore[return-value]
+
+    types = set(source_connection_types)
+    if not types:
+        return "duckdb"
+
+    duckdb_native = ENGINE_READ_SUPPORT["duckdb"]
+    if types <= duckdb_native:
+        return "duckdb"
+
+    # Single non-DuckDB dialect across all sources → pushdown to that engine.
+    non_duckdb = types - duckdb_native
+    if len(non_duckdb) == 1 and types.issubset(duckdb_native | non_duckdb):
+        # If sources also include filesystem-family, we can't push down —
+        # fall back to duckdb (which will then fail engine compat if the
+        # non-duckdb type isn't readable via duckdb).
+        if types & duckdb_native:
+            return "duckdb"
+        (single,) = non_duckdb
+        if single in ENGINE_READ_SUPPORT:
+            return single  # type: ignore[return-value]
+
+    return "duckdb"
+
+
+class EngineIncompatible(Exception):
+    """Raised when a pipeline's chosen engine can't handle every source or
+    destination it references.  Route handlers turn this into a 422 with a
+    structured payload."""
+
+    def __init__(
+        self,
+        code: str,
+        engine: str,
+        incompatible_sources: list[dict] | None = None,
+        incompatible_destination: dict | None = None,
+        message: str = "",
+    ):
+        self.code = code
+        self.engine = engine
+        self.incompatible_sources = incompatible_sources or []
+        self.incompatible_destination = incompatible_destination
+        super().__init__(message or code)
+
+    def payload(self) -> dict:
+        return {
+            "code": self.code,
+            "engine": self.engine,
+            "incompatible_sources": self.incompatible_sources,
+            "incompatible_destination": self.incompatible_destination,
+        }
+
+
+def validate_pipeline_engine_compat(
+    engine: str,
+    sources: list[tuple[str, ConnectionType]],
+    destination: tuple[str, ConnectionType],
+) -> None:
+    """Raise :class:`EngineIncompatible` if ``engine`` can't read every
+    source or write to the destination.
+
+    Parameters
+    ----------
+    engine
+        Resolved engine name (already run through :func:`resolve_pipeline_engine`).
+    sources
+        List of ``(source_id, connection_type)`` tuples.
+    destination
+        ``(destination_id, connection_type)`` tuple.
+    """
+    reads = ENGINE_READ_SUPPORT.get(engine, set())
+    writes = ENGINE_WRITE_SUPPORT.get(engine, set())
+
+    bad_sources = [
+        {
+            "source_id": sid,
+            "connection_type": ctype,
+            "reason": (
+                f"{engine!r} engine cannot read {ctype!r} sources. "
+                f"Supported: {sorted(reads)}. "
+                "Switch pipeline engine or split the source out."
+            ),
+        }
+        for sid, ctype in sources
+        if ctype not in reads
+    ]
+
+    dest_id, dest_ctype = destination
+    bad_dest = None
+    if dest_ctype not in writes:
+        bad_dest = {
+            "destination_id": dest_id,
+            "connection_type": dest_ctype,
+            "reason": (
+                f"{engine!r} engine cannot write to {dest_ctype!r} destinations. "
+                f"Supported: {sorted(writes)}."
+            ),
+        }
+
+    if bad_sources or bad_dest:
+        raise EngineIncompatible(
+            code="engine_incompatible",
+            engine=engine,
+            incompatible_sources=bad_sources,
+            incompatible_destination=bad_dest,
+        )

@@ -151,3 +151,89 @@ async def test_pivot_on_missing_values_column_fails(
     run = await trigger_and_wait(client, pipe_id)
     assert run["status"] == "failed", run
     assert run["error"], "expected non-empty error string"
+
+
+# ─── Engine × connection-type gating ────────────────────────────────────
+
+
+async def test_pipeline_with_bigquery_source_and_duckdb_engine_rejected_at_save(
+    client, scenario_ids, fixtures_dir, out_dir
+):
+    """A pipeline whose source is a bigquery connection must not save with
+    engine=duckdb — duckdb can't read bigquery in our architecture. Expect
+    a 422 with a structured `engine_incompatible` payload."""
+    from tests.scenarios.helpers import create_connection
+
+    conn_id = scenario_ids("connection", "bq")
+    src_id = scenario_ids("source", "bq_orders")
+    dst_id = scenario_ids("destination", "out")
+    out_path = out_dir / "err_engine.json"
+
+    await create_connection(
+        client, id=conn_id, connection_type="bigquery",
+        credentials={"url": "bigquery://my-project/my-dataset"},
+    )
+    await create_source(
+        client, id=src_id, source_type="sql_database", connection_id=conn_id,
+        config={"table": "orders"}, table="bq_orders",
+    )
+    await create_destination(
+        client, id=dst_id, connection_id="local_fs",
+        config={"type": "json_file", "path": str(out_path)},
+    )
+
+    pipe_id = scenario_ids("pipeline")
+    r = await client.post("/api/pipelines", json={
+        "id": pipe_id,
+        "name": pipe_id,
+        "sources": [src_id],
+        "output_id": dst_id,
+        "steps": [],
+        "engine": "duckdb",  # explicit override that can't handle bigquery
+    })
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "engine_incompatible"
+    assert detail["engine"] == "duckdb"
+    assert any(s["connection_type"] == "bigquery" for s in detail["incompatible_sources"])
+
+
+async def test_pipeline_with_trino_engine_when_disabled_returns_helpful_422(
+    client, scenario_ids, fixtures_dir, out_dir, monkeypatch
+):
+    """engine=trino without DTE_TRINO_ENABLED=true should fail at save
+    with a distinct `trino_not_enabled` code, not a generic ValueError."""
+    from tests.scenarios.helpers import create_connection
+
+    monkeypatch.delenv("DTE_TRINO_ENABLED", raising=False)
+
+    conn_id = scenario_ids("connection", "pg_conn")
+    src_id = scenario_ids("source", "pg_users")
+    dst_id = scenario_ids("destination", "out")
+    out_path = out_dir / "err_trino.json"
+
+    await create_connection(
+        client, id=conn_id, connection_type="postgres",
+        credentials={"url": "postgresql://u:p@h/db"},
+    )
+    await create_source(
+        client, id=src_id, source_type="sql_database", connection_id=conn_id,
+        config={"table": "users"}, table="pg_users",
+    )
+    await create_destination(
+        client, id=dst_id, connection_id="local_fs",
+        config={"type": "json_file", "path": str(out_path)},
+    )
+
+    pipe_id = scenario_ids("pipeline")
+    r = await client.post("/api/pipelines", json={
+        "id": pipe_id,
+        "name": pipe_id,
+        "sources": [src_id],
+        "output_id": dst_id,
+        "steps": [],
+        "engine": "trino",
+    })
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "trino_not_enabled"

@@ -17,21 +17,40 @@ from dte.engine.base import BaseEngine
 from dte.engine.duckdb_engine import DuckDBEngine
 
 
+def trino_enabled() -> bool:
+    """Whether the Trino engine is enabled in the current deployment.
+
+    Exposed so validators can raise a helpful 422 (``code=trino_not_enabled``)
+    before an engine-selection error surfaces from ``get_engine``.
+    """
+    return os.environ.get("DTE_TRINO_ENABLED", "false").lower() == "true"
+
+
 def get_engine(name: str) -> BaseEngine:
     """Return a fresh engine instance for *name*.
+
+    Engine names understood:
+
+    - ``"duckdb"`` — DuckDBEngine (default, also used as the local
+      execution glue for filesystem writers).
+    - ``"postgres"`` / ``"mysql"`` / ``"sqlite"`` / ``"bigquery"`` /
+      ``"snowflake"`` — pushdown engines.  These resolve to a DuckDBEngine
+      instance today; the actual pushdown happens because the source
+      tables are bound to their native ibis backend by
+      :class:`~dte.engine.backend_registry.BackendRegistry` before the
+      compiler runs.  DuckDBEngine is retained only for writer glue and
+      the raw-SQL escape hatches (which reject non-DuckDB tables at
+      call time via :func:`_require_duckdb_backend`).
+    - ``"trino"`` — TrinoEngine, gated behind ``DTE_TRINO_ENABLED``.
 
     Raises
     ------
     ValueError
-        Unknown engine name or Trino requested but ``DTE_TRINO_ENABLED`` is
-        not ``"true"``.
+        Unknown engine name, or Trino requested but ``DTE_TRINO_ENABLED``
+        is not ``"true"``.
     """
-    if name == "duckdb":
-        return DuckDBEngine()
-
     if name == "trino":
-        _trino_enabled = os.environ.get("DTE_TRINO_ENABLED", "false").lower()
-        if _trino_enabled != "true":
+        if not trino_enabled():
             raise ValueError(
                 "Trino engine is disabled. Set DTE_TRINO_ENABLED=true and "
                 "configure DTE_TRINO_HOST / DTE_TRINO_PORT / DTE_TRINO_USER "
@@ -40,7 +59,15 @@ def get_engine(name: str) -> BaseEngine:
         from dte.engine.trino_engine import TrinoEngine
         return TrinoEngine()
 
+    _PUSHDOWN_ENGINES = {
+        "duckdb", "postgres", "mysql", "sqlite", "bigquery", "snowflake", "auto",
+    }
+    if name in _PUSHDOWN_ENGINES:
+        # BackendRegistry decides the *actual* per-source execution locus;
+        # DuckDBEngine is the local orchestrator + writer glue.
+        return DuckDBEngine()
+
     raise ValueError(
-        f"Unknown engine {name!r}. Available engines: 'duckdb'"
-        + (" and 'trino' (when DTE_TRINO_ENABLED=true)" if True else "")
+        f"Unknown engine {name!r}. Available: duckdb, postgres, mysql, "
+        "sqlite, bigquery, snowflake, trino (when DTE_TRINO_ENABLED=true)."
     )

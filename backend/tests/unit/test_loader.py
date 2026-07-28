@@ -397,15 +397,19 @@ def test_dispatch_registers_sql_database():
     assert "sql_database" in LOADERS
 
 
-def test_sql_database_unsupported_scheme_raises():
+def test_sql_database_snowflake_without_extra_raises_helpfully():
+    """Snowflake is a supported connection type in the new architecture, but
+    routing to it requires the `snowflake-source` extra. Without it, the
+    loader should raise a clear error pointing at the missing extra."""
     src = Source(connection_id="local_fs",
-        id="sql_bad",
+        id="sql_snow",
         source_type="sql_database",
         config={"table": "t"},
         table="t",
     )
     con = ibis.duckdb.connect()
-    with pytest.raises(NotImplementedError, match="snowflake"):
+    # Extra not installed in the dev env → RuntimeError mentioning the extra.
+    with pytest.raises(RuntimeError, match="snowflake-source"):
         load_source(src, con, {"url": "snowflake://user:pw@acct"})
 
 

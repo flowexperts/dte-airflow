@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import dlt
 import ibis
 
 from dte.models.pipeline import Source
+
+if TYPE_CHECKING:
+    from dte.engine.backend_registry import BackendRegistry
+    from dte.models.pipeline import Connection
 
 
 def resolve_secret(value: Any) -> Any:
@@ -185,12 +189,13 @@ def _build_azure_secret_sql(credentials: dict, secret_name: str) -> str:
 
 def _load_remote_via_duckdb(
     source: Source,
-    con: ibis.BaseBackend,
+    registry: "BackendRegistry",
     extension: str,
     secret_sql: str,
 ) -> ibis.Table:
     """Install the required DuckDB extension, register a scoped SECRET, and
     materialise `bucket_url + file_glob` as a view over `read_*_auto`."""
+    con = registry.duckdb()
     raw_con = con.con
     config = source.config
     bucket_url = config["bucket_url"].rstrip("/")
@@ -210,7 +215,12 @@ def _load_remote_via_duckdb(
     return con.table(source.table)
 
 
-def _load_filesystem(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
+def _load_filesystem(
+    source: Source,
+    registry: "BackendRegistry",
+    connection: "Connection",
+    credentials: dict,
+) -> ibis.Table:
     """Read local files directly via DuckDB's native readers.
 
     Nested JSON comes through as STRUCT columns (DuckDB default). The
@@ -218,6 +228,7 @@ def _load_filesystem(source: Source, con: ibis.BaseBackend, credentials: dict) -
     into the struct; legacy `parent__child` refs still work because it
     falls back to `__`-joined lookups when struct traversal misses.
     """
+    con = registry.duckdb()
     config = source.config
     bucket_url = config["bucket_url"]
     file_glob = config.get("file_glob", "**/*.json")
@@ -239,24 +250,39 @@ def _load_filesystem(source: Source, con: ibis.BaseBackend, credentials: dict) -
     return con.table(source.table)
 
 
-def _load_s3(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
+def _load_s3(
+    source: Source,
+    registry: "BackendRegistry",
+    connection: "Connection",
+    credentials: dict,
+) -> ibis.Table:
     secret_name = f"dte_src_{source.id}_s3"
     return _load_remote_via_duckdb(
-        source, con, "httpfs", _build_s3_secret_sql(credentials, secret_name)
+        source, registry, "httpfs", _build_s3_secret_sql(credentials, secret_name)
     )
 
 
-def _load_gcs(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
+def _load_gcs(
+    source: Source,
+    registry: "BackendRegistry",
+    connection: "Connection",
+    credentials: dict,
+) -> ibis.Table:
     secret_name = f"dte_src_{source.id}_gcs"
     return _load_remote_via_duckdb(
-        source, con, "httpfs", _build_gcs_secret_sql(credentials, secret_name)
+        source, registry, "httpfs", _build_gcs_secret_sql(credentials, secret_name)
     )
 
 
-def _load_azure(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
+def _load_azure(
+    source: Source,
+    registry: "BackendRegistry",
+    connection: "Connection",
+    credentials: dict,
+) -> ibis.Table:
     secret_name = f"dte_src_{source.id}_azure"
     return _load_remote_via_duckdb(
-        source, con, "azure", _build_azure_secret_sql(credentials, secret_name)
+        source, registry, "azure", _build_azure_secret_sql(credentials, secret_name)
     )
 
 
@@ -271,58 +297,28 @@ def _ensure_ext(raw_con, name: str) -> None:
     raw_con.execute(f"LOAD {name}")
 
 
-def _sql_scanner_spec(credentials: str) -> tuple[str, str, str, str]:
-    """(ext_name, attach_target, attach_type, default_schema) for a URL.
+def _load_sql_database(
+    source: Source,
+    registry: "BackendRegistry",
+    connection: "Connection",
+    credentials: dict,
+) -> ibis.Table:
+    """Open a native ibis backend for the linked Connection and return the
+    referenced table.  Subsequent compilation pushes filters, projections,
+    aggregations etc. down into the source engine (postgres/mysql/sqlite).
 
-    - `sqlite:///path` → ('sqlite', 'path', 'sqlite', 'main')
-    - `postgresql://…` → ('postgres', <url>, 'postgres', 'public')
-    - `mysql://…`      → ('mysql', <url>, 'mysql', '')
+    Two sources bound to the same Connection.id share one backend via the
+    registry cache, so the compiler treats them as co-located and can join
+    them without cross-backend federation.
     """
-    if credentials.startswith("sqlite:///"):
-        return "sqlite", credentials[len("sqlite:///"):], "sqlite", "main"
-    if credentials.startswith(("postgresql://", "postgres://")):
-        return "postgres", credentials, "postgres", "public"
-    if credentials.startswith("mysql://"):
-        return "mysql", credentials, "mysql", ""
-    scheme = credentials.split("://", 1)[0] if "://" in credentials else credentials
-    raise NotImplementedError(
-        f"sql_database: unsupported credentials scheme '{scheme}://'. "
-        "Supported: sqlite, postgresql, mysql."
-    )
-
-
-def _load_sql_database(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
-    """Attach the source via a DuckDB scanner extension and expose the
-    requested table as a view. Queries stream through DuckDB — no dlt hop.
-
-    `credentials["url"]` is the SQLAlchemy-style connection string."""
-    raw_con = con.con
+    backend = registry.for_connection(connection, credentials)
     config = source.config
-    url = resolve_secret(credentials["url"])
     table_name = config["table"]
-    user_schema = config.get("schema")
-
-    ext, attach_target, attach_type, default_schema = _sql_scanner_spec(url)
-    _ensure_ext(raw_con, ext)
-
-    alias = f"dte_src_{source.id}"
-    raw_con.execute(f"DETACH DATABASE IF EXISTS {_sql_ident(alias)}")
-    raw_con.execute(
-        f"ATTACH {_sql_string_literal(attach_target)} "
-        f"AS {_sql_ident(alias)} (TYPE {attach_type}, READ_ONLY)"
-    )
-
-    schema = user_schema or default_schema
-    qualified = (
-        f"{_sql_ident(alias)}.{_sql_ident(schema)}.{_sql_ident(table_name)}"
-        if schema
-        else f"{_sql_ident(alias)}.{_sql_ident(table_name)}"
-    )
-    raw_con.execute(
-        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} "
-        f"AS SELECT * FROM {qualified}"
-    )
-    return con.table(source.table)
+    schema = config.get("schema")
+    # ibis backends accept `schema=` for postgres/mysql; sqlite ignores it.
+    if schema:
+        return backend.table(table_name, schema=schema)
+    return backend.table(table_name)
 
 
 def _mongo_client(connection_url: str):
@@ -330,7 +326,13 @@ def _mongo_client(connection_url: str):
     return MongoClient(connection_url)
 
 
-def _load_mongodb(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
+def _load_mongodb(
+    source: Source,
+    registry: "BackendRegistry",
+    connection: "Connection",
+    credentials: dict,
+) -> ibis.Table:
+    con = registry.duckdb()
     raw_con = con.con
     config = source.config
     connection_url = resolve_secret(credentials["url"])
@@ -356,9 +358,15 @@ def _load_mongodb(source: Source, con: ibis.BaseBackend, credentials: dict) -> i
     return con.table(source.table, database=("memory", "dte_sources"))
 
 
-def _load_rest_api(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
+def _load_rest_api(
+    source: Source,
+    registry: "BackendRegistry",
+    connection: "Connection",
+    credentials: dict,
+) -> ibis.Table:
     from dlt.sources.rest_api import rest_api_source
 
+    con = registry.duckdb()
     raw_con = con.con
     config = _merge_rest_credentials(source.config, credentials)
 
@@ -393,7 +401,9 @@ def _merge_rest_credentials(config: dict, credentials: dict) -> dict:
     return resolved
 
 
-LOADERS: dict[str, Callable[[Source, ibis.BaseBackend, dict], ibis.Table]] = {
+LoaderFn = Callable[[Source, "BackendRegistry", "Connection", dict], ibis.Table]
+
+LOADERS: dict[str, LoaderFn] = {
     "filesystem": _load_filesystem,
     "s3": _load_s3,
     "gcs": _load_gcs,
@@ -404,12 +414,85 @@ LOADERS: dict[str, Callable[[Source, ibis.BaseBackend, dict], ibis.Table]] = {
 }
 
 
-def load_source(source: Source, con: ibis.BaseBackend, credentials: dict) -> ibis.Table:
-    """`credentials` is the linked Connection's decrypted credentials
-    dict — always a dict, empty for `local_fs`."""
+def load_source(
+    source: Source,
+    registry_or_con: "BackendRegistry | ibis.BaseBackend",
+    connection_or_credentials: "Connection | dict | None" = None,
+    credentials: dict | None = None,
+) -> ibis.Table:
+    """Load a source into an ibis.Table via the appropriate backend.
+
+    - Filesystem-family and dlt-hop loaders use ``registry.duckdb()``.
+    - ``sql_database`` uses ``registry.for_connection(connection, creds)``
+      so subsequent compilation pushes down into the source engine.
+
+    Signature: ``load_source(source, registry, connection, credentials)``.
+
+    A legacy 3-arg call — ``load_source(source, con, credentials)`` where
+    ``con`` is an ``ibis.BaseBackend`` — is still accepted for one release
+    to give call sites time to migrate.  The connection is fabricated from
+    the source's ``source_type`` and (for ``sql_database``) the URL scheme.
+    """
+    if isinstance(registry_or_con, ibis.BaseBackend):
+        # Legacy: (source, con, credentials).
+        from dte.engine.backend_registry import BackendRegistry
+        creds: dict = connection_or_credentials or {}  # type: ignore[assignment]
+        registry = BackendRegistry(duckdb_con=registry_or_con)
+        connection = _fabricate_legacy_connection(source, creds)
+    else:
+        registry = registry_or_con
+        connection = connection_or_credentials  # type: ignore[assignment]
+        creds = credentials or {}
+
     loader = LOADERS.get(source.source_type)
     if loader is None:
         raise NotImplementedError(
             f"source_type '{source.source_type}' is not supported"
         )
-    return loader(source, con, credentials)
+    return loader(source, registry, connection, creds)
+
+
+def _fabricate_legacy_connection(source: Source, credentials: dict) -> "Connection":
+    """Build a minimal in-memory Connection from a legacy 3-arg call.
+
+    Only used by pre-registry callers (older tests).  Real API traffic
+    passes a real Connection through the routes.
+    """
+    from dte.models.pipeline import Connection
+
+    ctype: str
+    if source.source_type == "sql_database":
+        # Resolve env-indirection {"env": "X"} so URL-scheme sniffing works.
+        raw_url = credentials.get("url")
+        try:
+            resolved_url = resolve_secret(raw_url) if raw_url else ""
+        except KeyError:
+            resolved_url = ""
+        url = str(resolved_url)
+        if url.startswith("sqlite:"):
+            ctype = "sqlite"
+        elif url.startswith(("postgres:", "postgresql:")):
+            ctype = "postgres"
+        elif url.startswith("mysql:"):
+            ctype = "mysql"
+        elif url.startswith("snowflake:"):
+            ctype = "snowflake"
+        elif url.startswith("bigquery:"):
+            ctype = "bigquery"
+        else:
+            scheme = url.split("://", 1)[0] if "://" in url else url
+            raise NotImplementedError(
+                f"sql_database: unsupported credentials scheme '{scheme}://'. "
+                "Supported: sqlite, postgresql, mysql, snowflake, bigquery."
+            )
+    else:
+        # filesystem-family, mongodb, rest_api — all route through DuckDB;
+        # connection type is nominal.
+        ctype = source.source_type if source.source_type in (
+            "s3", "gcs", "azure", "mongodb", "rest_api",
+        ) else "local_fs"
+    return Connection(
+        id=f"legacy_{source.id}",
+        connection_type=ctype,  # type: ignore[arg-type]
+        credentials=credentials,
+    )
