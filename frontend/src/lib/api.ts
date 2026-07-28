@@ -1,9 +1,30 @@
-import type { components, paths } from "./api-types";
+/** Per-field projection with optional cast. Matches backend's `OutputField`. */
+export interface OutputField {
+  field: string;
+  as?: string | null;
+  cast?: string | null;
+}
 
-export type JsonFileOutput = components["schemas"]["JsonFileTarget"];
-export type CsvFileOutput = components["schemas"]["CsvFileTarget"];
-export type ExcelFileOutput = components["schemas"]["ExcelFileTarget"];
-export type OutputField = components["schemas"]["OutputField"];
+/** File-shaped output targets. Kept as plain aliases because the openapi
+ *  Destination.config is flattened to `Record<string, unknown>` (JSONB). */
+export interface JsonFileOutput {
+  type: "json_file";
+  path: string;
+  fields?: OutputField[];
+}
+export interface CsvFileOutput {
+  type: "csv_file";
+  path: string;
+  fields?: OutputField[];
+  delimiter?: string;
+  header?: boolean;
+}
+export interface ExcelFileOutput {
+  type: "excel_file";
+  path: string;
+  fields?: OutputField[];
+  sheet_name?: string;
+}
 
 /** Output kinds the destination form can create/edit inline.
  *  All three share `{ path, fields? }` — divergence is metadata only. */
@@ -26,12 +47,56 @@ export const FILE_OUTPUT_EXT: Record<FileOutputType, string> = {
  * Pipeline model — hand-typed because api-types.ts is stale until
  * `pnpm gen:types` regens against the new backend.
  */
+export type EngineChoice =
+  | "auto"
+  | "duckdb"
+  | "postgres"
+  | "mysql"
+  | "sqlite"
+  | "bigquery"
+  | "snowflake"
+  | "trino";
+
 export interface Pipeline {
   id: string;
   name: string;
   sources: string[];
   steps: Array<Record<string, unknown>>;
   output_id: string;
+  /** Engine dispatch. "auto" (default) resolves per source composition on
+   *  the backend: single-source postgres → pushdown to postgres, etc. */
+  engine?: EngineChoice;
+}
+
+/** Structured 4xx payloads returned by pipeline save / trigger when the
+ *  engine × connection-type gate rejects. */
+export interface EngineIncompatibleError {
+  code: "engine_incompatible";
+  engine: EngineChoice;
+  incompatible_sources: Array<{
+    source_id: string;
+    connection_type: ConnectionType;
+    reason: string;
+  }>;
+  incompatible_destination: null | {
+    destination_id: string;
+    connection_type: ConnectionType;
+    reason: string;
+  };
+}
+
+export interface TrinoNotEnabledError {
+  code: "trino_not_enabled";
+  engine: "trino";
+  message: string;
+}
+
+export type PipelineGateError = EngineIncompatibleError | TrinoNotEnabledError;
+
+export function isPipelineGateError(detail: unknown): detail is PipelineGateError {
+  if (!detail || typeof detail !== "object") return false;
+  const code = (detail as { code?: unknown }).code;
+  return code === "engine_incompatible" || code === "trino_not_enabled";
 }
 
 /** Source model — creds live on the linked Connection, not in `config`.
@@ -141,13 +206,20 @@ const BASE =
     : process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 class ApiError extends Error {
+  /** Raw detail parsed from the JSON body (may be a string or an object like
+   *  the structured `engine_incompatible` payload). Use `isPipelineGateError`
+   *  or similar narrowers to destructure. */
+  public rawDetail: unknown;
+
   constructor(
     public status: number,
     public detail: string,
     public url: string,
+    rawDetail?: unknown,
   ) {
     super(`${status} ${detail} (${url})`);
     this.name = "ApiError";
+    this.rawDetail = rawDetail ?? detail;
   }
 }
 
@@ -204,14 +276,15 @@ export async function apiFetch<T>(
         window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
       }
     }
-    let detail = res.statusText;
+    let detail: unknown = res.statusText;
     try {
       const body = await res.json();
-      detail = body?.detail ?? detail;
+      detail = body?.detail ?? res.statusText;
     } catch {
       // non-json error
     }
-    throw new ApiError(res.status, typeof detail === "string" ? detail : JSON.stringify(detail), url);
+    const detailStr = typeof detail === "string" ? detail : JSON.stringify(detail);
+    throw new ApiError(res.status, detailStr, url, detail);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -459,4 +532,4 @@ export const isTerminal = (status: RunStatus | undefined): boolean =>
   status === "completed" || status === "failed";
 
 // re-export the OpenAPI namespaces for consumers wanting the raw types
-export type { components, paths };
+export type { components, paths } from "./api-types";

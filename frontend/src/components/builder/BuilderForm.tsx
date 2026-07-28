@@ -2,13 +2,27 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Field, Input, PageHeader, Topbar } from "@/components/ui";
+import { Button, Dropdown, Field, Input, PageHeader, Topbar } from "@/components/ui";
 import {
+  ApiError,
   createPipeline,
+  isPipelineGateError,
   pipelineStepSchemas,
   updatePipeline,
+  type EngineChoice,
   type Pipeline,
 } from "@/lib/api";
+
+const ENGINE_OPTIONS: { value: EngineChoice; label: string }[] = [
+  { value: "auto",      label: "auto — pick engine from sources (recommended)" },
+  { value: "duckdb",    label: "duckdb — force local DuckDB execution" },
+  { value: "postgres",  label: "postgres — pushdown (all sources must be postgres)" },
+  { value: "mysql",     label: "mysql — pushdown (all sources must be mysql)" },
+  { value: "sqlite",    label: "sqlite — pushdown (all sources must be sqlite)" },
+  { value: "bigquery",  label: "bigquery — pushdown (all sources must be BigQuery)" },
+  { value: "snowflake", label: "snowflake — pushdown (all sources must be Snowflake)" },
+  { value: "trino",     label: "trino — federate across dialects (requires DTE_TRINO_ENABLED)" },
+];
 import { SourcesPanel } from "./sources";
 import { StepsPanel } from "./steps/StepsPanel";
 import type { StepShape } from "./steps/types";
@@ -16,6 +30,30 @@ import { DestinationPicker } from "./DestinationPicker";
 import { SchemaProvider, useSchemas } from "./schema-context";
 import { PipelinePreview } from "@/components/pipeline-preview";
 import { validateField, validatePipelineForm } from "@/lib/validation";
+
+/** Turn a save error into a human-readable message. Handles the structured
+ *  engine-gating 422 payloads (`engine_incompatible`, `trino_not_enabled`)
+ *  by pulling the reasons out instead of dumping the raw JSON. */
+function formatSaveError(e: unknown): string {
+  if (e instanceof ApiError && isPipelineGateError(e.rawDetail)) {
+    const d = e.rawDetail;
+    if (d.code === "trino_not_enabled") {
+      return d.message ||
+        "Trino engine is not enabled on this deployment. Choose a different engine.";
+    }
+    const lines: string[] = [`Engine '${d.engine}' can't run this pipeline:`];
+    for (const s of d.incompatible_sources) {
+      lines.push(`  • source '${s.source_id}' (${s.connection_type}): ${s.reason}`);
+    }
+    if (d.incompatible_destination) {
+      const x = d.incompatible_destination;
+      lines.push(`  • destination '${x.destination_id}' (${x.connection_type}): ${x.reason}`);
+    }
+    return lines.join("\n");
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
 
 function AutoInferSchemas({ sourceIds }: { sourceIds: string[] }) {
   const { schemas, refreshById } = useSchemas();
@@ -166,7 +204,7 @@ export function BuilderForm({
       }
       router.push(`/pipelines/${encodeURIComponent(pipeline.id)}`);
     } catch (e) {
-      setSubmitErr(e instanceof Error ? e.message : String(e));
+      setSubmitErr(formatSaveError(e));
       setSaving(false);
     }
   };
@@ -198,6 +236,16 @@ export function BuilderForm({
           }}
           onBlur={(e) => touchField("name", e.target.value)}
           placeholder="Orders — nightly cohort"
+        />
+      </Field>
+      <Field
+        label="Engine"
+        hint="Where the pipeline runs. 'auto' pushes down to your DB when possible; otherwise DuckDB."
+      >
+        <Dropdown<EngineChoice>
+          value={(pipeline.engine as EngineChoice) ?? "auto"}
+          onChange={(v) => setPipeline({ ...pipeline, engine: v })}
+          options={ENGINE_OPTIONS}
         />
       </Field>
     </div>
