@@ -275,6 +275,13 @@ export const previewPipeline = (id: string, limit = 100) =>
     `/api/pipelines/${encodeURIComponent(id)}/preview?limit=${limit}`,
   );
 
+/** Compile + sample an unsaved pipeline body (plan 038 item 6). */
+export const dryRunPipeline = (pipeline: Pipeline, limit = 20) =>
+  apiFetch<PreviewResponse>(
+    `/api/pipelines/dry-run?limit=${limit}`,
+    { method: "POST", body: JSON.stringify(pipeline) },
+  );
+
 export const listPipelineRuns = (id: string, limit = 50) =>
   apiFetch<Run[]>(
     `/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}`,

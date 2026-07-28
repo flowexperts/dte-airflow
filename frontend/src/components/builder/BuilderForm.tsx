@@ -13,6 +13,7 @@ import { StepsPanel } from "./steps/StepsPanel";
 import type { StepShape } from "./steps/types";
 import { DestinationPicker } from "./DestinationPicker";
 import { SchemaProvider, useSchemas } from "./schema-context";
+import { PipelinePreview } from "@/components/pipeline-preview";
 import { validateField, validatePipelineForm } from "@/lib/validation";
 
 function AutoInferSchemas({ sourceIds }: { sourceIds: string[] }) {
@@ -32,10 +33,18 @@ export function BuilderForm({
   initial,
   mode,
   preview,
+  livePreview,
 }: {
   initial: Pipeline;
   mode: "create" | "edit";
+  /** Right-hand split-pane content — a static node (e.g. saved-pipeline
+   *  preview keyed by id). Ignored when `livePreview` is set. */
   preview?: ReactNode;
+  /** When true, BuilderForm renders `<PipelinePreview pipelineId={pipeline}>`
+   *  itself, feeding the live builder state each edit (plan 038 item 6).
+   *  Cannot be handled via a callback prop because server components can't
+   *  pass functions across the client boundary. */
+  livePreview?: boolean;
 }) {
   const router = useRouter();
   const [pipeline, setPipeline] = useState<Pipeline>(initial);
@@ -190,7 +199,11 @@ export function BuilderForm({
         sub={mode === "edit" ? pipeline.id : undefined}
       />
 
-      {preview ? (
+      {preview || livePreview ? (() => {
+        const previewNode = livePreview
+          ? <PipelinePreview pipelineId={pipeline} />
+          : preview;
+        return (
         <div
           className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] overflow-hidden"
           style={{ height: "calc(100vh - 52px - 89px)" }}
@@ -226,10 +239,11 @@ export function BuilderForm({
             </div>
           </div>
           <div className="overflow-y-auto hidden lg:block">
-            <div className="px-8 py-8">{preview}</div>
+            <div className="px-8 py-8">{previewNode}</div>
           </div>
         </div>
-      ) : (
+      );
+      })() : (
         <div className="px-14 py-8 space-y-6">
           {submitErr && (
             <div className="p-3 border border-red rounded bg-code-bg text-red font-mono text-[12.5px]">

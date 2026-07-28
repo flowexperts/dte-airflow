@@ -278,6 +278,65 @@ async def _resolve(
     return sources, (destination, dest_conn.credentials)
 
 
+async def _compile_body_pipeline(
+    body: PipelineBase,
+    s_store: SourceStore,
+    d_store: DestinationStore,
+    c_store: ConnectionStore,
+    lt_store: LookupTableStore,
+):
+    """Shared plumbing for endpoints that compile an unsaved pipeline body.
+
+    Resolves source/destination/connection/lookup refs from the given
+    body, loads sources into a fresh DuckDBEngine, then compiles.  Returns
+    `(compiled_table, destination)` — caller decides how to consume it.
+    Compile errors bubble up as `HTTPException(422, str(e))`.
+    """
+    # Cast the PipelineBase body to Pipeline so downstream code that expects
+    # `.sources`, `.output_id`, `.steps` all works — validators already fired.
+    pipeline = Pipeline(**body.model_dump())
+    decrypt_context_var.set("pipeline_dry_run")
+    try:
+        sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
+        lookups = await _resolve_lookups(pipeline, lt_store)
+        engine = DuckDBEngine()
+        tables = {s.id: load_source(s, engine.con, creds) for s, creds in sources}
+        compiled = compile_pipeline(
+            pipeline, tables, output=destination.config, lookup_tables=lookups,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return compiled, destination
+
+
+@router.post("/pipelines/dry-run", dependencies=[Depends(requires("pipeline:read"))])
+async def dry_run_pipeline(
+    body: PipelineBase,
+    limit: int = 20,
+    s_store: SourceStore = Depends(get_source_store),
+    d_store: DestinationStore = Depends(get_destination_store),
+    c_store: ConnectionStore = Depends(get_connection_store),
+    lt_store: LookupTableStore = Depends(get_lookup_table_store),
+):
+    """Compile + sample an unsaved pipeline body (plan 038 item 6).
+
+    Mirrors `GET /pipelines/{id}/preview` but the pipeline definition rides
+    in the POST body.  Used by the builder split-pane so the preview updates
+    as the user edits, before hitting Save.
+    """
+    compiled, _ = await _compile_body_pipeline(
+        body, s_store, d_store, c_store, lt_store,
+    )
+    try:
+        df = compiled.limit(limit).execute()
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    rows = json.loads(df.to_json(orient="records", date_format="iso"))
+    return {"rows": rows, "count": len(rows)}
+
+
 @router.get("/pipelines/{pipeline_id}/preview", dependencies=[Depends(requires("pipeline:read"))])
 async def preview_pipeline(
     pipeline_id: str,
