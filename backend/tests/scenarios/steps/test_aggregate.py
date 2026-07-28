@@ -49,6 +49,40 @@ async def test_aggregate_sum_by_customer(client, scenario_ids, fixtures_dir, out
     }
 
 
+async def test_aggregate_by_month_date_part(client, scenario_ids, fixtures_dir, out_dir):
+    """Group by an extracted month from a date field (item 8, plan 038)."""
+    src_id, dst_id, out_path = await _seed(
+        client, scenario_ids, fixtures_dir, out_dir, "agg_by_month.json",
+    )
+    pipe_id = scenario_ids("pipeline")
+    await create_pipeline(
+        client, id=pipe_id, sources=[src_id],
+        steps=[
+            # Fixture stores ordered_at as ISO date strings — coerce first.
+            {"op": "retype", "field": "ordered_at", "to_type": "date"},
+            {
+                "op": "aggregate",
+                "group_by": [{"field": "ordered_at", "part": "month"}],
+                "aggregations": [
+                    {"field": "amount", "func": "sum", "alias": "total"},
+                    {"field": "order_id", "func": "count", "alias": "n"},
+                ],
+            },
+        ],
+        output_id=dst_id,
+    )
+    run = await trigger_and_wait(client, pipe_id)
+    assert run["status"] == "completed", run
+    rows = read_output_file(out_path)
+    # All 20 orders live in 2024-01 → one row.
+    assert len(rows) == 1
+    row = rows[0]
+    assert int(row["ordered_at_month"]) == 1
+    assert int(row["n"]) == 20
+    # Sum of all amounts in orders.json = 2775.
+    assert float(row["total"]) == 2775.0
+
+
 async def test_aggregate_count_distinct_and_max(client, scenario_ids, fixtures_dir, out_dir):
     src_id, dst_id, out_path = await _seed(client, scenario_ids, fixtures_dir, out_dir, "agg2.json")
     pipe_id = scenario_ids("pipeline")

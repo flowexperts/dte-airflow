@@ -11,6 +11,30 @@ export type StepOp =
 
 export type MapMode = "lookup" | "expression" | "calculation";
 
+/** Group-by entry for the aggregate step.
+ *
+ * A plain string is a field ref (backwards-compatible). A DatePartGroupBy
+ * extracts a temporal component (year/month/etc) from a date/timestamp field.
+ * Emitted column defaults to `<field>_<part>` unless `alias` is set.
+ */
+export type DatePart =
+  | "year"
+  | "quarter"
+  | "month"
+  | "week"
+  | "day"
+  | "date"
+  | "dow"
+  | "hour";
+
+export interface DatePartGroupBy {
+  field: string;
+  part: DatePart;
+  alias?: string;
+}
+
+export type GroupByEntry = string | DatePartGroupBy;
+
 export interface StepShape {
   op: StepOp;
   mode?: MapMode;

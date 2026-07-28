@@ -12,7 +12,7 @@ import {
 import { useSchemas } from "../schema-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { StepShape } from "./types";
+import type { StepShape, GroupByEntry, DatePart } from "./types";
 import { LookupTablePicker } from "../LookupTablePicker";
 
 type Setter = (patch: Partial<StepShape>) => void;
@@ -696,12 +696,69 @@ export function SortEditor({ step, set }: { step: StepShape; set: Setter }) {
 
 const AGG_FUNCS = ["sum", "count", "avg", "min", "max", "count_distinct"];
 
+const DATE_PARTS: DatePart[] = [
+  "year",
+  "quarter",
+  "month",
+  "week",
+  "day",
+  "date",
+  "dow",
+  "hour",
+];
+
 interface AggSpec { field: string; func: string; alias: string }
+
+// A group_by entry name (string or the .field of a DatePartGroupBy) is
+// considered temporal if the resolved schema type looks like a date/timestamp.
+function isTemporalType(t: string | undefined): boolean {
+  if (!t) return false;
+  const lower = t.toLowerCase();
+  return lower.includes("date") || lower.includes("time");
+}
 
 export function AggregateEditor({ step, set }: { step: StepShape; set: Setter }) {
   const { allFields } = useSchemas();
-  const group_by = (step.group_by as string[]) ?? [];
+  const group_by = (step.group_by as GroupByEntry[]) ?? [];
   const aggs = (step.aggregations as AggSpec[]) ?? [];
+
+  const fieldType = (name: string): string | undefined => {
+    // allFields is flat + deduped by name — matches the shape schema-context builds.
+    const found = allFields.find((f) => f.name === name);
+    return found?.type;
+  };
+
+  const entryField = (e: GroupByEntry) => (typeof e === "string" ? e : e.field);
+  const entryPart = (e: GroupByEntry): DatePart | "" =>
+    typeof e === "string" ? "" : e.part;
+
+  const updateGroupBy = (i: number, next: GroupByEntry) => {
+    const arr = [...group_by];
+    arr[i] = next;
+    set({ group_by: arr });
+  };
+  const setEntryField = (i: number, field: string) => {
+    const prev = group_by[i];
+    if (prev == null) return;
+    if (typeof prev === "string") {
+      updateGroupBy(i, field);
+    } else {
+      updateGroupBy(i, { ...prev, field });
+    }
+  };
+  const setEntryPart = (i: number, part: DatePart | "") => {
+    const prev = group_by[i];
+    if (prev == null) return;
+    const field = entryField(prev);
+    if (part === "") {
+      updateGroupBy(i, field);
+    } else {
+      updateGroupBy(i, { field, part });
+    }
+  };
+  const addGroupBy = () => set({ group_by: [...group_by, ""] });
+  const removeGroupBy = (i: number) =>
+    set({ group_by: group_by.filter((_, j) => j !== i) });
 
   const updateAgg = (i: number, patch: Partial<AggSpec>) => {
     const current = aggs[i];
@@ -717,15 +774,67 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
 
   return (
     <div className="grid gap-3">
-      <Field label="Group by" hint="fields to bucket rows by">
-        <FieldMultiSelect
-          value={group_by}
-          onChange={(v) => set({ group_by: v })}
-          options={allFields}
-          placeholder="add group_by field…"
-          variant="tree"
-        />
-      </Field>
+      <div>
+        <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1.5">
+          Group by
+        </div>
+        <div className="grid gap-1.5">
+          {group_by.map((entry, i) => {
+            const field = entryField(entry);
+            const part = entryPart(entry);
+            const temporal = isTemporalType(fieldType(field));
+            return (
+              <div
+                key={i}
+                className="grid grid-cols-[1fr_140px_28px] gap-2"
+              >
+                <FieldPicker
+                  value={field}
+                  onChange={(v) => setEntryField(i, v)}
+                  options={allFields}
+                  placeholder="field"
+                  variant="tree"
+                />
+                {temporal || part !== "" ? (
+                  <select
+                    value={part}
+                    onChange={(e) =>
+                      setEntryPart(i, e.target.value as DatePart | "")
+                    }
+                    className="bg-bg border border-border rounded px-2.5 py-1.5 text-[13.5px]"
+                    title="Extract a date component"
+                  >
+                    <option value="">(whole value)</option>
+                    {DATE_PARTS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="text-subtle text-[11px] flex items-center px-2">
+                    {/* Non-temporal field: no part picker */}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeGroupBy(i)}
+                  className="text-subtle hover:text-red text-sm"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={addGroupBy}
+          className="mt-1.5 text-[12px] text-subtle hover:text-fg"
+        >
+          + add group_by field
+        </button>
+      </div>
       <div>
         <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1.5">
           Aggregations

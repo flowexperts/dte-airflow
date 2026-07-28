@@ -52,6 +52,19 @@ def sales_table(con):
 
 
 @pytest.fixture
+def dated_sales_table(con):
+    df = pd.DataFrame([
+        {"amount": 10.0, "ordered_at": pd.Timestamp("2024-01-05 09:00:00")},
+        {"amount": 20.0, "ordered_at": pd.Timestamp("2024-01-20 15:30:00")},
+        {"amount": 30.0, "ordered_at": pd.Timestamp("2024-02-10 12:00:00")},
+        {"amount": 40.0, "ordered_at": pd.Timestamp("2024-04-01 08:15:00")},
+        {"amount": 50.0, "ordered_at": pd.Timestamp("2024-04-02 16:45:00")},
+        {"amount": 60.0, "ordered_at": pd.Timestamp("2025-01-01 00:00:00")},
+    ])
+    return con.create_table("dated_sales", df, overwrite=True)
+
+
+@pytest.fixture
 def country_table(con):
     df = pd.DataFrame([
         {"code": "US", "country_code": "US"},
@@ -183,6 +196,142 @@ def test_aggregate_count(sales_table):
     df = result.execute()
     x_row = df[df["category"] == "x"]
     assert x_row["cnt"].iloc[0] == 2
+
+
+def test_aggregate_by_date_part_year(dated_sales_table):
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "ordered_at", "part": "year"}],
+        "aggregations": [{"field": "amount", "func": "sum", "alias": "total"}],
+    }])
+    df = _run(pipeline, {"src": dated_sales_table}).execute()
+    by_year = {int(r["ordered_at_year"]): float(r["total"]) for _, r in df.iterrows()}
+    assert by_year == {2024: pytest.approx(150.0), 2025: pytest.approx(60.0)}
+
+
+def test_aggregate_by_date_part_month(dated_sales_table):
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "ordered_at", "part": "month"}],
+        "aggregations": [{"field": "amount", "func": "sum", "alias": "total"}],
+    }])
+    df = _run(pipeline, {"src": dated_sales_table}).execute()
+    by_month = {int(r["ordered_at_month"]): float(r["total"]) for _, r in df.iterrows()}
+    # Jan (2024+2025): 10+20+60=90; Feb: 30; Apr: 40+50=90
+    assert by_month == {1: pytest.approx(90.0), 2: pytest.approx(30.0), 4: pytest.approx(90.0)}
+
+
+def test_aggregate_by_date_part_day(dated_sales_table):
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "ordered_at", "part": "day"}],
+        "aggregations": [{"field": "amount", "func": "count", "alias": "n"}],
+    }])
+    df = _run(pipeline, {"src": dated_sales_table}).execute()
+    assert "ordered_at_day" in df.columns
+
+
+def test_aggregate_by_date_part_hour(dated_sales_table):
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "ordered_at", "part": "hour"}],
+        "aggregations": [{"field": "amount", "func": "count", "alias": "n"}],
+    }])
+    df = _run(pipeline, {"src": dated_sales_table}).execute()
+    hours = set(int(h) for h in df["ordered_at_hour"].tolist())
+    assert hours == {0, 8, 9, 12, 15, 16}
+
+
+def test_aggregate_by_date_part_quarter(dated_sales_table):
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "ordered_at", "part": "quarter"}],
+        "aggregations": [{"field": "amount", "func": "sum", "alias": "total"}],
+    }])
+    df = _run(pipeline, {"src": dated_sales_table}).execute()
+    assert "ordered_at_quarter" in df.columns
+
+
+def test_aggregate_by_date_part_week(dated_sales_table):
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "ordered_at", "part": "week"}],
+        "aggregations": [{"field": "amount", "func": "count", "alias": "n"}],
+    }])
+    df = _run(pipeline, {"src": dated_sales_table}).execute()
+    assert "ordered_at_week" in df.columns
+
+
+def test_aggregate_by_date_part_dow(dated_sales_table):
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "ordered_at", "part": "dow"}],
+        "aggregations": [{"field": "amount", "func": "count", "alias": "n"}],
+    }])
+    df = _run(pipeline, {"src": dated_sales_table}).execute()
+    assert "ordered_at_dow" in df.columns
+
+
+def test_aggregate_by_date_part_date(dated_sales_table):
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "ordered_at", "part": "date"}],
+        "aggregations": [{"field": "amount", "func": "sum", "alias": "total"}],
+    }])
+    df = _run(pipeline, {"src": dated_sales_table}).execute()
+    assert "ordered_at_date" in df.columns
+    # 6 distinct dates
+    assert len(df) == 6
+
+
+def test_aggregate_by_date_part_alias(dated_sales_table):
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "ordered_at", "part": "year", "alias": "yr"}],
+        "aggregations": [{"field": "amount", "func": "sum", "alias": "total"}],
+    }])
+    df = _run(pipeline, {"src": dated_sales_table}).execute()
+    assert "yr" in df.columns
+
+
+def test_aggregate_by_date_part_on_non_temporal_field_raises(sales_table):
+    from dte.errors import CompilerError
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [{"field": "category", "part": "year"}],
+        "aggregations": [{"field": "price", "func": "sum", "alias": "total"}],
+    }])
+    with pytest.raises(CompilerError, match="date/timestamp"):
+        _run(pipeline, {"src": sales_table})
+
+
+def test_aggregate_plain_string_group_by_still_works(sales_table):
+    """Backwards compat: plain string entries in group_by continue to work."""
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": ["category"],
+        "aggregations": [{"field": "price", "func": "sum", "alias": "total"}],
+    }])
+    df = _run(pipeline, {"src": sales_table}).execute()
+    assert set(df["category"].tolist()) == {"x", "y"}
+
+
+def test_aggregate_mixed_group_by(dated_sales_table, con):
+    """Mix a plain string entry and a date-part entry in the same group_by."""
+    df = pd.DataFrame([
+        {"cat": "A", "amount": 10.0, "ordered_at": pd.Timestamp("2024-01-05")},
+        {"cat": "A", "amount": 20.0, "ordered_at": pd.Timestamp("2024-01-06")},
+        {"cat": "B", "amount": 30.0, "ordered_at": pd.Timestamp("2024-02-01")},
+    ])
+    table = con.create_table("mixed_sales", df, overwrite=True)
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": ["cat", {"field": "ordered_at", "part": "month"}],
+        "aggregations": [{"field": "amount", "func": "sum", "alias": "total"}],
+    }])
+    out = _run(pipeline, {"src": table}).execute()
+    assert "cat" in out.columns
+    assert "ordered_at_month" in out.columns
 
 
 def test_output_field_selection(people_table):

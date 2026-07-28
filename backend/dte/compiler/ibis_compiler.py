@@ -8,6 +8,7 @@ import ibis.expr.datatypes as dt
 from dte.errors import CompilerError
 from dte.models.pipeline import (
     AggregateStep,
+    DatePartGroupBy,
     ExpressionMapStep,
     FilterStep,
     JoinStep,
@@ -283,8 +284,48 @@ def _apply_aggregate(table: ibis.Table, step: AggregateStep) -> ibis.Table:
             expr = col.nunique()
         agg_exprs.append(expr.name(agg.alias))
 
-    group_by_exprs = [_resolve_field(table, f).name(f) for f in step.group_by]
+    group_by_exprs = [_resolve_group_by(table, g) for g in step.group_by]
     return table.group_by(group_by_exprs).aggregate(agg_exprs)
+
+
+def _resolve_group_by(table: ibis.Table, entry: str | DatePartGroupBy) -> ibis.Expr:
+    if isinstance(entry, str):
+        return _resolve_field(table, entry).name(entry)
+    # DatePartGroupBy — extract a temporal component.
+    col = _resolve_field(table, entry.field)
+    col_type = col.type()
+    if not (col_type.is_timestamp() or col_type.is_date()):
+        raise CompilerError(
+            f"aggregate group_by part={entry.part!r} requires a date/timestamp field; "
+            f"{entry.field!r} is {col_type}"
+        )
+    part = entry.part
+    if part == "year":
+        expr = col.year()
+    elif part == "quarter":
+        expr = col.quarter()
+    elif part == "month":
+        expr = col.month()
+    elif part == "week":
+        expr = col.week_of_year()
+    elif part == "day":
+        expr = col.day()
+    elif part == "date":
+        # Truncate timestamp to date; dates stay as-is.
+        expr = col.date() if col_type.is_timestamp() else col
+    elif part == "dow":
+        expr = col.day_of_week.index()
+    elif part == "hour":
+        if not col_type.is_timestamp():
+            raise CompilerError(
+                f"aggregate group_by part='hour' requires a timestamp; "
+                f"{entry.field!r} is {col_type}"
+            )
+        expr = col.hour()
+    else:  # pragma: no cover — Literal guard
+        raise CompilerError(f"unknown date part {part!r}")
+    alias = entry.alias or f"{entry.field.split('.')[-1]}_{part}"
+    return expr.name(alias)
 
 
 def _apply_output_fields(table: ibis.Table, fields: list[OutputField]) -> ibis.Table:

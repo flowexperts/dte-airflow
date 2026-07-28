@@ -595,9 +595,22 @@ class AggSpec(BaseModel):
     alias: str
 
 
+DatePart = Literal["year", "quarter", "month", "week", "day", "date", "dow", "hour"]
+
+
+class DatePartGroupBy(BaseModel):
+    """Group by a date/timestamp field extracted to a component (year, month, ...).
+
+    Emitted column defaults to `<field>_<part>` unless `alias` is provided.
+    """
+    field: str
+    part: DatePart
+    alias: str | None = None
+
+
 class AggregateStep(BaseModel):
     op: Literal["aggregate"]
-    group_by: list[str]
+    group_by: list[str | DatePartGroupBy]
     aggregations: list[AggSpec]
 
 
