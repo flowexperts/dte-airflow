@@ -53,8 +53,6 @@ export function AppSidebar() {
         {can("pipeline:read") && (
           <NavItem href="/pipelines" label="Pipelines" active={on("/pipelines")} />
         )}
-        <NavGroup>System</NavGroup>
-        <NavItem href="/preview" label="Design" active={on("/preview")} />
       </NavSections>
       <NavFooter>
         <span />
