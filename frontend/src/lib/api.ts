@@ -198,6 +198,10 @@ export interface SchemaField {
 export interface PreviewResponse {
   rows: Array<Record<string, unknown>>;
   count: number;
+  // Plan-039 additions — compiler-produced SQL for the preview panel.
+  step_sqls?: Record<string, string>;
+  final_sql?: string | null;
+  error?: string | null;
 }
 
 const BASE =
