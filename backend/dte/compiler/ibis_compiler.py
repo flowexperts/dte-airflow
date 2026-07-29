@@ -102,6 +102,7 @@ def compile_pipeline(
     on_step=None,
     engine: BaseEngine | None = None,
     on_step_schema=None,
+    on_step_sql=None,
 ) -> ibis.Table:
     """Compile a pipeline into an ibis expression.
 
@@ -122,6 +123,12 @@ def compile_pipeline(
     on the current-key table.  Feeds ``/api/pipelines/step-schemas`` so
     the frontend can offer autocomplete on aggregation aliases and pivot
     outputs downstream (plan 038 item 7).
+
+    `on_step_sql(step_index, sql)` — optional sync callback fired after
+    each step compiles successfully with the SQL that materialises the
+    current-key table.  SQL is rendered via ``ibis.to_sql`` using the
+    engine's dialect (defaulting to ``duckdb`` when no engine is
+    supplied).  Feeds the preview SQL panel (plan-039).
     """
     registry = dict(tables)
     _check_single_backend(registry)
@@ -156,6 +163,13 @@ def compile_pipeline(
             try:
                 cols = list(registry[current_key].columns)
                 on_step_schema(idx, cols)
+            except Exception:  # never let telemetry crash a run
+                pass
+        if on_step_sql is not None:
+            try:
+                dialect = getattr(engine, "dialect", "duckdb")
+                sql = str(ibis.to_sql(registry[current_key], dialect=dialect))
+                on_step_sql(idx, sql)
             except Exception:  # never let telemetry crash a run
                 pass
 

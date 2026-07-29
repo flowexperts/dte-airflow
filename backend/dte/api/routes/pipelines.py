@@ -5,6 +5,8 @@ import contextvars
 import json
 import time
 
+import ibis
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from dte import runs as run_registry
@@ -364,6 +366,7 @@ async def _compile_body_pipeline(
     lt_store: LookupTableStore,
     *,
     on_step_schema=None,
+    on_step_sql=None,
 ):
     """Shared plumbing for endpoints that compile an unsaved pipeline body.
 
@@ -388,13 +391,14 @@ async def _compile_body_pipeline(
         compiled = compile_pipeline(
             pipeline, tables, output=destination.config,
             lookup_tables=lookups, on_step_schema=on_step_schema,
+            on_step_sql=on_step_sql,
             engine=engine,
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return compiled, destination
+    return compiled, destination, engine
 
 
 @router.post("/pipelines/step-schemas", dependencies=[Depends(requires("pipeline:read"))])
@@ -448,16 +452,50 @@ async def dry_run_pipeline(
     Mirrors `GET /pipelines/{id}/preview` but the pipeline definition rides
     in the POST body.  Used by the builder split-pane so the preview updates
     as the user edits, before hitting Save.
+
+    Response also includes `step_sqls` (per-step compiled SQL) and
+    `final_sql` (the LIMIT-wrapped SELECT that actually executes) — plan-039.
+    A compile error is returned as 200 with `error` populated and whatever
+    step SQLs were captured before the failing step, so the SQL panel can
+    keep rendering as the user edits.
     """
-    compiled, _ = await _compile_body_pipeline(
-        body, s_store, d_store, c_store, lt_store,
-    )
+    step_sqls: dict[int, str] = {}
+
+    def _capture_sql(idx: int, sql: str):
+        step_sqls[idx] = sql
+
+    error: str | None = None
+    compiled = None
+    engine = None
     try:
-        df = compiled.limit(limit).execute()
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    rows = json.loads(df.to_json(orient="records", date_format="iso"))
-    return {"rows": rows, "count": len(rows)}
+        compiled, _, engine = await _compile_body_pipeline(
+            body, s_store, d_store, c_store, lt_store,
+            on_step_sql=_capture_sql,
+        )
+    except HTTPException as e:
+        error = str(e.detail)
+
+    rows: list = []
+    final_sql: str | None = None
+    if compiled is not None:
+        dialect = getattr(engine, "dialect", "duckdb")
+        try:
+            final_sql = str(ibis.to_sql(compiled.limit(limit), dialect=dialect))
+        except Exception:
+            final_sql = None
+        try:
+            df = compiled.limit(limit).execute()
+            rows = json.loads(df.to_json(orient="records", date_format="iso"))
+        except Exception as e:
+            error = str(e)
+
+    return {
+        "rows": rows,
+        "count": len(rows),
+        "step_sqls": {str(k): v for k, v in step_sqls.items()},
+        "final_sql": final_sql,
+        "error": error,
+    }
 
 
 @router.get("/pipelines/{pipeline_id}/preview", dependencies=[Depends(requires("pipeline:read"))])
@@ -474,6 +512,15 @@ async def preview_pipeline(
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     decrypt_context_var.set("pipeline_preview")
+
+    step_sqls: dict[int, str] = {}
+
+    def _capture_sql(idx: int, sql: str):
+        step_sqls[idx] = sql
+
+    error: str | None = None
+    compiled = None
+    engine = None
     try:
         sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
@@ -486,16 +533,34 @@ async def preview_pipeline(
         tables = {s.id: load_source(s, registry, conn, creds) for s, conn, creds in sources}
         compiled = compile_pipeline(
             pipeline, tables, output=destination.config, lookup_tables=lookups,
-            engine=engine,
+            engine=engine, on_step_sql=_capture_sql,
         )
-        df = compiled.limit(limit).execute()
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        error = str(e)
 
-    rows = json.loads(df.to_json(orient="records", date_format="iso"))
-    return {"rows": rows, "count": len(rows)}
+    rows: list = []
+    final_sql: str | None = None
+    if compiled is not None:
+        dialect = getattr(engine, "dialect", "duckdb")
+        try:
+            final_sql = str(ibis.to_sql(compiled.limit(limit), dialect=dialect))
+        except Exception:
+            final_sql = None
+        try:
+            df = compiled.limit(limit).execute()
+            rows = json.loads(df.to_json(orient="records", date_format="iso"))
+        except Exception as e:
+            error = str(e)
+
+    return {
+        "rows": rows,
+        "count": len(rows),
+        "step_sqls": {str(k): v for k, v in step_sqls.items()},
+        "final_sql": final_sql,
+        "error": error,
+    }
 
 
 @router.post("/pipelines/{pipeline_id}/trigger", dependencies=[Depends(requires("pipeline:trigger"))])

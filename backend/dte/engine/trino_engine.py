@@ -46,6 +46,8 @@ class TrinoEngine(BaseEngine):
         plumbing.
     """
 
+    dialect = "trino"
+
     def __init__(
         self,
         host: str | None = None,
