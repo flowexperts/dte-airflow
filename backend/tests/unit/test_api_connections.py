@@ -111,3 +111,29 @@ def test_get_missing_404():
     c = TestClient(app)
     r = c.get("/api/connections/nope")
     assert r.status_code == 404
+
+
+def test_bulk_delete_mixed_outcomes(fake_stores):
+    c = TestClient(app)
+    c.post("/api/connections", json=_conn("c1"))
+    c.post("/api/connections", json=_conn("c2"))
+    c.post("/api/connections", json=_conn("c3"))
+    fake_stores["source"]._data["s1"] = Source(
+        id="s1", connection_id="c3", source_type="s3",
+        config={"bucket_url": "s3://foo"}, table="t",
+    )
+
+    r = c.post("/api/connections/bulk-delete", json={"ids": ["c1", "c2", "c3", "ghost"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert sorted(body["deleted"]) == ["c1", "c2"]
+    assert body["not_found"] == ["ghost"]
+    assert len(body["blocked"]) == 1
+    assert body["blocked"][0]["id"] == "c3"
+    assert body["blocked"][0]["referenced_by"]["sources"] == ["s1"]
+
+
+def test_bulk_delete_empty_ids_422():
+    c = TestClient(app)
+    r = c.post("/api/connections/bulk-delete", json={"ids": []})
+    assert r.status_code == 422

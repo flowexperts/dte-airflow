@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 
 from dte.api.deps import (
     get_connection_store,
     get_pipeline_store,
     get_source_store,
 )
+
+BULK_DELETE_LIMIT = 200
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=BULK_DELETE_LIMIT)
 from dte.api.routes.schema import InferSchemaResponse, _walk
 from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
@@ -80,6 +87,31 @@ async def update_source(
     await _validate_connection(source, c_store)
     await store.save(source)
     return source.model_dump()
+
+
+@router.post("/sources/bulk-delete", dependencies=[Depends(requires("source:delete"))])
+async def bulk_delete_sources(
+    body: BulkDeleteRequest,
+    s_store: SourceStore = Depends(get_source_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+):
+    ids = list(dict.fromkeys(body.ids))
+    pipelines = await p_store.list(limit=10_000)
+
+    deleted: list[str] = []
+    not_found: list[str] = []
+    blocked: list[dict] = []
+    for sid in ids:
+        if not await s_store.get(sid):
+            not_found.append(sid)
+            continue
+        referenced_by = [p.id for p in pipelines if sid in (p.sources or [])]
+        if referenced_by:
+            blocked.append({"id": sid, "referenced_by": referenced_by})
+            continue
+        await s_store.delete(sid)
+        deleted.append(sid)
+    return {"deleted": deleted, "not_found": not_found, "blocked": blocked}
 
 
 @router.delete("/sources/{source_id}", status_code=204, dependencies=[Depends(requires("source:delete"))])

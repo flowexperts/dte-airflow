@@ -219,6 +219,12 @@ export interface paths {
          *     Mirrors `GET /pipelines/{id}/preview` but the pipeline definition rides
          *     in the POST body.  Used by the builder split-pane so the preview updates
          *     as the user edits, before hitting Save.
+         *
+         *     Response also includes `step_sqls` (per-step compiled SQL) and
+         *     `final_sql` (the LIMIT-wrapped SELECT that actually executes) — plan-039.
+         *     A compile error is returned as 200 with `error` populated and whatever
+         *     step SQLs were captured before the failing step, so the SQL panel can
+         *     keep rendering as the user edits.
          */
         post: operations["dry_run_pipeline_api_pipelines_dry_run_post"];
         delete?: never;
@@ -425,6 +431,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sources/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk Delete Sources */
+        post: operations["bulk_delete_sources_api_sources_bulk_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sources/{source_id}/schema": {
         parameters: {
             query?: never;
@@ -474,6 +497,23 @@ export interface paths {
         post?: never;
         /** Delete Destination */
         delete: operations["delete_destination_api_destinations__destination_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/destinations/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk Delete Destinations */
+        post: operations["bulk_delete_destinations_api_destinations_bulk_delete_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -532,6 +572,28 @@ export interface paths {
          *     failure — the UI shows detail either way.
          */
         post: operations["test_connection_api_connections__connection_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connections/bulk-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk Delete Connections
+         * @description Delete many connections in one call. Returns a per-id breakdown so
+         *     partial success (some blocked by references, some already gone) can be
+         *     surfaced by the UI without failing the whole operation.
+         */
+        post: operations["bulk_delete_connections_api_connections_bulk_delete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -670,6 +732,11 @@ export interface components {
         AssignRoleBody: {
             /** Role Id */
             role_id: string;
+        };
+        /** BulkDeleteRequest */
+        BulkDeleteRequest: {
+            /** Ids */
+            ids: string[];
         };
         /**
          * ConnectionBase
@@ -1847,6 +1914,39 @@ export interface operations {
             };
         };
     };
+    bulk_delete_sources_api_sources_bulk_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     source_schema_api_sources__source_id__schema_get: {
         parameters: {
             query?: never;
@@ -2038,6 +2138,39 @@ export interface operations {
             };
         };
     };
+    bulk_delete_destinations_api_destinations_bulk_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_connections_api_connections_get: {
         parameters: {
             query?: {
@@ -2210,6 +2343,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_delete_connections_api_connections_bulk_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkDeleteRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

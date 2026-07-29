@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 
 from dte.api.deps import (
     get_connection_store,
@@ -13,6 +14,12 @@ from dte.security.permissions import requires
 from dte.sources.connection_test import probe_connection
 from dte.sources.pools import mongo as mongo_pool
 from dte.store.base import ConnectionStore, DestinationStore, SourceStore
+
+BULK_DELETE_LIMIT = 200
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=BULK_DELETE_LIMIT)
 
 router = APIRouter()
 
@@ -115,6 +122,41 @@ async def test_connection(
     if not c:
         raise HTTPException(status_code=404, detail="Connection not found")
     return probe_connection(c)
+
+
+@router.post("/connections/bulk-delete", dependencies=[Depends(requires("connection:delete"))])
+async def bulk_delete_connections(
+    body: BulkDeleteRequest,
+    c_store: ConnectionStore = Depends(get_connection_store),
+    s_store: SourceStore = Depends(get_source_store),
+    d_store: DestinationStore = Depends(get_destination_store),
+):
+    """Delete many connections in one call. Returns a per-id breakdown so
+    partial success (some blocked by references, some already gone) can be
+    surfaced by the UI without failing the whole operation."""
+    ids = list(dict.fromkeys(body.ids))  # de-dupe, preserve order
+    sources = await s_store.list(limit=10_000)
+    destinations = await d_store.list(limit=10_000)
+
+    deleted: list[str] = []
+    not_found: list[str] = []
+    blocked: list[dict] = []
+    for cid in ids:
+        if not await c_store.get(cid):
+            not_found.append(cid)
+            continue
+        ref_sources = [s.id for s in sources if s.connection_id == cid]
+        ref_dests = [d.id for d in destinations if d.connection_id == cid]
+        if ref_sources or ref_dests:
+            blocked.append({
+                "id": cid,
+                "referenced_by": {"sources": ref_sources, "destinations": ref_dests},
+            })
+            continue
+        await c_store.delete(cid)
+        await mongo_pool.evict(cid)
+        deleted.append(cid)
+    return {"deleted": deleted, "not_found": not_found, "blocked": blocked}
 
 
 @router.delete("/connections/{connection_id}", status_code=204, dependencies=[Depends(requires("connection:delete"))])

@@ -1,6 +1,7 @@
 export { Button, Kbd } from "./button";
 export { Pill } from "./pill";
 export { Panel, PanelHead } from "./panel";
+export { ErrorPanel, InlineError } from "./error-panel";
 export { PageHeader, SectionHead } from "./headers";
 export { Topbar } from "./topbar";
 export type { Crumb } from "./topbar";
@@ -14,7 +15,7 @@ export {
   NavFooter,
 } from "./sidebar";
 export { DataTable } from "./data-table";
-export type { Column } from "./data-table";
+export type { Column, DataTableSelection } from "./data-table";
 export { JsonCell } from "./json-cell";
 export {
   StepRow,

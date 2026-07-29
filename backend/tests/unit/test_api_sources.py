@@ -133,3 +133,27 @@ def test_source_schema_by_id_404(client):
     c, *_ = client
     r = c.get("/api/sources/nope/schema")
     assert r.status_code == 404
+
+
+def test_bulk_delete_sources_mixed(client):
+    c, s_store, p_store = client
+    _run(s_store.save(_src_create("s1")))
+    _run(s_store.save(_src_create("s2")))
+    _run(s_store.save(_src_create("s3")))
+    _run(p_store.save(Pipeline(
+        id="p1", name="p", sources=["s3"], steps=[], output_id="d1",
+    )))
+
+    r = c.post("/api/sources/bulk-delete", json={"ids": ["s1", "s2", "s3", "ghost"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert sorted(body["deleted"]) == ["s1", "s2"]
+    assert body["not_found"] == ["ghost"]
+    assert len(body["blocked"]) == 1
+    assert body["blocked"][0] == {"id": "s3", "referenced_by": ["p1"]}
+
+
+def test_bulk_delete_sources_empty_422(client):
+    c, *_ = client
+    r = c.post("/api/sources/bulk-delete", json={"ids": []})
+    assert r.status_code == 422

@@ -92,3 +92,26 @@ def test_delete_destination_referenced_409(client):
     r = c.delete("/api/destinations/d1")
     assert r.status_code == 409
     assert r.json()["detail"]["referenced_by"] == ["p1"]
+
+
+def test_bulk_delete_destinations_mixed(client):
+    c, d_store, p_store = client
+    _run(d_store.save(_dest("d1")))
+    _run(d_store.save(_dest("d2")))
+    _run(d_store.save(_dest("d3")))
+    _run(p_store.save(Pipeline(
+        id="p1", name="p", sources=["s1"], steps=[], output_id="d3",
+    )))
+
+    r = c.post("/api/destinations/bulk-delete", json={"ids": ["d1", "d2", "d3", "ghost"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert sorted(body["deleted"]) == ["d1", "d2"]
+    assert body["not_found"] == ["ghost"]
+    assert body["blocked"] == [{"id": "d3", "referenced_by": ["p1"]}]
+
+
+def test_bulk_delete_destinations_empty_422(client):
+    c, *_ = client
+    r = c.post("/api/destinations/bulk-delete", json={"ids": []})
+    assert r.status_code == 422

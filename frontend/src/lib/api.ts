@@ -429,6 +429,15 @@ export const diffPipelineRevisions = (
     `/api/pipelines/${encodeURIComponent(pipelineId)}/diff?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`,
   );
 
+// ---------- Bulk delete ----------
+
+export type BulkDeleteBlocked = { id: string; referenced_by: unknown };
+export type BulkDeleteResult = {
+  deleted: string[];
+  not_found: string[];
+  blocked: BulkDeleteBlocked[];
+};
+
 // ---------- Sources ----------
 
 export const listSources = () => apiFetch<Source[]>(`/api/sources`);
@@ -439,6 +448,11 @@ export const updateSource = (id: string, source: Source) =>
   apiFetch<Source>(`/api/sources/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(source) });
 export const deleteSource = (id: string) =>
   apiFetch<void>(`/api/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const bulkDeleteSources = (ids: string[]) =>
+  apiFetch<BulkDeleteResult>(`/api/sources/bulk-delete`, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
 export const getSourceSchema = (id: string) =>
   apiFetch<{ fields: SchemaField[] }>(`/api/sources/${encodeURIComponent(id)}/schema`);
 
@@ -452,6 +466,11 @@ export const updateDestination = (id: string, destination: Destination) =>
   apiFetch<Destination>(`/api/destinations/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(destination) });
 export const deleteDestination = (id: string) =>
   apiFetch<void>(`/api/destinations/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const bulkDeleteDestinations = (ids: string[]) =>
+  apiFetch<BulkDeleteResult>(`/api/destinations/bulk-delete`, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
 
 // ---------- Lookup tables ----------
 
@@ -497,6 +516,11 @@ export const updateConnection = (id: string, connection: Connection) =>
   });
 export const deleteConnection = (id: string) =>
   apiFetch<void>(`/api/connections/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const bulkDeleteConnections = (ids: string[]) =>
+  apiFetch<BulkDeleteResult>(`/api/connections/bulk-delete`, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
 export const testConnection = (id: string) =>
   apiFetch<ProbeResult>(`/api/connections/${encodeURIComponent(id)}/test`, {
     method: "POST",
