@@ -11,13 +11,17 @@ import {
   Panel,
   Topbar,
   type Column,
+  type DataTableSelection,
 } from "@/components/ui";
 import {
+  bulkDeleteLookupTables,
   createLookupTable,
   deleteLookupTable,
   updateLookupTable,
+  type BulkDeleteResult,
   type LookupTable,
 } from "@/lib/api";
+import { summarizeBulkDelete } from "@/lib/bulk-delete";
 import { LookupMappingsEditor } from "@/components/lookup-mappings-editor";
 import { usePermissions } from "@/lib/use-permissions";
 import { useToast } from "@/components/toaster";
@@ -100,6 +104,8 @@ export function LookupTablesTable() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const { can } = usePermissions();
   const canWrite = can("lookup_table:write");
   const canDelete = can("lookup_table:delete");
@@ -129,6 +135,41 @@ export function LookupTablesTable() {
       setBusy(false);
     }
   };
+  const onBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} lookup table(s)?`)) return;
+    setBulkBusy(true);
+    try {
+      const result: BulkDeleteResult = await bulkDeleteLookupTables(ids);
+      toast.success({ title: summarizeBulkDelete("lookup table", result) });
+      setSelectedIds(new Set());
+      await mutate();
+    } catch (e) {
+      toast.error(humanizeError(e, { action: "delete", entity: "lookup tables" }));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const selection: DataTableSelection<LookupTable> | undefined = canDelete
+    ? {
+        selectedIds,
+        rowId: (r) => r.id,
+        onToggle: (id) =>
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          }),
+        onToggleAll: () =>
+          setSelectedIds((prev) =>
+            prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id)),
+          ),
+      }
+    : undefined;
+
   const onDelete = async (id: string) => {
     if (!confirm(`Delete lookup table '${id}'?`)) return;
     setDeletingId(id);
@@ -225,12 +266,30 @@ export function LookupTablesTable() {
               onSave={save}
             />
           ) : (
-            <DataTable
-              columns={columns}
-              rows={rows}
-              onRowClick={canWrite ? openEdit : undefined}
-              emptyText="No lookup tables yet. Create one to reuse across map/lookup steps."
-            />
+            <div className="flex flex-col gap-2">
+              {canDelete && selectedIds.size > 0 && (
+                <div className="flex items-center justify-between px-3.5 py-2 border border-border rounded-[var(--radius)] bg-surface-2">
+                  <span className="font-mono text-[11px] text-muted">
+                    {selectedIds.size} selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onBulkDelete}
+                    disabled={bulkBusy}
+                    className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
+                  >
+                    {bulkBusy ? "Deleting…" : "Delete selected"}
+                  </button>
+                </div>
+              )}
+              <DataTable
+                columns={columns}
+                rows={rows}
+                selection={selection}
+                onRowClick={canWrite ? openEdit : undefined}
+                emptyText="No lookup tables yet. Create one to reuse across map/lookup steps."
+              />
+            </div>
           )}
         </div>
       </div>

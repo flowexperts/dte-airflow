@@ -340,6 +340,11 @@ export const deletePipeline = (id: string) =>
   apiFetch<void>(`/api/pipelines/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+export const bulkDeletePipelines = (ids: string[]) =>
+  apiFetch<BulkDeleteResult>(`/api/pipelines/bulk-delete`, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
 
 export const triggerPipeline = (id: string) =>
   apiFetch<{ run_id: string }>(
@@ -496,6 +501,11 @@ export const updateLookupTable = (id: string, lookup: LookupTable) =>
   });
 export const deleteLookupTable = (id: string) =>
   apiFetch<void>(`/api/lookup-tables/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const bulkDeleteLookupTables = (ids: string[]) =>
+  apiFetch<BulkDeleteResult>(`/api/lookup-tables/bulk-delete`, {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
 
 // ---------- Connections ----------
 

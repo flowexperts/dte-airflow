@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 
 from dte.api.deps import get_lookup_table_store, get_pipeline_store
 from dte.models.pipeline import LookupTableBase
@@ -8,6 +9,12 @@ from dte.security.permissions import requires
 from dte.store.base import LookupTableStore, PipelineStore
 
 router = APIRouter()
+
+BULK_DELETE_LIMIT = 200
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=BULK_DELETE_LIMIT)
 
 
 def _referenced_by(pipelines, lookup_id: str) -> list[str]:
@@ -72,6 +79,30 @@ async def update_lookup_table(
         raise HTTPException(status_code=404, detail="Lookup table not found")
     await store.save(lookup)
     return lookup.model_dump()
+
+
+@router.post("/lookup-tables/bulk-delete", dependencies=[Depends(requires("lookup_table:delete"))])
+async def bulk_delete_lookup_tables(
+    body: BulkDeleteRequest,
+    lt_store: LookupTableStore = Depends(get_lookup_table_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+):
+    ids = list(dict.fromkeys(body.ids))
+    pipelines = await p_store.list(limit=10_000)
+    deleted: list[str] = []
+    not_found: list[str] = []
+    blocked: list[dict] = []
+    for lid in ids:
+        if not await lt_store.get(lid):
+            not_found.append(lid)
+            continue
+        refs = _referenced_by(pipelines, lid)
+        if refs:
+            blocked.append({"id": lid, "referenced_by": refs})
+            continue
+        await lt_store.delete(lid)
+        deleted.append(lid)
+    return {"deleted": deleted, "not_found": not_found, "blocked": blocked}
 
 
 @router.delete("/lookup-tables/{lookup_id}", status_code=204, dependencies=[Depends(requires("lookup_table:delete"))])

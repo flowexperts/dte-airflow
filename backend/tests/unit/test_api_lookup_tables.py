@@ -111,3 +111,28 @@ def test_delete_referenced_409(client):
     r = c.delete("/api/lookup-tables/l1")
     assert r.status_code == 409
     assert r.json()["detail"]["referenced_by"] == ["p1"]
+
+
+def test_bulk_delete_lookup_tables_mixed(client):
+    c, lt_store, p_store = client
+    _run(lt_store.save(_create("l1")))
+    _run(lt_store.save(_create("l2")))
+    _run(lt_store.save(_create("l3")))
+    _run(p_store.save(Pipeline(
+        id="p1", name="p", sources=["s1"], steps=[
+            {"op": "map", "mode": "lookup", "field": "cc", "lookup_id": "l3"},
+        ], output_id="d1",
+    )))
+
+    r = c.post("/api/lookup-tables/bulk-delete", json={"ids": ["l1", "l2", "l3", "ghost"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert sorted(body["deleted"]) == ["l1", "l2"]
+    assert body["not_found"] == ["ghost"]
+    assert body["blocked"] == [{"id": "l3", "referenced_by": ["p1"]}]
+
+
+def test_bulk_delete_lookup_tables_empty_422(client):
+    c, *_ = client
+    r = c.post("/api/lookup-tables/bulk-delete", json={"ids": []})
+    assert r.status_code == 422

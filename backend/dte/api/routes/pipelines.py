@@ -8,6 +8,13 @@ import time
 import ibis
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, Field
+
+BULK_DELETE_LIMIT = 200
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=BULK_DELETE_LIMIT)
 
 from dte import runs as run_registry
 from dte.api.deps import (
@@ -226,6 +233,25 @@ async def update_pipeline(
     await store.save(row)
     await _record_revision(pipeline, rev_store, user)
     return row
+
+
+@router.post("/pipelines/bulk-delete", dependencies=[Depends(requires("pipeline:delete"))])
+async def bulk_delete_pipelines(
+    body: BulkDeleteRequest,
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    r_store: RunStore = Depends(get_run_store),
+):
+    ids = list(dict.fromkeys(body.ids))
+    deleted: list[str] = []
+    not_found: list[str] = []
+    for pid in ids:
+        if not await p_store.get(pid):
+            not_found.append(pid)
+            continue
+        await r_store.delete_for_pipeline(pid)
+        await p_store.delete(pid)
+        deleted.append(pid)
+    return {"deleted": deleted, "not_found": not_found, "blocked": []}
 
 
 @router.delete("/pipelines/{pipeline_id}", status_code=204, dependencies=[Depends(requires("pipeline:delete"))])

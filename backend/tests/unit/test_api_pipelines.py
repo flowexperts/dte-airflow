@@ -132,3 +132,24 @@ def test_delete_cascades_runs(client):
     assert _run(r_store.list_for_pipeline("p1")) == []
     remaining = _run(r_store.list_for_pipeline("p2"))
     assert [x["id"] for x in remaining] == [keep]
+
+
+def test_bulk_delete_pipelines_mixed(client):
+    c, p_store, r_store, _, _ = client
+    _run(p_store.save(_obj(pipeline_id="p1")))
+    _run(p_store.save(_obj(pipeline_id="p2")))
+    _run(r_store.create("p1"))
+
+    r = c.post("/api/pipelines/bulk-delete", json={"ids": ["p1", "p2", "ghost"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert sorted(body["deleted"]) == ["p1", "p2"]
+    assert body["not_found"] == ["ghost"]
+    assert body["blocked"] == []
+    assert _run(r_store.list_for_pipeline("p1")) == []
+
+
+def test_bulk_delete_pipelines_empty_422(client):
+    c, *_ = client
+    r = c.post("/api/pipelines/bulk-delete", json={"ids": []})
+    assert r.status_code == 422
