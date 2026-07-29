@@ -179,10 +179,10 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
       return [unquoteString(rest.slice(0, i + 1)), rest.slice(i + 1).trimStart()];
     }
     // Unquoted number
-    const numMatch = rest.match(/^(-?\d+(?:\.\d+)?)(.*)/s);
+    const numMatch = rest.match(/^(-?\d+(?:\.\d+)?)([\s\S]*)/);
     if (numMatch) return [numMatch[1]!, numMatch[2]!.trimStart()];
     // Unquoted boolean (TRUE/FALSE as emitted by safeLiteral)
-    const boolMatch = rest.match(/^(TRUE|FALSE)(.*)/si);
+    const boolMatch = rest.match(/^(TRUE|FALSE)([\s\S]*)/i);
     if (boolMatch) return [boolMatch[1]!.toLowerCase(), boolMatch[2]!.trimStart()];
     return null;
   }
@@ -195,14 +195,14 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
     const [field, afterIdent] = identResult;
 
     // IS NULL / IS NOT NULL
-    const isNullMatch = afterIdent.match(/^IS\s+(NOT\s+)?NULL(.*)/si);
+    const isNullMatch = afterIdent.match(/^IS\s+(NOT\s+)?NULL([\s\S]*)/i);
     if (isNullMatch) {
       const op: FilterOp = isNullMatch[1] ? "IS NOT NULL" : "IS NULL";
       return [{ field, op, value: "" }, isNullMatch[2]!.trimStart()];
     }
 
     // LIKE
-    const likeMatch = afterIdent.match(/^LIKE\s+(.*)/si);
+    const likeMatch = afterIdent.match(/^LIKE\s+([\s\S]*)/i);
     if (likeMatch) {
       const litResult = parseLiteral(likeMatch[1]!);
       if (!litResult) return null;
@@ -211,7 +211,7 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
     }
 
     // IN (...)
-    const inMatch = afterIdent.match(/^IN\s*\((.*)/si);
+    const inMatch = afterIdent.match(/^IN\s*\(([\s\S]*)/i);
     if (inMatch) {
       let inside = inMatch[1]!;
       const items: string[] = [];
@@ -231,11 +231,11 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
     }
 
     // BETWEEN x AND y
-    const betweenMatch = afterIdent.match(/^BETWEEN\s+(.*)/si);
+    const betweenMatch = afterIdent.match(/^BETWEEN\s+([\s\S]*)/i);
     if (betweenMatch) {
       const lo = parseLiteral(betweenMatch[1]!);
       if (!lo) return null;
-      const andMatch = lo[1].match(/^AND\s+(.*)/si);
+      const andMatch = lo[1].match(/^AND\s+([\s\S]*)/i);
       if (!andMatch) return null;
       const hi = parseLiteral(andMatch[1]!);
       if (!hi) return null;
@@ -243,7 +243,7 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
     }
 
     // Comparison operators (!=, >=, <=, >, <, =)
-    const compMatch = afterIdent.match(/^(!=|>=|<=|>|<|=)\s*(.*)/s);
+    const compMatch = afterIdent.match(/^(!=|>=|<=|>|<|=)\s*([\s\S]*)/);
     if (compMatch) {
       const op = compMatch[1] as FilterOp;
       const litResult = parseLiteral(compMatch[2]!);
@@ -263,7 +263,7 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
     let join: "AND" | "OR" = "AND";
 
     if (!isFirst) {
-      const joinMatch = remaining.match(/^(AND|OR)\s+(.*)/si);
+      const joinMatch = remaining.match(/^(AND|OR)\s+([\s\S]*)/i);
       if (!joinMatch) return null; // unexpected token — SQL is too complex
       join = joinMatch[1]!.toUpperCase() as "AND" | "OR";
       remaining = joinMatch[2]!;
