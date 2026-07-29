@@ -45,6 +45,11 @@ class BaseEngine(ABC):
     implement the abstract methods below.
     """
 
+    # SQL dialect passed to ``ibis.to_sql`` when the compiler or preview
+    # endpoints render per-step / final SQL (plan-039).  Concrete engines
+    # override with their native dialect name.
+    dialect: str = "duckdb"
+
     @property
     @abstractmethod
     def con(self) -> ibis.BaseBackend:

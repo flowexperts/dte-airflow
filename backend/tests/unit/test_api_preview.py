@@ -94,4 +94,9 @@ def test_preview_bad_step_returns_422(tmp_path, client):
     _save(store, _pipeline_payload("p3", steps=[{"op": "filter", "expr": "this_column_does_not_exist > 0"}]))
 
     r = c.get("/api/pipelines/p3/preview")
-    assert r.status_code == 422
+    # plan-039: compile errors return 200 with `error` populated (so partial
+    # step_sqls can accompany a failed compile for the SQL panel).
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("error")
+    assert body["rows"] == []

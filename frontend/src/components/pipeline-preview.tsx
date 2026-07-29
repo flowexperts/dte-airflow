@@ -7,6 +7,7 @@ import {
   Panel,
   PanelHead,
   SectionHead,
+  Segmented,
 } from "@/components/ui";
 import {
   dryRunPipeline,
@@ -28,6 +29,9 @@ import {
  *
  * The two flavours share the same rendering path — only the fetch call and
  * the trigger (click vs. debounce) differ.
+ *
+ * Plan-039 adds a Data | SQL toggle so the user can inspect the compiled
+ * per-step SQL and final SELECT alongside the sample rows.
  */
 export function PipelinePreview({
   pipelineId,
@@ -37,6 +41,7 @@ export function PipelinePreview({
   const [data, setData] = useState<PreviewResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<"data" | "sql">("data");
 
   const isLive = typeof pipelineId !== "string";
   // Serialise the pipeline for a stable useEffect dep. Fires on any content
@@ -96,6 +101,12 @@ export function PipelinePreview({
   }, [isLive, liveKey, pipelineId]);
 
   const columns = data?.rows?.[0] ? Object.keys(data.rows[0]) : [];
+  // Backend now returns 200 with `error` populated on compile failure so
+  // partial SQL can accompany the failure. Surface both fetch-level errors
+  // (network / HTTP) and payload-level compile errors.
+  const compileErr = data?.error ?? null;
+  const displayErr = err ?? compileErr;
+  const pipelineObj = isLive ? (pipelineId as Pipeline) : null;
 
   return (
     <section>
@@ -109,44 +120,56 @@ export function PipelinePreview({
               : "· compile + sample without writing output"
         }
         actions={
-          isLive ? undefined : (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={runSaved}
-              disabled={busy}
-            >
-              {busy ? "Running…" : data ? "Re-run" : "Dry run"}
-            </Button>
-          )
+          <div className="flex items-center gap-2">
+            <Segmented
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "data", label: "Data" },
+                { value: "sql", label: "SQL" },
+              ]}
+            />
+            {isLive ? null : (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={runSaved}
+                disabled={busy}
+              >
+                {busy ? "Running…" : data ? "Re-run" : "Dry run"}
+              </Button>
+            )}
+          </div>
         }
       />
 
-      {isLive && busy && !data && !err && (
+      {isLive && busy && !data && !displayErr && (
         <div className="p-6 text-center text-subtle text-sm">Compiling…</div>
       )}
 
-      {isLive && !busy && !data && !err && (
+      {isLive && !busy && !data && !displayErr && (
         <div className="p-6 text-center text-subtle text-sm">
           Pick at least one source and a destination to preview.
         </div>
       )}
 
-      {err && (
+      {displayErr && (
         <Panel>
           <PanelHead label="Error" />
           <pre className="p-4 font-mono text-[12px] text-red whitespace-pre-wrap break-words">
-            {err}
+            {displayErr}
           </pre>
         </Panel>
       )}
 
-      {data && !err && (
+      {view === "data" && data && !err && (
         <Panel>
           <PanelHead label="Sample rows" count={data.count} />
           {columns.length === 0 || data.rows.length === 0 ? (
             <div className="p-6 text-center text-subtle text-sm">
-              Compile succeeded but produced zero rows.
+              {compileErr
+                ? "No rows — compile failed before execute."
+                : "Compile succeeded but produced zero rows."}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -185,6 +208,91 @@ export function PipelinePreview({
           )}
         </Panel>
       )}
+
+      {view === "sql" && (!data || err) && !displayErr && (
+        <div className="p-6 text-center text-subtle text-sm">
+          SQL will appear once the pipeline compiles.
+        </div>
+      )}
+
+      {view === "sql" && data && (
+        <SqlPanel data={data} pipeline={pipelineObj} />
+      )}
     </section>
+  );
+}
+
+/**
+ * SqlPanel — plan-039.
+ *
+ * Renders per-step compiled SQL and the LIMIT-wrapped final SELECT with a
+ * Copy button on each block. Step labels use the op from the pipeline object
+ * when available (live mode); otherwise they show a generic "Step N" heading.
+ */
+function SqlPanel({
+  data,
+  pipeline,
+}: {
+  data: PreviewResponse;
+  pipeline: Pipeline | null;
+}) {
+  const stepSqls = data.step_sqls ?? {};
+  const stepEntries: Array<[number, string]> = Object.entries(stepSqls)
+    .map(([k, v]) => [Number(k), v] as [number, string])
+    .sort((a, b) => a[0] - b[0]);
+  const finalSql = data.final_sql ?? null;
+
+  if (stepEntries.length === 0 && !finalSql) {
+    return (
+      <div className="p-6 text-center text-subtle text-sm">
+        SQL will appear once the pipeline compiles.
+      </div>
+    );
+  }
+
+  const stepOp = (idx: number): string => {
+    const s = pipeline?.steps?.[idx] as { op?: string } | undefined;
+    return s?.op ?? "step";
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      {stepEntries.map(([idx, sql]) => (
+        <SqlBlock
+          key={`step-${idx}`}
+          label={`Step ${idx + 1} · ${stepOp(idx)}`}
+          sql={sql}
+        />
+      ))}
+      {finalSql && <SqlBlock label="Final query" sql={finalSql} />}
+    </div>
+  );
+}
+
+function SqlBlock({ label, sql }: { label: string; sql: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(sql);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // Clipboard permission denied — swallow; user can still select+copy.
+    }
+  };
+  return (
+    <Panel>
+      <PanelHead
+        label={label}
+        count={
+          <Button variant="ghost" size="sm" onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        }
+      />
+      <pre className="font-mono text-[11px] bg-code-bg p-3 rounded-sm whitespace-pre-wrap overflow-x-auto">
+        {sql}
+      </pre>
+    </Panel>
   );
 }

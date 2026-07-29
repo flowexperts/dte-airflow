@@ -22,6 +22,8 @@ def _is_duckdb_backend(backend: ibis.BaseBackend) -> bool:
 
 
 class DuckDBEngine(BaseEngine):
+    dialect = "duckdb"
+
     def __init__(self):
         self._con = ibis.duckdb.connect()
 
