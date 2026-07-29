@@ -94,16 +94,6 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
 
   const columns: Column<Pipeline>[] = [
     {
-      key: "idx",
-      header: "#",
-      width: "32px",
-      render: (_, i) => (
-        <span className="font-mono text-[10.5px] text-subtle">
-          {String(i + 1).padStart(2, "0")}
-        </span>
-      ),
-    },
-    {
       key: "name",
       header: "Name",
       width: "2.2fr",
