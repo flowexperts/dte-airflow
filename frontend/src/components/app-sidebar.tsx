@@ -6,7 +6,6 @@ import useSWR from "swr";
 import {
   Sidebar,
   Brand,
-  NavSearch,
   NavSections,
   NavGroup,
   NavItem,
@@ -37,7 +36,6 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <Brand version="v0.1" />
-      <NavSearch />
       <NavSections>
         <NavGroup>Workspace</NavGroup>
         {can("connection:read") && (
