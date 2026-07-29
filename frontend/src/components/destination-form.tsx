@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Button,
   Field,
+  InlineError,
   Input,
   PageHeader,
   Panel,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/api";
 import { OutputPanel } from "@/components/builder/OutputPanel";
 import { ConnectionPicker } from "@/components/builder/ConnectionPicker";
+import { humanizeError, type HumanError } from "@/lib/errors";
 
 /** Which connection_types a given destination `config.type` may bind to.
  *  Mirrors backend's DESTINATION_CONNECTION_COMPAT. */
@@ -41,7 +43,7 @@ export function DestinationForm({
   const router = useRouter();
   const [destination, setDestination] = useState<Destination>(initial);
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<HumanError | null>(null);
 
   const validate = (): string | null => {
     if (!destination.id.trim()) return "Destination id is required.";
@@ -57,7 +59,7 @@ export function DestinationForm({
   const save = async () => {
     const problem = validate();
     if (problem) {
-      setErr(problem);
+      setErr({ title: "Check your input", message: problem, kind: "validation" });
       return;
     }
     setSaving(true);
@@ -70,7 +72,7 @@ export function DestinationForm({
       }
       router.push("/destinations");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(humanizeError(e, { action: "save", entity: "destination" }));
       setSaving(false);
     }
   };
@@ -101,11 +103,7 @@ export function DestinationForm({
         sub={mode === "edit" ? initial.id : undefined}
       />
       <div className="px-14 py-8 space-y-4">
-        {err && (
-          <div className="p-3 border border-red rounded bg-code-bg text-red font-mono text-[12.5px]">
-            {err}
-          </div>
-        )}
+        {err && <InlineError title={err.title} message={err.message} detail={err.detail} />}
         <Panel>
           <div className="p-4 space-y-3">
             <Field label="Destination id" hint="stable identifier; can't change after create">

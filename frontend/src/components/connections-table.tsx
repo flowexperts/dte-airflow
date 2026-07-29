@@ -2,9 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DataTable, Pill, type Column } from "@/components/ui";
-import { deleteConnection, testConnection, type Connection, type ProbeResult } from "@/lib/api";
+import { DataTable, Pill, type Column, type DataTableSelection } from "@/components/ui";
+import {
+  bulkDeleteConnections,
+  deleteConnection,
+  testConnection,
+  type BulkDeleteResult,
+  type Connection,
+  type ProbeResult,
+} from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
+import { summarizeBulkDelete } from "@/lib/bulk-delete";
+import { useToast } from "@/components/toaster";
+import { humanizeError } from "@/lib/errors";
 
 export function ConnectionsTable({ rows }: { rows: Connection[] }) {
   const router = useRouter();
@@ -15,6 +25,9 @@ export function ConnectionsTable({ rows }: { rows: Connection[] }) {
   const [busyDelete, setBusyDelete] = useState<string | null>(null);
   const [busyTest, setBusyTest] = useState<string | null>(null);
   const [probes, setProbes] = useState<Record<string, ProbeResult>>({});
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const toast = useToast();
 
   const onDelete = async (id: string) => {
     if (!confirm(`Delete connection '${id}'?`)) return;
@@ -23,7 +36,7 @@ export function ConnectionsTable({ rows }: { rows: Connection[] }) {
       await deleteConnection(id);
       router.refresh();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(humanizeError(e, { action: "delete", entity: "connection" }));
     } finally {
       setBusyDelete(null);
     }
@@ -34,15 +47,61 @@ export function ConnectionsTable({ rows }: { rows: Connection[] }) {
     try {
       const p = await testConnection(id);
       setProbes((prev) => ({ ...prev, [id]: p }));
+      if (p.ok) {
+        toast.success({ title: `Connected to ${id}`, message: `Reachable in ${p.elapsed_ms}ms.` });
+      } else {
+        toast.error({
+          title: `Couldn't connect to ${id}`,
+          message: "The credentials or endpoint didn't work.",
+          detail: p.detail,
+        });
+      }
     } catch (e) {
+      const human = humanizeError(e, { action: "test", entity: "connection" });
       setProbes((prev) => ({
         ...prev,
-        [id]: { ok: false, elapsed_ms: 0, detail: e instanceof Error ? e.message : String(e) },
+        [id]: { ok: false, elapsed_ms: 0, detail: human.message },
       }));
+      toast.error(human);
     } finally {
       setBusyTest(null);
     }
   };
+
+  const onBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} connection(s)?`)) return;
+    setBulkBusy(true);
+    try {
+      const result: BulkDeleteResult = await bulkDeleteConnections(ids);
+      toast.success({ title: summarizeBulkDelete("connection", result) });
+      setSelectedIds(new Set());
+      router.refresh();
+    } catch (e) {
+      toast.error(humanizeError(e, { action: "delete", entity: "connections" }));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const selection: DataTableSelection<Connection> | undefined = canDelete
+    ? {
+        selectedIds,
+        rowId: (r) => r.id,
+        onToggle: (id) =>
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          }),
+        onToggleAll: () =>
+          setSelectedIds((prev) =>
+            prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id)),
+          ),
+      }
+    : undefined;
 
   const columns: Column<Connection>[] = [
     {
@@ -109,15 +168,33 @@ export function ConnectionsTable({ rows }: { rows: Connection[] }) {
   ];
 
   return (
-    <DataTable
-      columns={columns}
-      rows={rows}
-      onRowClick={
-        canEdit
-          ? (r) => router.push(`/connections/${encodeURIComponent(r.id)}/edit`)
-          : undefined
-      }
-      emptyText="No connections yet. Create one to store credentials."
-    />
+    <div className="flex flex-col gap-2">
+      {canDelete && selectedIds.size > 0 && (
+        <div className="flex items-center justify-between px-3.5 py-2 border border-border rounded-[var(--radius)] bg-surface-2">
+          <span className="font-mono text-[11px] text-muted">
+            {selectedIds.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={onBulkDelete}
+            disabled={bulkBusy}
+            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
+          >
+            {bulkBusy ? "Deleting…" : "Delete selected"}
+          </button>
+        </div>
+      )}
+      <DataTable
+        columns={columns}
+        rows={rows}
+        selection={selection}
+        onRowClick={
+          canEdit
+            ? (r) => router.push(`/connections/${encodeURIComponent(r.id)}/edit`)
+            : undefined
+        }
+        emptyText="No connections yet. Create one to store credentials."
+      />
+    </div>
   );
 }

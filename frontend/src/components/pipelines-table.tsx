@@ -5,16 +5,22 @@ import { useRouter } from "next/navigation";
 import { DataTable, type Column } from "@/components/ui";
 import { triggerPipeline, type Pipeline } from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
+import { useToast } from "@/components/toaster";
+import { humanizeError } from "@/lib/errors";
 
 export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const { can } = usePermissions();
   const canTrigger = can("pipeline:trigger");
+  const toast = useToast();
 
   const runPipeline = async (id: string) => {
     if (!id) {
-      alert("This pipeline is missing an id and can't be triggered. Edit or delete it.");
+      toast.error({
+        title: "This pipeline can't run",
+        message: "It's missing an id — edit or delete it before running.",
+      });
       return;
     }
     setBusy(id);
@@ -22,7 +28,7 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
       const { run_id } = await triggerPipeline(id);
       router.push(`/runs/${encodeURIComponent(run_id)}`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(humanizeError(e, { action: "start", entity: "pipeline" }));
       setBusy(null);
     }
   };

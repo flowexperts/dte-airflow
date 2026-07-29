@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, PageHeader, Panel, Topbar } from "@/components/ui";
+import { Button, InlineError, PageHeader, Panel, Topbar } from "@/components/ui";
 import { createSource, updateSource, type Source } from "@/lib/api";
 import { SourceEditor } from "@/components/builder/sources/SourceEditor";
 import { SchemaProvider } from "@/components/builder/schema-context";
+import { humanizeError, type HumanError } from "@/lib/errors";
 
 export function SourceForm({
   initial,
@@ -17,7 +18,7 @@ export function SourceForm({
   const router = useRouter();
   const [source, setSource] = useState<Source>(initial);
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<HumanError | null>(null);
 
   const validate = (): string | null => {
     if (!source.id.trim()) return "Source id is required.";
@@ -29,7 +30,7 @@ export function SourceForm({
   const save = async () => {
     const problem = validate();
     if (problem) {
-      setErr(problem);
+      setErr({ title: "Check your input", message: problem, kind: "validation" });
       return;
     }
     setSaving(true);
@@ -42,7 +43,7 @@ export function SourceForm({
       }
       router.push("/sources");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(humanizeError(e, { action: "save", entity: "source" }));
       setSaving(false);
     }
   };
@@ -81,11 +82,7 @@ export function SourceForm({
         sub={mode === "edit" ? initial.id : undefined}
       />
       <div className="px-14 py-8 space-y-4">
-        {err && (
-          <div className="p-3 border border-red rounded bg-code-bg text-red font-mono text-[12.5px]">
-            {err}
-          </div>
-        )}
+        {err && <InlineError title={err.title} message={err.message} detail={err.detail} />}
         <Panel>
           <SourceEditor source={source} onChange={setSource} />
         </Panel>

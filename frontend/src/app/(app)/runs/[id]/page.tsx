@@ -5,6 +5,7 @@ import useSWR from "swr";
 import Link from "next/link";
 import {
   Button,
+  ErrorPanel,
   InlineCode,
   MetricRow,
   Metric,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui";
 import { getDestination, getPipeline, getRun, getRunEvents, isTerminal, type Destination, type Pipeline, type Run, type RunEvent } from "@/lib/api";
 import { RunOutputPreview } from "@/components/run-output-preview";
+import { humanizeCompilerError } from "@/lib/errors";
 
 type Params = Promise<{ id: string }>;
 
@@ -137,14 +139,16 @@ export default function RunDetail({ params }: { params: Params }) {
               </div>
             )}
 
-            {data.status === "failed" && data.error && (
-              <Panel>
-                <PanelHead label="Error" />
-                <pre className="p-4 font-mono text-[12.5px] text-red whitespace-pre-wrap break-words">
-                  {data.error}
-                </pre>
-              </Panel>
-            )}
+            {data.status === "failed" && data.error && (() => {
+              const h = humanizeCompilerError(data.error);
+              return h ? (
+                <ErrorPanel
+                  title={h.title}
+                  message={h.message}
+                  detail={h.detail}
+                />
+              ) : null;
+            })()}
 
             <RunOutputPreview
               runId={id}

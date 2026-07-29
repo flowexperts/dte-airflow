@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Button,
   Field,
+  InlineError,
   Input,
   PageHeader,
   Panel,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/api";
 import { CONNECTION_KINDS, emptyCredentials } from "@/components/connections/types";
 import { CredentialFields } from "@/components/connections/CredentialFields";
+import { humanizeError, type HumanError } from "@/lib/errors";
 
 export function ConnectionForm({
   initial,
@@ -31,7 +33,7 @@ export function ConnectionForm({
   const router = useRouter();
   const [connection, setConnection] = useState<Connection>(initial);
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<HumanError | null>(null);
 
   const setKind = (k: ConnectionType) => {
     setConnection({
@@ -50,7 +52,10 @@ export function ConnectionForm({
 
   const save = async () => {
     const problem = validate();
-    if (problem) { setErr(problem); return; }
+    if (problem) {
+      setErr({ title: "Check your input", message: problem, kind: "validation" });
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -61,7 +66,7 @@ export function ConnectionForm({
       }
       router.push("/connections");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(humanizeError(e, { action: "save", entity: "connection" }));
       setSaving(false);
     }
   };
@@ -90,11 +95,7 @@ export function ConnectionForm({
         sub={mode === "edit" ? initial.id : undefined}
       />
       <div className="px-14 py-8 space-y-4">
-        {err && (
-          <div className="p-3 border border-red rounded bg-code-bg text-red font-mono text-[12.5px]">
-            {err}
-          </div>
-        )}
+        {err && <InlineError title={err.title} message={err.message} detail={err.detail} />}
         <Panel>
           <div className="p-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">

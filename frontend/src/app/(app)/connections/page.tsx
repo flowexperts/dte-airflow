@@ -1,17 +1,18 @@
-import { PageHeader, Topbar } from "@/components/ui";
+import { InlineError, PageHeader, Topbar } from "@/components/ui";
 import { listConnections, type Connection } from "@/lib/api";
 import { ConnectionsTable } from "@/components/connections-table";
 import { NewResourceButton } from "@/components/new-resource-button";
+import { humanizeError, type HumanError } from "@/lib/errors";
 
 export const revalidate = 30; // list/detail shell — SWR handles freshness client-side (P2 #26)
 
 export default async function ConnectionsPage() {
   let connections: Connection[] = [];
-  let error: string | null = null;
+  let error: HumanError | null = null;
   try {
     connections = await listConnections();
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    error = humanizeError(e, { action: "load", entity: "connections" });
   }
 
   return (
@@ -30,9 +31,7 @@ export default async function ConnectionsPage() {
 
       <div className="px-14 py-8">
         {error ? (
-          <div className="p-4 border border-red rounded bg-code-bg text-red font-mono text-sm">
-            Backend unreachable: {error}
-          </div>
+          <InlineError title={error.title} message={error.message} detail={error.detail} />
         ) : (
           <ConnectionsTable rows={connections} />
         )}

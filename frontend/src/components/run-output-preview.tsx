@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Button, JsonCell, Panel, PanelHead, SectionHead } from "@/components/ui";
+import { Button, ErrorPanel, JsonCell, Panel, PanelHead, SectionHead } from "@/components/ui";
 import { getRunOutput, type PreviewResponse } from "@/lib/api";
+import { humanizeError, type HumanError } from "@/lib/errors";
 
 const SUPPORTED = new Set(["json_file", "csv_file", "excel_file"]);
 
@@ -16,7 +17,7 @@ export function RunOutputPreview({
   disabled: boolean;
 }) {
   const [data, setData] = useState<PreviewResponse | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<HumanError | null>(null);
   const [busy, setBusy] = useState(false);
 
   const supported = outputType ? SUPPORTED.has(outputType) : false;
@@ -28,7 +29,7 @@ export function RunOutputPreview({
       const res = await getRunOutput(runId, 5);
       setData(res);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(humanizeError(e, { action: "load", entity: "output" }));
       setData(null);
     } finally {
       setBusy(false);
@@ -69,12 +70,7 @@ export function RunOutputPreview({
       )}
 
       {supported && err && (
-        <Panel>
-          <PanelHead label="Error" />
-          <pre className="p-4 font-mono text-[12px] text-red whitespace-pre-wrap break-words">
-            {err}
-          </pre>
-        </Panel>
+        <ErrorPanel title={err.title} message={err.message} detail={err.detail} />
       )}
 
       {supported && data && !err && (

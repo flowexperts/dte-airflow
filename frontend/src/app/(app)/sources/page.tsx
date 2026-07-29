@@ -1,17 +1,18 @@
-import { PageHeader, Topbar } from "@/components/ui";
+import { InlineError, PageHeader, Topbar } from "@/components/ui";
 import { listSources, type Source } from "@/lib/api";
 import { SourcesTable } from "@/components/sources-table";
 import { NewResourceButton } from "@/components/new-resource-button";
+import { humanizeError, type HumanError } from "@/lib/errors";
 
 export const revalidate = 30; // list/detail shell — SWR handles freshness client-side (P2 #26)
 
 export default async function SourcesPage() {
   let sources: Source[] = [];
-  let error: string | null = null;
+  let error: HumanError | null = null;
   try {
     sources = await listSources();
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    error = humanizeError(e, { action: "load", entity: "sources" });
   }
 
   return (
@@ -30,9 +31,7 @@ export default async function SourcesPage() {
 
       <div className="px-14 py-8">
         {error ? (
-          <div className="p-4 border border-red rounded bg-code-bg text-red font-mono text-sm">
-            Backend unreachable: {error}
-          </div>
+          <InlineError title={error.title} message={error.message} detail={error.detail} />
         ) : (
           <SourcesTable rows={sources} />
         )}

@@ -20,6 +20,8 @@ import {
 } from "@/lib/api";
 import { LookupMappingsEditor } from "@/components/lookup-mappings-editor";
 import { usePermissions } from "@/lib/use-permissions";
+import { useToast } from "@/components/toaster";
+import { humanizeError } from "@/lib/errors";
 
 function emptyLookup(id: string): LookupTable {
   return { id, name: null, mappings: {}, default: null };
@@ -101,6 +103,7 @@ export function LookupTablesTable() {
   const { can } = usePermissions();
   const canWrite = can("lookup_table:write");
   const canDelete = can("lookup_table:delete");
+  const toast = useToast();
 
   const openNew = () => {
     setEditing({ draft: emptyLookup(`lookup_${rows.length + 1}`), isNew: true });
@@ -120,7 +123,8 @@ export function LookupTablesTable() {
       await mutate();
       setEditing(null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const h = humanizeError(e, { action: "save", entity: "lookup table" });
+      setErr(h.detail ? `${h.message} — ${h.detail}` : h.message);
     } finally {
       setBusy(false);
     }
@@ -132,7 +136,7 @@ export function LookupTablesTable() {
       await deleteLookupTable(id);
       await mutate();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(humanizeError(e, { action: "delete", entity: "lookup table" }));
     } finally {
       setDeletingId(null);
     }

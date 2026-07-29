@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Button,
+  ErrorPanel,
   JsonCell,
   Panel,
   PanelHead,
@@ -15,6 +16,7 @@ import {
   type Pipeline,
   type PreviewResponse,
 } from "@/lib/api";
+import { humanizeCompilerError, humanizeError } from "@/lib/errors";
 
 /**
  * PipelinePreview
@@ -39,7 +41,7 @@ export function PipelinePreview({
   pipelineId: string | Pipeline;
 }) {
   const [data, setData] = useState<PreviewResponse | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<"data" | "sql">("data");
 
@@ -59,7 +61,7 @@ export function PipelinePreview({
       const res = await previewPipeline(pipelineId as string, 20);
       setData(res);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e);
       setData(null);
     } finally {
       setBusy(false);
@@ -91,7 +93,7 @@ export function PipelinePreview({
         setErr(null);
       } catch (e) {
         if (reqSeq.current !== seq) return;
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(e);
         setData(null);
       } finally {
         if (reqSeq.current === seq) setBusy(false);
@@ -105,7 +107,11 @@ export function PipelinePreview({
   // partial SQL can accompany the failure. Surface both fetch-level errors
   // (network / HTTP) and payload-level compile errors.
   const compileErr = data?.error ?? null;
-  const displayErr = err ?? compileErr;
+  const humanized =
+    err != null
+      ? humanizeError(err, { action: "run preview", entity: "pipeline" })
+      : humanizeCompilerError(compileErr);
+  const displayErr = humanized;
   const pipelineObj = isLive ? (pipelineId as Pipeline) : null;
 
   return (
@@ -154,12 +160,11 @@ export function PipelinePreview({
       )}
 
       {displayErr && (
-        <Panel>
-          <PanelHead label="Error" />
-          <pre className="p-4 font-mono text-[12px] text-red whitespace-pre-wrap break-words">
-            {displayErr}
-          </pre>
-        </Panel>
+        <ErrorPanel
+          title={displayErr.title}
+          message={displayErr.message}
+          detail={displayErr.detail}
+        />
       )}
 
       {view === "data" && data && !err && (
