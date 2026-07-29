@@ -1,0 +1,11 @@
+{
+  "name": "dte-demo-recorder",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "record:user-flow": "node record-user-flow.mjs"
+  },
+  "dependencies": {
+    "@playwright/test": "1.48.2"
+  }
+}
