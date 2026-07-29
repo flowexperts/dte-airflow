@@ -10,8 +10,6 @@ import {
   MetricRow,
   Metric,
   PageHeader,
-  Panel,
-  PanelHead,
   Pill,
   SectionHead,
   Timeline,

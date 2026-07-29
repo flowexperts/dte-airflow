@@ -8,16 +8,16 @@ interface RichToast {
   id: number;
   kind: ToastKind;
   title: string;
-  message?: string;
-  detail?: string;
+  message?: string | undefined;
+  detail?: string | undefined;
 }
 
 interface Ctx {
   /** Legacy single-string API — kept for existing call sites. */
   push: (message: string, kind?: "info" | "error") => void;
   /** Rich API used by humanized error handlers. */
-  error: (t: { title: string; message?: string; detail?: string }) => void;
-  success: (t: { title: string; message?: string }) => void;
+  error: (t: { title: string; message?: string | undefined; detail?: string | undefined }) => void;
+  success: (t: { title: string; message?: string | undefined }) => void;
 }
 
 const ToastCtx = createContext<Ctx | null>(null);
@@ -49,12 +49,14 @@ export function Toaster({ children }: { children: React.ReactNode }) {
   );
 
   const error = useCallback(
-    (t: { title: string; message?: string; detail?: string }) => add({ kind: "error", ...t }),
+    (t: { title: string; message?: string | undefined; detail?: string | undefined }) =>
+      add({ kind: "error", ...t }),
     [add],
   );
 
   const success = useCallback(
-    (t: { title: string; message?: string }) => add({ kind: "success", ...t }),
+    (t: { title: string; message?: string | undefined }) =>
+      add({ kind: "success", ...t }),
     [add],
   );
 

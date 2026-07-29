@@ -214,7 +214,7 @@ export function PipelinePreview({
         </Panel>
       )}
 
-      {view === "sql" && (!data || err) && !displayErr && (
+      {view === "sql" && (!data || !!err) && !displayErr && (
         <div className="p-6 text-center text-subtle text-sm">
           SQL will appear once the pipeline compiles.
         </div>

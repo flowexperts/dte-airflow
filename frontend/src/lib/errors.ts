@@ -61,17 +61,19 @@ function parsePydantic(detail: unknown): string | null {
 /** Try to rewrite a DuckDB / compiler string into something a non-engineer can read. */
 function humanizeCompilerString(raw: string): string | null {
   const s = raw.trim();
-  const notFound = s.match(/column\s+"?([^"\s]+)"?\s+not\s+found/i)
-    || s.match(/Referenced column\s+"?([^"\s]+)"?\s+not found/i);
+  const firstLine = (m: string | undefined) => (m ?? "").split("\n")[0] ?? "";
+  const notFound =
+    s.match(/column\s+"?([^"\s]+)"?\s+not\s+found/i) ||
+    s.match(/Referenced column\s+"?([^"\s]+)"?\s+not found/i);
   if (notFound) return `Column "${notFound[1]}" isn't in the data at this step.`;
   const binder = s.match(/Binder Error:\s*(.+)/i);
-  if (binder) return `The query couldn't be built: ${binder[1].split("\n")[0]}`;
+  if (binder) return `The query couldn't be built: ${firstLine(binder[1])}`;
   const parser = s.match(/Parser Error:\s*(.+)/i);
-  if (parser) return `Invalid SQL: ${parser[1].split("\n")[0]}`;
+  if (parser) return `Invalid SQL: ${firstLine(parser[1])}`;
   const conv = s.match(/Conversion Error:\s*(.+)/i);
-  if (conv) return `A value couldn't be converted: ${conv[1].split("\n")[0]}`;
+  if (conv) return `A value couldn't be converted: ${firstLine(conv[1])}`;
   const io = s.match(/IO Error:\s*(.+)/i);
-  if (io) return `Couldn't read the source file: ${io[1].split("\n")[0]}`;
+  if (io) return `Couldn't read the source file: ${firstLine(io[1])}`;
   return null;
 }
 

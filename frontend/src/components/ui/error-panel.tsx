@@ -3,12 +3,12 @@ import { cn } from "@/lib/cn";
 import { Panel, PanelHead } from "./panel";
 
 interface ErrorPanelProps {
-  title?: string;
+  title?: string | undefined;
   message: ReactNode;
-  detail?: string | null;
+  detail?: string | null | undefined;
   /** Panel head label — defaults to "Error". */
   label?: string;
-  className?: string;
+  className?: string | undefined;
 }
 
 /**
@@ -24,7 +24,7 @@ export function ErrorPanel({
   className,
 }: ErrorPanelProps) {
   return (
-    <Panel className={className}>
+    <Panel {...(className ? { className } : {})}>
       <PanelHead label={label} />
       <div className="p-4 text-[13px]">
         {title && <div className="font-medium text-red">{title}</div>}
@@ -54,10 +54,10 @@ export function InlineError({
   detail,
   className,
 }: {
-  title?: string;
+  title?: string | undefined;
   message: ReactNode;
-  detail?: string | null;
-  className?: string;
+  detail?: string | null | undefined;
+  className?: string | undefined;
 }) {
   return (
     <div
