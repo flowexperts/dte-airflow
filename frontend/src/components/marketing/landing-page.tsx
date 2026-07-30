@@ -77,7 +77,7 @@ export function LandingPage() {
             dt<span className="e">e</span>
           </Link>
           <div className="nav-right">
-            <Link href="/pipelines" className="btn plain">Open app</Link>
+            {/* <Link href="/pipelines" className="btn plain">Open app</Link> */}
             <a href="#book" className="btn primary">Book a call</a>
           </div>
         </div>
@@ -94,14 +94,14 @@ export function LandingPage() {
               className="lede"
               style={{ fontSize: 20, color: "var(--text)", maxWidth: "none" }}
             >
-              Map it <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>once</em>.
-              Run it <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>anytime</em>.
+              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>Move</em> and 
+              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}> transform</em> data between systems <br/> without writing one-off scripts.
             </p>
             <div className="hero-ctas">
               <a href="#book" className="btn primary">
                 Book a discovery call <span className="kbd">↵</span>
               </a>
-              <a href="#flow" className="btn ghost">See the flow</a>
+              <a href="#demo" className="btn ghost">See the flow</a>
             </div>
           </div>
 
@@ -141,6 +141,32 @@ export function LandingPage() {
                 <span>1,284 rows · 342 ms</span>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="demo" className="demo">
+        <div className="wrap">
+          <div className="section-head" style={{ alignItems: "flex-start" }}>
+            <div style={{ minWidth: 0 }}>
+              <h2 style={{ marginTop: 10 }}>
+                Transformation Pipeline in minutes. <br />No code, no scripts.
+              </h2>
+            </div>
+          </div>
+          <div className="demo-frame">
+            <video
+              className="demo-video"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              poster="/marketing/dte-demo-poster.png"
+            >
+              <source src="/marketing/dte-demo.mp4" type="video/mp4" />
+              <source src="/marketing/dte-demo.webm" type="video/webm" />
+            </video>
           </div>
         </div>
       </section>

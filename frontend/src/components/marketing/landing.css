@@ -657,6 +657,36 @@
 .mkt-root footer .right a { color: var(--muted); font-size: 13px; }
 .mkt-root footer .right a:hover { color: var(--text); }
 
+/* Demo video ---------------------------------------------------- */
+.mkt-root .demo {
+  padding: 96px 0 64px;
+}
+.mkt-root .demo-frame {
+  margin-top: 36px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 6px;
+  box-shadow:
+    0 24px 60px -20px rgba(0, 0, 0, 0.6),
+    0 2px 0 rgba(255, 255, 255, 0.03) inset;
+  overflow: hidden;
+  max-width: 1120px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.mkt-root .demo-video {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  background: #0a0a0a;
+}
+@media (max-width: 720px) {
+  .mkt-root .demo { padding: 48px 0 32px; }
+  .mkt-root .demo-frame { border-radius: 10px; padding: 3px; }
+}
+
 /* Motion respect */
 @media (prefers-reduced-motion: reduce) {
   .mkt-root *,

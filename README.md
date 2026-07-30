@@ -30,7 +30,9 @@ Ports:
 
 ## Docs
 
-See [`./docs`](./docs) (in progress).
+- **[User guide](./docs/user/README.md)** — start here if you're using the app.
+- **[Self-hosting](./docs/user/self-hosting/install.md)** — running your own instance.
+- **[Architecture](./docs/user/architecture/overview.md)** — how it fits together.
 
 ## License
 

@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // If the cookie is stale, apiFetch's 401 handler will clear it and bounce back.
 const TOKEN_COOKIE = "dte_token";
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/docs", "/docs-assets", "/marketing"];
 const PUBLIC_EXACT = new Set(["/"]);
 
 export function proxy(req: NextRequest) {
@@ -27,5 +27,5 @@ export function proxy(req: NextRequest) {
 
 // Matcher excludes static assets and Next internals.
 export const config = {
-  matcher: ["/((?!_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$).*)"],
+  matcher: ["/((?!_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|mp4|webm|mov|ogv)$).*)"],
 };

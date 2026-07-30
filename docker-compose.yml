@@ -83,11 +83,14 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8001
       INTERNAL_API_URL: http://backend:8001
+      # Where the public /docs route reads markdown from.
+      DOCS_DIR: /docs/user
     command: sh -c "CI=true pnpm install --prefer-offline && pnpm dev"
     volumes:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
+      - ./docs:/docs:ro
     ports:
       - "3000:3000"
     depends_on:
