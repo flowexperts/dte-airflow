@@ -209,13 +209,6 @@ export function PipelinePreview({
           if (!isLive) await runSaved(values);
           // Live mode auto-re-runs via the useEffect dep on paramValues.
         }}
-        onClear={() => {
-          // Wipe persisted values so future dry-runs re-prompt.
-          setParamValues({});
-          // Also nuke the last rendered result so the UI reflects the reset.
-          setData(null);
-          setErr(null);
-        }}
       />
 
       {isLive && needsPrompt && !modalOpen && (

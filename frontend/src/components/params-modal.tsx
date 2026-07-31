@@ -69,7 +69,6 @@ export function ParamsModal({
   open,
   onClose,
   onSubmit,
-  onClear,
   emptyMessage,
 }: {
   title: string;
@@ -79,10 +78,6 @@ export function ParamsModal({
   open: boolean;
   onClose: () => void;
   onSubmit: (values: Record<string, string>) => Promise<void> | void;
-  /** When provided, shows a "Clear" button that resets every input in the
-   *  dialog and invokes the callback so the caller can wipe persisted state.
-   *  Modal stays open after clearing so the user can re-enter values. */
-  onClear?: () => void;
   emptyMessage?: string;
 }) {
   const declared = params ?? [];
@@ -216,37 +211,18 @@ export function ParamsModal({
             {err}
           </div>
         )}
-        <div className="mt-5 flex items-center justify-between gap-2">
-          <div>
-            {onClear && declared.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  const cleared: Record<string, string> = {};
-                  for (const p of declared) cleared[p.name] = "";
-                  setValues(cleared);
-                  onClear();
-                }}
-                disabled={busy}
-              >
-                Clear
-              </Button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={busy || !submittable}
-              onClick={submit}
-            >
-              {busy ? "Working…" : submitLabel}
-            </Button>
-          </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={busy || !submittable}
+            onClick={submit}
+          >
+            {busy ? "Working…" : submitLabel}
+          </Button>
         </div>
       </div>
     </div>,
