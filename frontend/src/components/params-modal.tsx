@@ -101,6 +101,7 @@ export function ParamsModal({
       return seed;
     });
     setErr(null);
+    setBusy(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -126,6 +127,9 @@ export function ParamsModal({
       await onSubmit(collectParamPayload(declared, values));
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      // Modal often stays mounted across open/close (parent toggles `open`),
+      // so busy must be reset here — otherwise the next open shows "Working…".
       setBusy(false);
     }
   };
