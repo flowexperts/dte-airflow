@@ -61,6 +61,38 @@ async def _trigger_and_wait(client, pipeline_id, *, params=None, timeout=15.0):
     raise AssertionError(f"run {run_id} did not finish (last: {run})")
 
 
+async def test_pipeline_params_persist_across_create_edit_get(
+    client, scenario_ids, fixtures_dir, out_dir
+):
+    """Regression: PUT on a pipeline used to drop params from the on_conflict
+    SET clause. Reload after edit must return the added inputs."""
+    src_id, dst_id, _ = await _seed(
+        client, scenario_ids, fixtures_dir, out_dir, "params_persist.json",
+    )
+    pipe_id = scenario_ids("pipeline")
+    await _create_pipeline_with_params(
+        client, id=pipe_id, sources=[src_id],
+        steps=[{"op": "filter", "expr": "amount > {{params.min}}"}],
+        output_id=dst_id,
+        params=[{"name": "min", "type": "int", "required": True}],
+    )
+    # Reload immediately — INSERT path must have persisted the declaration.
+    r = await client.get(f"/api/pipelines/{pipe_id}")
+    assert r.status_code == 200
+    got = r.json()
+    assert [p["name"] for p in got.get("params", [])] == ["min"]
+
+    # Edit to add a second param → PUT hits on_conflict_do_update path.
+    got["params"].append({
+        "name": "start_date", "type": "date", "required": False, "default": "2024-01-01",
+    })
+    r = await client.put(f"/api/pipelines/{pipe_id}", json=got)
+    assert r.status_code == 200, r.text
+    r = await client.get(f"/api/pipelines/{pipe_id}")
+    names = {p["name"] for p in r.json().get("params", [])}
+    assert names == {"min", "start_date"}
+
+
 async def test_trigger_with_params_filters_by_placeholder(
     client, scenario_ids, fixtures_dir, out_dir
 ):

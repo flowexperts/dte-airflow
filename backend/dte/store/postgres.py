@@ -76,6 +76,9 @@ class PostgresPipelineStore:
                 "sources": stmt.excluded.sources,
                 "steps": stmt.excluded.steps,
                 "output_id": stmt.excluded.output_id,
+                "engine": stmt.excluded.engine,
+                "quality_contracts": stmt.excluded.quality_contracts,
+                "params": stmt.excluded.params,
             },
         )
         async with _open_tenant_session(self._factory) as s:
