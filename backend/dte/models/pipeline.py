@@ -881,6 +881,13 @@ class PipelineParam(BaseModel):
 
     @model_validator(mode="after")
     def _default_parses(self):
+        # Treat empty string as "no default" — the builder sends this when
+        # the user hasn't filled the Default input, and it wouldn't parse as
+        # a typed value anyway.
+        if self.default == "":
+            object.__setattr__(self, "default", None)
+        if self.description == "":
+            object.__setattr__(self, "description", None)
         if self.default is None:
             return self
         # Late import — coercion helper lives in the compiler package and we

@@ -29,7 +29,7 @@ export function InputsPanel({
   const add = () =>
     onChange([
       ...params,
-      { name: "", type: "string", required: true, default: "", description: "" },
+      { name: "", type: "string", required: true, default: null, description: null },
     ]);
 
   return (
@@ -81,14 +81,18 @@ export function InputsPanel({
             <Field label={i === 0 ? "Default" : undefined}>
               <Input
                 value={p.default ?? ""}
-                onChange={(e) => update(i, { default: e.target.value })}
+                onChange={(e) =>
+                  update(i, { default: e.target.value === "" ? null : e.target.value })
+                }
                 placeholder="optional"
               />
             </Field>
             <Field label={i === 0 ? "Description" : undefined}>
               <Input
                 value={p.description ?? ""}
-                onChange={(e) => update(i, { description: e.target.value })}
+                onChange={(e) =>
+                  update(i, { description: e.target.value === "" ? null : e.target.value })
+                }
                 placeholder="what this input controls"
               />
             </Field>
