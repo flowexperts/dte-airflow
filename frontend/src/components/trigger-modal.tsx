@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { triggerPipeline, type ParamType, type PipelineParam } from "@/lib/api";
@@ -63,8 +64,13 @@ export function TriggerModal({
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  if (!open) return null;
+  // Portal target is document.body — only exists client-side. Gate the
+  // createPortal call on hydration so SSR doesn't crash.
+  useEffect(() => setMounted(true), []);
+
+  if (!open || !mounted) return null;
 
   const fieldErrors: Record<string, string | null> = {};
   for (const p of declared) {
@@ -97,13 +103,13 @@ export function TriggerModal({
     }
   };
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       onClick={onClose}
     >
       <div
-        className="w-[520px] rounded-md border border-border bg-surface p-5 shadow-lg"
+        className="w-[520px] max-h-[calc(100vh-3rem)] overflow-y-auto rounded-md border border-border bg-surface p-5 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 text-sm font-medium">Trigger run</div>
@@ -187,6 +193,7 @@ export function TriggerModal({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
