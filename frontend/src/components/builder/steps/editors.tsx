@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   Field,
   FieldPicker,
@@ -132,6 +132,11 @@ function quoteString(value: string): string {
 function safeLiteral(v: string): string {
   const trimmed = v.trim();
   if (trimmed === "") return "''";
+  // {{params.X}} / {{today}} placeholders pass through unquoted — the
+  // interpolator resolves them at run time and the declared type decides
+  // whether a cast is needed. Users wrap in quotes explicitly for
+  // date/string casts: `'{{params.d}}'::date`.
+  if (/^\{\{[\w.]+\}\}$/.test(trimmed)) return trimmed;
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
   if (/^(true|false)$/i.test(trimmed)) return trimmed.toUpperCase();
   return quoteString(trimmed);
@@ -344,6 +349,10 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
 
 export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   const allFields = useStepFields();
+  const declaredParams = usePipelineParams();
+  // Native <datalist> id — one per FilterEditor instance is fine since we
+  // suggest the same declared inputs to every value cell in this step.
+  const paramsListId = `filter-params-${useId()}`;
 
   // Mode is local UI state — not persisted on the step. On first mount, if
   // there's an existing expr, default to Advanced.
@@ -504,6 +513,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                         : "value"
                   }
                   disabled={noValue}
+                  list={declaredParams.length > 0 ? paramsListId : undefined}
                 />
                 <button
                   type="button"
@@ -532,6 +542,17 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                 {previewExpr}
               </code>
             </div>
+          )}
+          {declaredParams.length > 0 && (
+            <datalist id={paramsListId}>
+              {declaredParams.map((p) => (
+                <option
+                  key={p.name}
+                  value={`{{params.${p.name}}}`}
+                  label={`${p.name} · ${p.type}`}
+                />
+              ))}
+            </datalist>
           )}
         </div>
       ) : (
