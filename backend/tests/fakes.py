@@ -103,6 +103,7 @@ class FakeRunStore:
             "location": None,
             "started_at": _utcnow_iso(),
             "finished_at": None,
+            "params": None,
         }
         return run_id
 

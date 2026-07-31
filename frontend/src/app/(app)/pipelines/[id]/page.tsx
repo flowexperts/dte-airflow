@@ -68,7 +68,7 @@ export default async function PipelineDetail({ params }: { params: Params }) {
               <Link href={`/pipelines/${encodeURIComponent(pipeline.id)}/edit`}>
                 <Button size="sm">Edit</Button>
               </Link>
-              <TriggerButton pipelineId={pipeline.id} />
+              <TriggerButton pipelineId={pipeline.id} params={pipeline.params} />
             </>
           }
         />

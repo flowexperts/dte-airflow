@@ -57,6 +57,23 @@ export type EngineChoice =
   | "snowflake"
   | "trino";
 
+/** Trigger-time typed inputs declared on a pipeline. */
+export type ParamType =
+  | "string"
+  | "int"
+  | "float"
+  | "date"
+  | "timestamp"
+  | "boolean";
+
+export interface PipelineParam {
+  name: string;
+  type: ParamType;
+  required?: boolean;
+  default?: string | null;
+  description?: string | null;
+}
+
 export interface Pipeline {
   id: string;
   name: string;
@@ -66,6 +83,9 @@ export interface Pipeline {
   /** Engine dispatch. "auto" (default) resolves per source composition on
    *  the backend: single-source postgres → pushdown to postgres, etc. */
   engine?: EngineChoice;
+  /** Declared trigger-time inputs. Referenced from filter/map expressions
+   *  as `{{params.<name>}}`; rendered as typed inputs on the trigger form. */
+  params?: PipelineParam[];
 }
 
 /** Structured 4xx payloads returned by pipeline save / trigger when the
@@ -187,6 +207,19 @@ export interface Run {
   location: string | null;
   started_at: string | null;
   finished_at: string | null;
+  /** Resolved trigger-time context: `{ params: {…}, now, today, yesterday, … }`.
+   *  Only populated for runs started after plan 040 shipped. */
+  params?: RunParams | null;
+}
+
+/** Shape persisted in `runs.params` — matches `resolve_context` output. */
+export interface RunParams {
+  params: Record<string, string>;
+  now: string;
+  today: string;
+  yesterday: string;
+  start_of_week: string;
+  start_of_month: string;
 }
 
 export interface SchemaField {
@@ -346,10 +379,13 @@ export const bulkDeletePipelines = (ids: string[]) =>
     body: JSON.stringify({ ids }),
   });
 
-export const triggerPipeline = (id: string) =>
+export const triggerPipeline = (
+  id: string,
+  params: Record<string, string> = {},
+) =>
   apiFetch<{ run_id: string }>(
     `/api/pipelines/${encodeURIComponent(id)}/trigger`,
-    { method: "POST" },
+    { method: "POST", body: JSON.stringify({ params }) },
   );
 
 export const previewPipeline = (id: string, limit = 100) =>

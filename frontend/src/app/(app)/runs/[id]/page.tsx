@@ -7,9 +7,13 @@ import {
   Button,
   ErrorPanel,
   InlineCode,
+  KV,
+  KVItem,
   MetricRow,
   Metric,
   PageHeader,
+  Panel,
+  PanelHead,
   Pill,
   SectionHead,
   Timeline,
@@ -124,6 +128,20 @@ export default function RunDetail({ params }: { params: Params }) {
                 value={<span className="text-[18px]">DuckDB</span>}
               />
             </MetricRow>
+
+            {data.params?.params && Object.keys(data.params.params).length > 0 && (
+              <Panel>
+                <PanelHead
+                  label="Trigger params"
+                  count={Object.keys(data.params.params).length}
+                />
+                <KV>
+                  {Object.entries(data.params.params).map(([k, v]) => (
+                    <KVItem key={k} label={k} value={<InlineCode>{v}</InlineCode>} />
+                  ))}
+                </KV>
+              </Panel>
+            )}
 
             {data.revision_id && data.pipeline_id && (
               <div className="text-[12px] text-subtle font-mono">
