@@ -302,13 +302,13 @@ export function BuilderForm({
                 }}
                 error={fieldErrors.output_id}
               />
-              <StepsPanel
-                steps={(pipeline.steps ?? []) as StepShape[]}
-                onChange={(steps) => setPipeline({ ...pipeline, steps })}
-              />
               <InputsPanel
                 params={pipeline.params ?? []}
                 onChange={(params) => setPipeline({ ...pipeline, params })}
+              />
+              <StepsPanel
+                steps={(pipeline.steps ?? []) as StepShape[]}
+                onChange={(steps) => setPipeline({ ...pipeline, steps })}
               />
             </div>
           </div>
@@ -345,14 +345,14 @@ export function BuilderForm({
             error={fieldErrors.output_id}
           />
 
-          <StepsPanel
-            steps={(pipeline.steps ?? []) as StepShape[]}
-            onChange={(steps) => setPipeline({ ...pipeline, steps })}
-          />
-
           <InputsPanel
             params={pipeline.params ?? []}
             onChange={(params) => setPipeline({ ...pipeline, params })}
+          />
+
+          <StepsPanel
+            steps={(pipeline.steps ?? []) as StepShape[]}
+            onChange={(steps) => setPipeline({ ...pipeline, steps })}
           />
         </div>
       )}
