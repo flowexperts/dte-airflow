@@ -10,12 +10,74 @@ import {
   Textarea,
 } from "@/components/ui";
 import { useStepFields } from "../schema-context";
+import { usePipelineParams } from "../params-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { StepShape, GroupByEntry, DatePart } from "./types";
 import { LookupTablePicker } from "../LookupTablePicker";
 
 type Setter = (patch: Partial<StepShape>) => void;
+
+/* --------------- Variable picker (trigger-time params + system vars) --------------- */
+
+const SYSTEM_VARS = ["now", "today", "yesterday", "start_of_week", "start_of_month"];
+
+function VariablePickerHint({ onInsert }: { onInsert: (token: string) => void }) {
+  const declared = usePipelineParams();
+  return (
+    <div className="mt-2 space-y-2 rounded border border-border bg-code-bg px-2.5 py-2">
+      <div>
+        <div className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle mb-1">
+          System
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {SYSTEM_VARS.map((v) => {
+            const token = `{{${v}}}`;
+            return (
+              <button
+                key={v}
+                type="button"
+                onClick={() => onInsert(token)}
+                className="font-mono text-[11px] text-accent hover:text-accent-h bg-surface border border-border rounded px-1.5 py-0.5"
+              >
+                {token}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <div className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle mb-1">
+          Inputs
+        </div>
+        {declared.length === 0 ? (
+          <div className="font-mono text-[10.5px] text-subtle">
+            No inputs declared. Add them in the Inputs panel.
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {declared.map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                onClick={() => onInsert(`{{params.${p.name}}}`)}
+                title={p.description ?? ""}
+                className="font-mono text-[11px] text-gold hover:brightness-125 bg-surface border border-border rounded px-1.5 py-0.5"
+              >
+                {`{{params.${p.name}}}`}
+                <span className="ml-1 text-subtle">· {p.type}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="font-mono text-[10.5px] text-subtle">
+        Resolved at run time. Values substitute as strings — cast in SQL where needed
+        (<span className="font-mono">{"'{{params.d}}'::date"}</span>).
+      </div>
+    </div>
+  );
+}
 
 /* --------------- Filter — Basic + Advanced tabs --------------- */
 
@@ -482,6 +544,9 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
             onChange={(e) => handleAdvancedChange(e.target.value)}
             placeholder="amount > 0 AND status = 'completed'"
           />
+          <VariablePickerHint
+            onInsert={(token) => handleAdvancedChange(advancedText + token)}
+          />
         </Field>
       )}
     </div>
@@ -660,6 +725,9 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
           value={(step.expr as string) ?? ""}
           onChange={(e) => set({ expr: e.target.value })}
           placeholder="date_trunc('week', created_at)"
+        />
+        <VariablePickerHint
+          onInsert={(token) => set({ expr: ((step.expr as string) ?? "") + token })}
         />
       </Field>
     </div>

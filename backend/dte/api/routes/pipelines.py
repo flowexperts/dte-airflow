@@ -16,6 +16,13 @@ BULK_DELETE_LIMIT = 200
 class BulkDeleteRequest(BaseModel):
     ids: list[str] = Field(..., min_length=1, max_length=BULK_DELETE_LIMIT)
 
+
+class TriggerRequest(BaseModel):
+    """Optional trigger-time params. Keys are user-defined; values are
+    strings substituted into filter/map `{{params.<key>}}` placeholders."""
+
+    params: dict[str, str] = Field(default_factory=dict)
+
 from dte import runs as run_registry
 from dte.api.deps import (
     get_connection_store,
@@ -29,6 +36,12 @@ from dte.api.deps import (
     get_source_store,
 )
 from dte.compiler.ibis_compiler import compile_pipeline
+from dte.compiler.interpolate import (
+    InterpolationError,
+    ParamValidationError,
+    interpolate_pipeline,
+    resolve_context,
+)
 from dte.pipelines.diff import diff_pipeline, summarise_diff
 from dte.config import get_settings
 from dte import metrics
@@ -87,6 +100,26 @@ async def _record_revision(
     )
     await rev_store.save(rev)
     return rev.id
+
+
+def _parse_params_query(raw: str | None) -> dict[str, str] | None:
+    """Decode `?params=<json>` into a str-keyed str-valued dict.
+
+    Rejects non-object JSON or non-string values with 422 so the caller can't
+    smuggle typed values into what will get str-substituted into SQL anyway.
+    """
+    if raw is None or raw == "":
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=422, detail=f"invalid params json: {e}")
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=422, detail="params must be a JSON object")
+    for k, v in parsed.items():
+        if not isinstance(k, str) or not isinstance(v, str):
+            raise HTTPException(status_code=422, detail="params keys and values must be strings")
+    return parsed
 
 
 async def _validate_pipeline_refs(
@@ -393,6 +426,7 @@ async def _compile_body_pipeline(
     *,
     on_step_schema=None,
     on_step_sql=None,
+    params: dict[str, str] | None = None,
 ):
     """Shared plumbing for endpoints that compile an unsaved pipeline body.
 
@@ -409,6 +443,7 @@ async def _compile_body_pipeline(
     pipeline = Pipeline(**body.model_dump())
     decrypt_context_var.set("pipeline_dry_run")
     try:
+        pipeline = interpolate_pipeline(pipeline, resolve_context(pipeline, params))
         sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
         engine = DuckDBEngine()
@@ -468,6 +503,7 @@ async def step_schemas_pipeline(
 async def dry_run_pipeline(
     body: PipelineBase,
     limit: int = 20,
+    params: str | None = None,
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
@@ -494,12 +530,19 @@ async def dry_run_pipeline(
     compiled = None
     engine = None
     try:
-        compiled, _, engine = await _compile_body_pipeline(
-            body, s_store, d_store, c_store, lt_store,
-            on_step_sql=_capture_sql,
-        )
+        parsed_params = _parse_params_query(params)
     except HTTPException as e:
         error = str(e.detail)
+        parsed_params = None
+    if error is None:
+        try:
+            compiled, _, engine = await _compile_body_pipeline(
+                body, s_store, d_store, c_store, lt_store,
+                on_step_sql=_capture_sql,
+                params=parsed_params,
+            )
+        except HTTPException as e:
+            error = str(e.detail)
 
     rows: list = []
     final_sql: str | None = None
@@ -528,6 +571,7 @@ async def dry_run_pipeline(
 async def preview_pipeline(
     pipeline_id: str,
     limit: int = 100,
+    params: str | None = None,
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
@@ -548,6 +592,8 @@ async def preview_pipeline(
     compiled = None
     engine = None
     try:
+        parsed_params = _parse_params_query(params)
+        pipeline = interpolate_pipeline(pipeline, resolve_context(pipeline, parsed_params))
         sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
         # Preview runs against whichever backend each source resolves to
@@ -592,6 +638,7 @@ async def preview_pipeline(
 @router.post("/pipelines/{pipeline_id}/trigger", dependencies=[Depends(requires("pipeline:trigger"))])
 async def trigger_pipeline(
     pipeline_id: str,
+    body: TriggerRequest | None = None,
     p_store: PipelineStore = Depends(get_pipeline_store),
     r_store: RunStore = Depends(get_run_store),
     re_store: RunEventStore = Depends(get_run_event_store),
@@ -612,9 +659,21 @@ async def trigger_pipeline(
     # the engine matrix existed, or a source's connection type changed
     # since save.
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
+    user_params = (body.params if body else {}) or {}
+    # Resolve the interpolation context up-front so `now`/`today` snapshot at
+    # trigger time (not at compile time deep inside the task) and get
+    # persisted alongside the caller's params for post-hoc inspection.
+    try:
+        run_context = resolve_context(pipeline, user_params)
+        interpolate_pipeline(pipeline, run_context)  # early fail on unknown vars
+    except ParamValidationError as e:
+        raise HTTPException(status_code=422, detail=e.payload())
+    except InterpolationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
     revision_id = latest_rev.id if latest_rev else None
     run_id = await r_store.create(pipeline_id, revision_id=revision_id)
+    await r_store.update(run_id, params=run_context)
     # asyncio.create_task in CPython 3.7+ already copies the current context
     # into the new task, so the dte_tenant_id contextvar set by
     # TenantContextMiddleware is automatically available inside _execute_pipeline.
@@ -748,6 +807,11 @@ async def _run_body(
 
         with tr.start_as_current_span("resolve"):
             pipeline = await p_store.get(pipeline_id)
+            # Reuse the context that was frozen at trigger time so `now`/`today`
+            # don't drift and the resolved values match what the run record shows.
+            run_row = await r_store.get(run_id)
+            run_context = (run_row or {}).get("params") or resolve_context(pipeline)
+            pipeline = interpolate_pipeline(pipeline, run_context)
             sources, (destination, dest_creds) = await _resolve(
                 pipeline, s_store, d_store, c_store,
             )

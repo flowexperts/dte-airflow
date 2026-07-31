@@ -109,7 +109,7 @@ class PostgresRunStore:
     async def get(self, id: str) -> dict | None:
         async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE id = :id"),
+                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params FROM runs WHERE id = :id"),
                 {"id": id}
             )
             row = result.mappings().fetchone()
@@ -133,18 +133,30 @@ class PostgresRunStore:
     async def update(self, id: str, **fields) -> None:
         if not fields:
             return
-        set_clause = ", ".join(f"{k} = :{k}" for k in fields)
+        # `params` lives in a jsonb column; asyncpg won't auto-encode a Python
+        # dict for a text bind, so serialise + cast at the SQL layer.
+        import json as _json
+        assignments = []
+        binds: dict = {"id": id}
+        for k, v in fields.items():
+            if k == "params" and isinstance(v, (dict, list)):
+                assignments.append(f"{k} = CAST(:{k} AS jsonb)")
+                binds[k] = _json.dumps(v)
+            else:
+                assignments.append(f"{k} = :{k}")
+                binds[k] = v
+        set_clause = ", ".join(assignments)
         async with _open_tenant_session(self._factory) as s:
             await s.execute(
                 text(f"UPDATE runs SET {set_clause} WHERE id = :id"),
-                {"id": id, **fields}
+                binds,
             )
             await s.commit()
 
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
         async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
+                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
                 {"pid": pipeline_id, "limit": limit}
             )
             rows = []

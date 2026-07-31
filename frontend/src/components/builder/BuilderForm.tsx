@@ -13,6 +13,8 @@ import {
 } from "@/lib/api";
 import { SourcesPanel } from "./sources";
 import { StepsPanel } from "./steps/StepsPanel";
+import { InputsPanel } from "./InputsPanel";
+import { PipelineParamsProvider } from "./params-context";
 import type { StepShape } from "./steps/types";
 import { DestinationPicker } from "./DestinationPicker";
 import { SchemaProvider, useSchemas } from "./schema-context";
@@ -231,6 +233,7 @@ export function BuilderForm({
 
   return (
     <SchemaProvider>
+     <PipelineParamsProvider params={pipeline.params}>
       <AutoInferSchemas sourceIds={pipeline.sources ?? []} />
       <AutoStepSchemas pipeline={pipeline} />
       <Topbar
@@ -303,6 +306,10 @@ export function BuilderForm({
                 steps={(pipeline.steps ?? []) as StepShape[]}
                 onChange={(steps) => setPipeline({ ...pipeline, steps })}
               />
+              <InputsPanel
+                params={pipeline.params ?? []}
+                onChange={(params) => setPipeline({ ...pipeline, params })}
+              />
             </div>
           </div>
           <div className="overflow-y-auto hidden lg:block">
@@ -342,8 +349,14 @@ export function BuilderForm({
             steps={(pipeline.steps ?? []) as StepShape[]}
             onChange={(steps) => setPipeline({ ...pipeline, steps })}
           />
+
+          <InputsPanel
+            params={pipeline.params ?? []}
+            onChange={(params) => setPipeline({ ...pipeline, params })}
+          />
         </div>
       )}
+     </PipelineParamsProvider>
     </SchemaProvider>
   );
 }

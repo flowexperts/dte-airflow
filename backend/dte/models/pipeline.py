@@ -846,6 +846,53 @@ EngineChoice = Literal[
 ]
 
 
+# ─── Pipeline inputs (trigger-time typed params) ─────────────────────────
+
+import re as _re
+
+ParamType = Literal["string", "int", "float", "date", "timestamp", "boolean"]
+
+_PARAM_NAME_RE = _re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+class PipelineParam(BaseModel):
+    """Declared trigger-time input on a pipeline.
+
+    Referenced from filter/map expressions as ``{{params.<name>}}``. Values
+    are supplied on the trigger request body and validated against the
+    declared ``type`` before interpolation.
+    """
+    model_config = {"extra": "forbid"}
+
+    name: str
+    type: ParamType
+    required: bool = True
+    default: str | None = None
+    description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _valid_name(cls, v: str) -> str:
+        if not _PARAM_NAME_RE.match(v):
+            raise ValueError(
+                f"param name {v!r} must match [a-zA-Z_][a-zA-Z0-9_]*"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _default_parses(self):
+        if self.default is None:
+            return self
+        # Late import — coercion helper lives in the compiler package and we
+        # want to avoid a top-level compiler import inside models.
+        from dte.compiler.interpolate import coerce_param_value, ParamValidationError
+        try:
+            coerce_param_value(self.default, self.type)
+        except ParamValidationError as e:
+            raise ValueError(f"default for {self.name!r} does not parse as {self.type}: {e}")
+        return self
+
+
 class PipelineBase(SQLModel):
     """API/domain fields. `id: str` is required — FastAPI raises 422 if
     the client omits it."""
@@ -861,6 +908,9 @@ class PipelineBase(SQLModel):
     # remain accepted as explicit overrides.
     engine: EngineChoice = "auto"
     quality_contracts: list = SMField(default_factory=list)  # list[Contract] — typed by validator
+    # Declared trigger-time inputs. Referenced from filter/map expressions as
+    # {{params.<name>}}; validated against declared types on trigger.
+    params: list[PipelineParam] = SMField(default_factory=list)
     tenant_id: str = "default"
 
     @model_validator(mode="after")
@@ -879,6 +929,60 @@ class PipelineBase(SQLModel):
                     f"steps[{i}]: unknown op/mode combination {key!r}"
                 )
             model.model_validate(step)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_params_and_refs(self):
+        """Unique param names + every {{params.X}} reference is declared."""
+        # SQLModel table=True skips this same-named validator on ORM hydration
+        # only when quality_contracts logic runs first — this validator is
+        # idempotent so re-running it on hydration is safe.
+        raw = self.params or []
+        # `params` may still be raw dicts if constructed through SQLModel ORM
+        # hydration; coerce them here so downstream code sees typed instances.
+        coerced: list[PipelineParam] = []
+        for p in raw:
+            if isinstance(p, PipelineParam):
+                coerced.append(p)
+            elif isinstance(p, dict):
+                coerced.append(PipelineParam.model_validate(p))
+            else:
+                raise ValueError(f"params entry must be dict or PipelineParam, got {type(p).__name__}")
+        seen: set[str] = set()
+        for p in coerced:
+            if p.name in seen:
+                raise ValueError(f"duplicate pipeline param: {p.name!r}")
+            seen.add(p.name)
+        object.__setattr__(self, "params", coerced)
+
+        # Ref check — every {{params.X}} in a filter/map expr must resolve.
+        from dte.compiler.interpolate import (
+            extract_param_refs,
+            SYSTEM_VAR_NAMES,
+        )
+        declared = {p.name for p in coerced}
+        for i, step in enumerate(self.steps or []):
+            op = step.get("op")
+            if op not in ("filter", "map"):
+                continue
+            expr = step.get("expr")
+            if not isinstance(expr, str):
+                continue
+            refs = extract_param_refs(expr)
+            for path in refs:
+                if path in SYSTEM_VAR_NAMES:
+                    continue
+                if not path.startswith("params."):
+                    raise ValueError(
+                        f"steps[{i}]: unknown variable {{{{{path}}}}} "
+                        f"— must be one of params.* or {sorted(SYSTEM_VAR_NAMES)}"
+                    )
+                name = path.split(".", 1)[1]
+                if name not in declared:
+                    raise ValueError(
+                        f"steps[{i}]: {{{{params.{name}}}}} references undeclared input"
+                        f" — declare it under Inputs or fix the name"
+                    )
         return self
 
     @model_validator(mode="after")
@@ -917,6 +1021,9 @@ class Pipeline(PipelineBase, table=True):
         default="duckdb", sa_column=Column(Text, nullable=False, server_default="duckdb")
     )
     quality_contracts: list = SMField(  # type: ignore[override]
+        default_factory=list, sa_column=Column(JSONB, nullable=False, server_default="'[]'::jsonb")
+    )
+    params: list = SMField(  # type: ignore[override]
         default_factory=list, sa_column=Column(JSONB, nullable=False, server_default="'[]'::jsonb")
     )
     tenant_id: str = SMField(  # type: ignore[override]
