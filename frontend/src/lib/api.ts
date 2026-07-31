@@ -388,17 +388,35 @@ export const triggerPipeline = (
     { method: "POST", body: JSON.stringify({ params }) },
   );
 
-export const previewPipeline = (id: string, limit = 100) =>
-  apiFetch<PreviewResponse>(
-    `/api/pipelines/${encodeURIComponent(id)}/preview?limit=${limit}`,
+export const previewPipeline = (
+  id: string,
+  limit = 100,
+  params?: Record<string, string>,
+) => {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (params && Object.keys(params).length > 0) {
+    q.set("params", JSON.stringify(params));
+  }
+  return apiFetch<PreviewResponse>(
+    `/api/pipelines/${encodeURIComponent(id)}/preview?${q.toString()}`,
   );
+};
 
 /** Compile + sample an unsaved pipeline body (plan 038 item 6). */
-export const dryRunPipeline = (pipeline: Pipeline, limit = 20) =>
-  apiFetch<PreviewResponse>(
-    `/api/pipelines/dry-run?limit=${limit}`,
+export const dryRunPipeline = (
+  pipeline: Pipeline,
+  limit = 20,
+  params?: Record<string, string>,
+) => {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (params && Object.keys(params).length > 0) {
+    q.set("params", JSON.stringify(params));
+  }
+  return apiFetch<PreviewResponse>(
+    `/api/pipelines/dry-run?${q.toString()}`,
     { method: "POST", body: JSON.stringify(pipeline) },
   );
+};
 
 /** Per-step schema map for an unsaved pipeline body (plan 038 item 7).
  *  Keys are string-indexed step numbers to match JSON transport. */

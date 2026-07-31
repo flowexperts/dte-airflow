@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import {
   Button,
   ErrorPanel,
@@ -12,11 +13,14 @@ import {
 } from "@/components/ui";
 import {
   dryRunPipeline,
+  getPipeline,
   previewPipeline,
   type Pipeline,
+  type PipelineParam,
   type PreviewResponse,
 } from "@/lib/api";
 import { humanizeCompilerError, humanizeError } from "@/lib/errors";
+import { ParamsModal } from "@/components/params-modal";
 
 /**
  * PipelinePreview
@@ -53,12 +57,42 @@ export function PipelinePreview({
   // Track the last request so a stale response can't overwrite a fresh one.
   const reqSeq = useRef(0);
 
-  const runSaved = async () => {
+  // Live mode carries params on the pipeline object; saved mode fetches the
+  // pipeline once to read the declared params list.
+  const { data: savedPipeline } = useSWR<Pipeline>(
+    !isLive ? ["pipeline", pipelineId] : null,
+    () => getPipeline(pipelineId as string),
+  );
+  const declaredParams: PipelineParam[] = useMemo(() => {
+    if (isLive) return (pipelineId as Pipeline).params ?? [];
+    return savedPipeline?.params ?? [];
+  }, [isLive, pipelineId, savedPipeline]);
+
+  // Values collected via the ParamsModal — persisted across re-runs so the
+  // user isn't reprompted on every keystroke in live mode.
+  const [paramValues, setParamValues] = useState<Record<string, string>>({});
+  const [modalOpen, setModalOpen] = useState(false);
+  // Whether we still need to prompt before running: any required declared
+  // input with no default and no value.
+  const needsPrompt = declaredParams.some((p) => {
+    const requiredNoDefault = p.required !== false && (p.default ?? "") === "";
+    return requiredNoDefault && !paramValues[p.name];
+  });
+
+  const runSaved = async (overrideValues?: Record<string, string>) => {
     if (isLive) return;
+    if (needsPrompt && !overrideValues) {
+      setModalOpen(true);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
-      const res = await previewPipeline(pipelineId as string, 20);
+      const res = await previewPipeline(
+        pipelineId as string,
+        20,
+        overrideValues ?? paramValues,
+      );
       setData(res);
     } catch (e) {
       setErr(e);
@@ -83,11 +117,18 @@ export function PipelinePreview({
       setBusy(false);
       return;
     }
+    // Gate live preview on the user having supplied any required inputs.
+    // The modal stays available via the Inputs button; without it the
+    // dry-run would 422 on every keystroke.
+    if (needsPrompt) {
+      setBusy(false);
+      return;
+    }
     const seq = ++reqSeq.current;
     setBusy(true);
     const t = window.setTimeout(async () => {
       try {
-        const res = await dryRunPipeline(pipeline, 20);
+        const res = await dryRunPipeline(pipeline, 20, paramValues);
         if (reqSeq.current !== seq) return; // superseded
         setData(res);
         setErr(null);
@@ -100,7 +141,7 @@ export function PipelinePreview({
       }
     }, 500);
     return () => window.clearTimeout(t);
-  }, [isLive, liveKey, pipelineId]);
+  }, [isLive, liveKey, pipelineId, needsPrompt, paramValues]);
 
   const columns = data?.rows?.[0] ? Object.keys(data.rows[0]) : [];
   // Backend now returns 200 with `error` populated on compile failure so
@@ -135,11 +176,16 @@ export function PipelinePreview({
                 { value: "sql", label: "SQL" },
               ]}
             />
+            {declaredParams.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={() => setModalOpen(true)}>
+                Inputs · {Object.keys(paramValues).length}/{declaredParams.length}
+              </Button>
+            )}
             {isLive ? null : (
               <Button
                 variant="primary"
                 size="sm"
-                onClick={runSaved}
+                onClick={() => runSaved()}
                 disabled={busy}
               >
                 {busy ? "Running…" : data ? "Re-run" : "Dry run"}
@@ -148,6 +194,34 @@ export function PipelinePreview({
           </div>
         }
       />
+
+      <ParamsModal
+        title={isLive ? "Preview inputs" : "Dry-run inputs"}
+        submitLabel={isLive ? "Preview" : "Dry run"}
+        params={declaredParams}
+        initialValues={paramValues}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        emptyMessage="This pipeline has no declared inputs."
+        onSubmit={async (values) => {
+          setParamValues(values);
+          setModalOpen(false);
+          if (!isLive) await runSaved(values);
+          // Live mode auto-re-runs via the useEffect dep on paramValues.
+        }}
+      />
+
+      {isLive && needsPrompt && !modalOpen && (
+        <div className="p-4 border border-dashed border-border rounded bg-code-bg text-subtle text-[12.5px] flex items-center justify-between">
+          <span>
+            Waiting on {declaredParams.filter((p) => p.required !== false && (p.default ?? "") === "" && !paramValues[p.name]).length}
+            {" "}required input(s) to run preview.
+          </span>
+          <Button variant="primary" size="sm" onClick={() => setModalOpen(true)}>
+            Enter inputs
+          </Button>
+        </div>
+      )}
 
       {isLive && busy && !data && !displayErr && (
         <div className="p-6 text-center text-subtle text-sm">Compiling…</div>
