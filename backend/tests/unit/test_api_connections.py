@@ -137,3 +137,70 @@ def test_bulk_delete_empty_ids_422():
     c = TestClient(app)
     r = c.post("/api/connections/bulk-delete", json={"ids": []})
     assert r.status_code == 422
+
+
+# ── Editable name + server-generated id ───────────────────────────────────
+def test_post_without_id_generates_uuid_and_defaults_name(fake_stores):
+    c = TestClient(app)
+    body = {"connection_type": "s3", "credentials": {
+        "aws_access_key_id": "AKIA", "aws_secret_access_key": "s3cret",
+    }}
+    r = c.post("/api/connections", json=body)
+    assert r.status_code == 201, r.text
+    row = r.json()
+    # Server generated a UUID-shaped id (not empty, contains dashes).
+    assert "-" in row["id"] and len(row["id"]) >= 32
+    # Name defaults to the id when the client omits it.
+    assert row["name"] == row["id"]
+
+
+def test_post_with_name_creates_editable_label(fake_stores):
+    c = TestClient(app)
+    body = {
+        "name": "production-warehouse",
+        "connection_type": "s3",
+        "credentials": {"aws_access_key_id": "AKIA", "aws_secret_access_key": "x"},
+    }
+    r = c.post("/api/connections", json=body)
+    assert r.status_code == 201, r.text
+    assert r.json()["name"] == "production-warehouse"
+
+
+def test_duplicate_name_returns_409(fake_stores):
+    c = TestClient(app)
+    body = {
+        "name": "warehouse",
+        "connection_type": "s3",
+        "credentials": {"aws_access_key_id": "AKIA", "aws_secret_access_key": "x"},
+    }
+    r1 = c.post("/api/connections", json=body)
+    assert r1.status_code == 201
+    # Different id (server-generated) but same name → conflict on the
+    # UNIQUE(tenant_id, name) constraint.
+    r2 = c.post("/api/connections", json=body)
+    assert r2.status_code == 409, r2.text
+
+
+def test_put_renames_name_without_changing_id(fake_stores):
+    """The bug the migration fixes: rename must not 404."""
+    c = TestClient(app)
+    r = c.post("/api/connections", json={
+        "name": "old",
+        "connection_type": "s3",
+        "credentials": {"aws_access_key_id": "AKIA", "aws_secret_access_key": "x"},
+    })
+    assert r.status_code == 201
+    cid = r.json()["id"]
+    # Rename using the SAME id (as the frontend will).
+    r2 = c.put(f"/api/connections/{cid}", json={
+        "id": cid,
+        "name": "new",
+        "connection_type": "s3",
+        "credentials": {},
+    })
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["name"] == "new"
+    # Re-fetch confirms the rename persisted and id is unchanged.
+    got = c.get(f"/api/connections/{cid}").json()
+    assert got["id"] == cid
+    assert got["name"] == "new"

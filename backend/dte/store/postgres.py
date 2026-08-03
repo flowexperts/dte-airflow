@@ -477,12 +477,14 @@ class PostgresConnectionStore:
     async def save(self, connection: "ConnectionBase | Connection") -> None:
         stmt = pg_insert(Connection).values(
             id=connection.id,
+            name=connection.name or connection.id,
             connection_type=connection.connection_type,
             credentials=connection.credentials,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[Connection.id],
             set_={
+                "name": stmt.excluded.name,
                 "connection_type": stmt.excluded.connection_type,
                 # Physical column name is `credentials_encrypted` (TypeDecorator alias).
                 "credentials_encrypted": stmt.excluded.credentials_encrypted,
@@ -507,6 +509,7 @@ class PostgresConnectionStore:
         for row in rows:
             masked_row = Connection(
                 id=row.id,
+                name=row.name,
                 connection_type=row.connection_type,
                 credentials={},
             )

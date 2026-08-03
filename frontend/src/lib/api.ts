@@ -146,7 +146,10 @@ export type ConnectionType =
   | "snowflake" | "bigquery";
 
 export interface Connection {
+  /** Opaque, server-generated. Never edited after creation. */
   id: string;
+  /** Editable, unique per tenant. Defaults to `id` for historic rows. */
+  name?: string;
   connection_type: ConnectionType;
   credentials: Record<string, unknown>;
 }

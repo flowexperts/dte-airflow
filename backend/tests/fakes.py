@@ -416,8 +416,19 @@ class FakeConnectionStore:
 
     async def save(self, connection: "ConnectionBase | Connection") -> None:
         existing = self._data.get(connection.id)
+        name = connection.name or connection.id
+        tenant_id = getattr(connection, "tenant_id", "default") or "default"
+        # Enforce UNIQUE(tenant_id, name) — mirrors DB constraint from migration 020.
+        for other in self._data.values():
+            if other.id == connection.id:
+                continue
+            if getattr(other, "tenant_id", "default") == tenant_id and (other.name or other.id) == name:
+                raise ValueError(
+                    f"Connection name '{name}' already exists for tenant '{tenant_id}'"
+                )
         row = Connection(
             id=connection.id,
+            name=name,
             connection_type=connection.connection_type,
             credentials=connection.credentials,
         )
@@ -434,6 +445,7 @@ class FakeConnectionStore:
         for c in items[offset:offset + limit]:
             masked_row = Connection(
                 id=c.id,
+                name=c.name,
                 connection_type=c.connection_type,
                 credentials={},
             )
