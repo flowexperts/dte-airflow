@@ -535,19 +535,32 @@ DltSource = Source
 # legacy pipelines.
 
 class LookupTableBase(SQLModel):
-    """API/domain fields. `id` required so FastAPI raises 422 on missing."""
-    id: str
+    """API/domain fields.
+
+    Identity: `id` is server-generated (UUID4 by default). `name` is the
+    editable, unique-per-tenant label; defaults to `id` when omitted so
+    historic callers keep working.
+    """
+    id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
     mappings: dict[str, str] = SMField(default_factory=dict)
     default: str | None = None
     tenant_id: str = "default"
 
+    @model_validator(mode="after")
+    def _default_name_to_id(self):
+        if not self.name:
+            self.name = self.id
+        return self
+
 
 class LookupTable(LookupTableBase, table=True):
     __tablename__ = "lookup_tables"
 
-    id: str = SMField(primary_key=True)  # type: ignore[override]
-    name: str | None = SMField(default=None, sa_column=Column(Text, nullable=True))
+    id: str = SMField(  # type: ignore[override]
+        default_factory=lambda: str(_uuid.uuid4()), primary_key=True
+    )
+    name: str | None = SMField(default=None, sa_column=Column(Text, nullable=False))
     mappings: dict = SMField(  # type: ignore[override]
         default_factory=dict, sa_column=Column(JSONB, nullable=False)
     )

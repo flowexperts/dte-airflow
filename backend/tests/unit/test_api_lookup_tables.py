@@ -136,3 +136,32 @@ def test_bulk_delete_lookup_tables_empty_422(client):
     c, *_ = client
     r = c.post("/api/lookup-tables/bulk-delete", json={"ids": []})
     assert r.status_code == 422
+
+
+# ── Editable name + server-generated id ───────────────────────────────────
+def test_lookup_without_id_generates_uuid(client):
+    c, *_ = client
+    r = c.post("/api/lookup-tables", json={"name": "countries", "mappings": {"US": "USA"}})
+    assert r.status_code == 201, r.text
+    row = r.json()
+    assert "-" in row["id"] and len(row["id"]) >= 32
+    assert row["name"] == "countries"
+
+
+def test_lookup_duplicate_name_409(client):
+    c, *_ = client
+    body = {"name": "countries", "mappings": {"US": "USA"}}
+    r1 = c.post("/api/lookup-tables", json=body)
+    assert r1.status_code == 201
+    r2 = c.post("/api/lookup-tables", json=body)
+    assert r2.status_code == 409, r2.text
+
+
+def test_lookup_rename_by_stable_id(client):
+    c, *_ = client
+    r = c.post("/api/lookup-tables", json={"name": "old", "mappings": {}})
+    assert r.status_code == 201
+    lid = r.json()["id"]
+    r2 = c.put(f"/api/lookup-tables/{lid}", json={"id": lid, "name": "new", "mappings": {}})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["name"] == "new"

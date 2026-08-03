@@ -40,7 +40,10 @@ async def create_lookup_table(
         raise HTTPException(
             status_code=409, detail=f"Lookup table '{lookup.id}' already exists"
         )
-    await store.save(lookup)
+    try:
+        await store.save(lookup)
+    except ValueError as e:  # name collision
+        raise HTTPException(status_code=409, detail=str(e))
     return lookup.model_dump()
 
 
@@ -77,7 +80,10 @@ async def update_lookup_table(
         )
     if not await store.get(lookup_id):
         raise HTTPException(status_code=404, detail="Lookup table not found")
-    await store.save(lookup)
+    try:
+        await store.save(lookup)
+    except ValueError as e:  # name collision
+        raise HTTPException(status_code=409, detail=str(e))
     return lookup.model_dump()
 
 
