@@ -15,12 +15,11 @@ import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { StepShape, GroupByEntry, DatePart } from "./types";
 import { LookupTablePicker } from "../LookupTablePicker";
+import { SYSTEM_VARS } from "@/lib/system-vars";
 
 type Setter = (patch: Partial<StepShape>) => void;
 
 /* --------------- Variable picker (trigger-time params + system vars) --------------- */
-
-const SYSTEM_VARS = ["now", "today", "yesterday", "start_of_week", "start_of_month"];
 
 function VariablePickerHint({ onInsert }: { onInsert: (token: string) => void }) {
   const declared = usePipelineParams();

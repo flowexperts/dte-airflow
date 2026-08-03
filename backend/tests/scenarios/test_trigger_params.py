@@ -146,6 +146,32 @@ async def test_trigger_with_system_variable_today(
     assert len(rows) == 20
 
 
+async def test_trigger_with_dynamic_param_sentinel(
+    client, scenario_ids, fixtures_dir, out_dir
+):
+    """A declared date param bound to `{{today}}` at trigger time should
+    resolve to today's ISO date before the filter runs."""
+    src_id, dst_id, out_path = await _seed(
+        client, scenario_ids, fixtures_dir, out_dir, "params_dynamic.json",
+    )
+    pipe_id = scenario_ids("pipeline")
+    await _create_pipeline_with_params(
+        client, id=pipe_id, sources=[src_id],
+        steps=[{"op": "filter", "expr": "ordered_at < '{{params.as_of}}'"}],
+        output_id=dst_id,
+        params=[{"name": "as_of", "type": "date", "required": True}],
+    )
+    run = await _trigger_and_wait(
+        client, pipe_id, params={"as_of": "{{today}}"},
+    )
+    assert run["status"] == "completed", run
+    rows = read_output_file(out_path)
+    # Fixture rows all in 2024 → all 20 pass a "< today" filter.
+    assert len(rows) == 20
+    # The persisted run context carries the *resolved* date, not the sentinel.
+    assert run["params"]["params"]["as_of"] == date.today().isoformat()
+
+
 async def test_save_rejects_undeclared_param_reference(
     client, scenario_ids, fixtures_dir, out_dir
 ):
