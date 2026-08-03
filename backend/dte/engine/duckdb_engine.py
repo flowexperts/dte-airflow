@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from itertools import count
+
 import ibis
 
 from dte.engine.base import BaseEngine
@@ -26,6 +28,7 @@ class DuckDBEngine(BaseEngine):
 
     def __init__(self):
         self._con = ibis.duckdb.connect()
+        self._view_seq = count()
 
     @property
     def con(self) -> ibis.BaseBackend:
@@ -36,13 +39,15 @@ class DuckDBEngine(BaseEngine):
 
     def apply_filter_sql(self, table: ibis.Table, expr: str) -> ibis.Table:
         _require_duckdb_backend(table, op="filter (Advanced tab)")
-        self._con.create_view("_filter_input", table, overwrite=True)
-        return self._con.sql(f"SELECT * FROM _filter_input WHERE {expr}")
+        view_name = f"_filter_input_{next(self._view_seq)}"
+        self._con.create_view(view_name, table, overwrite=True)
+        return self._con.sql(f"SELECT * FROM {view_name} WHERE {expr}")
 
     def apply_expression_sql(self, table: ibis.Table, output_field: str, expr: str) -> ibis.Table:
         _require_duckdb_backend(table, op="map/expression")
-        self._con.create_view("_expr_input", table, overwrite=True)
-        return self._con.sql(f"SELECT *, ({expr}) AS {output_field} FROM _expr_input")
+        view_name = f"_expr_input_{next(self._view_seq)}"
+        self._con.create_view(view_name, table, overwrite=True)
+        return self._con.sql(f"SELECT *, ({expr}) AS {output_field} FROM {view_name}")
 
 
 def _require_duckdb_backend(table: ibis.Table, op: str) -> None:

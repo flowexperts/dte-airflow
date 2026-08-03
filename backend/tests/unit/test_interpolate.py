@@ -51,7 +51,26 @@ def test_interpolate_text_unknown_variable_raises():
 
 def test_interpolate_text_whitespace_inside_braces():
     ctx = resolve_context()
-    assert interpolate_text("{{ today }}", ctx) == ctx["today"]
+    # Bare (unquoted) date/timestamp sentinels get auto-quoted so the
+    # emitted SQL is valid.
+    assert interpolate_text("{{ today }}", ctx) == f"'{ctx['today']}'"
+
+
+def test_interpolate_text_bare_sentinel_gets_quoted():
+    ctx = resolve_context()
+    out = interpolate_text('"ts" >= {{now}}', ctx)
+    assert out == f"\"ts\" >= '{ctx['now']}'"
+
+
+def test_interpolate_text_quoted_sentinel_not_double_quoted():
+    ctx = resolve_context()
+    out = interpolate_text("updated_at <= '{{today}}'", ctx)
+    assert out == f"updated_at <= '{ctx['today']}'"
+
+
+def test_interpolate_text_numeric_sentinel_passes_through_unquoted():
+    ctx = {"params": {"qty": "42"}}
+    assert interpolate_text("qty >= {{params.qty}}", ctx) == "qty >= 42"
 
 
 # ─── Coercion ───────────────────────────────────────────────────────────

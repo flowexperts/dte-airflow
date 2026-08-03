@@ -228,9 +228,26 @@ def _lookup(context: dict[str, Any], path: str) -> str:
     return str(value)
 
 
+_NUMERIC_RE = re.compile(r"^-?\d+(\.\d+)?$")
+_BOOL_RE = re.compile(r"^(true|false)$", re.IGNORECASE)
+
+
 def interpolate_text(text: str, context: dict[str, Any]) -> str:
     def _sub(m: re.Match[str]) -> str:
-        return _lookup(context, m.group(1))
+        value = _lookup(context, m.group(1))
+        # If the placeholder is already wrapped in single quotes (author
+        # wrote `'{{params.d}}'::date`), don't re-quote — just escape any
+        # internal `'`.
+        prev_char = text[m.start() - 1] if m.start() > 0 else ""
+        next_char = text[m.end()] if m.end() < len(text) else ""
+        if prev_char == "'" and next_char == "'":
+            return value.replace("'", "''")
+        # Bare placeholder in a SQL expression. Numbers/bools pass through
+        # unquoted so numeric comparisons work; everything else (date,
+        # timestamp, string) gets quoted so the emitted SQL is valid.
+        if _NUMERIC_RE.match(value) or _BOOL_RE.match(value):
+            return value
+        return "'" + value.replace("'", "''") + "'"
 
     return _PLACEHOLDER_RE.sub(_sub, text)
 
