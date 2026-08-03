@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Field, Input, PageHeader, Topbar } from "@/components/ui";
+import { Button, Field, Input, PageHeader, Segmented, Topbar } from "@/components/ui";
 import {
   ApiError,
   createPipeline,
@@ -167,12 +167,16 @@ export function BuilderForm({
     });
   };
 
+  const isQuality = pipeline.pipeline_type === "quality";
+
   const save = async () => {
     const errors = validatePipelineForm({
       id: pipeline.id,
       name: pipeline.name,
       sources: pipeline.sources ?? [],
-      output_id: pipeline.output_id ?? "",
+      // Quality pipelines don't require a destination — pass a sentinel so
+      // the min(1) check passes. The backend ignores output_id for quality.
+      output_id: isQuality ? "__quality__" : (pipeline.output_id ?? ""),
       steps: (pipeline.steps ?? []) as unknown[],
     });
 
@@ -208,21 +212,33 @@ export function BuilderForm({
 
   // Shared field grid used in both the split-pane and single-column layouts.
   const fieldGrid = (
-    <div className="space-y-2">
-      <Field label="Name" hint="editable; unique per workspace" error={fieldErrors.name}>
-        <Input
-          value={pipeline.name}
-          onChange={(e) => {
-            setPipeline({ ...pipeline, name: e.target.value });
-            revalidateField("name", e.target.value);
-          }}
-          onBlur={(e) => touchField("name", e.target.value)}
-          placeholder="Orders — nightly cohort"
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Field label="Name" hint="editable; unique per workspace" error={fieldErrors.name}>
+          <Input
+            value={pipeline.name}
+            onChange={(e) => {
+              setPipeline({ ...pipeline, name: e.target.value });
+              revalidateField("name", e.target.value);
+            }}
+            onBlur={(e) => touchField("name", e.target.value)}
+            placeholder="Orders — nightly cohort"
+          />
+        </Field>
+        {mode === "edit" && (
+          <div className="text-xs text-subtle font-mono">id: {pipeline.id}</div>
+        )}
+      </div>
+      <Field label="Pipeline type" hint="Transform writes output data; Quality asserts conditions on it.">
+        <Segmented<"transform" | "quality">
+          options={[
+            { value: "transform", label: "Transform" },
+            { value: "quality", label: "Quality" },
+          ]}
+          value={pipeline.pipeline_type ?? "transform"}
+          onChange={(v) => setPipeline((p: Pipeline) => ({ ...p, pipeline_type: v }))}
         />
       </Field>
-      {mode === "edit" && (
-        <div className="text-xs text-subtle font-mono">id: {pipeline.id}</div>
-      )}
     </div>
   );
 
@@ -289,14 +305,20 @@ export function BuilderForm({
                 }}
                 error={fieldErrors.sources}
               />
-              <DestinationPicker
-                outputId={pipeline.output_id ?? ""}
-                onChange={(output_id) => {
-                  setPipeline({ ...pipeline, output_id });
-                  touchField("output_id", output_id);
-                }}
-                error={fieldErrors.output_id}
-              />
+              {isQuality ? (
+                <p className="text-muted text-sm">
+                  Quality pipelines produce a quality report, not a data output.
+                </p>
+              ) : (
+                <DestinationPicker
+                  outputId={pipeline.output_id ?? ""}
+                  onChange={(output_id) => {
+                    setPipeline({ ...pipeline, output_id });
+                    touchField("output_id", output_id);
+                  }}
+                  error={fieldErrors.output_id}
+                />
+              )}
               <InputsPanel
                 params={pipeline.params ?? []}
                 onChange={(params) => setPipeline({ ...pipeline, params })}
@@ -304,6 +326,7 @@ export function BuilderForm({
               <StepsPanel
                 steps={(pipeline.steps ?? []) as StepShape[]}
                 onChange={(steps) => setPipeline({ ...pipeline, steps })}
+                pipelineType={pipeline.pipeline_type ?? "transform"}
               />
               <QualityContractsPanel
                 contracts={(pipeline.quality_contracts ?? []) as QualityContract[]}
@@ -337,14 +360,20 @@ export function BuilderForm({
             error={fieldErrors.sources}
           />
 
-          <DestinationPicker
-            outputId={pipeline.output_id ?? ""}
-            onChange={(output_id) => {
-              setPipeline({ ...pipeline, output_id });
-              touchField("output_id", output_id);
-            }}
-            error={fieldErrors.output_id}
-          />
+          {isQuality ? (
+            <p className="text-muted text-sm">
+              Quality pipelines produce a quality report, not a data output.
+            </p>
+          ) : (
+            <DestinationPicker
+              outputId={pipeline.output_id ?? ""}
+              onChange={(output_id) => {
+                setPipeline({ ...pipeline, output_id });
+                touchField("output_id", output_id);
+              }}
+              error={fieldErrors.output_id}
+            />
+          )}
 
           <InputsPanel
             params={pipeline.params ?? []}
@@ -354,6 +383,7 @@ export function BuilderForm({
           <StepsPanel
             steps={(pipeline.steps ?? []) as StepShape[]}
             onChange={(steps) => setPipeline({ ...pipeline, steps })}
+            pipelineType={pipeline.pipeline_type ?? "transform"}
           />
           <QualityContractsPanel
             contracts={(pipeline.quality_contracts ?? []) as QualityContract[]}

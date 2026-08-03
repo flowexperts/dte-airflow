@@ -103,6 +103,7 @@ def compile_pipeline(
     engine: BaseEngine | None = None,
     on_step_schema=None,
     on_step_sql=None,
+    on_quality_result=None,  # Callable[[int, QualityResult], None] | None
 ) -> ibis.Table:
     """Compile a pipeline into an ibis expression.
 
@@ -153,7 +154,10 @@ def compile_pipeline(
                 current_key = s.output_id
             else:
                 table = registry[current_key]
-                table = _dispatch_single_table_step(table, step, lookups, engine=engine)
+                table = _dispatch_single_table_step(
+                    table, step, lookups, engine=engine,
+                    idx=idx, on_quality_result=on_quality_result,
+                )
                 registry[current_key] = table
         except Exception as e:
             _emit(idx, op, "failed", str(e))
@@ -185,6 +189,8 @@ def _dispatch_single_table_step(
     step: dict,
     lookup_tables: dict[str, LookupTable],
     engine: BaseEngine | None = None,
+    idx: int = 0,
+    on_quality_result=None,
 ) -> ibis.Table:
     op = step["op"]
     if op == "filter":
@@ -212,6 +218,13 @@ def _dispatch_single_table_step(
             keep = [c for c in table.columns if c not in drop_set]
             return table.select(keep)
         return _apply_output_fields(table, s.fields)
+    elif op in ("check_not_null", "check_unique", "check_range", "check_regex",
+                "check_accepted_values", "check_row_count", "check_custom_sql"):
+        return _apply_check(table, step, idx=idx, engine=engine,
+                            on_quality_result=on_quality_result)
+    elif op == "profile":
+        return _apply_profile(table, step, idx=idx, engine=engine,
+                              on_quality_result=on_quality_result)
     raise CompilerError(f"unknown step op {op!r}")
 
 
@@ -236,6 +249,194 @@ def _apply_pivot(table: ibis.Table, step: PivotStep) -> ibis.Table:
         GROUP BY {index}
     """)
     return con.table("_dte_pivot_result")
+
+
+def _apply_check(
+    table: ibis.Table,
+    step: dict,
+    idx: int,
+    engine,
+    on_quality_result,
+) -> ibis.Table:
+    """Run a check step against the table, call on_quality_result, return table unchanged."""
+    from dte.models.quality import QualityResult
+    import uuid as _uuid_mod
+    import json as _json
+
+    op = step["op"]
+    severity = step.get("severity", "fail")
+    column = step.get("column", "")
+
+    if engine is None:
+        # No engine supplied — skip check silently and pass table through.
+        return table
+
+    con = engine.con
+
+    view_name = f"__check_v_{idx}__"
+    sql_str = ibis.to_sql(table)
+    con.con.execute(f"CREATE OR REPLACE TEMP VIEW {view_name} AS {sql_str}")
+
+    try:
+        if op == "check_not_null":
+            count = con.con.execute(
+                f'SELECT COUNT(*) FROM {view_name} WHERE "{column}" IS NULL'
+            ).fetchone()[0]
+            passed = count == 0
+            detail = f"{count} null values found in '{column}'" if not passed else None
+
+        elif op == "check_unique":
+            count = con.con.execute(
+                f'SELECT COUNT(*) FROM (SELECT "{column}", COUNT(*) cnt FROM {view_name} GROUP BY 1 HAVING cnt > 1)'
+            ).fetchone()[0]
+            passed = count == 0
+            detail = f"{count} duplicate groups found in '{column}'" if not passed else None
+
+        elif op == "check_range":
+            min_val = step.get("min")
+            max_val = step.get("max")
+            clauses = []
+            if min_val is not None:
+                clauses.append(f'"{column}" < {min_val}')
+            if max_val is not None:
+                clauses.append(f'"{column}" > {max_val}')
+            if clauses:
+                where = " OR ".join(clauses)
+                count = con.con.execute(
+                    f"SELECT COUNT(*) FROM {view_name} WHERE {where}"
+                ).fetchone()[0]
+            else:
+                count = 0
+            passed = count == 0
+            detail = f"{count} values out of range in '{column}'" if not passed else None
+
+        elif op == "check_regex":
+            pattern = step.get("pattern", "")
+            escaped = pattern.replace("'", "''")
+            count = con.con.execute(
+                f"SELECT COUNT(*) FROM {view_name} WHERE NOT regexp_matches(\"{column}\", '{escaped}')"
+            ).fetchone()[0]
+            passed = count == 0
+            detail = f"{count} values don't match pattern in '{column}'" if not passed else None
+
+        elif op == "check_accepted_values":
+            values = step.get("values", [])
+            vals_sql = ", ".join(
+                f"'{str(v).replace(chr(39), chr(39)+chr(39))}'" if isinstance(v, str)
+                else str(v)
+                for v in values
+            )
+            count = con.con.execute(
+                f'SELECT COUNT(*) FROM {view_name} WHERE "{column}" NOT IN ({vals_sql})'
+            ).fetchone()[0]
+            passed = count == 0
+            detail = f"{count} values not in accepted list in '{column}'" if not passed else None
+
+        elif op == "check_row_count":
+            total = con.con.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()[0]
+            min_val = step.get("min")
+            max_val = step.get("max")
+            passed = True
+            if min_val is not None and total < min_val:
+                passed = False
+            if max_val is not None and total > max_val:
+                passed = False
+            detail = f"Row count {total} out of range [{min_val}, {max_val}]" if not passed else None
+
+        elif op == "check_custom_sql":
+            sql_expr = step.get("sql", "")
+            count = con.con.execute(
+                f"SELECT COUNT(*) FROM {view_name} WHERE NOT ({sql_expr})"
+            ).fetchone()[0]
+            passed = count == 0
+            label = step.get("label", op)
+            detail = f"{count} rows failed check '{label}'" if not passed else None
+
+        else:
+            return table
+
+        result = QualityResult(
+            contract_id=str(_uuid_mod.uuid4()),
+            contract_type=op,
+            passed=passed,
+            severity=severity,
+            detail=detail,
+        )
+        if on_quality_result is not None:
+            on_quality_result(idx, result)
+
+    finally:
+        try:
+            con.con.execute(f"DROP VIEW IF EXISTS {view_name}")
+        except Exception:
+            pass
+
+    return table
+
+
+def _apply_profile(
+    table: ibis.Table,
+    step: dict,
+    idx: int,
+    engine,
+    on_quality_result,
+) -> ibis.Table:
+    """Profile columns, call on_quality_result for each, return table unchanged."""
+    from dte.models.quality import QualityResult
+    import uuid as _uuid_mod
+    import json as _json
+
+    if engine is None:
+        return table
+
+    con = engine.con
+    columns = list(step.get("columns") or [])
+    view_name = f"__profile_v_{idx}__"
+    sql_str = ibis.to_sql(table)
+    con.con.execute(f"CREATE OR REPLACE TEMP VIEW {view_name} AS {sql_str}")
+
+    try:
+        if not columns:
+            schema_result = con.con.execute(
+                f"SELECT column_name FROM information_schema.columns WHERE table_name = '{view_name}'"
+            ).fetchall()
+            columns = [row[0] for row in schema_result]
+
+        for col in columns:
+            try:
+                stats = con.con.execute(
+                    f"""SELECT COUNT(*) total,
+                               COUNT("{col}") non_null,
+                               COUNT(DISTINCT "{col}") distinct_count,
+                               MIN(CAST("{col}" AS VARCHAR)) min_val,
+                               MAX(CAST("{col}" AS VARCHAR)) max_val
+                        FROM {view_name}"""
+                ).fetchone()
+                detail_dict = {
+                    "total": stats[0],
+                    "non_null": stats[1],
+                    "distinct_count": stats[2],
+                    "min_val": stats[3],
+                    "max_val": stats[4],
+                }
+                result = QualityResult(
+                    contract_id=str(_uuid_mod.uuid4()),
+                    contract_type="column_profile",
+                    passed=True,
+                    severity="warn",
+                    detail=_json.dumps(detail_dict),
+                )
+                if on_quality_result is not None:
+                    on_quality_result(idx, result)
+            except Exception:
+                pass
+    finally:
+        try:
+            con.con.execute(f"DROP VIEW IF EXISTS {view_name}")
+        except Exception:
+            pass
+
+    return table
 
 
 def _apply_filter(

@@ -9,9 +9,11 @@ import { StepIndexProvider } from "../schema-context";
 export function StepsPanel({
   steps,
   onChange,
+  pipelineType = "transform",
 }: {
   steps: StepShape[];
   onChange: (next: StepShape[]) => void;
+  pipelineType?: "transform" | "quality";
 }) {
   const [addOpen, setAddOpen] = useState(false);
 
@@ -39,6 +41,12 @@ export function StepsPanel({
     onChange([...steps, emptyStep(op as StepShape["op"], mode as StepShape["mode"])]);
     setAddOpen(false);
   };
+
+  const filteredOps = STEP_OPS.filter((o) =>
+    pipelineType === "quality"
+      ? o.category === "quality" || ["filter", "rename", "select", "join"].includes(o.op)
+      : o.category !== "quality",
+  );
 
   return (
     <Panel>
@@ -90,7 +98,7 @@ export function StepsPanel({
       ))}
       {addOpen ? (
         <div className="p-3 border-t border-dashed border-border grid grid-cols-2 md:grid-cols-3 gap-1.5 bg-surface-2">
-          {STEP_OPS.map((op) => (
+          {filteredOps.map((op) => (
             <button
               key={`${op.op}-${op.mode ?? ""}`}
               type="button"

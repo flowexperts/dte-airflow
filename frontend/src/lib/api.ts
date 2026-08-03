@@ -109,6 +109,8 @@ export interface Pipeline {
   params?: PipelineParam[];
   /** Quality contracts evaluated after each run (plan 044). */
   quality_contracts?: QualityContract[];
+  /** Pipeline type: "transform" (default) writes output data; "quality" asserts conditions. */
+  pipeline_type?: "transform" | "quality";
 }
 
 /** Structured 4xx payloads returned by pipeline save / trigger when the

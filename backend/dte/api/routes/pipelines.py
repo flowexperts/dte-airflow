@@ -423,6 +423,27 @@ async def _resolve(
     return sources, (destination, dest_conn.credentials)
 
 
+async def _resolve_sources(
+    pipeline: Pipeline,
+    s_store: SourceStore,
+    c_store: ConnectionStore,
+) -> list[tuple[Source, "Connection", dict]]:
+    """Resolve only sources (no destination) — used for quality pipelines."""
+    sources: list[tuple[Source, "Connection", dict]] = []
+    for sid in pipeline.sources:
+        source = await s_store.get(sid)
+        if not source:
+            raise HTTPException(status_code=422, detail=f"Source not found: {sid}")
+        conn = await c_store.get(source.connection_id)
+        if not conn:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Source '{sid}' references missing connection '{source.connection_id}'",
+            )
+        sources.append((source, conn, conn.credentials))
+    return sources
+
+
 async def _compile_body_pipeline(
     body: PipelineBase,
     s_store: SourceStore,
@@ -818,9 +839,17 @@ async def _run_body(
             run_row = await r_store.get(run_id)
             run_context = (run_row or {}).get("params") or resolve_context(pipeline)
             pipeline = interpolate_pipeline(pipeline, run_context)
-            sources, (destination, dest_creds) = await _resolve(
-                pipeline, s_store, d_store, c_store,
-            )
+            pipeline_type = getattr(pipeline, "pipeline_type", "transform") or "transform"
+
+            if pipeline_type == "quality":
+                # Quality pipelines: resolve only sources (no destination needed).
+                sources = await _resolve_sources(pipeline, s_store, c_store)
+                destination = None
+                dest_creds = None
+            else:
+                sources, (destination, dest_creds) = await _resolve(
+                    pipeline, s_store, d_store, c_store,
+                )
             lookups = await _resolve_lookups(pipeline, lt_store)
 
         with tr.start_as_current_span("load_sources") as span:
@@ -843,6 +872,47 @@ async def _run_body(
             span.set_attribute("source_count", len(tables))
             span.set_attribute("engine", _engine_name)
 
+        if pipeline_type == "quality":
+            # Quality pipeline: compile with inline check callbacks, skip write.
+            with tr.start_as_current_span("compile"):
+                events_buf: list[tuple[int, str, str, str | None]] = []
+                quality_results = []
+
+                def _cb(idx, op, status, msg=None):
+                    events_buf.append((idx, op, status, msg))
+
+                def _on_quality_result(step_idx, qresult):
+                    quality_results.append(qresult)
+
+                try:
+                    compile_pipeline(
+                        pipeline, tables,
+                        lookup_tables=lookups,
+                        on_step=_cb,
+                        engine=engine,
+                        on_quality_result=_on_quality_result,
+                    )
+                finally:
+                    for idx, op, status, msg in events_buf:
+                        await re_store.record(run_id, idx, op, status, msg)
+
+            await r_store.set_quality(run_id, [r.model_dump() for r in quality_results])
+
+            failed_hard = any(not r.passed and r.severity == "fail" for r in quality_results)
+            failed_warn = any(not r.passed and r.severity == "warn" for r in quality_results)
+            final_status = (
+                "failed_quality" if failed_hard
+                else "completed_with_warnings" if failed_warn
+                else "completed"
+            )
+            await r_store.update(run_id, status=final_status, rows_written=0, location=None)
+            _log.info(
+                "quality run completed",
+                extra={"pipeline_id": pipeline_id, "checks": len(quality_results), "status": final_status},
+            )
+            return
+
+        # Transform pipeline: existing compile → write → post-run contracts path.
         with tr.start_as_current_span("compile"):
             # Compiler emits synchronously; buffer here and flush async.
             events_buf: list[tuple[int, str, str, str | None]] = []

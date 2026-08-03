@@ -723,6 +723,59 @@ class PivotStep(BaseModel):
     agg: Literal["sum", "count", "avg", "min", "max"] = "sum"
 
 
+class CheckNotNullStep(BaseModel):
+    op: Literal["check_not_null"]
+    column: str
+    severity: Literal["warn", "fail"] = "fail"
+
+
+class CheckUniqueStep(BaseModel):
+    op: Literal["check_unique"]
+    column: str
+    severity: Literal["warn", "fail"] = "fail"
+
+
+class CheckRangeStep(BaseModel):
+    op: Literal["check_range"]
+    column: str
+    min: float | None = None
+    max: float | None = None
+    severity: Literal["warn", "fail"] = "fail"
+
+
+class CheckRegexStep(BaseModel):
+    op: Literal["check_regex"]
+    column: str
+    pattern: str
+    severity: Literal["warn", "fail"] = "fail"
+
+
+class CheckAcceptedValuesStep(BaseModel):
+    op: Literal["check_accepted_values"]
+    column: str
+    values: list[str | int | float]
+    severity: Literal["warn", "fail"] = "fail"
+
+
+class CheckRowCountStep(BaseModel):
+    op: Literal["check_row_count"]
+    min: int | None = None
+    max: int | None = None
+    severity: Literal["warn", "fail"] = "fail"
+
+
+class CheckCustomSqlStep(BaseModel):
+    op: Literal["check_custom_sql"]
+    sql: str
+    label: str
+    severity: Literal["warn", "fail"] = "fail"
+
+
+class ProfileStep(BaseModel):
+    op: Literal["profile"]
+    columns: list[str] = Field(default_factory=list)
+
+
 class OutputField(BaseModel):
     field: str
     alias: str | None = None
@@ -932,6 +985,14 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("select", None): SelectStep,
     ("join", None): JoinStep,
     ("pivot", None): PivotStep,
+    ("check_not_null", None): CheckNotNullStep,
+    ("check_unique", None): CheckUniqueStep,
+    ("check_range", None): CheckRangeStep,
+    ("check_regex", None): CheckRegexStep,
+    ("check_accepted_values", None): CheckAcceptedValuesStep,
+    ("check_row_count", None): CheckRowCountStep,
+    ("check_custom_sql", None): CheckCustomSqlStep,
+    ("profile", None): ProfileStep,
 }
 
 
@@ -1005,13 +1066,14 @@ class PipelineBase(SQLModel):
     name: str
     sources: list[str] = SMField(default_factory=list)
     steps: list[dict] = SMField(default_factory=list)
-    output_id: str
+    output_id: str | None = None
     # Engine dispatch.  Default "auto" derives the engine from the pipeline's
     # source composition: single-source postgres → runs in postgres,
     # filesystem-only → DuckDB, mixed → DuckDB (or 422 with hint to use
     # trino when DuckDB can't federate).  Legacy values "duckdb"/"trino"
     # remain accepted as explicit overrides.
     engine: EngineChoice = "auto"
+    pipeline_type: Literal["transform", "quality"] = "transform"
     quality_contracts: list = SMField(default_factory=list)  # list[Contract] — typed by validator
     # Declared trigger-time inputs. Referenced from filter/map expressions as
     # {{params.<name>}}; validated against declared types on trigger.
@@ -1034,6 +1096,10 @@ class PipelineBase(SQLModel):
                     f"steps[{i}]: unknown op/mode combination {key!r}"
                 )
             model.model_validate(step)
+            if self.pipeline_type == "quality" and step["op"] in ("aggregate", "pivot"):
+                raise ValueError(
+                    f"Step op {step['op']!r} is not allowed in quality pipelines"
+                )
         return self
 
     @model_validator(mode="after")
@@ -1126,6 +1192,9 @@ class Pipeline(PipelineBase, table=True):
     # with plain str + explicit sa_column.  Strict Literal stays on Base.
     engine: str = SMField(  # type: ignore[override]
         default="duckdb", sa_column=Column(Text, nullable=False, server_default="duckdb")
+    )
+    pipeline_type: str = SMField(  # type: ignore[override]
+        default="transform", sa_column=Column(Text, nullable=False, server_default="transform")
     )
     quality_contracts: list = SMField(  # type: ignore[override]
         default_factory=list, sa_column=Column(JSONB, nullable=False, server_default="'[]'::jsonb")
