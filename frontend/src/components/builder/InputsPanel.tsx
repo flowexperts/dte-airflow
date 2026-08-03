@@ -2,6 +2,7 @@
 
 import { Button, Field, Input, Panel, PanelHead } from "@/components/ui";
 import type { ParamType, PipelineParam } from "@/lib/api";
+import { compatibleFor } from "@/lib/system-vars";
 
 const TYPES: ParamType[] = [
   "string",
@@ -79,13 +80,48 @@ export function InputsPanel({
               </label>
             </Field>
             <Field label={i === 0 ? "Default" : undefined}>
-              <Input
-                value={p.default ?? ""}
-                onChange={(e) =>
-                  update(i, { default: e.target.value === "" ? null : e.target.value })
+              {(() => {
+                const dynOpts = compatibleFor(p.type);
+                const raw = p.default ?? "";
+                const m = raw.match(/^\{\{\s*([\w.]+)\s*\}\}$/);
+                const isDyn = !!m && dynOpts.length > 0;
+                if (!isDyn) {
+                  return (
+                    <Input
+                      value={raw}
+                      onChange={(e) =>
+                        update(i, {
+                          default: e.target.value === "" ? null : e.target.value,
+                        })
+                      }
+                      placeholder={dynOpts.length > 0 ? "value or {{today}}" : "optional"}
+                      list={dynOpts.length > 0 ? `sysvars-${i}` : undefined}
+                    />
+                  );
                 }
-                placeholder="optional"
-              />
+                return (
+                  <select
+                    value={m![1]}
+                    onChange={(e) =>
+                      update(i, { default: `{{${e.target.value}}}` })
+                    }
+                    className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent font-mono"
+                  >
+                    {dynOpts.map((v) => (
+                      <option key={v} value={v}>
+                        {`{{${v}}}`}
+                      </option>
+                    ))}
+                  </select>
+                );
+              })()}
+              {compatibleFor(p.type).length > 0 && (
+                <datalist id={`sysvars-${i}`}>
+                  {compatibleFor(p.type).map((v) => (
+                    <option key={v} value={`{{${v}}}`} label={`${v} · dynamic`} />
+                  ))}
+                </datalist>
+              )}
             </Field>
             <Field label={i === 0 ? "Description" : undefined}>
               <Input
