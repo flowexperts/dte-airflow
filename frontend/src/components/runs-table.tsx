@@ -4,8 +4,28 @@ import Link from "next/link";
 import { DataTable, Pill, type Column } from "@/components/ui";
 import type { Run } from "@/lib/api";
 
-const pillFor = (s: Run["status"]) =>
-  s === "completed" ? "ok" : s === "running" ? "running" : s === "failed" ? "failed" : "pending";
+const pillFor = (s: Run["status"]): "ok" | "running" | "failed" | "pending" =>
+  s === "completed" || s === "completed_with_warnings"
+    ? "ok"
+    : s === "running"
+      ? "running"
+      : s === "failed" || s === "failed_quality"
+        ? "failed"
+        : "pending";
+
+function QualityPill({ quality }: { quality: Run["quality"] }) {
+  if (!quality) return <span className="font-mono text-[12px] text-subtle">—</span>;
+  const total = quality.passed + quality.failed + quality.warned;
+  if (total === 0) return <span className="font-mono text-[12px] text-subtle">—</span>;
+  const passRate = Math.round((quality.passed / total) * 100);
+  if (quality.failed > 0) {
+    return <Pill status="failed">{passRate}%</Pill>;
+  }
+  if (quality.warned > 0) {
+    return <Pill status="running">{passRate}%</Pill>;
+  }
+  return <Pill status="ok">100%</Pill>;
+}
 
 export function RunsTable({ runs }: { runs: Run[] }) {
   const columns: Column<Run>[] = [
@@ -47,6 +67,12 @@ export function RunsTable({ runs }: { runs: Run[] }) {
           {r.started_at ? new Date(r.started_at).toLocaleString() : "—"}
         </span>
       ),
+    },
+    {
+      key: "quality",
+      header: "Quality",
+      width: "100px",
+      render: (r) => <QualityPill quality={r.quality} />,
     },
     {
       key: "err",

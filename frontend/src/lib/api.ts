@@ -57,6 +57,27 @@ export type EngineChoice =
   | "snowflake"
   | "trino";
 
+// ---------- Quality contracts ----------
+
+export type ContractType =
+  | "row_count_between"
+  | "column_not_null"
+  | "column_unique"
+  | "column_in_range"
+  | "column_matches";
+
+export interface QualityContract {
+  id: string;
+  type: ContractType;
+  severity: "warn" | "fail";
+  column?: string;
+  min?: number;
+  max?: number;
+  regex?: string;
+}
+
+// ---------- Pipeline params ----------
+
 /** Trigger-time typed inputs declared on a pipeline. */
 export type ParamType =
   | "string"
@@ -86,6 +107,8 @@ export interface Pipeline {
   /** Declared trigger-time inputs. Referenced from filter/map expressions
    *  as `{{params.<name>}}`; rendered as typed inputs on the trigger form. */
   params?: PipelineParam[];
+  /** Quality contracts evaluated after each run (plan 044). */
+  quality_contracts?: QualityContract[];
 }
 
 /** Structured 4xx payloads returned by pipeline save / trigger when the
@@ -205,7 +228,22 @@ export function emptyFileOutput(
 }
 
 // Run is untyped in OpenAPI (routes return `dict`), so we model it here.
-export type RunStatus = "pending" | "running" | "completed" | "failed";
+export type RunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "failed_quality"
+  | "completed_with_warnings";
+
+export interface QualityCheckResult {
+  contract_id: string;
+  contract_type: string;
+  passed: boolean;
+  severity: "warn" | "fail";
+  detail: string | null;
+}
+
 export interface Run {
   id: string;
   pipeline_id: string;
@@ -219,6 +257,8 @@ export interface Run {
   /** Resolved trigger-time context: `{ params: {…}, now, today, yesterday, … }`.
    *  Only populated for runs started after plan 040 shipped. */
   params?: RunParams | null;
+  /** Quality contract summary — populated after plan 044 shipped. */
+  quality?: { passed: number; failed: number; warned: number } | null;
 }
 
 /** Shape persisted in `runs.params` — matches `resolve_context` output. */
@@ -601,8 +641,15 @@ export const testConnection = (id: string) =>
 
 // ---------- Runs ----------
 
+// ---------- Runs ----------
+
 export const getRun = (id: string) =>
   apiFetch<Run>(`/api/runs/${encodeURIComponent(id)}`);
+
+export const getRunQuality = (runId: string) =>
+  apiFetch<{ results: QualityCheckResult[]; count: number }>(
+    `/api/runs/${encodeURIComponent(runId)}/quality`,
+  );
 
 export const getRunOutput = (id: string, limit = 5) =>
   apiFetch<PreviewResponse>(
@@ -630,7 +677,10 @@ export const inferSchema = (source: Source) =>
   });
 
 export const isTerminal = (status: RunStatus | undefined): boolean =>
-  status === "completed" || status === "failed";
+  status === "completed" ||
+  status === "failed" ||
+  status === "failed_quality" ||
+  status === "completed_with_warnings";
 
 // re-export the OpenAPI namespaces for consumers wanting the raw types
 export type { components, paths } from "./api-types";

@@ -866,13 +866,31 @@ async def _run_body(
             span.set_attribute("destination_type", destination.config.type)
             result = engine.execute(compiled, destination.config, credentials=dest_creds)
             span.set_attribute("rows_written", result["rows_written"])
+
+        with tr.start_as_current_span("quality") as q_span:
+            contracts = getattr(pipeline, "quality_contracts", []) or []
+            quality_results = []
+            if contracts:
+                from dte.quality.evaluator import evaluate_contracts
+                quality_results = evaluate_contracts(contracts, destination.config, engine.con)
+                q_span.set_attribute("contracts_evaluated", len(contracts))
+                q_span.set_attribute("contracts_passed", sum(1 for r in quality_results if r.passed))
+            await r_store.set_quality(run_id, [r.model_dump() for r in quality_results])
+
+    failed_hard = any(not r.passed and r.severity == "fail" for r in quality_results)
+    failed_warn = any(not r.passed and r.severity == "warn" for r in quality_results)
+    final_status = (
+        "failed_quality" if failed_hard
+        else "completed_with_warnings" if failed_warn
+        else "completed"
+    )
     await r_store.update(
         run_id,
-        status="completed",
+        status=final_status,
         rows_written=result["rows_written"],
         location=result["location"],
     )
     _log.info(
         "run completed",
-        extra={"pipeline_id": pipeline_id, "rows_written": result["rows_written"]},
+        extra={"pipeline_id": pipeline_id, "rows_written": result["rows_written"], "status": final_status},
     )

@@ -1,3 +1,4 @@
+import json
 import uuid
 from contextlib import asynccontextmanager
 
@@ -22,6 +23,14 @@ from dte.models.pipeline import (
 )
 from dte.models.user import Role, User, UserBase, UserRoleLink
 from dte.tenancy import get_current_tenant
+
+
+def _quality_summary_dicts(results: list[dict]) -> dict:
+    """Compute pass/fail/warn counts from a list of raw quality_checks dicts."""
+    passed = sum(1 for r in results if r.get("passed"))
+    warned = sum(1 for r in results if not r.get("passed") and r.get("severity") == "warn")
+    failed = sum(1 for r in results if not r.get("passed") and r.get("severity") == "fail")
+    return {"passed": passed, "failed": failed, "warned": warned}
 
 
 @asynccontextmanager
@@ -112,7 +121,7 @@ class PostgresRunStore:
     async def get(self, id: str) -> dict | None:
         async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params FROM runs WHERE id = :id"),
+                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks FROM runs WHERE id = :id"),
                 {"id": id}
             )
             row = result.mappings().fetchone()
@@ -121,6 +130,8 @@ class PostgresRunStore:
             d = dict(row)
             d["started_at"] = d["started_at"].isoformat() if d.get("started_at") else None
             d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
+            raw_quality = list(d.pop("quality_checks") or [])
+            d["quality"] = _quality_summary_dicts(raw_quality)
             return d
 
     async def create(self, pipeline_id: str, revision_id: str | None = None) -> str:
@@ -159,7 +170,7 @@ class PostgresRunStore:
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
         async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
+                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
                 {"pid": pipeline_id, "limit": limit}
             )
             rows = []
@@ -167,6 +178,8 @@ class PostgresRunStore:
                 d = dict(row)
                 d["started_at"] = d["started_at"].isoformat() if d.get("started_at") else None
                 d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
+                raw_quality = list(d.pop("quality_checks") or [])
+                d["quality"] = _quality_summary_dicts(raw_quality)
                 rows.append(d)
             return rows
 
@@ -177,6 +190,27 @@ class PostgresRunStore:
             )
             await s.commit()
             return result.rowcount
+
+    async def set_quality(self, run_id: str, results: list) -> None:
+        serialised = [
+            r.model_dump() if hasattr(r, "model_dump") else r
+            for r in results
+        ]
+        async with _open_tenant_session(self._factory) as s:
+            await s.execute(
+                text("UPDATE runs SET quality_checks = CAST(:v AS jsonb) WHERE id = :id"),
+                {"v": json.dumps(serialised), "id": run_id},
+            )
+            await s.commit()
+
+    async def get_quality(self, run_id: str) -> list:
+        async with _open_tenant_session(self._factory) as s:
+            result = await s.execute(
+                text("SELECT quality_checks FROM runs WHERE id = :id"),
+                {"id": run_id},
+            )
+            row = result.mappings().fetchone()
+            return list(row["quality_checks"] or []) if row else []
 
 
 class PostgresPipelineRevisionStore:
