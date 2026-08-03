@@ -44,9 +44,8 @@ export function ConnectionForm({
   };
 
   const validate = (): string | null => {
-    if (!connection.id.trim()) return "Connection id is required.";
-    if (!/^[a-zA-Z0-9_-]+$/.test(connection.id))
-      return "Connection id may only contain letters, numbers, '_' and '-'.";
+    const name = (connection.name ?? "").trim();
+    if (!name) return "Connection name is required.";
     return null;
   };
 
@@ -91,19 +90,19 @@ export function ConnectionForm({
         }
       />
       <PageHeader
-        title={mode === "create" ? "New connection" : `Editing ${initial.id}`}
-        sub={mode === "edit" ? initial.id : undefined}
+        title={mode === "create" ? "New connection" : `Editing ${initial.name ?? initial.id}`}
+        sub={mode === "edit" ? initial.name ?? initial.id : undefined}
       />
       <div className="px-14 py-8 space-y-4">
         {err && <InlineError title={err.title} message={err.message} detail={err.detail} />}
         <Panel>
           <div className="p-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Connection id" hint="stable identifier; can't change after create">
+              <Field label="Name" hint="editable; must be unique">
                 <Input
-                  value={connection.id}
-                  onChange={(e) => setConnection({ ...connection, id: e.target.value })}
-                  disabled={mode === "edit"}
+                  value={connection.name ?? ""}
+                  onChange={(e) => setConnection({ ...connection, name: e.target.value })}
+                  placeholder="production-warehouse"
                 />
               </Field>
               <Field label="Type">
@@ -114,6 +113,11 @@ export function ConnectionForm({
                 />
               </Field>
             </div>
+            {mode === "edit" && (
+              <div className="text-xs text-subtle font-mono">
+                id: {connection.id}
+              </div>
+            )}
           </div>
         </Panel>
         <Panel>

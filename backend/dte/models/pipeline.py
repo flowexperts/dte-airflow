@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid as _uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -158,12 +159,29 @@ def _public_fields(instance) -> dict:
 
 class ConnectionBase(SQLModel):
     """API/domain fields.  `credentials` is validated against the dlt spec
-    class for the given `connection_type` and stored as a cleaned dict."""
+    class for the given `connection_type` and stored as a cleaned dict.
 
-    id: str
+    Identity model
+    --------------
+    - `id`: opaque, server-generated (default: UUID4 string). Clients that
+      omit it get a fresh one; clients that supply it (legacy migration
+      scripts, historic tests) keep working. Never edited after creation.
+    - `name`: user-facing label, editable, unique per (tenant_id, class).
+      If omitted at construction we default to `id` so historic call
+      sites (e.g. `ConnectionBase(id="local_fs", ...)`) still round-trip.
+    """
+
+    id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
+    name: str | None = None
     connection_type: ConnectionType  # strict Literal for API validation
     credentials: dict = SMField(default_factory=dict)
     tenant_id: str = "default"
+
+    @model_validator(mode="after")
+    def _default_name_to_id(self):
+        if not self.name:
+            self.name = self.id
+        return self
 
     @model_validator(mode="after")
     def _validate_credentials(self):
@@ -192,7 +210,16 @@ class Connection(ConnectionBase, table=True):
     __tablename__ = "connections"
 
     # Override id to declare it as the primary key.
-    id: str = SMField(primary_key=True)  # type: ignore[override]
+    id: str = SMField(  # type: ignore[override]
+        default_factory=lambda: str(_uuid.uuid4()), primary_key=True
+    )
+    # Editable, unique-per-tenant display name. NOT NULL at the DB layer
+    # (see migration 020); nullable here so back-compat callers that only
+    # pass `id` still construct — `_default_name_to_id` fills it in on Base
+    # and we mirror the same fallback in stores.
+    name: str | None = SMField(  # type: ignore[override]
+        default=None, sa_column=Column(Text, nullable=False)
+    )
     # Override: Literal → str for SQLAlchemy mapping.
     connection_type: str = SMField(  # type: ignore[override]
         sa_column=Column(Text, nullable=False)

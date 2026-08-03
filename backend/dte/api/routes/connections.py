@@ -28,6 +28,7 @@ def _mask(c: Connection) -> dict:
     """Return a plain dict with credentials values replaced by '***'."""
     return {
         "id": c.id,
+        "name": c.name or c.id,
         "connection_type": c.connection_type,
         "credentials": {k: "***" for k in c.credentials},
     }
@@ -38,9 +39,13 @@ async def create_connection(
     connection: ConnectionBase,
     store: ConnectionStore = Depends(get_connection_store),
 ):
+    # If the client supplied an id (legacy), refuse if it's already taken.
     if await store.get(connection.id):
         raise HTTPException(status_code=409, detail=f"Connection '{connection.id}' already exists")
-    await store.save(connection)
+    try:
+        await store.save(connection)
+    except ValueError as e:  # name collision from FakeConnectionStore
+        raise HTTPException(status_code=409, detail=str(e))
     return _mask_base(connection)
 
 
@@ -49,6 +54,7 @@ def _mask_base(connection: ConnectionBase) -> dict:
     creds = connection.credentials or {}
     return {
         "id": connection.id,
+        "name": connection.name or connection.id,
         "connection_type": connection.connection_type,
         "credentials": {k: "***" for k in creds},
     }
@@ -79,6 +85,7 @@ async def get_connection(
         # pre-populating fields). Callers should treat this as sensitive.
         return {
             "id": c.id,
+            "name": c.name or c.id,
             "connection_type": c.connection_type,
             "credentials": c.credentials,
         }
@@ -91,20 +98,24 @@ async def update_connection(
     connection: ConnectionBase,
     store: ConnectionStore = Depends(get_connection_store),
 ):
-    if connection.id != connection_id:
-        raise HTTPException(status_code=400, detail="Connection id in path and body must match")
     existing = await store.get(connection_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Connection not found")
+    if connection.id != connection_id:
+        raise HTTPException(status_code=400, detail="Connection id in path and body must match")
     # If credentials omitted (empty dict) on PUT, keep the existing set.
     if not connection.credentials:
         existing_creds = existing.credentials
         connection = ConnectionBase(
             id=connection.id,
+            name=connection.name,
             connection_type=connection.connection_type,
             credentials=existing_creds,
         )
-    await store.save(connection)
+    try:
+        await store.save(connection)
+    except ValueError as e:  # name collision
+        raise HTTPException(status_code=409, detail=str(e))
     await mongo_pool.evict(connection_id)
     return _mask_base(connection)
 

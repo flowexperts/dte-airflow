@@ -106,9 +106,16 @@ export function ConnectionsTable({ rows }: { rows: Connection[] }) {
   const columns: Column<Connection>[] = [
     {
       key: "id",
-      header: "ID",
+      header: "Name",
       width: "1.5fr",
-      render: (r) => <span className="font-mono text-[12px]">{r.id}</span>,
+      render: (r) => (
+        <div className="flex flex-col">
+          <span className="text-[13px]">{r.name ?? r.id}</span>
+          {r.name && r.name !== r.id ? (
+            <span className="font-mono text-[10.5px] text-subtle">{r.id}</span>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "type",
