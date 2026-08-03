@@ -67,12 +67,18 @@ export function SourceEditor({
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Source id" hint="referenced by steps; also used as the local table name">
+        <Field label="Name" hint="editable; unique per workspace. Also used as the local table name unless overridden.">
           <Input
-            value={source.id}
+            value={source.name ?? ""}
             onChange={(e) => {
-              const id = e.target.value;
-              onChange({ ...source, id, table: id });
+              const name = e.target.value;
+              // Auto-mirror name → table while the user is naming a fresh
+              // source (empty table, or table still matches the old name).
+              const nextTable =
+                !source.table || source.table === (source.name ?? "")
+                  ? name
+                  : source.table;
+              onChange({ ...source, name, table: nextTable });
             }}
             placeholder="orders"
           />
@@ -85,6 +91,9 @@ export function SourceEditor({
           />
         </Field>
       </div>
+      {source.name && source.name !== source.id && (
+        <div className="text-xs text-subtle font-mono">id: {source.id}</div>
+      )}
 
       <ConnectionPicker
         value={source.connection_id}
