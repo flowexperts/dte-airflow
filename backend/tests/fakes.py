@@ -42,6 +42,14 @@ class FakePipelineStore:
 
     async def save(self, pipeline: Pipeline) -> None:
         existing = self._data.get(pipeline.id)
+        # UNIQUE(tenant_id, name) — mirrors DB constraint from migration 024.
+        for other in self._data.values():
+            if other.id == pipeline.id:
+                continue
+            if other.tenant_id == pipeline.tenant_id and other.name == pipeline.name:
+                raise ValueError(
+                    f"Pipeline name '{pipeline.name}' already exists for tenant '{pipeline.tenant_id}'"
+                )
         pipeline.created_at = existing.created_at if existing else _utcnow()
         pipeline.updated_at = _utcnow()
         self._data[pipeline.id] = pipeline

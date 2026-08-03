@@ -226,7 +226,10 @@ async def create_pipeline(
 ):
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
-    await store.save(Pipeline(**pipeline.model_dump()))
+    try:
+        await store.save(Pipeline(**pipeline.model_dump()))
+    except ValueError as e:  # name collision on UNIQUE(tenant_id, name)
+        raise HTTPException(status_code=409, detail=str(e))
     await _record_revision(pipeline, rev_store, user)
     return {"id": pipeline.id}
 
@@ -263,7 +266,10 @@ async def update_pipeline(
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
     row = Pipeline(**pipeline.model_dump())
-    await store.save(row)
+    try:
+        await store.save(row)
+    except ValueError as e:  # name collision
+        raise HTTPException(status_code=409, detail=str(e))
     await _record_revision(pipeline, rev_store, user)
     return row
 
