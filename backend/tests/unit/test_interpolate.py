@@ -156,6 +156,43 @@ def test_interpolate_pipeline_rewrites_filter_and_map_expr():
     assert out.steps[2] == {"op": "rename", "mappings": {"a": "b"}}
 
 
+# ─── Dynamic trigger values ─────────────────────────────────────────────
+
+def test_coerce_dynamic_today_resolves_to_date():
+    out = coerce_param_value("{{today}}", "date")
+    assert out == date.today().isoformat()
+
+
+def test_coerce_dynamic_now_resolves_to_timestamp():
+    out = coerce_param_value("{{now}}", "timestamp")
+    # ISO string parses back as datetime
+    from datetime import datetime
+    datetime.fromisoformat(out)
+
+
+def test_coerce_dynamic_with_whitespace():
+    out = coerce_param_value("{{ today }}", "date")
+    assert out == date.today().isoformat()
+
+
+def test_coerce_dynamic_now_on_int_rejected():
+    with pytest.raises(ParamValidationError):
+        coerce_param_value("{{now}}", "int")
+
+
+def test_coerce_dynamic_unknown_var_rejected():
+    with pytest.raises(ParamValidationError):
+        coerce_param_value("{{bogus}}", "string")
+
+
+def test_resolve_context_dynamic_declared_param():
+    p = _pipeline(params=[
+        {"name": "as_of", "type": "date", "required": True},
+    ])
+    ctx = resolve_context(p, {"as_of": "{{today}}"})
+    assert ctx["params"]["as_of"] == date.today().isoformat()
+
+
 def test_interpolate_pipeline_leaves_lookup_map_untouched():
     p = _pipeline(steps=[
         {"op": "map", "mode": "lookup", "field": "id", "lookup_id": "lt1"},

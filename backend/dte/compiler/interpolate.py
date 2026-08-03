@@ -69,6 +69,9 @@ _TRUE_VALS = {"true", "1", "yes"}
 _FALSE_VALS = {"false", "0", "no"}
 
 
+_SYSTEM_VAR_SENTINEL_RE = re.compile(r"^\{\{\s*([\w.]+)\s*\}\}$")
+
+
 def coerce_param_value(raw: str, expected_type: str) -> str:
     """Validate `raw` parses as `expected_type`. Return the canonicalised
     string suitable for interpolation.
@@ -76,12 +79,25 @@ def coerce_param_value(raw: str, expected_type: str) -> str:
     Coercion is validation-only: the returned value is always a string so
     interpolation stays a pure text substitution. SQL authors cast
     explicitly (`'{{params.d}}'::date`).
+
+    Trigger-time dynamic binding: if `raw` is a bare `{{<system_var>}}`
+    sentinel (e.g. `{{today}}`), resolve against the current system
+    context before coercing. Preserves late binding for scheduled runs.
     """
     if not isinstance(raw, str):
         raise ParamValidationError(
             f"expected string value, got {type(raw).__name__}",
             param="?", expected_type=expected_type, got=raw,
         )
+    m = _SYSTEM_VAR_SENTINEL_RE.match(raw)
+    if m:
+        name = m.group(1)
+        if name not in SYSTEM_VAR_NAMES:
+            raise ParamValidationError(
+                f"unknown system variable: {{{{{name}}}}}",
+                param="?", expected_type=expected_type, got=raw,
+            )
+        raw = _system_context()[name]
     t = expected_type
     try:
         if t == "string":

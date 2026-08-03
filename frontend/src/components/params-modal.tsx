@@ -4,12 +4,19 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui";
 import type { ParamType, PipelineParam } from "@/lib/api";
+import {
+  compatibleFor,
+  isDynamicSentinel,
+  type SystemVar,
+} from "@/lib/system-vars";
 
 /** Client-side validation mirror of `dte.compiler.interpolate.coerce_param_value`.
  *  Returns null on success, or a message. Server is source of truth — this
  *  only exists to disable Submit before a doomed round-trip. */
 export function validateParam(value: string, type: ParamType): string | null {
   if (value === "") return null;
+  // {{today}}, {{now}}, ... — resolved server-side. Trust the sentinel.
+  if (isDynamicSentinel(value)) return null;
   switch (type) {
     case "string":
       return null;
@@ -154,6 +161,10 @@ export function ParamsModal({
               const rowErr = fieldErrors[p.name];
               const showErr = rowErr && rowErr !== "required";
               const isRequired = p.required !== false;
+              const dynamicOpts = compatibleFor(p.type);
+              const raw = values[p.name] ?? "";
+              const dynMatch = raw.match(/^\{\{\s*([\w.]+)\s*\}\}$/);
+              const isDynamic = !!dynMatch && dynamicOpts.length > 0;
               return (
                 <div
                   key={p.name}
@@ -165,7 +176,59 @@ export function ParamsModal({
                     <div className="text-[10.5px] text-subtle">{p.type}</div>
                   </div>
                   <div>
-                    {p.type === "boolean" ? (
+                    {dynamicOpts.length > 0 && (
+                      <div className="mb-1 inline-flex border border-border rounded-[var(--radius)] bg-bg p-0.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setValues((s) => ({ ...s, [p.name]: "" }))
+                          }
+                          className={
+                            (!isDynamic
+                              ? "bg-[color:var(--accent-tint)] text-accent"
+                              : "text-muted hover:text-text") +
+                            " px-2 py-0.5 text-[11px] rounded-[3px]"
+                          }
+                        >
+                          Literal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setValues((s) => ({
+                              ...s,
+                              [p.name]: `{{${dynamicOpts[0]}}}`,
+                            }))
+                          }
+                          className={
+                            (isDynamic
+                              ? "bg-[color:var(--accent-tint)] text-accent"
+                              : "text-muted hover:text-text") +
+                            " px-2 py-0.5 text-[11px] rounded-[3px]"
+                          }
+                        >
+                          Dynamic
+                        </button>
+                      </div>
+                    )}
+                    {isDynamic ? (
+                      <select
+                        value={dynMatch![1] as SystemVar}
+                        onChange={(e) =>
+                          setValues((s) => ({
+                            ...s,
+                            [p.name]: `{{${e.target.value}}}`,
+                          }))
+                        }
+                        className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent font-mono"
+                      >
+                        {dynamicOpts.map((v) => (
+                          <option key={v} value={v}>
+                            {`{{${v}}}`}
+                          </option>
+                        ))}
+                      </select>
+                    ) : p.type === "boolean" ? (
                       <div className="inline-flex border border-border rounded-[var(--radius)] bg-bg p-0.5">
                         {["true", "false"].map((v) => (
                           <button
