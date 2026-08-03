@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
 import {
-  Dropdown,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import {
   Field,
   FieldPicker,
   FieldMultiSelect,
@@ -21,27 +27,101 @@ import { SYSTEM_VARS, type SystemVar } from "@/lib/system-vars";
 /** Compact λ-labelled dropdown that writes a `{{sysvar}}` sentinel into a
  *  filter value cell. Rendered alongside date/timestamp inputs where the
  *  native picker can't hold a sentinel string. */
-function DynamicValueButton({
+/** Icon-sized dynamic-value menu. Absolutely-positioned so it can overlay
+ *  the right edge of a native date/datetime input, next to the browser's
+ *  calendar picker icon. Popover portals to <body> to escape any
+ *  overflow-hidden ancestor. */
+function DynamicValueMenu({
   vars,
   onPick,
-  className,
 }: {
   vars: readonly SystemVar[];
   onPick: (token: string) => void;
-  className?: string;
 }) {
-  const props: React.ComponentProps<typeof Dropdown<SystemVar>> = {
-    value: "",
-    onChange: (v) => onPick(`{{${v}}}`),
-    placeholder: "λ",
-    options: vars.map((v) => ({
-      value: v,
-      label: <span className="font-mono">{`{{${v}}}`}</span>,
-      meta: "dynamic",
-    })),
-  };
-  if (className) props.className = className;
-  return <Dropdown<SystemVar> {...props} />;
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const compute = () => {
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (!r) return;
+      setPos({ left: r.right - 180, top: r.bottom + 4 });
+    };
+    compute();
+    window.addEventListener("scroll", compute, true);
+    window.addEventListener("resize", compute);
+    return () => {
+      window.removeEventListener("scroll", compute, true);
+      window.removeEventListener("resize", compute);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        aria-label="Dynamic value"
+        title="Dynamic value"
+        className="h-5 w-5 flex items-center justify-center rounded text-[13px] font-mono text-subtle hover:text-accent hover:bg-[color:var(--accent-tint)] transition-colors"
+      >
+        λ
+      </button>
+      {open && pos &&
+        createPortal(
+          <div
+            ref={popRef}
+            style={{
+              position: "fixed",
+              left: pos.left,
+              top: pos.top,
+              width: 180,
+              zIndex: 1000,
+            }}
+            className="max-h-72 overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg py-1"
+            role="listbox"
+          >
+            {vars.map((v) => (
+              <button
+                key={v}
+                type="button"
+                role="option"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onPick(`{{${v}}}`);
+                  setOpen(false);
+                }}
+                className="w-full flex items-center justify-between gap-3 px-2.5 py-1.5 text-left text-[13px] text-text hover:bg-[color:var(--accent-tint)]"
+              >
+                <span className="font-mono truncate">{`{{${v}}}`}</span>
+                <span className="font-mono text-[11px] text-subtle shrink-0">
+                  dynamic
+                </span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
 }
 
 type Setter = (patch: Partial<StepShape>) => void;
@@ -568,69 +648,117 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                     const hiType = /^\{\{[\w.]+\}\}$/.test(hi) ? "text" : inputType;
                     return (
                       <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1">
-                        <div className={dynVars.length > 0 ? "flex items-center gap-1 min-w-0" : "min-w-0"}>
+                        <div className="relative min-w-0">
                           <Input
                             type={loType}
                             value={lo}
                             onChange={(e) => commit(e.target.value, hi)}
                             placeholder="min"
                             list={paramsListId}
-                            className="min-w-0 flex-1"
+                            className={cn(
+                              "min-w-0 w-full",
+                              dynVars.length > 0 &&
+                                (loType === "date" || loType === "datetime-local"
+                                  ? "pr-14"
+                                  : "pr-7"),
+                            )}
                           />
                           {dynVars.length > 0 && (
-                            <DynamicValueButton
-                              vars={dynVars}
-                              onPick={(tok) => commit(tok, hi)}
-                              className="w-10 shrink-0"
-                            />
+                            <div
+                              className={cn(
+                                "absolute top-1/2 -translate-y-1/2",
+                                loType === "date" || loType === "datetime-local"
+                                  ? "right-7"
+                                  : "right-1.5",
+                              )}
+                            >
+                              <DynamicValueMenu
+                                vars={dynVars}
+                                onPick={(tok) => commit(tok, hi)}
+                              />
+                            </div>
                           )}
                         </div>
                         <span className="text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
                           and
                         </span>
-                        <div className={dynVars.length > 0 ? "flex items-center gap-1 min-w-0" : "min-w-0"}>
+                        <div className="relative min-w-0">
                           <Input
                             type={hiType}
                             value={hi}
                             onChange={(e) => commit(lo, e.target.value)}
                             placeholder="max"
                             list={paramsListId}
-                            className="min-w-0 flex-1"
+                            className={cn(
+                              "min-w-0 w-full",
+                              dynVars.length > 0 &&
+                                (hiType === "date" || hiType === "datetime-local"
+                                  ? "pr-14"
+                                  : "pr-7"),
+                            )}
                           />
                           {dynVars.length > 0 && (
-                            <DynamicValueButton
-                              vars={dynVars}
-                              onPick={(tok) => commit(lo, tok)}
-                              className="w-10 shrink-0"
-                            />
+                            <div
+                              className={cn(
+                                "absolute top-1/2 -translate-y-1/2",
+                                hiType === "date" || hiType === "datetime-local"
+                                  ? "right-7"
+                                  : "right-1.5",
+                              )}
+                            >
+                              <DynamicValueMenu
+                                vars={dynVars}
+                                onPick={(tok) => commit(lo, tok)}
+                              />
+                            </div>
                           )}
                         </div>
                       </div>
                     );
                   })()
                 ) : (
-                  <div className={dynVars.length > 0 && !noValue && r.op !== "IN" && r.op !== "LIKE" ? "flex items-center gap-1 min-w-0" : "min-w-0"}>
-                    <Input
-                      type={
-                        /^\{\{[\w.]+\}\}$/.test(r.value) || r.op === "IN" || r.op === "LIKE"
-                          ? "text"
-                          : inputType
-                      }
-                      value={r.value}
-                      onChange={(e) => updateRule(i, { value: e.target.value })}
-                      placeholder={r.op === "IN" ? "a, b, c" : "value"}
-                      disabled={noValue}
-                      list={paramsListId}
-                      className="min-w-0 flex-1"
-                    />
-                    {dynVars.length > 0 && !noValue && r.op !== "IN" && r.op !== "LIKE" && (
-                      <DynamicValueButton
-                        vars={dynVars}
-                        onPick={(tok) => updateRule(i, { value: tok })}
-                        className="w-10 shrink-0"
-                      />
-                    )}
-                  </div>
+                  (() => {
+                    const isSentinel = /^\{\{[\w.]+\}\}$/.test(r.value);
+                    const useNativePicker =
+                      !isSentinel && r.op !== "IN" && r.op !== "LIKE" && !noValue;
+                    const boxType = useNativePicker ? inputType : "text";
+                    const showDyn =
+                      dynVars.length > 0 && !noValue && r.op !== "IN" && r.op !== "LIKE";
+                    return (
+                      <div className="relative min-w-0">
+                        <Input
+                          type={boxType}
+                          value={r.value}
+                          onChange={(e) => updateRule(i, { value: e.target.value })}
+                          placeholder={r.op === "IN" ? "a, b, c" : "value"}
+                          disabled={noValue}
+                          list={paramsListId}
+                          className={cn(
+                            "min-w-0 w-full",
+                            showDyn &&
+                              (boxType === "date" || boxType === "datetime-local"
+                                ? "pr-14"
+                                : "pr-7"),
+                          )}
+                        />
+                        {showDyn && (
+                          <div
+                            className={cn(
+                              "absolute top-1/2 -translate-y-1/2",
+                              boxType === "date" || boxType === "datetime-local"
+                                ? "right-7"
+                                : "right-1.5",
+                            )}
+                          >
+                            <DynamicValueMenu
+                              vars={dynVars}
+                              onPick={(tok) => updateRule(i, { value: tok })}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()
                 )}
                 <button
                   type="button"
