@@ -512,7 +512,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                         : "value"
                   }
                   disabled={noValue}
-                  list={declaredParams.length > 0 ? paramsListId : undefined}
+                  list={paramsListId}
                 />
                 <button
                   type="button"
@@ -542,17 +542,22 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
               </code>
             </div>
           )}
-          {declaredParams.length > 0 && (
-            <datalist id={paramsListId}>
-              {declaredParams.map((p) => (
-                <option
-                  key={p.name}
-                  value={`{{params.${p.name}}}`}
-                  label={`${p.name} · ${p.type}`}
-                />
-              ))}
-            </datalist>
-          )}
+          <datalist id={paramsListId}>
+            {declaredParams.map((p) => (
+              <option
+                key={`p-${p.name}`}
+                value={`{{params.${p.name}}}`}
+                label={`${p.name} · ${p.type}`}
+              />
+            ))}
+            {SYSTEM_VARS.map((v) => (
+              <option
+                key={`s-${v}`}
+                value={`{{${v}}}`}
+                label={`${v} · dynamic`}
+              />
+            ))}
+          </datalist>
         </div>
       ) : (
         <Field
