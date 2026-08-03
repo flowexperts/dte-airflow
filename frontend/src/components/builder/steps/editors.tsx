@@ -420,25 +420,31 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
     return s.slice(1, -1).replace(/''/g, "'");
   }
 
-  // Parse one quoted identifier (possibly dot-chained): "a"."b" → a.b
+  // Parse a dot-chained identifier — each segment may be quoted ("a") or
+  // bare (a). Handles legacy pre-quoted-ident filter SQL like `col = 5`.
   // Returns [fieldName, remainingStr] or null.
   function parseIdent(s: string): [string, string] | null {
     const parts: string[] = [];
     let rest = s.trimStart();
-    while (rest.startsWith('"')) {
-      // Consume "...""..." — internal doubled-quotes are escaped
-      let i = 1;
-      while (i < rest.length) {
-        if (rest[i] === '"') {
-          if (rest[i + 1] === '"') { i += 2; continue; }
-          break;
+    while (true) {
+      if (rest.startsWith('"')) {
+        let i = 1;
+        while (i < rest.length) {
+          if (rest[i] === '"') {
+            if (rest[i + 1] === '"') { i += 2; continue; }
+            break;
+          }
+          i++;
         }
-        i++;
+        if (rest[i] !== '"') return null; // unclosed quote
+        parts.push(rest.slice(1, i).replace(/""/g, '"'));
+        rest = rest.slice(i + 1);
+      } else {
+        const bare = rest.match(/^([A-Za-z_][\w$]*)([\s\S]*)/);
+        if (!bare) break;
+        parts.push(bare[1]!);
+        rest = bare[2]!;
       }
-      if (rest[i] !== '"') return null; // unclosed quote
-      // Unquote: strip outer quotes and unescape ""
-      parts.push(rest.slice(1, i).replace(/""/g, '"'));
-      rest = rest.slice(i + 1);
       if (rest.startsWith(".")) { rest = rest.slice(1); continue; }
       break;
     }
@@ -446,10 +452,13 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
     return [parts.join("."), rest.trimStart()];
   }
 
-  // Parse a single value literal (number, boolean, 'string').
+  // Parse a single value literal (number, boolean, 'string', {{sentinel}}).
   // Returns [displayValue, remainingStr] or null.
   function parseLiteral(s: string): [string, string] | null {
     const rest = s.trimStart();
+    // {{sentinel}} unquoted — pass through verbatim so it round-trips.
+    const sentinelMatch = rest.match(/^(\{\{\s*[\w.]+\s*\}\})([\s\S]*)/);
+    if (sentinelMatch) return [sentinelMatch[1]!, sentinelMatch[2]!.trimStart()];
     if (rest.startsWith("'")) {
       // Find matching close quote ('' is an escaped single quote)
       let i = 1;
