@@ -338,11 +338,11 @@ function quoteString(value: string): string {
 function safeLiteral(v: string): string {
   const trimmed = v.trim();
   if (trimmed === "") return "''";
-  // {{params.X}} / {{today}} placeholders pass through unquoted — the
-  // interpolator resolves them at run time and the declared type decides
-  // whether a cast is needed. Users wrap in quotes explicitly for
-  // date/string casts: `'{{params.d}}'::date`.
-  if (/^\{\{[\w.]+\}\}$/.test(trimmed)) return trimmed;
+  // {{params.X}} / {{today}} placeholders: quote so the resolved value
+  // (ISO date/timestamp string) lands as a valid SQL literal. DuckDB
+  // implicitly casts against the column type. Numeric comparisons still
+  // work because DuckDB coerces string → number.
+  if (/^\{\{[\w.]+\}\}$/.test(trimmed)) return `'${trimmed}'`;
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
   if (/^(true|false)$/i.test(trimmed)) return trimmed.toUpperCase();
   return quoteString(trimmed);
@@ -456,7 +456,12 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
   // Returns [displayValue, remainingStr] or null.
   function parseLiteral(s: string): [string, string] | null {
     const rest = s.trimStart();
-    // {{sentinel}} unquoted — pass through verbatim so it round-trips.
+    // '{{sentinel}}' quoted (current emit form) — unwrap to display form.
+    const quotedSentinelMatch = rest.match(/^'(\{\{\s*[\w.]+\s*\}\})'([\s\S]*)/);
+    if (quotedSentinelMatch)
+      return [quotedSentinelMatch[1]!, quotedSentinelMatch[2]!.trimStart()];
+    // {{sentinel}} unquoted — legacy form; still parse so old pipelines
+    // round-trip cleanly on next save.
     const sentinelMatch = rest.match(/^(\{\{\s*[\w.]+\s*\}\})([\s\S]*)/);
     if (sentinelMatch) return [sentinelMatch[1]!, sentinelMatch[2]!.trimStart()];
     if (rest.startsWith("'")) {
