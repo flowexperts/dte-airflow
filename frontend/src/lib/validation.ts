@@ -8,14 +8,13 @@
 
 import { z } from "zod";
 
-/** Pipeline id: alphanumeric, underscore, hyphen. Non-empty. */
-export const pipelineIdSchema = z
-  .string()
-  .min(1, "Pipeline id is required.")
-  .regex(
-    /^[a-zA-Z0-9_-]+$/,
-    "Pipeline id may only contain letters, numbers, '_' and '-'.",
-  );
+/**
+ * Pipeline id is opaque and server-generated (UUID). On create the client
+ * sends an empty string and the backend fills it in; on edit the client
+ * echoes the server's value back. We only require that if a value IS
+ * present it's non-empty — the shape is not the frontend's concern.
+ */
+export const pipelineIdSchema = z.string();
 
 /** Pipeline name: non-empty string. */
 export const pipelineNameSchema = z

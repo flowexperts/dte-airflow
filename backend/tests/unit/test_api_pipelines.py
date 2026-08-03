@@ -41,10 +41,12 @@ def _run(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
 
 
-def _pipeline(pipeline_id: str = "p1", name: str = "orig", sources=("s1",), output_id="out1"):
+def _pipeline(pipeline_id: str = "p1", name: str | None = None, sources=("s1",), output_id="out1"):
+    # Default name derives from id so tests that seed multiple pipelines get
+    # distinct names (UNIQUE(tenant_id, name) is enforced by the fake store).
     return {
         "id": pipeline_id,
-        "name": name,
+        "name": name if name is not None else pipeline_id,
         "sources": list(sources),
         "steps": [],
         "output_id": output_id,
@@ -59,7 +61,7 @@ def test_create_pipeline_with_valid_refs(client):
     c, p_store, _, _, _ = client
     r = c.post("/api/pipelines", json=_pipeline())
     assert r.status_code == 200, r.text
-    assert _run(p_store.get("p1")).name == "orig"
+    assert _run(p_store.get("p1")).name == "p1"
 
 
 def test_create_pipeline_missing_source_returns_422(client):
@@ -116,6 +118,46 @@ def test_delete_missing_pipeline_returns_404(client):
     c, _, _, _, _ = client
     r = c.delete("/api/pipelines/nope")
     assert r.status_code == 404
+
+
+# ── Editable name + server-generated id ───────────────────────────────────
+def test_pipeline_without_id_generates_uuid(client):
+    c, p_store, _, _, _ = client
+    body = {
+        "name": "brand new",
+        "sources": ["s1"],
+        "steps": [],
+        "output_id": "out1",
+    }
+    r = c.post("/api/pipelines", json=body)
+    assert r.status_code == 200, r.text
+    pid = r.json()["id"]
+    assert "-" in pid and len(pid) >= 32
+    row = _run(p_store.get(pid))
+    assert row is not None and row.name == "brand new"
+
+
+def test_pipeline_duplicate_name_409(client):
+    c, _p, _r, _s, _d = client
+    body = {"name": "shared", "sources": ["s1"], "steps": [], "output_id": "out1"}
+    r1 = c.post("/api/pipelines", json=body)
+    assert r1.status_code == 200
+    r2 = c.post("/api/pipelines", json=body)
+    assert r2.status_code == 409, r2.text
+
+
+def test_pipeline_rename_by_stable_id(client):
+    c, _p, _r, _s, _d = client
+    r = c.post("/api/pipelines", json={
+        "name": "old", "sources": ["s1"], "steps": [], "output_id": "out1",
+    })
+    assert r.status_code == 200
+    pid = r.json()["id"]
+    r2 = c.put(f"/api/pipelines/{pid}", json={
+        "id": pid, "name": "new", "sources": ["s1"], "steps": [], "output_id": "out1",
+    })
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["name"] == "new"
 
 
 def test_delete_cascades_runs(client):

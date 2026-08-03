@@ -187,12 +187,15 @@ export function BuilderForm({
     setSubmitErr(null);
     setFieldErrors({});
     try {
+      let destinationId = pipeline.id;
       if (mode === "create") {
-        await createPipeline(pipeline);
+        // Server generates the id — use the response, not the draft.
+        const created = await createPipeline(pipeline);
+        destinationId = created.id;
       } else {
         await updatePipeline(pipeline.id, pipeline);
       }
-      router.push(`/pipelines/${encodeURIComponent(pipeline.id)}`);
+      router.push(`/pipelines/${encodeURIComponent(destinationId)}`);
     } catch (e) {
       setSubmitErr(formatSaveError(e));
       setSaving(false);
@@ -201,23 +204,8 @@ export function BuilderForm({
 
   // Shared field grid used in both the split-pane and single-column layouts.
   const fieldGrid = (
-    <div className="grid grid-cols-2 gap-3">
-      <Field
-        label="Pipeline id"
-        hint="stable identifier; can't change after create"
-        error={fieldErrors.id}
-      >
-        <Input
-          value={pipeline.id}
-          onChange={(e) => {
-            setPipeline({ ...pipeline, id: e.target.value });
-            revalidateField("id", e.target.value);
-          }}
-          onBlur={(e) => touchField("id", e.target.value)}
-          disabled={mode === "edit"}
-        />
-      </Field>
-      <Field label="Name" error={fieldErrors.name}>
+    <div className="space-y-2">
+      <Field label="Name" hint="editable; unique per workspace" error={fieldErrors.name}>
         <Input
           value={pipeline.name}
           onChange={(e) => {
@@ -228,6 +216,9 @@ export function BuilderForm({
           placeholder="Orders — nightly cohort"
         />
       </Field>
+      {mode === "edit" && (
+        <div className="text-xs text-subtle font-mono">id: {pipeline.id}</div>
+      )}
     </div>
   );
 

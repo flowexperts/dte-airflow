@@ -974,9 +974,12 @@ class PipelineParam(BaseModel):
 
 
 class PipelineBase(SQLModel):
-    """API/domain fields. `id: str` is required — FastAPI raises 422 if
-    the client omits it."""
-    id: str
+    """API/domain fields.
+
+    Identity: `id` is server-generated (UUID4 by default). `name` is the
+    editable, unique-per-tenant label — required from day one.
+    """
+    id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str
     sources: list[str] = SMField(default_factory=list)
     steps: list[dict] = SMField(default_factory=list)
@@ -1087,7 +1090,9 @@ class Pipeline(PipelineBase, table=True):
     __tablename__ = "pipelines"
 
     # Override id to declare it as the primary key.
-    id: str = SMField(primary_key=True)  # type: ignore[override]
+    id: str = SMField(  # type: ignore[override]
+        default_factory=lambda: str(_uuid.uuid4()), primary_key=True
+    )
     # Override list fields with explicit JSONB sa_columns.
     sources: list[str] = SMField(  # type: ignore[override]
         default_factory=list, sa_column=Column(JSONB, nullable=False)
