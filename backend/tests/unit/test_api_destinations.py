@@ -83,6 +83,49 @@ def test_delete_destination_204(client):
     assert _run(d_store.get("d1")) is None
 
 
+# ── Editable name + server-generated id ───────────────────────────────────
+def test_destination_without_id_generates_uuid(client):
+    c, _d, _p = client
+    r = c.post("/api/destinations", json={
+        "name": "warehouse-out",
+        "connection_id": "local_fs",
+        "config": {"type": "json_file", "path": "/tmp/out.json"},
+    })
+    assert r.status_code == 201, r.text
+    row = r.json()
+    assert "-" in row["id"] and len(row["id"]) >= 32
+    assert row["name"] == "warehouse-out"
+
+
+def test_destination_duplicate_name_409(client):
+    c, _d, _p = client
+    body = {
+        "name": "warehouse-out",
+        "connection_id": "local_fs",
+        "config": {"type": "json_file", "path": "/tmp/out.json"},
+    }
+    r1 = c.post("/api/destinations", json=body)
+    assert r1.status_code == 201
+    r2 = c.post("/api/destinations", json=body)
+    assert r2.status_code == 409, r2.text
+
+
+def test_destination_rename_by_stable_id(client):
+    c, _d, _p = client
+    r = c.post("/api/destinations", json={
+        "name": "old", "connection_id": "local_fs",
+        "config": {"type": "json_file", "path": "/tmp/o.json"},
+    })
+    assert r.status_code == 201
+    did = r.json()["id"]
+    r2 = c.put(f"/api/destinations/{did}", json={
+        "id": did, "name": "new", "connection_id": "local_fs",
+        "config": {"type": "json_file", "path": "/tmp/o.json"},
+    })
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["name"] == "new"
+
+
 def test_delete_destination_referenced_409(client):
     c, d_store, p_store = client
     _run(d_store.save(_dest("d1")))

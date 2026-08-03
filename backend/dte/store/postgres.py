@@ -372,6 +372,7 @@ class PostgresDestinationStore:
 
         stmt = pg_insert(Destination).values(
             id=destination.id,
+            name=destination.name or destination.id,
             connection_id=destination.connection_id,
             config=config_dict,
             dest_type=dest_type,
@@ -379,6 +380,7 @@ class PostgresDestinationStore:
         stmt = stmt.on_conflict_do_update(
             index_elements=[Destination.id],
             set_={
+                "name": stmt.excluded.name,
                 "connection_id": stmt.excluded.connection_id,
                 "config": stmt.excluded.config,
                 "dest_type": stmt.excluded.dest_type,
