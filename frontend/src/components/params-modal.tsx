@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "@/components/ui";
+import { Button, Dropdown } from "@/components/ui";
 import type { ParamType, PipelineParam } from "@/lib/api";
 import {
   compatibleFor,
@@ -212,22 +212,19 @@ export function ParamsModal({
                       </div>
                     )}
                     {isDynamic ? (
-                      <select
+                      <Dropdown<SystemVar>
                         value={dynMatch![1] as SystemVar}
-                        onChange={(e) =>
-                          setValues((s) => ({
-                            ...s,
-                            [p.name]: `{{${e.target.value}}}`,
-                          }))
+                        onChange={(v) =>
+                          setValues((s) => ({ ...s, [p.name]: `{{${v}}}` }))
                         }
-                        className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent font-mono"
-                      >
-                        {dynamicOpts.map((v) => (
-                          <option key={v} value={v}>
-                            {`{{${v}}}`}
-                          </option>
-                        ))}
-                      </select>
+                        options={dynamicOpts.map((v) => ({
+                          value: v,
+                          label: (
+                            <span className="font-mono">{`{{${v}}}`}</span>
+                          ),
+                          meta: "dynamic",
+                        }))}
+                      />
                     ) : p.type === "boolean" ? (
                       <div className="inline-flex border border-border rounded-[var(--radius)] bg-bg p-0.5">
                         {["true", "false"].map((v) => (

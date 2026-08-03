@@ -1,8 +1,8 @@
 "use client";
 
-import { Button, Field, Input, Panel, PanelHead } from "@/components/ui";
+import { Button, Dropdown, Field, Input, Panel, PanelHead } from "@/components/ui";
 import type { ParamType, PipelineParam } from "@/lib/api";
-import { compatibleFor } from "@/lib/system-vars";
+import { compatibleFor, type SystemVar } from "@/lib/system-vars";
 
 const TYPES: ParamType[] = [
   "string",
@@ -100,19 +100,15 @@ export function InputsPanel({
                   );
                 }
                 return (
-                  <select
-                    value={m![1]}
-                    onChange={(e) =>
-                      update(i, { default: `{{${e.target.value}}}` })
-                    }
-                    className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent font-mono"
-                  >
-                    {dynOpts.map((v) => (
-                      <option key={v} value={v}>
-                        {`{{${v}}}`}
-                      </option>
-                    ))}
-                  </select>
+                  <Dropdown<SystemVar>
+                    value={m![1] as SystemVar}
+                    onChange={(v) => update(i, { default: `{{${v}}}` })}
+                    options={dynOpts.map((v) => ({
+                      value: v,
+                      label: <span className="font-mono">{`{{${v}}}`}</span>,
+                      meta: "dynamic",
+                    }))}
+                  />
                 );
               })()}
               {compatibleFor(p.type).length > 0 && (
