@@ -142,7 +142,10 @@ def _build_s3_secret_sql(credentials: dict, secret_name: str) -> str:
 def _build_gcs_secret_sql(credentials: dict, secret_name: str) -> str:
     """DuckDB uses HMAC keys for GCS via the S3-compatible API — not the
     service-account JSON that fsspec/gcsfs consumes. `credentials_json`
-    is rejected; users must issue HMAC keys instead."""
+    is rejected; users must issue HMAC keys instead.
+
+    `endpoint_url` overrides the GCS endpoint (e.g. fake-gcs-server for
+    local testing). DuckDB's TYPE gcs supports ENDPOINT, USE_SSL, URL_STYLE."""
     if "credentials_json" in credentials and "hmac_key_id" not in credentials:
         raise ValueError(
             "gcs connection: `credentials_json` (service-account JSON) is not "
@@ -154,6 +157,13 @@ def _build_gcs_secret_sql(credentials: dict, secret_name: str) -> str:
         parts.append(_secret_kv("KEY_ID", resolve_secret(credentials["hmac_key_id"])))
     if "hmac_secret" in credentials:
         parts.append(_secret_kv("SECRET", resolve_secret(credentials["hmac_secret"])))
+    if "endpoint_url" in credentials:
+        endpoint = resolve_secret(credentials["endpoint_url"])
+        stripped = endpoint.split("://", 1)[-1].rstrip("/")
+        parts.append(_secret_kv("ENDPOINT", stripped))
+        parts.append("    URL_STYLE 'path'")
+        if endpoint.startswith("http://"):
+            parts.append("    USE_SSL false")
     body = ",\n".join(parts)
     return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
 
@@ -161,8 +171,14 @@ def _build_gcs_secret_sql(credentials: dict, secret_name: str) -> str:
 def _build_azure_secret_sql(credentials: dict, secret_name: str) -> str:
     """Azure Blob Storage secret. Field names follow dlt's `AzureCredentials`:
     `azure_storage_account_name` + `azure_storage_account_key`, or a
-    `azure_storage_sas_token` for SAS auth."""
+    `azure_storage_sas_token` for SAS auth.
+    `connection_string` short-circuits ACCOUNT_NAME logic — required for
+    Azurite (BlobEndpoint=http://127.0.0.1:10000/...)."""
     parts: list[str] = ["TYPE azure"]
+    if "connection_string" in credentials:
+        parts.append(_secret_kv("CONNECTION_STRING", resolve_secret(credentials["connection_string"])))
+        body = ",\n".join(parts)
+        return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
     account = credentials.get("azure_storage_account_name")
     key = credentials.get("azure_storage_account_key")
     sas = credentials.get("azure_storage_sas_token")

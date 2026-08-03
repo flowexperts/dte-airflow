@@ -323,6 +323,28 @@ def test_azure_secret_sql_missing_credentials_raises():
         _build_azure_secret_sql({}, secret_name="az")
 
 
+def test_azure_secret_sql_connection_string():
+    from dte.sources.loader import _build_azure_secret_sql
+    conn_str = (
+        "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+        "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/"
+        "K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+    )
+    sql = _build_azure_secret_sql({"connection_string": conn_str}, secret_name="az_local")
+    assert "TYPE azure" in sql
+    assert "CONNECTION_STRING" in sql
+    assert "ACCOUNT_NAME" not in sql
+
+
+def test_azure_secret_sql_connection_string_env_indirection(monkeypatch):
+    from dte.sources.loader import _build_azure_secret_sql
+    monkeypatch.setenv("AZURITE_CONN", "DefaultEndpointsProtocol=http;AccountName=x;")
+    sql = _build_azure_secret_sql(
+        {"connection_string": {"env": "AZURITE_CONN"}}, secret_name="az"
+    )
+    assert "CONNECTION_STRING 'DefaultEndpointsProtocol=http;AccountName=x;'" in sql
+
+
 def test_dispatch_registers_object_storage_types():
     from dte.sources.loader import LOADERS
     assert "s3" in LOADERS

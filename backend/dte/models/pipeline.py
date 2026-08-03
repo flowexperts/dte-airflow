@@ -46,17 +46,39 @@ from dlt.common.configuration.specs import (
     AwsCredentials as _DltAws,
 )
 from dlt.common.configuration.specs import (
-    AzureCredentials as _DltAzure,
-)
-from dlt.common.configuration.specs import (
     ConnectionStringCredentials as _DltConnStr,
 )
 
 
+class _AzureSpec:
+    """Local mini-spec for Azure Blob credentials.
+    Accepts `connection_string` (for Azurite / custom endpoints) OR the
+    standard dlt AzureCredentials fields (account_name + key/sas)."""
+    _fields = (
+        "azure_storage_account_name",
+        "azure_storage_account_key",
+        "azure_storage_sas_token",
+        "connection_string",
+    )
+
+    def __init__(self, **kw):
+        extra = set(kw) - set(self._fields)
+        if extra:
+            raise TypeError(f"unexpected azure credential keys: {sorted(extra)}")
+        for k in self._fields:
+            setattr(self, k, kw.get(k))
+        if not self.connection_string and not self.azure_storage_account_name:
+            raise TypeError(
+                "azure credentials require `connection_string` or "
+                "`azure_storage_account_name` + `azure_storage_account_key`/`azure_storage_sas_token`"
+            )
+
+
 class _GcsHmacSpec:
     """Local mini-spec: DuckDB / S3-compatible GCS uses HMAC keys, which
-    dlt's `GcpServiceAccountCredentials` (JSON-key auth) can't express."""
-    _fields = ("hmac_key_id", "hmac_secret")
+    dlt's `GcpServiceAccountCredentials` (JSON-key auth) can't express.
+    `endpoint_url` is optional — used for fake-gcs-server in local tests."""
+    _fields = ("hmac_key_id", "hmac_secret", "endpoint_url")
 
     def __init__(self, **kw):
         extra = set(kw) - set(self._fields)
@@ -86,7 +108,7 @@ _DLT_CRED_CLASS: dict[str, type | None] = {
     "local_fs": None,  # no creds
     "s3": _DltAws,
     "gcs": _GcsHmacSpec,
-    "azure": _DltAzure,
+    "azure": _AzureSpec,
     "postgres": _DltConnStr,
     "mysql": _DltConnStr,
     "sqlite": _DltConnStr,
