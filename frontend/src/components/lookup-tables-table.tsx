@@ -27,8 +27,8 @@ import { usePermissions } from "@/lib/use-permissions";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
 
-function emptyLookup(id: string): LookupTable {
-  return { id, name: null, mappings: {}, default: null };
+function emptyLookup(name: string): LookupTable {
+  return { id: "", name, mappings: {}, default: null };
 }
 
 function LookupEditorPanel({
@@ -53,7 +53,7 @@ function LookupEditorPanel({
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-accent">
-            {isNew ? "New lookup table" : `Editing ${draft.id}`}
+            {isNew ? "New lookup table" : `Editing ${draft.name ?? draft.id}`}
           </span>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
@@ -65,21 +65,16 @@ function LookupEditorPanel({
           </div>
         </div>
         {err && <div className="font-mono text-[11.5px] text-red">{err}</div>}
-        {isNew && (
-          <input
-            className="w-full bg-transparent border border-border rounded px-2 py-1 font-mono text-[12px]"
-            value={draft.id}
-            onChange={(e) => onChange({ ...draft, id: e.target.value })}
-            placeholder="lookup_id"
-          />
-        )}
-        <Field label="Name (optional)">
+        <Field label="Name" hint="editable; unique per workspace">
           <Input
             value={draft.name ?? ""}
             onChange={(e) => onChange({ ...draft, name: e.target.value || null })}
             placeholder="Country names"
           />
         </Field>
+        {!isNew && (
+          <div className="text-xs text-subtle font-mono">id: {draft.id}</div>
+        )}
         <Field label="Default" hint="value used when no match">
           <Input
             value={draft.default ?? ""}
@@ -112,7 +107,7 @@ export function LookupTablesTable() {
   const toast = useToast();
 
   const openNew = () => {
-    setEditing({ draft: emptyLookup(`lookup_${rows.length + 1}`), isNew: true });
+    setEditing({ draft: emptyLookup(`Lookup ${rows.length + 1}`), isNew: true });
     setErr(null);
   };
   const openEdit = (row: LookupTable) => {
@@ -125,6 +120,7 @@ export function LookupTablesTable() {
     setErr(null);
     try {
       if (editing.isNew) await createLookupTable(editing.draft);
+      // Server generates the id on create; refetch via SWR will re-populate.
       else await updateLookupTable(editing.draft.id, editing.draft);
       await mutate();
       setEditing(null);
@@ -185,16 +181,17 @@ export function LookupTablesTable() {
 
   const columns: Column<LookupTable>[] = [
     {
-      key: "id",
-      header: "ID",
-      width: "1.5fr",
-      render: (r) => <span className="font-mono text-[12px]">{r.id}</span>,
-    },
-    {
       key: "name",
       header: "Name",
       width: "1.5fr",
-      render: (r) => <span className="text-[12.5px]">{r.name ?? ""}</span>,
+      render: (r) => (
+        <div className="flex flex-col">
+          <span className="text-[13px]">{r.name ?? r.id}</span>
+          {r.name && r.name !== r.id ? (
+            <span className="font-mono text-[10.5px] text-subtle">{r.id}</span>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "entries",

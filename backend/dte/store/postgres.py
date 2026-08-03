@@ -424,7 +424,7 @@ class PostgresLookupTableStore:
     async def save(self, lookup: "LookupTableBase | LookupTable") -> None:
         values = {
             "id": lookup.id,
-            "name": lookup.name,
+            "name": lookup.name or lookup.id,
             "mappings": lookup.mappings,
             "default": lookup.default,
         }

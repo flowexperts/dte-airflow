@@ -392,19 +392,30 @@ class FakeLookupTableStore:
 
     async def save(self, lookup: "LookupTableBase | LookupTable | dict") -> None:
         if isinstance(lookup, dict):
+            lid = lookup["id"]
             row = LookupTable(
-                id=lookup["id"],
-                name=lookup.get("name"),
+                id=lid,
+                name=lookup.get("name") or lid,
                 mappings=lookup.get("mappings", {}),
                 default=lookup.get("default"),
+                tenant_id=lookup.get("tenant_id", "default"),
             )
         else:
             row = LookupTable(
                 id=lookup.id,
-                name=lookup.name,
+                name=lookup.name or lookup.id,
                 mappings=lookup.mappings,
                 default=lookup.default,
+                tenant_id=getattr(lookup, "tenant_id", "default"),
             )
+        # UNIQUE(tenant_id, name) — mirrors DB constraint from migration 023.
+        for other in self._data.values():
+            if other.id == row.id:
+                continue
+            if other.tenant_id == row.tenant_id and (other.name or other.id) == (row.name or row.id):
+                raise ValueError(
+                    f"Lookup table name '{row.name}' already exists for tenant '{row.tenant_id}'"
+                )
         existing = self._data.get(row.id)
         row.created_at = existing.created_at if existing else _utcnow()
         row.updated_at = _utcnow()
