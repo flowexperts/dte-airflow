@@ -501,19 +501,49 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                     </option>
                   ))}
                 </select>
-                <Input
-                  value={r.value}
-                  onChange={(e) => updateRule(i, { value: e.target.value })}
-                  placeholder={
-                    r.op === "IN"
-                      ? "a, b, c"
-                      : r.op === "BETWEEN"
-                        ? "min, max"
-                        : "value"
-                  }
-                  disabled={noValue}
-                  list={paramsListId}
-                />
+                {r.op === "BETWEEN" ? (
+                  (() => {
+                    // BETWEEN uses the same wire format as before ("lo, hi"),
+                    // but is edited as two independent inputs so users don't
+                    // have to remember the comma syntax.
+                    const [lo = "", hi = ""] = (r.value ?? "")
+                      .split(",")
+                      .map((s) => s.trim());
+                    const commit = (nlo: string, nhi: string) => {
+                      const parts = [nlo.trim(), nhi.trim()];
+                      updateRule(i, {
+                        value: parts.every((s) => s === "") ? "" : parts.join(", "),
+                      });
+                    };
+                    return (
+                      <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1">
+                        <Input
+                          value={lo}
+                          onChange={(e) => commit(e.target.value, hi)}
+                          placeholder="min"
+                          list={paramsListId}
+                        />
+                        <span className="text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+                          and
+                        </span>
+                        <Input
+                          value={hi}
+                          onChange={(e) => commit(lo, e.target.value)}
+                          placeholder="max"
+                          list={paramsListId}
+                        />
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <Input
+                    value={r.value}
+                    onChange={(e) => updateRule(i, { value: e.target.value })}
+                    placeholder={r.op === "IN" ? "a, b, c" : "value"}
+                    disabled={noValue}
+                    list={paramsListId}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => removeRule(i)}
