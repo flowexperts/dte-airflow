@@ -304,10 +304,12 @@ def _make_destination(d: "DestinationBase | Destination | dict") -> Destination:
     legacy test helpers that pre-date the typed store.
     """
     if isinstance(d, dict):
+        did = d["id"]
         config_raw = d.get("config", {})
         dest_type = config_raw.get("type", "") if isinstance(config_raw, dict) else ""
         row = Destination(
-            id=d["id"],
+            id=did,
+            name=d.get("name") or did,
             connection_id=d.get("connection_id", "local_fs"),
             config=config_raw,
             dest_type=dest_type,
@@ -323,6 +325,7 @@ def _make_destination(d: "DestinationBase | Destination | dict") -> Destination:
         dest_type = config_dict.get("type", "")
         row = Destination(
             id=d.id,
+            name=getattr(d, "name", None) or d.id,
             connection_id=d.connection_id,
             config=config_dict,
             dest_type=dest_type,
@@ -347,6 +350,14 @@ class FakeDestinationStore:
         dest_id = destination["id"] if isinstance(destination, dict) else destination.id
         existing = self._data.get(dest_id)
         row = _make_destination(destination)
+        # UNIQUE(tenant_id, name) — mirrors DB constraint from migration 022.
+        for other in self._data.values():
+            if other.id == row.id:
+                continue
+            if other.tenant_id == row.tenant_id and (other.name or other.id) == (row.name or row.id):
+                raise ValueError(
+                    f"Destination name '{row.name}' already exists for tenant '{row.tenant_id}'"
+                )
         row.created_at = existing.created_at if existing else _utcnow()
         row.updated_at = _utcnow()
         self._data[dest_id] = row

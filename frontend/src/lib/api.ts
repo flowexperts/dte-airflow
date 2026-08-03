@@ -176,7 +176,10 @@ export type OutputTarget =
   | { type: "sql_database"; dialect: "mysql" | "snowflake" | "bigquery"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" };
 
 export interface Destination {
+  /** Opaque, server-generated. Never edited after creation. */
   id: string;
+  /** Editable, unique per tenant. Defaults to `id` for historic rows. */
+  name?: string;
   connection_id: string;
   config: OutputTarget;
 }

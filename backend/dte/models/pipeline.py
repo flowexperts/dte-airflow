@@ -783,11 +783,22 @@ class DestinationBase(SQLModel):
     `connection_id` references a Connection row.
     `config` is declared as `dict` for SQLModel JSONB mapping, but is narrowed
     to the typed `OutputTarget` union by `_narrow_config` at validation time.
+
+    Identity: `id` is server-generated (UUID4 by default). `name` is the
+    editable, unique-per-tenant label; defaults to `id` when omitted so
+    historic callers keep working.
     """
-    id: str
+    id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
+    name: str | None = None
     connection_id: str
     config: dict = SMField(default_factory=dict, sa_column=Column(JSONB, nullable=False))
     tenant_id: str = "default"
+
+    @model_validator(mode="after")
+    def _default_name_to_id(self):
+        if not self.name:
+            self.name = self.id
+        return self
 
     @model_validator(mode="after")
     def _narrow_config(self) -> DestinationBase:
@@ -803,7 +814,7 @@ class DestinationBase(SQLModel):
         return self
 
     def to_api_dict(self) -> dict:
-        """Serialise for API responses: id + connection_id + config as plain dict."""
+        """Serialise for API responses: id + name + connection_id + config as plain dict."""
         cfg = self.config
         if hasattr(cfg, "model_dump"):
             cfg_dict = cfg.model_dump(by_alias=True, exclude_none=True)
@@ -811,6 +822,7 @@ class DestinationBase(SQLModel):
             cfg_dict = cfg  # already a plain dict (edge case)
         return {
             "id": self.id,
+            "name": self.name or self.id,
             "connection_id": self.connection_id,
             "config": cfg_dict,
         }
@@ -827,7 +839,12 @@ class Destination(DestinationBase, table=True):
     __tablename__ = "destinations"
 
     # Override id to declare it as the primary key.
-    id: str = SMField(primary_key=True)  # type: ignore[override]
+    id: str = SMField(  # type: ignore[override]
+        default_factory=lambda: str(_uuid.uuid4()), primary_key=True
+    )
+    name: str | None = SMField(  # type: ignore[override]
+        default=None, sa_column=Column(Text, nullable=False)
+    )
     config: dict = SMField(  # type: ignore[override]
         default_factory=dict, sa_column=Column(JSONB, nullable=False)
     )

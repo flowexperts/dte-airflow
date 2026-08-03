@@ -11,9 +11,10 @@ import {
 } from "@/lib/api";
 import { OutputPanel } from "./OutputPanel";
 
-function emptyDestination(id: string): Destination {
+function emptyDestination(name: string): Destination {
   return {
-    id,
+    id: "",
+    name,
     connection_id: "local_fs",
     config: { type: "json_file", path: "./out/result.json", fields: [] },
   };
@@ -55,8 +56,9 @@ export function DestinationPicker({
     setErr(null);
     try {
       if (editing.isNew) {
-        await createDestination(editing.draft);
-        onChange(editing.draft.id);
+        // Server generates the id — use the response, not the draft.
+        const created = await createDestination(editing.draft);
+        onChange(created.id);
       } else {
         await updateDestination(editing.draft.id, editing.draft);
       }
@@ -85,7 +87,7 @@ export function DestinationPicker({
               ...(available.length > 0 ? ([{ kind: "divider" }] as DropdownOption<string>[]) : []),
               ...available.map<DropdownOption<string>>((d) => ({
                 value: d.id,
-                label: d.id,
+                label: d.name ?? d.id,
                 meta:
                   "path" in d.config && d.config.path
                     ? d.config.path
@@ -113,7 +115,7 @@ export function DestinationPicker({
         <div className="border-t-2 border-accent bg-code-bg p-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-accent">
-              {editing.isNew ? "New destination" : `Editing ${editing.draft.id}`}
+              {editing.isNew ? "New destination" : `Editing ${editing.draft.name ?? editing.draft.id}`}
               {!editing.isNew && (
                 <span className="ml-2 text-subtle normal-case tracking-normal">
                   · shared with other pipelines
@@ -142,15 +144,16 @@ export function DestinationPicker({
           {err && (
             <div className="font-mono text-[11.5px] text-red">{err}</div>
           )}
-          {editing.isNew && (
-            <input
-              className="w-full bg-transparent border border-border rounded px-2 py-1 font-mono text-[12px]"
-              value={editing.draft.id}
-              onChange={(e) =>
-                setEditing({ ...editing, draft: { ...editing.draft, id: e.target.value } })
-              }
-              placeholder="destination_id"
-            />
+          <input
+            className="w-full bg-transparent border border-border rounded px-2 py-1 text-[13px]"
+            value={editing.draft.name ?? ""}
+            onChange={(e) =>
+              setEditing({ ...editing, draft: { ...editing.draft, name: e.target.value } })
+            }
+            placeholder="Name (editable, unique)"
+          />
+          {!editing.isNew && (
+            <div className="text-xs text-subtle font-mono">id: {editing.draft.id}</div>
           )}
           {isFileOutput(editing.draft.config) ? (
             <OutputPanel
