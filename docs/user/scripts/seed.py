@@ -31,12 +31,13 @@ DEMO_ORDERS = [
 ]
 
 CONNECTIONS = [
-    {"id": "docs_demo_local",    "connection_type": "local_fs", "credentials": {}},
+    {"id": "docs_demo_local", "name": "Local demo", "connection_type": "local_fs", "credentials": {}},
 ]
 
 SOURCES = [
     {
         "id": "docs_demo_orders",
+        "name": "Demo orders",
         "source_type": "filesystem",
         "connection_id": "docs_demo_local",
         "table": "docs_demo_orders",
@@ -47,6 +48,7 @@ SOURCES = [
 DESTINATIONS = [
     {
         "id": "docs_demo_orders_paid",
+        "name": "Demo paid orders",
         "connection_id": "docs_demo_local",
         "config": {"type": "json_file", "path": "/tmp/dte-samples/docs_demo_orders_paid.json"},
     },

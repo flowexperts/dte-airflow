@@ -33,10 +33,15 @@ const OUT_DIR = resolve(__dirname, "..", "assets", "landing");
 const OUT_FILE = "dte-demo.webm";
 const VIEWPORT = { width: 1440, height: 900 };
 
-const PIPE_ID = "demo_pipeline";
+// The demo pipeline is upserted below by its user-facing NAME (unique per
+// tenant). Its id is opaque and server-generated on first create; we resolve
+// name → id once at startup so subsequent /api/pipelines/<id>/... calls
+// point at the right row.
 const PIPE_NAME = "Customer revenue";
-const SOURCE_ID = "docs_demo_orders";
-const DEST_ID = "docs_demo_orders_paid";
+const SOURCE_ID = "docs_demo_orders";   // seeded by seed.py, id-stable
+const DEST_ID = "docs_demo_orders_paid"; // seeded by seed.py, id-stable
+
+let PIPE_ID = "";
 
 let TOKEN = "";
 // Playwright doesn't expose current mouse position; track it ourselves so
@@ -76,23 +81,40 @@ async function installAuth(ctx: BrowserContext) {
   }, TOKEN);
 }
 
+async function resolvePipelineIdByName(name: string): Promise<string> {
+  const r = await api(`/api/pipelines?limit=1000`);
+  if (!r.ok) return "";
+  const list = (await r.json()) as { id: string; name: string }[];
+  return list.find((p) => p.name === name)?.id ?? "";
+}
+
 async function resetPipeline() {
-  await api(`/api/pipelines/${PIPE_ID}`, { method: "DELETE" });
+  PIPE_ID = await resolvePipelineIdByName(PIPE_NAME);
+  if (PIPE_ID) {
+    await api(`/api/pipelines/${PIPE_ID}`, { method: "DELETE" });
+    PIPE_ID = "";
+  }
 }
 
 async function patchPipeline(steps: unknown[]) {
-  const body = {
-    id: PIPE_ID,
+  const body: Record<string, unknown> = {
     name: PIPE_NAME,
     sources: [SOURCE_ID],
     output_id: DEST_ID,
     steps,
   };
-  let r = await api(`/api/pipelines/${PIPE_ID}`, { method: "PUT", body: JSON.stringify(body) });
-  if (r.status === 404) {
-    r = await api(`/api/pipelines`, { method: "POST", body: JSON.stringify(body) });
+  if (PIPE_ID) {
+    // Update in place — id is opaque, path carries the server-side UUID.
+    body.id = PIPE_ID;
+    const r = await api(`/api/pipelines/${PIPE_ID}`, { method: "PUT", body: JSON.stringify(body) });
+    if (r.ok) return;
+    if (r.status !== 404) throw new Error(`patch pipeline: ${r.status} ${await r.text()}`);
+    PIPE_ID = "";
   }
+  // Create — server generates the id; capture it for subsequent calls.
+  const r = await api(`/api/pipelines`, { method: "POST", body: JSON.stringify(body) });
   if (!r.ok) throw new Error(`patch pipeline: ${r.status} ${await r.text()}`);
+  PIPE_ID = ((await r.json()) as { id: string }).id;
 }
 
 /* ── Injected cursor ─────────────────────────────────────────────── */
@@ -308,10 +330,9 @@ async function main() {
   await page.evaluate(CURSOR_SCRIPT);
   await hideCaption(page);
 
-  /* Scene 3 — type id + name */
+  /* Scene 3 — type name (id is server-generated) */
   await caption(page, "Give it a name.");
-  await typeInto(page, () => page.locator('input').first(), PIPE_ID); // id field is first
-  await typeInto(page, () => page.locator('input').nth(1), PIPE_NAME);
+  await typeInto(page, () => page.locator('input').first(), PIPE_NAME);
   await hideCaption(page);
 
   /* Scene 4 — pick source + destination.
