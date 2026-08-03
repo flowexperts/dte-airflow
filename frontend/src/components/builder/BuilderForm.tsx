@@ -190,7 +190,9 @@ export function BuilderForm({
       let destinationId = pipeline.id;
       if (mode === "create") {
         // Server generates the id — use the response, not the draft.
-        const created = await createPipeline(pipeline);
+        // Strip the placeholder empty id so the backend's default_factory fires.
+        const { id: _drop, ...body } = pipeline;
+        const created = await createPipeline(body as Pipeline);
         destinationId = created.id;
       } else {
         await updatePipeline(pipeline.id, pipeline);
