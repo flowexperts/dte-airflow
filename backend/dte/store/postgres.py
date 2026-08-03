@@ -297,10 +297,15 @@ class PostgresSourceStore:
 
     async def save(self, source: "SourceBase | Source") -> None:
         values = source.model_dump(exclude={"created_at", "updated_at"})
+        # Guarantee name is set — historic callers may pass a Source ORM
+        # instance whose validator never ran.
+        if not values.get("name"):
+            values["name"] = values["id"]
         stmt = pg_insert(Source).values(**values)
         stmt = stmt.on_conflict_do_update(
             index_elements=[Source.id],
             set_={
+                "name": stmt.excluded.name,
                 "source_type": stmt.excluded.source_type,
                 "config": stmt.excluded.config,
                 "table_name": stmt.excluded.table_name,

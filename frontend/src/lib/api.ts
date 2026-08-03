@@ -125,7 +125,10 @@ export function isPipelineGateError(detail: unknown): detail is PipelineGateErro
  *  the extension/glob guardrail. Only meaningful for filesystem-family
  *  source_types; null = auto-detect from extension. */
 export interface Source {
+  /** Opaque, server-generated. Never edited after creation. */
   id: string;
+  /** Editable, unique per tenant. Defaults to `id` for historic rows. */
+  name?: string;
   connection_id: string;
   source_type: string;
   config: Record<string, unknown>;

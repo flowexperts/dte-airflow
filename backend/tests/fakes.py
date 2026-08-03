@@ -216,8 +216,10 @@ def _make_source(s: "SourceBase | Source | dict") -> Source:
     legacy test helpers that pre-date the typed store.
     """
     if isinstance(s, dict):
+        sid = s["id"]
         return Source(
-            id=s["id"],
+            id=sid,
+            name=s.get("name") or sid,
             connection_id=s.get("connection_id", ""),
             source_type=s.get("source_type", ""),
             config=s.get("config", {}),
@@ -227,6 +229,7 @@ def _make_source(s: "SourceBase | Source | dict") -> Source:
         )
     return Source(
         id=s.id,
+        name=getattr(s, "name", None) or s.id,
         connection_id=s.connection_id,
         source_type=s.source_type,
         config=s.config,
@@ -258,6 +261,14 @@ class FakeSourceStore:
         source_id = source["id"] if isinstance(source, dict) else source.id
         existing = self._data.get(source_id)
         row = _make_source(source)
+        # UNIQUE(tenant_id, name) — mirrors DB constraint from migration 021.
+        for other in self._data.values():
+            if other.id == row.id:
+                continue
+            if other.tenant_id == row.tenant_id and (other.name or other.id) == (row.name or row.id):
+                raise ValueError(
+                    f"Source name '{row.name}' already exists for tenant '{row.tenant_id}'"
+                )
         row.created_at = existing.created_at if existing else _utcnow()
         row.updated_at = _utcnow()
         self._data[source_id] = row

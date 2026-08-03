@@ -31,12 +31,18 @@ export const SOURCE_CONNECTION_COMPAT: Record<SourceKind, ConnectionType[]> = {
   rest_api:     ["rest_api"],
 };
 
-export function emptySource(id = ""): Source {
+/**
+ * Empty template for a new source. The `id` is optional and only used as a
+ * suggested name when the caller wants to prefill the label ("source_2");
+ * on POST the server ignores an empty id and generates a UUID.
+ */
+export function emptySource(name = ""): Source {
   return {
-    id,
+    id: "",
+    name,
     connection_id: "",
     source_type: "filesystem",
     config: { bucket_url: "", file_glob: "*.json" },
-    table: id,
+    table: name,
   };
 }

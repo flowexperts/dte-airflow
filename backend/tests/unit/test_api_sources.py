@@ -153,6 +153,62 @@ def test_bulk_delete_sources_mixed(client):
     assert body["blocked"][0] == {"id": "s3", "referenced_by": ["p1"]}
 
 
+# ── Editable name + server-generated id ───────────────────────────────────
+def test_create_source_without_id_generates_uuid(client):
+    c, _s, _p = client
+    body = {
+        "name": "orders",
+        "connection_id": "local_fs",
+        "source_type": "filesystem",
+        "config": {"bucket_url": "/tmp"},
+        "table": "orders",
+    }
+    r = c.post("/api/sources", json=body)
+    assert r.status_code == 201, r.text
+    row = r.json()
+    assert "-" in row["id"] and len(row["id"]) >= 32
+    assert row["name"] == "orders"
+
+
+def test_source_duplicate_name_409(client):
+    c, _s, _p = client
+    body = {
+        "name": "orders",
+        "connection_id": "local_fs",
+        "source_type": "filesystem",
+        "config": {"bucket_url": "/tmp"},
+        "table": "orders",
+    }
+    r1 = c.post("/api/sources", json=body)
+    assert r1.status_code == 201
+    r2 = c.post("/api/sources", json=body)
+    assert r2.status_code == 409, r2.text
+
+
+def test_source_rename_by_stable_id(client):
+    """Regression: editing name via PUT /api/sources/<uuid> succeeds."""
+    c, _s, _p = client
+    r = c.post("/api/sources", json={
+        "name": "old_name",
+        "connection_id": "local_fs",
+        "source_type": "filesystem",
+        "config": {"bucket_url": "/tmp"},
+        "table": "orders",
+    })
+    assert r.status_code == 201
+    sid = r.json()["id"]
+    r2 = c.put(f"/api/sources/{sid}", json={
+        "id": sid,
+        "name": "new_name",
+        "connection_id": "local_fs",
+        "source_type": "filesystem",
+        "config": {"bucket_url": "/tmp"},
+        "table": "orders",
+    })
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["name"] == "new_name"
+
+
 def test_bulk_delete_sources_empty_422(client):
     c, *_ = client
     r = c.post("/api/sources/bulk-delete", json={"ids": []})

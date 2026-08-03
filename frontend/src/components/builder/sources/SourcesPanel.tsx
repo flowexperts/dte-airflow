@@ -52,8 +52,8 @@ export function SourcesPanel({
   const remove = (i: number) => onChange(sources.filter((_, j) => j !== i));
 
   const openNewAtSlot = (slot: number) => {
-    const nextId = `source_${slot + 1}`;
-    setEditing({ slot, draft: emptySource(nextId), isNew: true });
+    const suggestedName = `source_${slot + 1}`;
+    setEditing({ slot, draft: emptySource(suggestedName), isNew: true });
     setErr(null);
   };
   const openEdit = async (slot: number) => {
@@ -73,9 +73,10 @@ export function SourcesPanel({
     setErr(null);
     try {
       if (editing.isNew) {
-        await createSource(editing.draft);
+        // Server generates the id — use the response, not the draft.
+        const created = await createSource(editing.draft);
         const copy = [...sources];
-        copy[editing.slot] = editing.draft.id;
+        copy[editing.slot] = created.id;
         onChange(copy);
       } else {
         await updateSource(editing.draft.id, editing.draft);
@@ -106,7 +107,7 @@ export function SourcesPanel({
             const used = otherSelected.has(s.id);
             return {
               value: s.id,
-              label: s.id,
+              label: s.name ?? s.id,
               meta: used ? "Already added" : meta,
               disabled: used,
             };
@@ -195,7 +196,7 @@ export function SourcesPanel({
         <div className="border-t-2 border-accent bg-code-bg">
           <div className="px-4 py-2 flex items-center justify-between">
             <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-accent">
-              {editing.isNew ? "New source" : `Editing ${editing.draft.id}`}
+              {editing.isNew ? "New source" : `Editing ${editing.draft.name ?? editing.draft.id}`}
               {!editing.isNew && (
                 <span className="ml-2 text-subtle normal-case tracking-normal">
                   · shared with other pipelines

@@ -411,14 +411,25 @@ class SourceBase(SQLModel):
 
     `source_type` is the strict `SourceKind` Literal for API validation.
     `format` is the strict `_FileFormat | None` Literal.
+
+    Identity: `id` is server-generated (UUID4 by default). `name` is the
+    editable, unique-per-tenant label; defaults to `id` when omitted so
+    historic callers keep working.
     """
-    id: str
+    id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
+    name: str | None = None
     connection_id: str
     source_type: SourceKind  # strict Literal for API validation
     config: dict = SMField(default_factory=dict)
     table: str
     format: _FileFormat | None = None
     tenant_id: str = "default"
+
+    @model_validator(mode="after")
+    def _default_name_to_id(self):
+        if not self.name:
+            self.name = self.id
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -479,7 +490,12 @@ class Source(SourceBase, table=True):
     __tablename__ = "sources"
 
     # Override id to declare it as the primary key.
-    id: str = SMField(primary_key=True)  # type: ignore[override]
+    id: str = SMField(  # type: ignore[override]
+        default_factory=lambda: str(_uuid.uuid4()), primary_key=True
+    )
+    name: str | None = SMField(  # type: ignore[override]
+        default=None, sa_column=Column(Text, nullable=False)
+    )
     # Override: Literal → str for SQLAlchemy mapping.
     source_type: str = SMField(  # type: ignore[override]
         sa_column=Column(Text, nullable=False)

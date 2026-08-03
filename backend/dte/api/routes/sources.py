@@ -55,7 +55,10 @@ async def create_source(
     if await store.get(source.id):
         raise HTTPException(status_code=409, detail=f"Source '{source.id}' already exists")
     await _validate_connection(source, c_store)
-    await store.save(source)
+    try:
+        await store.save(source)
+    except ValueError as e:  # name collision
+        raise HTTPException(status_code=409, detail=str(e))
     return source.model_dump()
 
 
@@ -85,7 +88,10 @@ async def update_source(
     if not await store.get(source_id):
         raise HTTPException(status_code=404, detail="Source not found")
     await _validate_connection(source, c_store)
-    await store.save(source)
+    try:
+        await store.save(source)
+    except ValueError as e:  # name collision
+        raise HTTPException(status_code=409, detail=str(e))
     return source.model_dump()
 
 
