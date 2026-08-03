@@ -568,13 +568,14 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                     const hiType = /^\{\{[\w.]+\}\}$/.test(hi) ? "text" : inputType;
                     return (
                       <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1">
-                        <div className={dynVars.length > 0 ? "flex items-center gap-1" : ""}>
+                        <div className={dynVars.length > 0 ? "flex items-center gap-1 min-w-0" : "min-w-0"}>
                           <Input
                             type={loType}
                             value={lo}
                             onChange={(e) => commit(e.target.value, hi)}
                             placeholder="min"
                             list={paramsListId}
+                            className="min-w-0 flex-1"
                           />
                           {dynVars.length > 0 && (
                             <DynamicValueButton
@@ -587,13 +588,14 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                         <span className="text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
                           and
                         </span>
-                        <div className={dynVars.length > 0 ? "flex items-center gap-1" : ""}>
+                        <div className={dynVars.length > 0 ? "flex items-center gap-1 min-w-0" : "min-w-0"}>
                           <Input
                             type={hiType}
                             value={hi}
                             onChange={(e) => commit(lo, e.target.value)}
                             placeholder="max"
                             list={paramsListId}
+                            className="min-w-0 flex-1"
                           />
                           {dynVars.length > 0 && (
                             <DynamicValueButton
@@ -607,7 +609,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                     );
                   })()
                 ) : (
-                  <div className={dynVars.length > 0 && !noValue && r.op !== "IN" && r.op !== "LIKE" ? "flex items-center gap-1" : ""}>
+                  <div className={dynVars.length > 0 && !noValue && r.op !== "IN" && r.op !== "LIKE" ? "flex items-center gap-1 min-w-0" : "min-w-0"}>
                     <Input
                       type={
                         /^\{\{[\w.]+\}\}$/.test(r.value) || r.op === "IN" || r.op === "LIKE"
@@ -619,6 +621,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                       placeholder={r.op === "IN" ? "a, b, c" : "value"}
                       disabled={noValue}
                       list={paramsListId}
+                      className="min-w-0 flex-1"
                     />
                     {dynVars.length > 0 && !noValue && r.op !== "IN" && r.op !== "LIKE" && (
                       <DynamicValueButton
