@@ -141,6 +141,18 @@ function safeLiteral(v: string): string {
   return quoteString(trimmed);
 }
 
+/** Map a schema-reported column type (ibis/DuckDB) to a native <input>
+ *  type so date/timestamp filter cells get a picker. Types we don't
+ *  recognise fall back to "text" — safe for numerics + strings, which the
+ *  server coerces anyway. */
+function fieldInputType(colType: string | undefined): "text" | "date" | "datetime-local" {
+  if (!colType) return "text";
+  const t = colType.toLowerCase();
+  if (t.startsWith("date") && !t.startsWith("datetime")) return "date";
+  if (t.startsWith("timestamp") || t.startsWith("datetime")) return "datetime-local";
+  return "text";
+}
+
 function ruleToSql(r: FilterRule): string {
   if (!r.field) return "";
   const f = quoteIdent(r.field);
@@ -464,6 +476,10 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
           )}
           {rules.map((r, i) => {
             const noValue = OPS_WITHOUT_VALUE.has(r.op);
+            // Look up the selected field's declared type so date/timestamp
+            // columns get a native picker instead of a plain text input.
+            const fieldMeta = allFields.find((f) => f.name === r.field);
+            const inputType = fieldInputType(fieldMeta?.type);
             return (
               <div
                 key={i}
@@ -503,9 +519,6 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                 </select>
                 {r.op === "BETWEEN" ? (
                   (() => {
-                    // BETWEEN uses the same wire format as before ("lo, hi"),
-                    // but is edited as two independent inputs so users don't
-                    // have to remember the comma syntax.
                     const [lo = "", hi = ""] = (r.value ?? "")
                       .split(",")
                       .map((s) => s.trim());
@@ -515,9 +528,15 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                         value: parts.every((s) => s === "") ? "" : parts.join(", "),
                       });
                     };
+                    // Native date/datetime-local inputs can't hold a
+                    // {{sentinel}} — fall back to text when the user has
+                    // typed one.
+                    const loType = /^\{\{[\w.]+\}\}$/.test(lo) ? "text" : inputType;
+                    const hiType = /^\{\{[\w.]+\}\}$/.test(hi) ? "text" : inputType;
                     return (
                       <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1">
                         <Input
+                          type={loType}
                           value={lo}
                           onChange={(e) => commit(e.target.value, hi)}
                           placeholder="min"
@@ -527,6 +546,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                           and
                         </span>
                         <Input
+                          type={hiType}
                           value={hi}
                           onChange={(e) => commit(lo, e.target.value)}
                           placeholder="max"
@@ -537,6 +557,11 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                   })()
                 ) : (
                   <Input
+                    type={
+                      /^\{\{[\w.]+\}\}$/.test(r.value) || r.op === "IN" || r.op === "LIKE"
+                        ? "text"
+                        : inputType
+                    }
                     value={r.value}
                     onChange={(e) => updateRule(i, { value: e.target.value })}
                     placeholder={r.op === "IN" ? "a, b, c" : "value"}
