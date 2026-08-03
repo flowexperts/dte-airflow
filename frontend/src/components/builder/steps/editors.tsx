@@ -34,21 +34,28 @@ import { SYSTEM_VARS, type SystemVar } from "@/lib/system-vars";
 function DynamicValueMenu({
   vars,
   onPick,
+  widthRef,
 }: {
   vars: readonly SystemVar[];
   onPick: (token: string) => void;
+  /** Element whose width the popover should match — typically the input
+   *  wrapper. Falls back to the trigger's width if the ref is empty. */
+  widthRef?: React.RefObject<HTMLElement | null>;
 }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     if (!open) return;
     const compute = () => {
-      const r = triggerRef.current?.getBoundingClientRect();
-      if (!r) return;
-      setPos({ left: r.right - 180, top: r.bottom + 4 });
+      const anchor = widthRef?.current ?? triggerRef.current;
+      const trigger = triggerRef.current;
+      if (!anchor || !trigger) return;
+      const ar = anchor.getBoundingClientRect();
+      const tr = trigger.getBoundingClientRect();
+      setPos({ left: ar.left, top: tr.bottom + 4, width: ar.width });
     };
     compute();
     window.addEventListener("scroll", compute, true);
@@ -57,7 +64,7 @@ function DynamicValueMenu({
       window.removeEventListener("scroll", compute, true);
       window.removeEventListener("resize", compute);
     };
-  }, [open]);
+  }, [open, widthRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,7 +100,7 @@ function DynamicValueMenu({
               position: "fixed",
               left: pos.left,
               top: pos.top,
-              width: 180,
+              width: pos.width,
               zIndex: 1000,
             }}
             className="max-h-72 overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg py-1"
@@ -121,6 +128,99 @@ function DynamicValueMenu({
           document.body,
         )}
     </>
+  );
+}
+
+/** Filter value cell wrapping <Input> + λ dynamic-value menu + a
+ *  calendar-reset button that appears when the value is a `{{sentinel}}`.
+ *  Consolidates the three overlay sites in the Basic filter row. */
+function DateValueField({
+  value,
+  onChange,
+  baseType,
+  dynVars,
+  placeholder,
+  disabled,
+  list,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  /** Native input type when the value is *not* a sentinel. */
+  baseType: "text" | "date" | "datetime-local";
+  dynVars: readonly SystemVar[];
+  placeholder?: string;
+  disabled?: boolean;
+  list?: string;
+}) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const isSentinel = /^\{\{[\w.]+\}\}$/.test(value);
+  const effectiveType = isSentinel ? "text" : baseType;
+  const isDatey = baseType === "date" || baseType === "datetime-local";
+  // Reserve room on the right for the overlays. When a sentinel is set the
+  // native calendar is gone, so we render our own — needs its own slot too.
+  const padRight =
+    dynVars.length === 0
+      ? undefined
+      : isSentinel
+        ? "pr-14"
+        : isDatey
+          ? "pr-14"
+          : "pr-7";
+  return (
+    <div ref={wrapperRef} className="relative min-w-0">
+      <Input
+        type={effectiveType}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        list={list}
+        disabled={disabled}
+        className={cn("min-w-0 w-full", padRight)}
+      />
+      {dynVars.length > 0 && (
+        <div
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 flex items-center gap-1",
+            // When a sentinel is showing, we're in text mode and can hug
+            // the right edge. Otherwise leave room for the browser icon.
+            isSentinel ? "right-1.5" : isDatey ? "right-7" : "right-1.5",
+          )}
+        >
+          {isSentinel && <CalendarResetButton onClear={() => onChange("")} />}
+          <DynamicValueMenu
+            vars={dynVars}
+            onPick={onChange}
+            widthRef={wrapperRef}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Small calendar-shaped button rendered when the field holds a `{{sentinel}}`
+ *  (native date input can't display it, so the browser's calendar icon is
+ *  gone). Clicking clears the value, which lets the input flip back to
+ *  date/datetime-local and the browser's own picker reappears. */
+function CalendarResetButton({ onClear }: { onClear: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClear();
+      }}
+      aria-label="Back to date picker"
+      title="Back to date picker"
+      className="h-5 w-5 flex items-center justify-center rounded text-subtle hover:text-accent hover:bg-[color:var(--accent-tint)] transition-colors"
+    >
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden>
+        <rect x="2" y="3" width="12" height="11" rx="1.5"
+          fill="none" stroke="currentColor" strokeWidth="1.3" />
+        <path d="M2 6h12M5 2v3M11 2v3"
+          fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    </button>
   );
 }
 
@@ -644,119 +744,44 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                         value: parts.every((s) => s === "") ? "" : parts.join(", "),
                       });
                     };
-                    const loType = /^\{\{[\w.]+\}\}$/.test(lo) ? "text" : inputType;
-                    const hiType = /^\{\{[\w.]+\}\}$/.test(hi) ? "text" : inputType;
                     return (
                       <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1">
-                        <div className="relative min-w-0">
-                          <Input
-                            type={loType}
-                            value={lo}
-                            onChange={(e) => commit(e.target.value, hi)}
-                            placeholder="min"
-                            list={paramsListId}
-                            className={cn(
-                              "min-w-0 w-full",
-                              dynVars.length > 0 &&
-                                (loType === "date" || loType === "datetime-local"
-                                  ? "pr-14"
-                                  : "pr-7"),
-                            )}
-                          />
-                          {dynVars.length > 0 && (
-                            <div
-                              className={cn(
-                                "absolute top-1/2 -translate-y-1/2",
-                                loType === "date" || loType === "datetime-local"
-                                  ? "right-7"
-                                  : "right-1.5",
-                              )}
-                            >
-                              <DynamicValueMenu
-                                vars={dynVars}
-                                onPick={(tok) => commit(tok, hi)}
-                              />
-                            </div>
-                          )}
-                        </div>
+                        <DateValueField
+                          value={lo}
+                          onChange={(v) => commit(v, hi)}
+                          baseType={inputType}
+                          dynVars={dynVars}
+                          placeholder="min"
+                          list={paramsListId}
+                        />
                         <span className="text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
                           and
                         </span>
-                        <div className="relative min-w-0">
-                          <Input
-                            type={hiType}
-                            value={hi}
-                            onChange={(e) => commit(lo, e.target.value)}
-                            placeholder="max"
-                            list={paramsListId}
-                            className={cn(
-                              "min-w-0 w-full",
-                              dynVars.length > 0 &&
-                                (hiType === "date" || hiType === "datetime-local"
-                                  ? "pr-14"
-                                  : "pr-7"),
-                            )}
-                          />
-                          {dynVars.length > 0 && (
-                            <div
-                              className={cn(
-                                "absolute top-1/2 -translate-y-1/2",
-                                hiType === "date" || hiType === "datetime-local"
-                                  ? "right-7"
-                                  : "right-1.5",
-                              )}
-                            >
-                              <DynamicValueMenu
-                                vars={dynVars}
-                                onPick={(tok) => commit(lo, tok)}
-                              />
-                            </div>
-                          )}
-                        </div>
+                        <DateValueField
+                          value={hi}
+                          onChange={(v) => commit(lo, v)}
+                          baseType={inputType}
+                          dynVars={dynVars}
+                          placeholder="max"
+                          list={paramsListId}
+                        />
                       </div>
                     );
                   })()
                 ) : (
                   (() => {
-                    const isSentinel = /^\{\{[\w.]+\}\}$/.test(r.value);
-                    const useNativePicker =
-                      !isSentinel && r.op !== "IN" && r.op !== "LIKE" && !noValue;
-                    const boxType = useNativePicker ? inputType : "text";
-                    const showDyn =
-                      dynVars.length > 0 && !noValue && r.op !== "IN" && r.op !== "LIKE";
+                    // IN / LIKE keep text semantics; disable pickers there.
+                    const suppressed = r.op === "IN" || r.op === "LIKE" || noValue;
                     return (
-                      <div className="relative min-w-0">
-                        <Input
-                          type={boxType}
-                          value={r.value}
-                          onChange={(e) => updateRule(i, { value: e.target.value })}
-                          placeholder={r.op === "IN" ? "a, b, c" : "value"}
-                          disabled={noValue}
-                          list={paramsListId}
-                          className={cn(
-                            "min-w-0 w-full",
-                            showDyn &&
-                              (boxType === "date" || boxType === "datetime-local"
-                                ? "pr-14"
-                                : "pr-7"),
-                          )}
-                        />
-                        {showDyn && (
-                          <div
-                            className={cn(
-                              "absolute top-1/2 -translate-y-1/2",
-                              boxType === "date" || boxType === "datetime-local"
-                                ? "right-7"
-                                : "right-1.5",
-                            )}
-                          >
-                            <DynamicValueMenu
-                              vars={dynVars}
-                              onPick={(tok) => updateRule(i, { value: tok })}
-                            />
-                          </div>
-                        )}
-                      </div>
+                      <DateValueField
+                        value={r.value}
+                        onChange={(v) => updateRule(i, { value: v })}
+                        baseType={suppressed ? "text" : inputType}
+                        dynVars={suppressed ? [] : dynVars}
+                        placeholder={r.op === "IN" ? "a, b, c" : "value"}
+                        disabled={noValue}
+                        list={paramsListId}
+                      />
                     );
                   })()
                 )}
