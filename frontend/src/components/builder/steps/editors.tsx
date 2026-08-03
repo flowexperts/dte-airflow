@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import {
+  Dropdown,
   Field,
   FieldPicker,
   FieldMultiSelect,
@@ -15,7 +16,33 @@ import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { StepShape, GroupByEntry, DatePart } from "./types";
 import { LookupTablePicker } from "../LookupTablePicker";
-import { SYSTEM_VARS } from "@/lib/system-vars";
+import { SYSTEM_VARS, type SystemVar } from "@/lib/system-vars";
+
+/** Compact λ-labelled dropdown that writes a `{{sysvar}}` sentinel into a
+ *  filter value cell. Rendered alongside date/timestamp inputs where the
+ *  native picker can't hold a sentinel string. */
+function DynamicValueButton({
+  vars,
+  onPick,
+  className,
+}: {
+  vars: readonly SystemVar[];
+  onPick: (token: string) => void;
+  className?: string;
+}) {
+  const props: React.ComponentProps<typeof Dropdown<SystemVar>> = {
+    value: "",
+    onChange: (v) => onPick(`{{${v}}}`),
+    placeholder: "λ",
+    options: vars.map((v) => ({
+      value: v,
+      label: <span className="font-mono">{`{{${v}}}`}</span>,
+      meta: "dynamic",
+    })),
+  };
+  if (className) props.className = className;
+  return <Dropdown<SystemVar> {...props} />;
+}
 
 type Setter = (patch: Partial<StepShape>) => void;
 
@@ -480,6 +507,15 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
             // columns get a native picker instead of a plain text input.
             const fieldMeta = allFields.find((f) => f.name === r.field);
             const inputType = fieldInputType(fieldMeta?.type);
+            // Native date/datetime pickers can't hold a {{sentinel}}, so we
+            // surface a compact λ dropdown beside them. Filter the sysvars
+            // to the shapes that will coerce cleanly.
+            const dynVars =
+              inputType === "date"
+                ? SYSTEM_VARS.filter((v) => v !== "now")
+                : inputType === "datetime-local"
+                  ? SYSTEM_VARS
+                  : [];
             return (
               <div
                 key={i}
@@ -528,46 +564,70 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                         value: parts.every((s) => s === "") ? "" : parts.join(", "),
                       });
                     };
-                    // Native date/datetime-local inputs can't hold a
-                    // {{sentinel}} — fall back to text when the user has
-                    // typed one.
                     const loType = /^\{\{[\w.]+\}\}$/.test(lo) ? "text" : inputType;
                     const hiType = /^\{\{[\w.]+\}\}$/.test(hi) ? "text" : inputType;
                     return (
                       <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1">
-                        <Input
-                          type={loType}
-                          value={lo}
-                          onChange={(e) => commit(e.target.value, hi)}
-                          placeholder="min"
-                          list={paramsListId}
-                        />
+                        <div className={dynVars.length > 0 ? "flex items-center gap-1" : ""}>
+                          <Input
+                            type={loType}
+                            value={lo}
+                            onChange={(e) => commit(e.target.value, hi)}
+                            placeholder="min"
+                            list={paramsListId}
+                          />
+                          {dynVars.length > 0 && (
+                            <DynamicValueButton
+                              vars={dynVars}
+                              onPick={(tok) => commit(tok, hi)}
+                              className="w-10 shrink-0"
+                            />
+                          )}
+                        </div>
                         <span className="text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
                           and
                         </span>
-                        <Input
-                          type={hiType}
-                          value={hi}
-                          onChange={(e) => commit(lo, e.target.value)}
-                          placeholder="max"
-                          list={paramsListId}
-                        />
+                        <div className={dynVars.length > 0 ? "flex items-center gap-1" : ""}>
+                          <Input
+                            type={hiType}
+                            value={hi}
+                            onChange={(e) => commit(lo, e.target.value)}
+                            placeholder="max"
+                            list={paramsListId}
+                          />
+                          {dynVars.length > 0 && (
+                            <DynamicValueButton
+                              vars={dynVars}
+                              onPick={(tok) => commit(lo, tok)}
+                              className="w-10 shrink-0"
+                            />
+                          )}
+                        </div>
                       </div>
                     );
                   })()
                 ) : (
-                  <Input
-                    type={
-                      /^\{\{[\w.]+\}\}$/.test(r.value) || r.op === "IN" || r.op === "LIKE"
-                        ? "text"
-                        : inputType
-                    }
-                    value={r.value}
-                    onChange={(e) => updateRule(i, { value: e.target.value })}
-                    placeholder={r.op === "IN" ? "a, b, c" : "value"}
-                    disabled={noValue}
-                    list={paramsListId}
-                  />
+                  <div className={dynVars.length > 0 && !noValue && r.op !== "IN" && r.op !== "LIKE" ? "flex items-center gap-1" : ""}>
+                    <Input
+                      type={
+                        /^\{\{[\w.]+\}\}$/.test(r.value) || r.op === "IN" || r.op === "LIKE"
+                          ? "text"
+                          : inputType
+                      }
+                      value={r.value}
+                      onChange={(e) => updateRule(i, { value: e.target.value })}
+                      placeholder={r.op === "IN" ? "a, b, c" : "value"}
+                      disabled={noValue}
+                      list={paramsListId}
+                    />
+                    {dynVars.length > 0 && !noValue && r.op !== "IN" && r.op !== "LIKE" && (
+                      <DynamicValueButton
+                        vars={dynVars}
+                        onPick={(tok) => updateRule(i, { value: tok })}
+                        className="w-10 shrink-0"
+                      />
+                    )}
+                  </div>
                 )}
                 <button
                   type="button"
