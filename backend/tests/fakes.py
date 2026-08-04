@@ -77,10 +77,12 @@ _TERMINAL_STATUSES = frozenset({
 
 
 def _quality_summary(results: list) -> dict:
-    """Compute {passed, failed, warned} counts from a list of QualityResult."""
-    passed = sum(1 for r in results if r.passed)
-    warned = sum(1 for r in results if not r.passed and r.severity == "warn")
-    failed = sum(1 for r in results if not r.passed and r.severity == "fail")
+    """Compute {passed, failed, warned} counts from QualityResult objects or dicts."""
+    def _get(r, key):
+        return r[key] if isinstance(r, dict) else getattr(r, key)
+    passed = sum(1 for r in results if _get(r, "passed"))
+    warned = sum(1 for r in results if not _get(r, "passed") and _get(r, "severity") == "warn")
+    failed = sum(1 for r in results if not _get(r, "passed") and _get(r, "severity") == "fail")
     return {"passed": passed, "failed": failed, "warned": warned}
 
 

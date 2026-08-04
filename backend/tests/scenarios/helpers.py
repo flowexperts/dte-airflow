@@ -62,15 +62,19 @@ async def create_destination(
 
 async def create_pipeline(
     client, *, id: str, name: str | None = None,
-    sources: list[str], steps: list[dict], output_id: str,
+    sources: list[str], steps: list[dict], output_id: str | None = None,
+    pipeline_type: str = "transform", **extra,
 ) -> dict:
-    payload = {
+    payload: dict[str, Any] = {
         "id": id,
         "name": name or id,
         "sources": sources,
         "steps": steps,
-        "output_id": output_id,
+        "pipeline_type": pipeline_type,
+        **extra,
     }
+    if output_id is not None:
+        payload["output_id"] = output_id
     r = await client.post("/api/pipelines", json=payload)
     assert r.status_code in (200, 201), f"create_pipeline failed: {r.status_code} {r.text}"
     return r.json()
@@ -99,7 +103,7 @@ async def trigger_and_wait(client, pipeline_id: str, timeout: float = 15.0) -> d
         r = await client.get(f"/api/runs/{run_id}")
         assert r.status_code == 200, r.text
         run = r.json()
-        if run["status"] in ("completed", "failed"):
+        if run["status"] in ("completed", "failed", "failed_quality", "completed_with_warnings"):
             return run
         await asyncio.sleep(0.05)
     raise AssertionError(f"run {run_id} did not finish within {timeout}s (last: {run})")
