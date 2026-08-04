@@ -179,7 +179,7 @@ async def _validate_engine_compat(
         src_types.append((sid, conn.connection_type))
 
     is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
-    dest_conn_type: str | None = None
+    dest_tuple: tuple[str, str] | None = None
     if not is_quality:
         destination = await d_store.get(pipeline.output_id)
         if not destination:
@@ -190,7 +190,7 @@ async def _validate_engine_compat(
                 status_code=422,
                 detail=f"Destination '{destination.id}' references missing connection '{destination.connection_id}'",
             )
-        dest_conn_type = dest_conn.connection_type
+        dest_tuple = (destination.id, dest_conn.connection_type)
 
     engine_choice = getattr(pipeline, "engine", None) or "auto"
     resolved = resolve_pipeline_engine(engine_choice, [ct for _, ct in src_types])
@@ -213,7 +213,7 @@ async def _validate_engine_compat(
         validate_pipeline_engine_compat(
             engine=resolved,
             sources=src_types,  # type: ignore[arg-type]
-            destination=(destination.id, dest_conn_type) if not is_quality else None,
+            destination=dest_tuple,
         )
     except EngineIncompatible as e:
         raise HTTPException(status_code=422, detail=e.payload()) from e

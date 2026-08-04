@@ -1355,7 +1355,7 @@ class EngineIncompatible(Exception):
 def validate_pipeline_engine_compat(
     engine: str,
     sources: list[tuple[str, ConnectionType]],
-    destination: tuple[str, ConnectionType],
+    destination: tuple[str, ConnectionType] | None,
 ) -> None:
     """Raise :class:`EngineIncompatible` if ``engine`` can't read every
     source or write to the destination.
@@ -1386,17 +1386,18 @@ def validate_pipeline_engine_compat(
         if ctype not in reads
     ]
 
-    dest_id, dest_ctype = destination
     bad_dest = None
-    if dest_ctype not in writes:
-        bad_dest = {
-            "destination_id": dest_id,
-            "connection_type": dest_ctype,
-            "reason": (
-                f"{engine!r} engine cannot write to {dest_ctype!r} destinations. "
-                f"Supported: {sorted(writes)}."
-            ),
-        }
+    if destination is not None:
+        dest_id, dest_ctype = destination
+        if dest_ctype not in writes:
+            bad_dest = {
+                "destination_id": dest_id,
+                "connection_type": dest_ctype,
+                "reason": (
+                    f"{engine!r} engine cannot write to {dest_ctype!r} destinations. "
+                    f"Supported: {sorted(writes)}."
+                ),
+            }
 
     if bad_sources or bad_dest:
         raise EngineIncompatible(
