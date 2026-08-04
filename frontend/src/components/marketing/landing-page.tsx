@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CalEmbed } from "./cal-embed";
+import { DemoPlayer } from "./demo-player";
 import "./landing.css";
 
 type PillState = "pending" | "running" | "ok";
@@ -176,18 +177,7 @@ export function LandingPage() {
             </div>
           </div>
           <div className="demo-frame">
-            <video
-              className="demo-video"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              poster="/marketing/dte-demo-poster.png"
-            >
-              <source src="/marketing/dte-demo.mp4" type="video/mp4" />
-              <source src="/marketing/dte-demo.webm" type="video/webm" />
-            </video>
+            <DemoPlayer />
           </div>
         </div>
       </section>

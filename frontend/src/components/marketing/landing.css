@@ -675,17 +675,124 @@
   margin-left: auto;
   margin-right: auto;
 }
-.mkt-root .demo-video {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 10px;
-  background: #0a0a0a;
-}
 @media (max-width: 720px) {
   .mkt-root .demo { padding: 48px 0 32px; }
   .mkt-root .demo-frame { border-radius: 10px; padding: 3px; }
 }
+
+/* Custom video player */
+.dplayer {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0a0a0a;
+  cursor: pointer;
+  display: block;
+}
+
+.dplayer-video {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+
+.dplayer-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 28px 14px 12px;
+  background: linear-gradient(to top, rgba(0,0,0,0.72) 0%, transparent 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+
+.dplayer-controls.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* progress bar */
+.dplayer-bar-track {
+  position: relative;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.dplayer-bar-track::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  background: rgba(255,255,255,0.18);
+  border-radius: 999px;
+}
+
+.dplayer-bar-fill {
+  position: absolute;
+  left: 0;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.dplayer-bar-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+  pointer-events: none;
+  transition: transform 100ms ease;
+}
+
+.dplayer-bar-track:hover .dplayer-bar-thumb {
+  transform: translate(-50%, -50%) scale(1.25);
+}
+
+/* bottom row */
+.dplayer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dplayer-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.dplayer-btn:hover { opacity: 1; transform: scale(1.1); }
+.dplayer-btn:active { transform: scale(0.95); }
+
+.dplayer-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(255,255,255,0.7);
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.dplayer-fs { margin-left: auto; }
 
 /* --- Steps (#steps) --- */
 .mkt-root .steps-section { padding: clamp(72px, 10vh, 128px) 0; }
