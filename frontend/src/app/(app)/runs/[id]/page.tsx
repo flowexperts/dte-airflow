@@ -141,7 +141,7 @@ function QualityRunBody({
         )
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_268px] gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_268px] xl:grid-cols-[1fr_320px] gap-5 items-start">
         {results.length > 0 ? (
           <QualityPanel results={results} totalRows={null} failedCount={bad} />
         ) : (
@@ -361,7 +361,7 @@ export default function RunDetail({ params }: { params: Params }) {
       />
 
       <div className="px-14 py-8">
-        <div className="max-w-[1080px] space-y-5">
+        <div className="space-y-5">
           {error ? (
             <div className="p-4 border border-red rounded-[var(--radius)] bg-code-bg text-red font-mono text-sm">
               Run not found or backend unreachable: {String(error)}
