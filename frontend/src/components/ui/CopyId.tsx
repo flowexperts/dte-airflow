@@ -13,7 +13,7 @@ export function CopyId({ id, shorten }: { id: string; shorten?: boolean }) {
   };
 
   return (
-    <span className="flex items-center gap-1 min-w-0">
+    <span className="flex items-center gap-1 min-w-0 pr-4">
       <span className="font-mono text-[11.5px] text-subtle truncate">
         {shorten ? id.slice(0, 8) + "…" : id}
       </span>
