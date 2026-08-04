@@ -28,8 +28,30 @@ services:
       start_period: 3s
 
   fake-gcs:
-    image: fsouza/fake-gcs-server:latest
-    command: -scheme http -port 4443 -public-host localhost
+    # Locally built from fsouza/fake-gcs-server PR #2092 ("Support XML API"),
+    # which is unmerged and therefore in no published tag. Stock images only
+    # implement the JSON upload API, but DuckDB writes via the S3-compatible
+    # XML PUT -- so `COPY ... TO 'gcs://...'` fails 400 "invalid uploadType"
+    # against them. Reads work on any image; only writes need this build.
+    #
+    #   git clone -b support-xml-api-fixed \
+    #     https://github.com/LarsAlmgren/fake-gcs-server.git
+    #   cd fake-gcs-server && docker build -t fake-gcs-server:xml-pr2092 .
+    #
+    # Swap back to `fsouza/fake-gcs-server:latest` once #2092 lands upstream.
+    image: fake-gcs-server:xml-pr2092
+    # `publicHostMatcher` demands exact hostname equality (port stripped), so
+    # this must match the ENDPOINT clients use -- a mismatch 404s the XML API
+    # while the JSON API keeps working, which looks nothing like a config bug.
+    #
+    # `localhost` serves host-run tooling but is unreachable under that name
+    # from another container. To drive the emulator from the Docker backend
+    # too, set both of these to this machine's LAN IP, which resolves on the
+    # host and is reachable from containers:
+    #
+    #   export FAKE_GCS_PUBLIC_HOST=$(ipconfig getifaddr en0)     # macOS
+    #   export FAKE_GCS_ENDPOINT="http://$FAKE_GCS_PUBLIC_HOST:4443"
+    command: -scheme http -port 4443 -public-host ${FAKE_GCS_PUBLIC_HOST:-localhost}
     ports:
       - "4443:4443"
     healthcheck:
