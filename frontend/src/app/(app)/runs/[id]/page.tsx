@@ -325,8 +325,15 @@ export default function RunDetail({ params }: { params: Params }) {
 
             {(() => {
               const sq = data.sql_query;
+              const isQualityRun = pipeline?.pipeline_type === "quality";
+              // Transform runs get one SQL block per step (each transform op is captured
+              // individually); showing all of them is noise when there's a single final
+              // compiled query. Quality runs have no final_sql — one block per check is
+              // the actual content, so show it per-row there.
               const sqlByIndex = new Map<number, string>(
-                sq?.step_sqls ? Object.entries(sq.step_sqls).map(([k, v]) => [Number(k), v]) : [],
+                isQualityRun && sq?.step_sqls
+                  ? Object.entries(sq.step_sqls).map(([k, v]) => [Number(k), v])
+                  : [],
               );
               const stepIndices = new Set<number>(events.map((e) => e.step_index));
               sqlByIndex.forEach((_, idx) => stepIndices.add(idx));
