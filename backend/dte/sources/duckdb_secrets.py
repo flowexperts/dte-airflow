@@ -42,13 +42,17 @@ _INSTALLED_EXTS: set[str] = set()
 
 
 def _ensure_home_directory(raw_con) -> None:
-    """Point DuckDB at a writable home before installing extensions.
+    """Point DuckDB at a writable home before touching extensions.
 
     DuckDB caches downloaded extensions under `$HOME/.duckdb`. Container
     images commonly run as a user whose home was never created, so `INSTALL`
     dies with "Can't find the home directory at '/home/<user>'" — which would
     take out every s3/gcs/azure read and write. Fall back to a temp dir when
     the configured home is missing or read-only. `DTE_DUCKDB_HOME` overrides.
+
+    This is per *connection*, not per extension: `LOAD` reads the same cache
+    `INSTALL` writes, and connections are created per request while
+    `_INSTALLED_EXTS` lives for the whole process.
     """
     home = os.environ.get("DTE_DUCKDB_HOME") or os.environ.get("HOME") or ""
     if home and os.path.isdir(home) and os.access(home, os.W_OK):
@@ -60,8 +64,8 @@ def _ensure_home_directory(raw_con) -> None:
 
 def _ensure_ext(raw_con, name: str) -> None:
     """Idempotently INSTALL + LOAD a DuckDB extension in this process."""
+    _ensure_home_directory(raw_con)
     if name not in _INSTALLED_EXTS:
-        _ensure_home_directory(raw_con)
         raw_con.execute(f"INSTALL {name}")
         _INSTALLED_EXTS.add(name)
     raw_con.execute(f"LOAD {name}")

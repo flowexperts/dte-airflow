@@ -218,6 +218,30 @@ def test_extension_install_survives_missing_home(monkeypatch, tmp_path, sample_t
     assert out.exists()
 
 
+def test_missing_home_survives_a_second_connection(monkeypatch, tmp_path, sample_table):
+    """`_INSTALLED_EXTS` is process-global; the connection is per-request.
+
+    Only the first request's connection ever saw `SET home_directory`, so the
+    second one hit a bare `LOAD` and DuckDB went looking under the missing
+    `$HOME` again. The home fallback has to be applied per connection, not
+    once per extension.
+    """
+    import dte.sources.duckdb_secrets as ds
+
+    monkeypatch.setenv("HOME", "/nonexistent/home/dte")
+    monkeypatch.delenv("DTE_DUCKDB_HOME", raising=False)
+    monkeypatch.setattr(ds, "_INSTALLED_EXTS", set())
+
+    from dte.engine.writers import write
+
+    for n in range(2):  # second pass takes the "already installed" branch
+        con = ibis.duckdb.connect()
+        con.create_table("t", sample_table.to_pandas(), overwrite=True)
+        out = tmp_path / f"out{n}.xlsx"
+        target = _adapter.validate_python({"type": "excel", "path": str(out)})
+        assert write(con.table("t"), target)["rows_written"] == 2
+
+
 def test_unknown_scheme_is_rejected(sample_table):
     """A typo'd scheme must not silently create a local file named 'ftp:/...'."""
     from dte.engine.writers import write
