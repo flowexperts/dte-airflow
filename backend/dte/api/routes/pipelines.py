@@ -132,7 +132,10 @@ async def _validate_pipeline_refs(
     for sid in pipeline.sources:
         if not await s_store.get(sid):
             missing_sources.append(sid)
-    missing_dest = None if await d_store.get(pipeline.output_id) else pipeline.output_id
+    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    missing_dest = None
+    if not is_quality:
+        missing_dest = None if await d_store.get(pipeline.output_id) else pipeline.output_id
     if missing_sources or missing_dest:
         detail: dict = {}
         if missing_sources:
@@ -175,15 +178,19 @@ async def _validate_engine_compat(
             )
         src_types.append((sid, conn.connection_type))
 
-    destination = await d_store.get(pipeline.output_id)
-    if not destination:
-        raise HTTPException(status_code=422, detail=f"Destination not found: {pipeline.output_id}")
-    dest_conn = await c_store.get(destination.connection_id)
-    if not dest_conn:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Destination '{destination.id}' references missing connection '{destination.connection_id}'",
-        )
+    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    dest_conn_type: str | None = None
+    if not is_quality:
+        destination = await d_store.get(pipeline.output_id)
+        if not destination:
+            raise HTTPException(status_code=422, detail=f"Destination not found: {pipeline.output_id}")
+        dest_conn = await c_store.get(destination.connection_id)
+        if not dest_conn:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Destination '{destination.id}' references missing connection '{destination.connection_id}'",
+            )
+        dest_conn_type = dest_conn.connection_type
 
     engine_choice = getattr(pipeline, "engine", None) or "auto"
     resolved = resolve_pipeline_engine(engine_choice, [ct for _, ct in src_types])
@@ -206,7 +213,7 @@ async def _validate_engine_compat(
         validate_pipeline_engine_compat(
             engine=resolved,
             sources=src_types,  # type: ignore[arg-type]
-            destination=(destination.id, dest_conn.connection_type),
+            destination=(destination.id, dest_conn_type) if not is_quality else None,
         )
     except EngineIncompatible as e:
         raise HTTPException(status_code=422, detail=e.payload()) from e
@@ -692,7 +699,11 @@ async def trigger_pipeline(
         raise HTTPException(status_code=404, detail="Pipeline not found")
     # Fail fast on missing refs before creating a run.
     decrypt_context_var.set("pipeline_run")
-    await _resolve(pipeline, s_store, d_store, c_store)
+    _is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    if _is_quality:
+        await _resolve_sources(pipeline, s_store, c_store)
+    else:
+        await _resolve(pipeline, s_store, d_store, c_store)
     await _resolve_lookups(pipeline, lt_store)
     # Engine compatibility: catches cases where a pipeline was saved before
     # the engine matrix existed, or a source's connection type changed
