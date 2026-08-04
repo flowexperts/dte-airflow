@@ -15,6 +15,7 @@ export {
   NavFooter,
 } from "./sidebar";
 export { DataTable } from "./data-table";
+export { CopyId } from "./CopyId";
 export type { Column, DataTableSelection } from "./data-table";
 export { JsonCell } from "./json-cell";
 export {

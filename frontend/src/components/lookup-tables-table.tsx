@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import {
   Button,
+  CopyId,
   DataTable,
   Field,
   Input,
@@ -181,17 +182,16 @@ export function LookupTablesTable() {
 
   const columns: Column<LookupTable>[] = [
     {
+      key: "id",
+      header: "ID",
+      width: "200px",
+      render: (r) => <CopyId id={r.id} />,
+    },
+    {
       key: "name",
       header: "Name",
       width: "1.5fr",
-      render: (r) => (
-        <div className="flex flex-col">
-          <span className="text-[13px]">{r.name ?? r.id}</span>
-          {r.name && r.name !== r.id ? (
-            <span className="font-mono text-[10.5px] text-subtle">{r.id}</span>
-          ) : null}
-        </div>
-      ),
+      render: (r) => <span className="text-[13px] truncate">{r.name ?? r.id}</span>,
     },
     {
       key: "entries",

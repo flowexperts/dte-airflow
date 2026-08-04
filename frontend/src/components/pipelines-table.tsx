@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DataTable, type Column, type DataTableSelection } from "@/components/ui";
+import { CopyId, DataTable, type Column, type DataTableSelection } from "@/components/ui";
 import {
   bulkDeletePipelines,
   deletePipeline,
@@ -94,6 +94,12 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
 
   const columns: Column<Pipeline>[] = [
     {
+      key: "id",
+      header: "ID",
+      width: "220px",
+      render: (r) => <CopyId id={r.id} />,
+    },
+    {
       key: "name",
       header: "Name",
       width: "2.2fr",
@@ -124,16 +130,6 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
       render: (r) => (
         <span className="font-mono text-[12px] text-muted">
           {r.steps?.length ?? 0}
-        </span>
-      ),
-    },
-    {
-      key: "id",
-      header: "ID",
-      width: "180px",
-      render: (r) => (
-        <span className="font-mono text-[11px] text-subtle truncate">
-          {r.id}
         </span>
       ),
     },

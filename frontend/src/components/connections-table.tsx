@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DataTable, Pill, type Column, type DataTableSelection } from "@/components/ui";
+import { CopyId, DataTable, Pill, type Column, type DataTableSelection } from "@/components/ui";
 import {
   bulkDeleteConnections,
   deleteConnection,
@@ -106,16 +106,15 @@ export function ConnectionsTable({ rows }: { rows: Connection[] }) {
   const columns: Column<Connection>[] = [
     {
       key: "id",
+      header: "ID",
+      width: "200px",
+      render: (r) => <CopyId id={r.id} />,
+    },
+    {
+      key: "name",
       header: "Name",
       width: "1.5fr",
-      render: (r) => (
-        <div className="flex flex-col">
-          <span className="text-[13px]">{r.name ?? r.id}</span>
-          {r.name && r.name !== r.id ? (
-            <span className="font-mono text-[10.5px] text-subtle">{r.id}</span>
-          ) : null}
-        </div>
-      ),
+      render: (r) => <span className="text-[13px] truncate">{r.name ?? r.id}</span>,
     },
     {
       key: "type",

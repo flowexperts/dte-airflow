@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DataTable, type Column, type DataTableSelection } from "@/components/ui";
+import { CopyId, DataTable, type Column, type DataTableSelection } from "@/components/ui";
 import {
   bulkDeleteDestinations,
   deleteDestination,
@@ -77,7 +77,7 @@ export function DestinationsTable({ rows }: { rows: Destination[] }) {
       key: "id",
       header: "ID",
       width: "1.5fr",
-      render: (r) => <span className="font-mono text-[12px]">{r.id}</span>,
+      render: (r) => <CopyId id={r.id} />,
     },
     {
       key: "type",

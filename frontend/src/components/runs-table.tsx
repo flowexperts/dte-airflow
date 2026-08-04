@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { DataTable, Pill, type Column } from "@/components/ui";
+import { CopyId, DataTable, Pill, type Column } from "@/components/ui";
 import type { Run } from "@/lib/api";
 
 const pillFor = (s: Run["status"]): "ok" | "running" | "failed" | "pending" =>
@@ -32,14 +32,17 @@ export function RunsTable({ runs }: { runs: Run[] }) {
     {
       key: "id",
       header: "Run",
-      width: "180px",
+      width: "220px",
       render: (r) => (
-        <Link
-          href={`/runs/${encodeURIComponent(r.id)}`}
-          className="font-mono text-[12px] text-text hover:text-accent"
-        >
-          {r.id.slice(0, 8)}
-        </Link>
+        <span className="flex items-center gap-2 min-w-0">
+          <Link
+            href={`/runs/${encodeURIComponent(r.id)}`}
+            className="font-mono text-[12px] text-text hover:text-accent shrink-0"
+          >
+            {r.id.slice(0, 8)}
+          </Link>
+          <CopyId id={r.id} shorten />
+        </span>
       ),
     },
     {
