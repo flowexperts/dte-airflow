@@ -127,12 +127,13 @@ export default function Preview() {
 
           {/* PILLS */}
           <section>
-            <SectionHead title="Status pills" count="· 4 states" />
+            <SectionHead title="Status pills" count="· 5 states" />
             <div className="flex flex-wrap gap-3 items-center">
               <Pill status="ok" />
               <Pill status="running" />
               <Pill status="failed" />
               <Pill status="pending" />
+              <Pill status="warn" />
             </div>
           </section>
 
