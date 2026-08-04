@@ -161,7 +161,8 @@ def test_destination_parquet_s3_extension_checked_on_bucket_url():
     ParquetS3Target(type="parquet_s3", bucket_url="s3://acme/out/orders.parquet")
     with pytest.raises(ValidationError) as exc:
         ParquetS3Target(type="parquet_s3", bucket_url="s3://acme/out/orders.json")
-    assert "bucket_url" in str(exc.value)
+    # Field is `path` now; `bucket_url` remains accepted as an input alias.
+    assert "path" in str(exc.value)
 
 
 def test_destination_postgres_no_extension_check():
@@ -182,7 +183,7 @@ def test_destination_parses():
     )
     assert d.id == "out1"
     assert d.connection_id == "local_fs"
-    assert d.config.type == "json_file"
+    assert d.config.type == "json"  # legacy "json_file" input normalises to the format-only name
     assert d.config.path == "/out.json"
 
 

@@ -21,8 +21,8 @@ import {
  * lives in the ordered steps (op: "select") — it's a mid-pipeline concern
  * that composes with everything else.
  *
- * All three inline-editable output types (json_file / csv_file /
- * excel_file) share `{ path, fields? }` — the type picker toggles the
+ * All inline-editable output types (json / csv / excel /
+ * parquet) share `{ path, fields? }` — the type picker toggles the
  * discriminant while preserving `path`.
  */
 export function OutputPanel({
@@ -89,7 +89,8 @@ export function OutputPanel({
 }
 
 const TYPE_LABEL: Record<FileOutputType, string> = {
-  json_file: "JSON file",
-  csv_file: "CSV file",
-  excel_file: "Excel (.xlsx)",
+  json: "JSON",
+  csv: "CSV",
+  excel: "Excel (.xlsx)",
+  parquet: "Parquet",
 };

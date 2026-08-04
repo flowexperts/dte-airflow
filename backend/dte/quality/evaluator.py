@@ -31,29 +31,30 @@ from dte.models.quality import (
 )
 
 
+# Targets name a format only; `path` may be local or an object-store URI, so
+# the same reader works either way (the run already registered the SECRET).
+_FORMAT_READER: dict[str, str] = {
+    "json": "read_json_auto",
+    "csv": "read_csv_auto",
+    "excel": "read_xlsx",
+    "parquet": "read_parquet",
+}
+
+
 def _view_sql_for_target(target) -> str:
     """Return a DuckDB SELECT expression that reads all rows from the target.
 
     Only file-based targets are supported today. Database targets are a
     stretch goal (plan 029 §Non-goals).
     """
-    t = target.type
-    if t == "json_file":
-        path = target.path.replace("'", "''")
-        return f"SELECT * FROM read_json_auto('{path}')"
-    if t == "csv_file":
-        path = target.path.replace("'", "''")
-        return f"SELECT * FROM read_csv_auto('{path}')"
-    if t == "excel_file":
-        path = target.path.replace("'", "''")
-        return f"SELECT * FROM read_xlsx('{path}')"
-    if t == "parquet_s3":
-        url = target.bucket_url.replace("'", "''")
-        return f"SELECT * FROM read_parquet('{url}')"
-    raise NotImplementedError(
-        f"Quality contracts are not yet supported for destination type '{t}'. "
-        "Supported types: json_file, csv_file, excel_file, parquet_s3."
-    )
+    reader = _FORMAT_READER.get(target.type)
+    if reader is None:
+        raise NotImplementedError(
+            f"Quality contracts are not yet supported for destination type "
+            f"'{target.type}'. Supported types: {', '.join(_FORMAT_READER)}."
+        )
+    path = target.path.replace("'", "''")
+    return f"SELECT * FROM {reader}('{path}')"
 
 
 def _create_quality_view(con, target, view_name: str = "__dq_output__") -> None:

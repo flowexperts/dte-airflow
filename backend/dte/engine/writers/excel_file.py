@@ -2,30 +2,27 @@ from __future__ import annotations
 
 import ibis
 
-from dte.models.pipeline import ExcelFileTarget
+from dte.engine.writers._copy import copy_to
+from dte.models.pipeline import ExcelTarget
 
 
 def write(
-    table: ibis.Table, target: ExcelFileTarget, con: ibis.BaseBackend | None = None
+    table: ibis.Table,
+    target: ExcelTarget,
+    con: ibis.BaseBackend | None = None,
+    credentials: dict | None = None,
 ) -> dict:
     """Write an ibis Table to `.xlsx` via DuckDB's `excel` extension.
 
-    Routing through DuckDB keeps `openpyxl` / `xlsxwriter` out of the
-    dep tree. The extension's `COPY … TO … (FORMAT xlsx)` accepts any
-    subquery, so we ask the table's own backend to run it.
+    Routing through DuckDB keeps `openpyxl` / `xlsxwriter` out of the dep
+    tree, and means xlsx reaches object stores on the same COPY path as
+    every other format.
     """
-    backend = con if con is not None else table._find_backend()
-    raw = backend.con
-    raw.execute("INSTALL excel")
-    raw.execute("LOAD excel")
-
-    view_name = "_dte_excel_out"
-    backend.create_view(view_name, table, overwrite=True)
-    quoted_path = target.path.replace("'", "''")
-    raw.execute(
-        f"COPY (SELECT * FROM {view_name}) TO '{quoted_path}' "
-        f"(FORMAT xlsx, HEADER true)"
+    return copy_to(
+        table,
+        target.path,
+        "FORMAT xlsx, HEADER true",
+        con=con,
+        credentials=credentials,
+        extension="excel",
     )
-
-    (rows,) = raw.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()
-    return {"rows_written": int(rows), "location": target.path}

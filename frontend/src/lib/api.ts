@@ -8,39 +8,52 @@ export interface OutputField {
 /** File-shaped output targets. Kept as plain aliases because the openapi
  *  Destination.config is flattened to `Record<string, unknown>` (JSONB). */
 export interface JsonFileOutput {
-  type: "json_file";
+  type: "json";
   path: string;
   fields?: OutputField[];
 }
 export interface CsvFileOutput {
-  type: "csv_file";
+  type: "csv";
   path: string;
   fields?: OutputField[];
   delimiter?: string;
   header?: boolean;
 }
 export interface ExcelFileOutput {
-  type: "excel_file";
+  type: "excel";
   path: string;
   fields?: OutputField[];
   sheet_name?: string;
 }
+export interface ParquetOutput {
+  type: "parquet";
+  path: string;
+  fields?: OutputField[];
+}
 
 /** Output kinds the destination form can create/edit inline.
- *  All three share `{ path, fields? }` — divergence is metadata only. */
-export type FileOutputTarget = JsonFileOutput | CsvFileOutput | ExcelFileOutput;
+ *  Targets name a *format* only — `path` may be a local path or an
+ *  object-store URI (`s3://`, `gcs://`, `az://`), so every format can
+ *  address every storage backend. */
+export type FileOutputTarget =
+  | JsonFileOutput
+  | CsvFileOutput
+  | ExcelFileOutput
+  | ParquetOutput;
 export type FileOutputType = FileOutputTarget["type"];
 
 export const FILE_OUTPUT_TYPES: FileOutputType[] = [
-  "json_file",
-  "csv_file",
-  "excel_file",
+  "json",
+  "csv",
+  "excel",
+  "parquet",
 ];
 
 export const FILE_OUTPUT_EXT: Record<FileOutputType, string> = {
-  json_file: ".json",
-  csv_file: ".csv",
-  excel_file: ".xlsx",
+  json: ".json",
+  csv: ".csv",
+  excel: ".xlsx",
+  parquet: ".parquet",
 };
 
 /**
@@ -196,7 +209,7 @@ export type OutputTarget =
   | JsonFileOutput
   | CsvFileOutput
   | ExcelFileOutput
-  | { type: "parquet_s3"; bucket_url: string }
+  | ParquetOutput
   | { type: "postgres"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" }
   | { type: "sql_database"; dialect: "mysql" | "snowflake" | "bigquery"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" };
 
@@ -211,7 +224,7 @@ export interface Destination {
 
 /** Discriminated narrowing helper — kept for callers that still special-case json. */
 export function isJsonFileOutput(o: OutputTarget): o is JsonFileOutput {
-  return o.type === "json_file";
+  return o.type === "json";
 }
 
 /** True for any file-shaped output the destination form can edit inline. */
