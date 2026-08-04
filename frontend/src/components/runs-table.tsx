@@ -22,7 +22,7 @@ function QualityPill({ quality }: { quality: Run["quality"] }) {
     return <Pill status="failed">{passRate}%</Pill>;
   }
   if (quality.warned > 0) {
-    return <Pill status="running">{passRate}%</Pill>;
+    return <Pill status="warn">{passRate}%</Pill>;
   }
   return <Pill status="ok">100%</Pill>;
 }

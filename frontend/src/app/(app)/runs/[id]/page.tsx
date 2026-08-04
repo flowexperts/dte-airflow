@@ -5,7 +5,6 @@ import useSWR from "swr";
 import Link from "next/link";
 import {
   Button,
-  DataTable,
   ErrorPanel,
   InlineCode,
   KV,
@@ -20,7 +19,6 @@ import {
   Timeline,
   TimelineRow,
   Topbar,
-  type Column,
 } from "@/components/ui";
 import { getDestination, getPipeline, getRun, getRunEvents, getRunQuality, isTerminal, type Destination, type Pipeline, type QualityCheckResult, type Run, type RunEvent } from "@/lib/api";
 import { RunOutputPreview } from "@/components/run-output-preview";
@@ -28,48 +26,69 @@ import { humanizeCompilerError } from "@/lib/errors";
 
 type Params = Promise<{ id: string }>;
 
-const qualityColumns: Column<QualityCheckResult>[] = [
-  {
-    key: "contract_type",
-    header: "Check",
-    width: "200px",
-    render: (r) => (
-      <span className="font-mono text-[12px] text-text">{r.label ?? r.contract_type}</span>
-    ),
-  },
-  {
-    key: "contract_id",
-    header: "Contract ID",
-    width: "130px",
-    render: (r) => (
-      <span className="font-mono text-[11px] text-subtle">{r.contract_id.slice(0, 8)}</span>
-    ),
-  },
-  {
-    key: "status",
-    header: "Status",
-    width: "120px",
-    render: (r) => (
-      r.passed ? (
-        <Pill status="ok">Passed</Pill>
-      ) : r.severity === "warn" ? (
-        <Pill status="running">Warning</Pill>
-      ) : (
-        <Pill status="failed">Failed</Pill>
-      )
-    ),
-  },
-  {
-    key: "detail",
-    header: "Detail",
-    width: "1fr",
-    render: (r) => (
-      <span className="font-mono text-[11.5px] text-subtle">
-        {r.detail ?? (r.passed ? "All rows passed" : "—")}
-      </span>
-    ),
-  },
-];
+const severityTone: Record<"ok" | "warn" | "err", string> = {
+  ok: "var(--green)",
+  warn: "var(--gold)",
+  err: "var(--red)",
+};
+
+function QualityCheckRow({ result }: { result: QualityCheckResult }) {
+  const tone: "ok" | "warn" | "err" = result.passed
+    ? "ok"
+    : result.severity === "warn"
+      ? "warn"
+      : "err";
+
+  return (
+    <div className="relative pl-4 pr-3.5 py-3 border-b border-border last:border-b-0">
+      <span
+        className="absolute left-0 top-0 bottom-0 w-[3px]"
+        style={{ background: severityTone[tone] }}
+      />
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <span className="text-[13px] text-text font-medium">
+          {result.label ?? result.contract_type}
+        </span>
+        <span className="font-mono text-[11px] text-subtle">
+          {result.contract_id.slice(0, 8)}
+        </span>
+        <Pill status={result.passed ? "ok" : result.severity === "warn" ? "warn" : "failed"}>
+          {result.passed ? "Passed" : result.severity === "warn" ? "Warning" : "Failed"}
+        </Pill>
+      </div>
+      <div className="font-mono text-[11.5px] text-subtle mt-1">
+        {result.detail ?? (result.passed ? "All rows passed" : "—")}
+      </div>
+    </div>
+  );
+}
+
+function QualityCheckList({ results }: { results: QualityCheckResult[] }) {
+  return (
+    <Timeline>
+      {results.map((r) => (
+        <QualityCheckRow key={r.contract_id} result={r} />
+      ))}
+    </Timeline>
+  );
+}
+
+function WarningBanner({ quality }: { quality: Run["quality"] }) {
+  return (
+    <Panel>
+      <PanelHead label="Warning" />
+      <div className="px-3.5 py-3 font-mono text-[12.5px]" style={{ color: "var(--gold)" }}>
+        Run completed with quality warnings.
+        {quality && quality.failed === 0 && quality.warned > 0 && (
+          <span className="text-subtle">
+            {" "}
+            {quality.warned} check{quality.warned === 1 ? "" : "s"} passed with warnings.
+          </span>
+        )}
+      </div>
+    </Panel>
+  );
+}
 
 function elapsedSeconds(started?: string | null, finished?: string | null): string {
   if (!started) return "—";
@@ -152,64 +171,63 @@ export default function RunDetail({ params }: { params: Params }) {
           <div className="text-subtle font-mono text-sm">Loading…</div>
         ) : (
           <>
-            {(() => {
-              const q = data.quality;
-              const qTotal = q ? q.passed + q.failed + q.warned : 0;
-              const qValue = !q || qTotal === 0
-                ? "—"
-                : `${q.passed}/${qTotal}`;
-              const qTone: "ok" | "warn" | "err" | "default" =
-                !q || qTotal === 0
-                  ? "default"
-                  : q.failed > 0
-                    ? "err"
-                    : q.warned > 0
-                      ? "warn"
-                      : "ok";
-              return (
-                <MetricRow>
-                  <Metric
-                    label="Rows written"
-                    value={data.rows_written?.toLocaleString() ?? "—"}
-                    tone={
-                      data.status === "completed" ||
-                      data.status === "completed_with_warnings"
-                        ? "ok"
-                        : "default"
-                    }
-                  />
-                  <Metric
-                    label="Elapsed"
-                    value={elapsedSeconds(data.started_at, data.finished_at)}
-                  />
-                  <Metric
-                    label="Started"
-                    value={
-                      data.started_at ? (
-                        <span className="text-[18px]">
-                          {new Date(data.started_at).toLocaleString()}
-                        </span>
-                      ) : (
-                        "—"
-                      )
-                    }
-                  />
-                  <Metric
-                    label="Quality checks"
-                    value={qValue}
-                    tone={qTone}
-                  />
-                </MetricRow>
+            {(data.status === "failed" || data.status === "failed_quality") && data.error && (() => {
+              const title = data.status === "failed_quality"
+                ? "Quality checks failed"
+                : undefined;
+              const h = humanizeCompilerError(data.error);
+              return h ? (
+                <ErrorPanel
+                  title={title ?? h.title}
+                  message={h.message}
+                  detail={h.detail}
+                />
+              ) : (
+                <ErrorPanel
+                  title={title ?? "Run failed"}
+                  message={data.error}
+                  detail={null}
+                />
               );
             })()}
+
+            {data.status === "completed_with_warnings" && (
+              <WarningBanner quality={data.quality} />
+            )}
+
+            <MetricRow className="lg:grid-cols-3">
+              <Metric
+                label="Rows written"
+                value={data.rows_written?.toLocaleString() ?? "—"}
+                tone={
+                  data.status === "completed" ||
+                  data.status === "completed_with_warnings"
+                    ? "ok"
+                    : "default"
+                }
+              />
+              <Metric
+                label="Elapsed"
+                value={elapsedSeconds(data.started_at, data.finished_at)}
+              />
+              <Metric
+                label="Started"
+                value={
+                  data.started_at ? (
+                    <span className="text-[18px]">
+                      {new Date(data.started_at).toLocaleString()}
+                    </span>
+                  ) : (
+                    "—"
+                  )
+                }
+              />
+            </MetricRow>
 
             {qualityResults.length > 0 && (
               <section>
                 <SectionHead title="Quality checks" count={qualityResults.length} />
-                <DataTable<QualityCheckResult>
-                  columns={qualityColumns}
-                  rows={qualityResults}
-                />
+                <QualityCheckList results={qualityResults} />
               </section>
             )}
 
@@ -239,128 +257,110 @@ export default function RunDetail({ params }: { params: Params }) {
               </div>
             )}
 
-            {(data.status === "failed" || data.status === "failed_quality") && data.error && (() => {
-              const title = data.status === "failed_quality"
-                ? "Quality checks failed"
-                : undefined;
-              const h = humanizeCompilerError(data.error);
-              return h ? (
-                <ErrorPanel
-                  title={title ?? h.title}
-                  message={h.message}
-                  detail={h.detail}
-                />
-              ) : (
-                <ErrorPanel
-                  title={title ?? "Run failed"}
-                  message={data.error}
-                  detail={null}
-                />
-              );
-            })()}
-
-            {data.status === "completed_with_warnings" && (
-              <div className="p-3 border border-border rounded bg-surface font-mono text-[12.5px] text-gold">
-                Run completed with quality warnings.
-              </div>
-            )}
-
             <RunOutputPreview
               runId={id}
               outputType={destination?.config?.type}
               disabled={data.status !== "completed"}
             />
 
-            <section>
-              <SectionHead
-                title="Execution timeline"
-                count="· per-step events"
-              />
-              <Timeline>
-                {events.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-subtle text-sm">
-                    No events yet.
-                  </div>
-                ) : (
-                  events.map((e) => {
-                    const started = e.started_at ? new Date(e.started_at) : null;
-                    const finished = e.finished_at ? new Date(e.finished_at) : null;
-                    const dur =
-                      started && finished
-                        ? `${Math.max(0, finished.getTime() - started.getTime())}ms`
-                        : e.status === "started"
-                          ? "…"
-                          : "—";
-                    const tone: "default" | "warn" | "err" =
-                      e.status === "failed"
-                        ? "err"
-                        : e.status === "started"
-                          ? "warn"
-                          : "default";
-                    return (
-                      <TimelineRow
-                        key={e.step_index}
-                        time={started ? started.toLocaleTimeString() : "—"}
-                        message={
-                          <>
-                            step {e.step_index} <InlineCode>{e.op}</InlineCode>{" "}
-                            {e.status}
-                            {e.message ? ` — ${e.message}` : ""}
-                          </>
-                        }
-                        duration={dur}
-                        tone={tone}
-                      />
-                    );
-                  })
-                )}
-              </Timeline>
-            </section>
+            <details className="group">
+              <summary className="cursor-pointer select-none font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle hover:text-text list-none flex items-center gap-2 py-1">
+                <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
+                Diagnostics
+              </summary>
+              <div className="mt-4 space-y-8">
+                <section>
+                  <SectionHead
+                    title="Execution timeline"
+                    count="· per-step events"
+                  />
+                  <Timeline>
+                    {events.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-subtle text-sm">
+                        No events yet.
+                      </div>
+                    ) : (
+                      events.map((e) => {
+                        const started = e.started_at ? new Date(e.started_at) : null;
+                        const finished = e.finished_at ? new Date(e.finished_at) : null;
+                        const dur =
+                          started && finished
+                            ? `${Math.max(0, finished.getTime() - started.getTime())}ms`
+                            : e.status === "started"
+                              ? "…"
+                              : "—";
+                        const tone: "default" | "warn" | "err" =
+                          e.status === "failed"
+                            ? "err"
+                            : e.status === "started"
+                              ? "warn"
+                              : "default";
+                        return (
+                          <TimelineRow
+                            key={e.step_index}
+                            time={started ? started.toLocaleTimeString() : "—"}
+                            message={
+                              <>
+                                step {e.step_index} <InlineCode>{e.op}</InlineCode>{" "}
+                                {e.status}
+                                {e.message ? ` — ${e.message}` : ""}
+                              </>
+                            }
+                            duration={dur}
+                            tone={tone}
+                          />
+                        );
+                      })
+                    )}
+                  </Timeline>
+                </section>
 
-            {data.sql_query && (
-              (() => {
-                const sq = data.sql_query;
-                const stepEntries = sq.step_sqls ? Object.entries(sq.step_sqls) : [];
-                const hasSql = stepEntries.length > 0 || !!sq.final_sql;
-                if (!hasSql) return null;
-                return (
-                  <section>
-                    <SectionHead
-                      title="Compiled SQL"
-                      count={stepEntries.length + (sq.final_sql ? 1 : 0)}
-                    />
-                    <div className="space-y-3">
-                      {stepEntries.map(([idx, sql]) => (
-                        <details key={idx} className="group">
-                          <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
-                            <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
-                            Step {idx}
-                          </summary>
-                          <div className="mt-2 rounded overflow-hidden">
-                            <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
-                              <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sql}</pre>
-                            </div>
-                          </div>
-                        </details>
-                      ))}
-                      {sq.final_sql && (
-                        <details className="group" open>
-                          <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
-                            <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
-                            Final query
-                          </summary>
-                          <div className="mt-2 rounded overflow-hidden">
-                            <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
-                              <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sq.final_sql}</pre>
-                            </div>
-                          </div>
-                        </details>
-                      )}
-                    </div>
-                  </section>
-                );
-              })()
-            )}
+                {data.sql_query && (
+                  (() => {
+                    const sq = data.sql_query;
+                    const stepEntries = sq.step_sqls ? Object.entries(sq.step_sqls) : [];
+                    const hasSql = stepEntries.length > 0 || !!sq.final_sql;
+                    if (!hasSql) return null;
+                    return (
+                      <section>
+                        <SectionHead
+                          title="Compiled SQL"
+                          count={stepEntries.length + (sq.final_sql ? 1 : 0)}
+                        />
+                        <div className="space-y-3">
+                          {stepEntries.map(([idx, sql]) => (
+                            <details key={idx} className="group">
+                              <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
+                                <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
+                                Step {idx}
+                              </summary>
+                              <div className="mt-2 rounded overflow-hidden">
+                                <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
+                                  <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sql}</pre>
+                                </div>
+                              </div>
+                            </details>
+                          ))}
+                          {sq.final_sql && (
+                            <details className="group" open>
+                              <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
+                                <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
+                                Final query
+                              </summary>
+                              <div className="mt-2 rounded overflow-hidden">
+                                <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
+                                  <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sq.final_sql}</pre>
+                                </div>
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      </section>
+                    );
+                  })()
+                )}
+              </div>
+            </details>
           </>
         )}
       </div>

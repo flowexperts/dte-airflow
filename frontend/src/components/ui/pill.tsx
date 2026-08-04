@@ -1,13 +1,14 @@
 import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
 
-type Status = "ok" | "running" | "failed" | "pending";
+type Status = "ok" | "running" | "failed" | "pending" | "warn";
 
 const styles: Record<Status, { color: string; bg: string; pulse: boolean }> = {
   ok:       { color: "var(--green)", bg: "color-mix(in srgb, var(--green) 12%, transparent)", pulse: false },
   running:  { color: "var(--gold)",  bg: "color-mix(in srgb, var(--gold) 14%, transparent)",  pulse: true  },
   failed:   { color: "var(--red)",   bg: "color-mix(in srgb, var(--red) 12%, transparent)",   pulse: false },
   pending:  { color: "var(--subtle)",bg: "var(--surface-2)", pulse: false },
+  warn:     { color: "var(--gold)",  bg: "color-mix(in srgb, var(--gold) 14%, transparent)",  pulse: false },
 };
 
 const labels: Record<Status, string> = {
@@ -15,6 +16,7 @@ const labels: Record<Status, string> = {
   running: "Running",
   failed: "Failed",
   pending: "Pending",
+  warn: "Warning",
 };
 
 export function Pill({

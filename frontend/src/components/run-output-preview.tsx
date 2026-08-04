@@ -62,11 +62,9 @@ export function RunOutputPreview({
       />
 
       {!supported && (
-        <Panel>
-          <div className="p-6 text-center text-subtle text-sm">
-            Preview not supported for {outputType ?? "unknown"} outputs yet.
-          </div>
-        </Panel>
+        <div className="text-[12px] text-subtle font-mono px-1">
+          Preview not supported for {outputType ?? "unknown"} outputs yet.
+        </div>
       )}
 
       {supported && err && (
