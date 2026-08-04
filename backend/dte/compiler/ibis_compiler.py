@@ -294,7 +294,7 @@ def _apply_check_step(
             f"SELECT COUNT(*) FROM {view_name}"
         ).fetchone()[0]
         passed = violation_count == 0
-        detail = f"{violation_count}/{total} rows failed: {label}" if not passed else f"0/{total} rows failed: {label}"
+        detail = f"{violation_count}/{total} rows failed: {label}" if not passed else None
         result = QualityResult(
             contract_id=str(_uuid.uuid4()),
             contract_type="check",
