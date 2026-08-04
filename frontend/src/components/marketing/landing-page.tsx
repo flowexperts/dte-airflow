@@ -44,6 +44,27 @@ const LOGIC_STEPS = [
   { idx: "05", op: "join", expr: "customers on cust_id" },
 ];
 
+const ALL_STEPS = [
+  { label: "Filter",        hint: "SQL WHERE — GUI builder or raw expression", cat: "transform" },
+  { label: "Rename",        hint: "remap column names in bulk",                cat: "transform" },
+  { label: "Retype",        hint: "cast to any DuckDB type",                   cat: "transform" },
+  { label: "Map · Lookup",  hint: "join a saved lookup table",                 cat: "transform" },
+  { label: "Map · Expr",    hint: "derive a new column in SQL",                cat: "transform" },
+  { label: "Sort",          hint: "order by any field set, asc or desc",       cat: "transform" },
+  { label: "Aggregate",     hint: "group-by with sum · count · avg · min/max", cat: "transform" },
+  { label: "Join",          hint: "inner · left · right · outer",              cat: "transform" },
+  { label: "Pivot",         hint: "rows → columns (DuckDB PIVOT)",             cat: "transform" },
+  { label: "Select / Drop", hint: "keep or strip fields, with aliases",        cat: "transform" },
+  { label: "Check",         hint: "assert a rule — fail or warn on breach",    cat: "quality"   },
+  { label: "Profile",       hint: "null % · distinct count · min/max stats",   cat: "quality"   },
+] as const;
+
+const QUALITY_ROWS = [
+  { glyph: "CHK", label: "Check",   hint: "Assert any SQL rule — fail or warn on breach" },
+  { glyph: "PRF", label: "Profile", hint: "Null %, distinct count, min/max embedded in the run" },
+  { glyph: "PRV", label: "Preview", hint: "20-row dry run — compile errors surface before data moves" },
+] as const;
+
 export function LandingPage() {
   const [activeStep, setActiveStep] = useState(-1);
   const [pill, setPill] = useState<PillState>("running");
@@ -253,6 +274,81 @@ export function LandingPage() {
                     <span className="name">More on request</span>
                     <span className="sub">bring your own</span>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="steps" className="steps-section">
+        <div className="wrap">
+          <div className="section-head" style={{ alignItems: "flex-start" }}>
+            <div style={{ minWidth: 0 }}>
+              <span className="section-eyebrow">STEPS</span>
+              <h2 style={{ marginTop: 10 }}>12 ways to shape your data.</h2>
+              <p>Each step is composable and ordered. Mix and match — the pipeline runs them in sequence on every trigger.</p>
+            </div>
+          </div>
+          <div className="steps-grid">
+            {ALL_STEPS.map((s) => (
+              <div key={s.label} className={`steps-card${s.cat === "quality" ? " steps-card--qa" : ""}`}>
+                {s.cat === "quality" && <span className="steps-qa-badge">QA</span>}
+                <span className="steps-card-label">{s.label}</span>
+                <span className="steps-card-hint">{s.hint}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="quality" className="feat-section">
+        <div className="wrap">
+          <div className="qa-grid">
+            <div className="qa-copy">
+              <h2>Data Quality?<br /><span style={{ color: "var(--muted)", fontWeight: 400 }}>we got it.</span></h2>
+              <div className="qa-rows">
+                {QUALITY_ROWS.map((r) => (
+                  <div key={r.label} className="qa-row">
+                    <div className="qa-glyph">{r.glyph}</div>
+                    <div>
+                      <span className="qa-row-label">{r.label}</span>
+                      <span className="qa-row-hint">{r.hint}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="qa-panel" aria-hidden="true">
+              <div className="qa-panel-head">
+                <span className="dots"><i /><i /><i /></span>
+                <span>orders_pipeline · step 4 · check</span>
+              </div>
+              <div className="qa-checks">
+                <div className="qa-check ok">
+                  <span className="qa-check-mark">✓</span>
+                  <span className="qa-check-expr">amount &gt; 0</span>
+                  <span className="qa-check-count">12,847 ok</span>
+                </div>
+                <div className="qa-check fail">
+                  <span className="qa-check-mark">✗</span>
+                  <span className="qa-check-expr">customer_id IS NOT NULL</span>
+                  <span className="qa-check-count">3 failed</span>
+                </div>
+                <div className="qa-check warn">
+                  <span className="qa-check-mark">⚠</span>
+                  <span className="qa-check-expr">country IN (&apos;US&apos;, &apos;EU&apos;)</span>
+                  <span className="qa-check-count">42 warned</span>
+                </div>
+              </div>
+              <div className="qa-profile">
+                <div className="qa-profile-head">profile · amount</div>
+                <div className="qa-profile-stats">
+                  <span><b>0%</b> null</span>
+                  <span><b>847</b> distinct</span>
+                  <span><b>1.20</b> min</span>
+                  <span><b>9,420</b> max</span>
                 </div>
               </div>
             </div>

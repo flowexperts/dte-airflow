@@ -59,6 +59,110 @@ Three tiers — run only what the change touches:
 | `test_pipeline_azure_source_to_local_json` | Azurite → local | Full pipeline: Azure source → rename → json_file |
 | `test_pipeline_gcs_source_to_local_json` | fake-gcs-server → local | Full pipeline: GCS source → sort → json_file |
 
+## Features
+
+> Legend: **Available** — shipped and working · **Hidden** — implemented, off by default (feature flag) · **Planned** — stubbed or in progress
+
+### Sources
+
+| Source | Type | Status |
+|--------|------|--------|
+| Local filesystem (JSON, JSONL, CSV, Parquet, Excel) | filesystem | Available |
+| AWS S3 (JSON, CSV, Parquet) | s3 | Available |
+| Google Cloud Storage — HMAC auth only | gcs | Available |
+| Azure Blob Storage | azure | Available |
+| PostgreSQL | sql_database | Available |
+| MySQL | sql_database | Available |
+| SQLite | sql_database | Available |
+| Snowflake | sql_database | Available |
+| BigQuery | sql_database | Available |
+| MongoDB | mongodb | Available |
+| REST API (with pagination) | rest_api | Available |
+
+### Destinations
+
+| Destination | Status |
+|-------------|--------|
+| JSON file | Available |
+| CSV file | Available |
+| Excel file | Available |
+| Parquet on S3 | Available |
+| PostgreSQL | Available |
+| SQL database (MySQL, Snowflake, BigQuery) | Available |
+
+### Transform Steps
+
+| Step | Description | Status |
+|------|-------------|--------|
+| Filter — Basic | GUI-built SQL `WHERE` (no injection surface) | Available |
+| Filter — Advanced | Raw SQL expression | Available |
+| Rename | Rename one or more columns | Available |
+| Retype | Cast a column to a target type | Available |
+| Map · Lookup | Join a saved lookup table to replace values | Available |
+| Map · Expression | Derive a new column from a raw SQL expression | Available |
+| Map · Calculation | Derive a column from a typed formula (same backend as expression) | Available |
+| Sort | Order rows by one or more fields, asc or desc | Available |
+| Aggregate | Group-by with SUM / COUNT / AVG / MIN / MAX | Available |
+| Join | Inner / left / right / outer join across two sources | Available |
+| Pivot | Reshape rows to columns (DuckDB PIVOT) | Available |
+| Select / Drop fields | Keep or drop a set of columns, with optional aliases | Available |
+| Check | Data-quality assertion — fail or warn when the expression is false | Available |
+| Profile columns | Per-column null count, distinct count, min/max stats | Available |
+
+### Connections
+
+| Connection type | Status |
+|----------------|--------|
+| Local filesystem (no credentials) | Available |
+| AWS (access key + secret) | Available |
+| GCS (HMAC key) | Available |
+| Azure (connection string or account key) | Available |
+| PostgreSQL | Available |
+| MySQL | Available |
+| SQLite | Available |
+| Snowflake | Available |
+| BigQuery | Available |
+| MongoDB | Available |
+| REST API | Available |
+| Connectivity test (`POST /api/connections/{id}/test`) | Available |
+| Credentials encrypted at rest (Fernet) | Available |
+
+### Runtime & Pipeline Features
+
+| Feature | Status |
+|---------|--------|
+| Async pipeline execution — trigger returns immediately, caller polls | Available |
+| Preview / dry run (sample rows, compile-time errors surfaced) | Available |
+| Run history per pipeline | Available |
+| Run output peek (`GET /api/runs/{id}/output`) | Available |
+| Template parameters — `{{params.x}}` in step expressions | Available |
+| System variables — `{{today}}` resolves at trigger time | Available |
+| Schema inference from an in-flight source body | Available |
+| Nested struct fields via dot syntax (`order.amount`) | Available |
+| Lookup tables — CRUD + referenced by Map · Lookup step | Available |
+| Per-step run timeline events | Planned — frontend stub in place, backend not recording yet |
+
+### Engines
+
+| Engine | Status |
+|--------|--------|
+| DuckDB (default) | Available |
+| Trino | Hidden — enable with `DTE_TRINO_ENABLED=true` |
+
+### Auth & Access Control
+
+| Feature | Status |
+|---------|--------|
+| Email/password login — first user becomes admin | Available |
+| Role-based permissions | Available |
+
+### Integrations & SDK
+
+| Feature | Status |
+|---------|--------|
+| Python SDK (`dte-sdk`) — define and run pipelines as Python objects | Available |
+| Orchestrator-ready SDK (Airflow, Prefect, Dagster operators) | Available |
+
 ## Docs
 
 - **[User guide](./docs/user/README.md)** — start here if you're using the app.
