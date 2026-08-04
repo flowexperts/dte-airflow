@@ -246,6 +246,11 @@ export interface QualityCheckResult {
   detail: string | null;
 }
 
+export interface RunSqlQuery {
+  step_sqls?: Record<string, string>;
+  final_sql?: string | null;
+}
+
 export interface Run {
   id: string;
   pipeline_id: string;
@@ -261,6 +266,8 @@ export interface Run {
   params?: RunParams | null;
   /** Quality contract summary — populated after plan 044 shipped. */
   quality?: { passed: number; failed: number; warned: number } | null;
+  /** Compiled SQL captured during pipeline execution. */
+  sql_query?: RunSqlQuery | null;
 }
 
 /** Shape persisted in `runs.params` — matches `resolve_context` output. */

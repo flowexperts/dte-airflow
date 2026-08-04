@@ -201,6 +201,16 @@ export default function RunDetail({ params }: { params: Params }) {
               );
             })()}
 
+            {qualityResults.length > 0 && (
+              <section>
+                <SectionHead title="Quality checks" count={qualityResults.length} />
+                <DataTable<QualityCheckResult>
+                  columns={qualityColumns}
+                  rows={qualityResults}
+                />
+              </section>
+            )}
+
             {data.params?.params && Object.keys(data.params.params).length > 0 && (
               <Panel>
                 <PanelHead
@@ -305,14 +315,49 @@ export default function RunDetail({ params }: { params: Params }) {
               </Timeline>
             </section>
 
-            {qualityResults.length > 0 && (
-              <section>
-                <SectionHead title="Quality checks" count={qualityResults.length} />
-                <DataTable<QualityCheckResult>
-                  columns={qualityColumns}
-                  rows={qualityResults}
-                />
-              </section>
+            {data.sql_query && (
+              (() => {
+                const sq = data.sql_query;
+                const stepEntries = sq.step_sqls ? Object.entries(sq.step_sqls) : [];
+                const hasSql = stepEntries.length > 0 || !!sq.final_sql;
+                if (!hasSql) return null;
+                return (
+                  <Panel>
+                    <PanelHead
+                      label="Compiled SQL"
+                      count={stepEntries.length + (sq.final_sql ? 1 : 0)}
+                    />
+                    <div className="p-4 space-y-3">
+                      {stepEntries.map(([idx, sql]) => (
+                        <details key={idx} className="group">
+                          <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
+                            <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
+                            Step {idx}
+                          </summary>
+                          <div className="mt-2 rounded overflow-hidden">
+                            <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
+                              <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sql}</pre>
+                            </div>
+                          </div>
+                        </details>
+                      ))}
+                      {sq.final_sql && (
+                        <details className="group" open>
+                          <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
+                            <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
+                            Final query
+                          </summary>
+                          <div className="mt-2 rounded overflow-hidden">
+                            <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
+                              <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sq.final_sql}</pre>
+                            </div>
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  </Panel>
+                );
+              })()
             )}
           </>
         )}
