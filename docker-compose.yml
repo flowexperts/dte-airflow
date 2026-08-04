@@ -104,5 +104,27 @@ services:
           cpus: "0.25"
           memory: 512M
 
+  site:
+    build:
+      context: ./site
+      dockerfile: Dockerfile.dev
+    environment:
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+    command: sh -c "CI=true pnpm install --prefer-offline && pnpm dev"
+    volumes:
+      - ./site:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3001:3000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
 volumes:
   pgdata:

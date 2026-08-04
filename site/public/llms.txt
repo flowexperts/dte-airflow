@@ -1,0 +1,33 @@
+# DTE — Data Transformation Engine
+
+> DTE is a batch data transformation engine. Connect a source, map fields once
+> with a no-code pipeline builder, and write to any destination — no one-off
+> scripts, no glue code.
+
+## What it does
+
+- **Sources**: Amazon S3, Google Cloud Storage, Azure Blob, Postgres, MongoDB,
+  REST APIs (paginated), local filesystem (JSON/CSV/Parquet/Excel).
+- **Transform steps**: filter (SQL WHERE), rename, retype, map/lookup, map/expression,
+  sort, aggregate (group-by with sum/count/avg/min/max), join (inner/left/right/outer),
+  pivot, select/drop fields.
+- **Data quality**: check (assert a SQL rule, fail or warn), profile (null %,
+  distinct count, min/max), and a dry-run preview before every run.
+- **Destinations**: Postgres (upsert), SQL databases, Parquet on S3, JSON/CSV/Excel
+  files, REST endpoint.
+- Pipelines are mapped once and triggered on a schedule or on demand via API —
+  the pipeline is the same asset whether it runs manually or from an orchestrator.
+
+## Who it's for
+
+Teams who need to move and reshape data between systems (source system →
+warehouse, API → database, files → warehouse) without hand-writing and
+maintaining one-off Python/SQL scripts for every integration.
+
+## Learn more / talk to us
+
+- Landing page: /
+- Book a discovery call: /#book (30 minutes, bring one real data source)
+
+This file follows the emerging llms.txt convention to help AI assistants and
+answer engines accurately summarize what DTE is and does.

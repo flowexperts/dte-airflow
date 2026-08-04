@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/* ---------- tokens (dark only — the marketing site doesn't theme-toggle) ---------- */
+:root {
+  --bg:          #0c0b09;
+  --surface:     #141210;
+  --surface-2:   #1a1714;
+  --hover:       #221e1a;
+  --border:      #2a2720;
+  --border-2:    #3a3630;
+  --text:        #f2ede4;
+  --muted:       #b8b0a4;
+  --subtle:      #7a7268;
+  --accent:      #e8441a;
+  --accent-h:    #ff6040;
+  --accent-tint: rgba(232, 68, 26, 0.10);
+  --gold:        #c9963e;
+  --green:       #5a9872;
+  --red:         #d94a3a;
+  --code-bg:     #0a0907;
+}
+
+/* ---------- Tailwind theme mapping ---------- */
+@theme inline {
+  --color-bg:        var(--bg);
+  --color-surface:   var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-hover:     var(--hover);
+  --color-border:    var(--border);
+  --color-border-2:  var(--border-2);
+  --color-text:      var(--text);
+  --color-muted:     var(--muted);
+  --color-subtle:    var(--subtle);
+  --color-accent:    var(--accent);
+  --color-accent-h:  var(--accent-h);
+  --color-gold:      var(--gold);
+  --color-green:     var(--green);
+  --color-red:       var(--red);
+  --color-code-bg:   var(--code-bg);
+
+  --font-ui:    var(--font-outfit), system-ui, sans-serif;
+  --font-mono:  var(--font-space-mono), ui-monospace, monospace;
+  --font-brand: var(--font-cormorant), Georgia, serif;
+
+  --radius: 4px;
+}
+
+/* ---------- base ---------- */
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11", "tnum";
+}
+
+* { box-sizing: border-box; }
