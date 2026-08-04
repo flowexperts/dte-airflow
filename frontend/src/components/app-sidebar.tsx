@@ -51,7 +51,21 @@ export function AppSidebar() {
           <NavItem href="/lookup-tables" label="Lookup tables" active={on("/lookup-tables")} />
         )}
         {can("pipeline:read") && (
-          <NavItem href="/pipelines" label="Pipelines" active={on("/pipelines")} />
+          <>
+            <NavGroup>Pipelines</NavGroup>
+            <NavItem
+              href="/pipelines?type=transform"
+              label="Transform"
+              indent
+              active={on("/pipelines") && pathname.includes("type=transform")}
+            />
+            <NavItem
+              href="/pipelines?type=quality"
+              label="Quality Check"
+              indent
+              active={on("/pipelines") && pathname.includes("type=quality")}
+            />
+          </>
         )}
       </NavSections>
       <NavFooter>

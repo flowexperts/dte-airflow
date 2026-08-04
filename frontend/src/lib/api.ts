@@ -357,11 +357,17 @@ export async function apiFetch<T>(
     },
   });
   if (!res.ok) {
-    if (res.status === 401 && typeof window !== "undefined") {
-      // Token expired / invalid — drop it and bounce to login.
-      clearToken();
-      if (!window.location.pathname.startsWith("/login")) {
-        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    if (res.status === 401) {
+      if (typeof window !== "undefined") {
+        // Client-side: drop token and bounce to login.
+        clearToken();
+        if (!window.location.pathname.startsWith("/login")) {
+          window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+        }
+      } else {
+        // Server-side: redirect via Next.js navigation (throws NEXT_REDIRECT).
+        const { redirect } = await import("next/navigation");
+        redirect("/login");
       }
     }
     let detail: unknown = res.statusText;

@@ -20,8 +20,6 @@ import { DestinationPicker } from "./DestinationPicker";
 import { SchemaProvider, useSchemas } from "./schema-context";
 import { PipelinePreview } from "@/components/pipeline-preview";
 import { validateField, validatePipelineForm } from "@/lib/validation";
-import { QualityContractsPanel } from "./QualityContractsPanel";
-import type { QualityContract } from "@/lib/api";
 
 /** Turn a save error into a human-readable message. Handles the structured
  *  engine-gating 422 payloads (`engine_incompatible`, `trino_not_enabled`)
@@ -229,16 +227,24 @@ export function BuilderForm({
           <div className="text-xs text-subtle font-mono">id: {pipeline.id}</div>
         )}
       </div>
-      <Field label="Pipeline type" hint="Transform writes output data; Quality asserts conditions on it.">
-        <Segmented<"transform" | "quality">
-          options={[
-            { value: "transform", label: "Transform" },
-            { value: "quality", label: "Quality" },
-          ]}
-          value={pipeline.pipeline_type ?? "transform"}
-          onChange={(v) => setPipeline((p: Pipeline) => ({ ...p, pipeline_type: v }))}
-        />
-      </Field>
+      {mode === "edit" ? (
+        <Field label="Pipeline type">
+          <span className="font-mono text-[12px] text-muted capitalize">
+            {pipeline.pipeline_type ?? "transform"}
+          </span>
+        </Field>
+      ) : (
+        <Field label="Pipeline type" hint="Transform writes output data; Quality asserts conditions on it.">
+          <Segmented<"transform" | "quality">
+            options={[
+              { value: "transform", label: "Transform" },
+              { value: "quality", label: "Quality" },
+            ]}
+            value={pipeline.pipeline_type ?? "transform"}
+            onChange={(v) => setPipeline((p: Pipeline) => ({ ...p, pipeline_type: v }))}
+          />
+        </Field>
+      )}
     </div>
   );
 
@@ -328,12 +334,6 @@ export function BuilderForm({
                 onChange={(steps) => setPipeline({ ...pipeline, steps })}
                 pipelineType={pipeline.pipeline_type ?? "transform"}
               />
-              <QualityContractsPanel
-                contracts={(pipeline.quality_contracts ?? []) as QualityContract[]}
-                onChange={(quality_contracts) =>
-                  setPipeline({ ...pipeline, quality_contracts })
-                }
-              />
             </div>
           </div>
           <div className="overflow-y-auto hidden lg:block">
@@ -384,12 +384,6 @@ export function BuilderForm({
             steps={(pipeline.steps ?? []) as StepShape[]}
             onChange={(steps) => setPipeline({ ...pipeline, steps })}
             pipelineType={pipeline.pipeline_type ?? "transform"}
-          />
-          <QualityContractsPanel
-            contracts={(pipeline.quality_contracts ?? []) as QualityContract[]}
-            onChange={(quality_contracts) =>
-              setPipeline({ ...pipeline, quality_contracts })
-            }
           />
         </div>
       )}

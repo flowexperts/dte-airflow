@@ -70,17 +70,20 @@ export function NavItem({
   label,
   active,
   count,
+  indent,
 }: {
   href: string;
   label: string;
   active?: boolean;
   count?: ReactNode;
+  indent?: boolean;
 }) {
   return (
     <Link
       href={href}
       className={cn(
-        "flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] rounded-[var(--radius)] transition-colors no-underline",
+        "flex items-center gap-2.5 py-1.5 text-[13px] rounded-[var(--radius)] transition-colors no-underline",
+        indent ? "px-5" : "px-2.5",
         active
           ? "text-text bg-[color:var(--accent-tint)]"
           : "text-muted hover:text-text hover:bg-hover",
