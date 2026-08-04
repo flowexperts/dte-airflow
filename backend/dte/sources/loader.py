@@ -1,23 +1,30 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import dlt
 import ibis
 
 from dte.models.pipeline import Source
 
+# Object-store plumbing lives in `duckdb_secrets` so the writers can reuse it.
+# Re-exported here because `dlt_loader`, `backend_registry` and the unit tests
+# import these names from `loader`.
+from dte.sources.duckdb_secrets import (  # noqa: F401
+    _build_azure_secret_sql,
+    _build_gcs_secret_sql,
+    _build_s3_secret_sql,
+    _ensure_ext,
+    _secret_kv,
+    _sql_ident,
+    _sql_string_literal,
+    resolve_secret,
+)
+
 if TYPE_CHECKING:
     from dte.engine.backend_registry import BackendRegistry
     from dte.models.pipeline import Connection
-
-
-def resolve_secret(value: Any) -> Any:
-    if isinstance(value, dict) and set(value.keys()) == {"env"}:
-        return os.environ[value["env"]]
-    return value
 
 
 _JSONL_EXTS = (".jsonl", ".ndjson")
@@ -49,16 +56,6 @@ def _detect_format(path: str, explicit: str | None) -> str:
     if lower.endswith(_JSON_EXTS):
         return "json"
     return "json"
-
-
-def _sql_string_literal(s: str) -> str:
-    """DuckDB SQL string literal — wrap in '', escape internal ' as ''."""
-    return "'" + s.replace("'", "''") + "'"
-
-
-def _sql_ident(name: str) -> str:
-    """DuckDB identifier quote — wrap in "", escape internal " as ""."""
-    return '"' + name.replace('"', '""') + '"'
 
 
 def _ensure_format_ext(raw_con, fmt: str) -> None:
@@ -102,105 +99,6 @@ def _glob_local(bucket_url: str, file_glob: str) -> list[str]:
         root = bucket_url
     pattern = str(Path(root) / file_glob)
     return sorted(_glob.glob(pattern, recursive=True))
-
-
-def _secret_kv(key: str, value: str) -> str:
-    """Render one `KEY VALUE` line for a DuckDB CREATE SECRET body."""
-    return f"    {key} {_sql_string_literal(value)}"
-
-
-def _build_s3_secret_sql(credentials: dict, secret_name: str) -> str:
-    """Return `CREATE OR REPLACE SECRET …` DDL for an S3-compatible endpoint.
-
-    `credentials` comes from the linked Connection (already decrypted by
-    the SecretResolver). Env-indirection is a no-op here — the resolver
-    handled it — but `resolve_secret()` is still safe on literals.
-    Endpoint URL (LocalStack / MinIO) switches on path-style + optional
-    TLS off when the scheme is http.
-    """
-    parts: list[str] = ["TYPE s3"]
-    if "aws_access_key_id" in credentials:
-        parts.append(_secret_kv("KEY_ID", resolve_secret(credentials["aws_access_key_id"])))
-    if "aws_secret_access_key" in credentials:
-        parts.append(_secret_kv("SECRET", resolve_secret(credentials["aws_secret_access_key"])))
-    if "aws_session_token" in credentials:
-        parts.append(_secret_kv("SESSION_TOKEN", resolve_secret(credentials["aws_session_token"])))
-    if "region_name" in credentials:
-        parts.append(_secret_kv("REGION", resolve_secret(credentials["region_name"])))
-    if "endpoint_url" in credentials:
-        endpoint = resolve_secret(credentials["endpoint_url"])
-        # Strip scheme — DuckDB wants `host[:port]`.
-        stripped = endpoint.split("://", 1)[-1].rstrip("/")
-        parts.append(_secret_kv("ENDPOINT", stripped))
-        parts.append("    URL_STYLE 'path'")
-        if endpoint.startswith("http://"):
-            parts.append("    USE_SSL false")
-    body = ",\n".join(parts)
-    return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
-
-
-def _build_gcs_secret_sql(credentials: dict, secret_name: str) -> str:
-    """DuckDB uses HMAC keys for GCS via the S3-compatible API — not the
-    service-account JSON that fsspec/gcsfs consumes. `credentials_json`
-    is rejected; users must issue HMAC keys instead.
-
-    `endpoint_url` overrides the GCS endpoint (e.g. fake-gcs-server for
-    local testing). DuckDB's TYPE gcs supports ENDPOINT, USE_SSL, URL_STYLE."""
-    if "credentials_json" in credentials and "hmac_key_id" not in credentials:
-        raise ValueError(
-            "gcs connection: `credentials_json` (service-account JSON) is not "
-            "supported. Issue an HMAC key on the storage account and pass "
-            "`hmac_key_id` + `hmac_secret` instead."
-        )
-    parts: list[str] = ["TYPE gcs"]
-    if "hmac_key_id" in credentials:
-        parts.append(_secret_kv("KEY_ID", resolve_secret(credentials["hmac_key_id"])))
-    if "hmac_secret" in credentials:
-        parts.append(_secret_kv("SECRET", resolve_secret(credentials["hmac_secret"])))
-    if "endpoint_url" in credentials:
-        endpoint = resolve_secret(credentials["endpoint_url"])
-        stripped = endpoint.split("://", 1)[-1].rstrip("/")
-        parts.append(_secret_kv("ENDPOINT", stripped))
-        parts.append("    URL_STYLE 'path'")
-        if endpoint.startswith("http://"):
-            parts.append("    USE_SSL false")
-    body = ",\n".join(parts)
-    return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
-
-
-def _build_azure_secret_sql(credentials: dict, secret_name: str) -> str:
-    """Azure Blob Storage secret. Field names follow dlt's `AzureCredentials`:
-    `azure_storage_account_name` + `azure_storage_account_key`, or a
-    `azure_storage_sas_token` for SAS auth.
-    `connection_string` short-circuits ACCOUNT_NAME logic — required for
-    Azurite (BlobEndpoint=http://127.0.0.1:10000/...)."""
-    parts: list[str] = ["TYPE azure"]
-    if "connection_string" in credentials:
-        parts.append(_secret_kv("CONNECTION_STRING", resolve_secret(credentials["connection_string"])))
-        body = ",\n".join(parts)
-        return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
-    account = credentials.get("azure_storage_account_name")
-    key = credentials.get("azure_storage_account_key")
-    sas = credentials.get("azure_storage_sas_token")
-    if account:
-        parts.append(_secret_kv("ACCOUNT_NAME", resolve_secret(account)))
-        if key:
-            parts.append(_secret_kv("ACCOUNT_KEY", resolve_secret(key)))
-        elif sas:
-            parts.append(_secret_kv("SAS_TOKEN", resolve_secret(sas)))
-        else:
-            raise ValueError(
-                "azure connection: missing key. Provide `azure_storage_account_key` "
-                "or `azure_storage_sas_token`."
-            )
-    else:
-        raise ValueError(
-            "azure connection: missing credentials. Provide "
-            "`azure_storage_account_name` + `azure_storage_account_key` "
-            "(or `azure_storage_sas_token`)."
-        )
-    body = ",\n".join(parts)
-    return f"CREATE OR REPLACE SECRET {_sql_ident(secret_name)} (\n{body}\n)"
 
 
 def _load_remote_via_duckdb(
@@ -300,17 +198,6 @@ def _load_azure(
     return _load_remote_via_duckdb(
         source, registry, "azure", _build_azure_secret_sql(credentials, secret_name)
     )
-
-
-_INSTALLED_EXTS: set[str] = set()
-
-
-def _ensure_ext(raw_con, name: str) -> None:
-    """Idempotently INSTALL + LOAD a DuckDB extension in this process."""
-    if name not in _INSTALLED_EXTS:
-        raw_con.execute(f"INSTALL {name}")
-        _INSTALLED_EXTS.add(name)
-    raw_con.execute(f"LOAD {name}")
 
 
 def _load_sql_database(

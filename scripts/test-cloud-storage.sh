@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
+#
+# Local S3 / GCS / Azure emulators for cloud-storage work.
+#
+#   ./scripts/test-cloud-storage.sh          # start, seed, run tests, tear down
+#   ./scripts/test-cloud-storage.sh test     # same as above (explicit)
+#   ./scripts/test-cloud-storage.sh start    # start + seed, LEAVE RUNNING
+#   ./scripts/test-cloud-storage.sh stop     # tear down
+#
+# `start` is for driving the emulators by hand (pipelines against the API,
+# poking around the MinIO console); it skips pytest and the teardown trap so
+# the containers survive after the script exits.
 set -euo pipefail
+
+MODE="${1:-test}"
+case "$MODE" in
+  test|start|stop) ;;
+  *) echo "usage: $0 [test|start|stop]" >&2; exit 2 ;;
+esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -15,7 +32,17 @@ cleanup() {
   echo "==> Tearing down..."
   docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || true
 }
-trap cleanup EXIT
+
+if [[ "$MODE" == "stop" ]]; then
+  cleanup
+  exit 0
+fi
+
+# Only the self-contained test run tears down on exit; `start` deliberately
+# leaves the containers up for manual use.
+if [[ "$MODE" == "test" ]]; then
+  trap cleanup EXIT
+fi
 
 echo "==> Starting MinIO + Azurite..."
 docker compose -f "$COMPOSE_FILE" up -d
@@ -31,69 +58,95 @@ until curl -s --max-time 2 "$FAKE_GCS_ENDPOINT/storage/v1/b" > /dev/null 2>&1; d
 
 cd "$BACKEND"
 
-echo "==> Seeding MinIO bucket 'dte-test' via s3fs..."
+echo "==> Seeding all three emulators with orders.{json,csv,parquet,xlsx}..."
 uv run python - << 'PYEOF'
-import os, json, pathlib
+import io, json, os, pathlib
+
+import duckdb
+import httpx
 import s3fs
+from azure.storage.blob import BlobServiceClient
+
+SRC = pathlib.Path("tests/scenarios/fixtures/orders.json")
+BUCKET = "dte-test"
+
+# Render the one fixture into every format DTE can read, so each
+# (format x backend) source in the test matrix has real data behind it.
+# DuckDB does the conversion — same readers/writers the product uses.
+tmp = pathlib.Path(os.environ.get("TMPDIR", "/tmp")) / "dte-seed"
+tmp.mkdir(parents=True, exist_ok=True)
+con = duckdb.connect()
+con.execute("INSTALL excel"); con.execute("LOAD excel")
+con.execute(f"CREATE TABLE orders AS SELECT * FROM read_json_auto('{SRC}')")
+for name, clause in [
+    ("orders.csv", "FORMAT CSV, HEADER"),
+    ("orders.parquet", "FORMAT PARQUET"),
+    ("orders.xlsx", "FORMAT xlsx, HEADER true"),
+]:
+    con.execute(f"COPY orders TO '{tmp / name}' ({clause})")
+
+payloads = {"orders.json": SRC.read_bytes()}
+for name in ("orders.csv", "orders.parquet", "orders.xlsx"):
+    payloads[name] = (tmp / name).read_bytes()
+
+# ── MinIO (S3) ───────────────────────────────────────────────────────────
 fs = s3fs.S3FileSystem(
     key="minioadmin", secret="minioadmin",
     client_kwargs={"endpoint_url": os.environ["MINIO_ENDPOINT"]},
     use_ssl=False,
 )
 try:
-    fs.mkdirs("dte-test", exist_ok=True)
+    fs.mkdirs(BUCKET, exist_ok=True)
 except Exception:
     pass
-src = pathlib.Path("tests/scenarios/fixtures/orders.json")
-with fs.open("dte-test/orders.json", "wb") as f:
-    f.write(src.read_bytes())
-try:
-    import pyarrow as pa, pyarrow.parquet as pq, io
-    data = json.loads(src.read_text())
-    buf = io.BytesIO()
-    pq.write_table(pa.Table.from_pylist(data), buf)
-    with fs.open("dte-test/orders.parquet", "wb") as f:
-        f.write(buf.getvalue())
-    print("seeded: orders.json + orders.parquet")
-except ImportError:
-    print("seeded: orders.json (pyarrow missing — skipped parquet)")
-PYEOF
+for name, blob in payloads.items():
+    with fs.open(f"{BUCKET}/{name}", "wb") as f:
+        f.write(blob)
+print(f"seeded: s3://{BUCKET}/{{{','.join(payloads)}}}")
 
-echo "==> Seeding fake-gcs-server bucket 'dte-test' via GCS JSON API..."
-uv run python - << 'PYEOF'
-import os, pathlib
-import httpx
-
+# ── fake-gcs-server ──────────────────────────────────────────────────────
+# Reads only. fake-gcs-server does not implement the XML API PUT that
+# DuckDB uses to write, so `gcs://` *writes* must target an S3-compatible
+# server (MinIO) instead — see plans/045 for the detail.
 base = os.environ["FAKE_GCS_ENDPOINT"]
-# Create bucket
-r = httpx.post(f"{base}/storage/v1/b?project=test", json={"name": "dte-test"})
+r = httpx.post(f"{base}/storage/v1/b?project=test", json={"name": BUCKET})
 if r.status_code not in (200, 409):
     raise RuntimeError(f"bucket create failed: {r.status_code} {r.text}")
-# Upload orders.json
-data = pathlib.Path("tests/scenarios/fixtures/orders.json").read_bytes()
-r = httpx.post(
-    f"{base}/upload/storage/v1/b/dte-test/o?uploadType=media&name=orders.json",
-    content=data,
-    headers={"Content-Type": "application/json"},
-)
-if r.status_code not in (200, 201):
-    raise RuntimeError(f"upload failed: {r.status_code} {r.text}")
-print("seeded: gcs://dte-test/orders.json")
-PYEOF
+for name, blob in payloads.items():
+    r = httpx.post(
+        f"{base}/upload/storage/v1/b/{BUCKET}/o?uploadType=media&name={name}",
+        content=blob, headers={"Content-Type": "application/octet-stream"},
+    )
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"upload {name} failed: {r.status_code} {r.text}")
+print(f"seeded: gcs://{BUCKET}/{{{','.join(payloads)}}}")
 
-echo "==> Seeding Azurite container 'dte-test' via azure-storage-blob..."
-uv run python - << PYEOF
-import os, pathlib
-from azure.storage.blob import BlobServiceClient
+# ── Azurite ──────────────────────────────────────────────────────────────
 client = BlobServiceClient.from_connection_string(os.environ["AZURITE_CONN"])
 try:
-    client.create_container("dte-test")
+    client.create_container(BUCKET)
 except Exception:
     pass  # already exists
-data = pathlib.Path("tests/scenarios/fixtures/orders.json").read_bytes()
-client.get_blob_client("dte-test", "orders.json").upload_blob(data, overwrite=True)
-print("seeded: az://dte-test/orders.json")
+for name, blob in payloads.items():
+    client.get_blob_client(BUCKET, name).upload_blob(blob, overwrite=True)
+print(f"seeded: az://{BUCKET}/{{{','.join(payloads)}}}")
 PYEOF
+
+if [[ "$MODE" == "start" ]]; then
+  cat <<EOF
+
+==> Emulators are UP and seeded (containers left running).
+
+  MinIO      S3        $MINIO_ENDPOINT      (console :9001, minioadmin/minioadmin)
+  Azurite    Azure     $AZURITE_ENDPOINT
+  fake-gcs   GCS       $FAKE_GCS_ENDPOINT   (reads only - see plans/045)
+
+  Bucket/container 'dte-test' holds orders.{json,csv,parquet,xlsx}.
+
+  Stop with: $0 stop
+EOF
+  exit 0
+fi
 
 echo "==> Running integration tests..."
 uv run pytest tests/integration/test_cloud_storage.py -m integration -v -s

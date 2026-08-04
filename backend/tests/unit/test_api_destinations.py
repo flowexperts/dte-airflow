@@ -34,7 +34,7 @@ def test_create_destination_201(client):
     assert r.json()["id"] == "d1"
     dest = _run(d_store.get("d1"))
     assert dest is not None
-    assert dest.config.type == "json_file"
+    assert dest.config.type == "json"  # legacy "json_file" input normalises to the format-only name
 
 
 def test_create_destination_duplicate_409(client):

@@ -16,7 +16,7 @@ function emptyDestination(name: string): Destination {
     id: "",
     name,
     connection_id: "local_fs",
-    config: { type: "json_file", path: "./out/result.json", fields: [] },
+    config: { type: "json", path: "./out/result.json", fields: [] },
   };
 }
 

@@ -5,7 +5,7 @@ import { Button, ErrorPanel, JsonCell, Panel, PanelHead, SectionHead } from "@/c
 import { getRunOutput, type PreviewResponse } from "@/lib/api";
 import { humanizeError, type HumanError } from "@/lib/errors";
 
-const SUPPORTED = new Set(["json_file", "csv_file", "excel_file"]);
+const SUPPORTED = new Set(["json", "csv", "excel"]);
 
 export function RunOutputPreview({
   runId,

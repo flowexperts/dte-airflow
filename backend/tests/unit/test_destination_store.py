@@ -16,7 +16,7 @@ async def test_save_and_get():
     got = await s.get("d1")
     assert got is not None
     assert got.id == "d1"
-    assert got.config.type == "json_file"
+    assert got.config.type == "json"  # legacy "json_file" input normalises to the format-only name
 
 
 async def test_get_missing_returns_none():

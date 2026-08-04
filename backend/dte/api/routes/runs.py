@@ -72,14 +72,14 @@ async def get_run_output(
     output_type = dest.config.type
 
     try:
-        if output_type == "json_file":
+        if output_type == "json":
             data = json.loads(Path(location).read_text())
             rows = data[:limit] if isinstance(data, list) else [data]
-        elif output_type == "csv_file":
+        elif output_type == "csv":
             import pandas as pd
             df = pd.read_csv(location, nrows=limit)
             rows = json.loads(df.to_json(orient="records", date_format="iso"))
-        elif output_type == "excel_file":
+        elif output_type == "excel":
             # DuckDB's excel extension for read too — keeps openpyxl out
             # of the dep tree and matches how the writer produced it.
             import ibis

@@ -5,10 +5,10 @@ from typing import TypedDict
 import ibis
 
 from dte.models.pipeline import (
-    CsvFileTarget,
-    ExcelFileTarget,
-    JsonFileTarget,
-    ParquetS3Target,
+    CsvTarget,
+    ExcelTarget,
+    JsonTarget,
+    ParquetTarget,
     PostgresTarget,
     SqlDatabaseTarget,
 )
@@ -26,20 +26,24 @@ def write(
     credentials: dict | None = None,
 ) -> WriteResult:
     """`credentials` comes from the destination's linked Connection —
-    always a dict (empty `{}` for local file targets)."""
+    always a dict (empty `{}` for local file targets).
+
+    All four file formats take credentials now: any of them can address an
+    object store, and the writer picks its secret from the URI scheme.
+    """
     creds = credentials or {}
-    if isinstance(target, JsonFileTarget):
+    if isinstance(target, JsonTarget):
         from dte.engine.writers import json_file
-        return json_file.write(table, target, con)
-    if isinstance(target, CsvFileTarget):
+        return json_file.write(table, target, con, creds)
+    if isinstance(target, CsvTarget):
         from dte.engine.writers import csv_file
-        return csv_file.write(table, target, con)
-    if isinstance(target, ExcelFileTarget):
+        return csv_file.write(table, target, con, creds)
+    if isinstance(target, ExcelTarget):
         from dte.engine.writers import excel_file
-        return excel_file.write(table, target, con)
-    if isinstance(target, ParquetS3Target):
-        from dte.engine.writers import parquet_s3
-        return parquet_s3.write(table, target, con, creds)
+        return excel_file.write(table, target, con, creds)
+    if isinstance(target, ParquetTarget):
+        from dte.engine.writers import parquet
+        return parquet.write(table, target, con, creds)
     if isinstance(target, PostgresTarget):
         from dte.engine.writers import postgres
         return postgres.write(table, target, con, creds)

@@ -61,16 +61,14 @@ def test_excel_file_writer(tmp_path, sample_table):
     assert sorted(df["name"].tolist()) == ["alice", "bob"]
 
 
-def test_parquet_writer_memory_fs(sample_table):
-    mem = fsspec.filesystem("memory")
-    for path in list(mem.store):
-        mem.rm(path)
-    url = "memory://out.parquet"
-    target = ParquetS3Target(type="parquet_s3", bucket_url=url)
+def test_parquet_writer(tmp_path, sample_table):
+    """Parquet now writes through DuckDB COPY rather than fsspec+pyarrow, so
+    this exercises a real path instead of the `memory://` filesystem."""
+    out = tmp_path / "out.parquet"
+    target = ParquetS3Target(type="parquet_s3", bucket_url=str(out))
     result = write(sample_table, target)
     assert result["rows_written"] == 2
-    assert result["location"] == url
-    with fsspec.open(url, "rb") as f:
-        table = pq.read_table(f)
+    assert result["location"] == str(out)
+    table = pq.read_table(out)
     assert table.num_rows == 2
     assert set(table.column_names) == {"id", "name", "score"}

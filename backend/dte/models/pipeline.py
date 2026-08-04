@@ -4,7 +4,7 @@ import uuid as _uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from sqlalchemy import Column, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as SMField
@@ -366,10 +366,10 @@ _FORMAT_FAMILY: dict[str, str] = {
 # `path` (or `bucket_url` for parquet_s3) matches the target's `type`:
 # `json_file` at `orders.csv` is silent nonsense, so we reject at save.
 _DEST_FAMILY: dict[str, str] = {
-    "json_file":  "json",
-    "csv_file":   "csv",
-    "excel_file": "excel",
-    "parquet_s3": "parquet",
+    "json":    "json",
+    "csv":     "csv",
+    "excel":   "excel",
+    "parquet": "parquet",
 }
 
 _FAMILY_CANONICAL_EXT: dict[str, str] = {
@@ -750,11 +750,32 @@ class OutputField(BaseModel):
 
 
 # ─── Output targets (slimmed — creds live on the Connection) ──────────────
+#
+# Format and location are independent axes.  A target names the *format*
+# only; where the bytes land is carried by `path`, which may be a local
+# path or an object-store URI (`s3://`, `gcs://`, `az://`).  The writer
+# picks its DuckDB extension and SECRET from the URI scheme.
+#
+# These used to be one class per format-and-location pair (`json_file` was
+# local-only, `parquet_s3` was S3-only).  The legacy discriminator values
+# are still accepted on read — see `_LEGACY_DEST_TYPES`.
 
-class JsonFileTarget(BaseModel):
-    type: Literal["json_file"]
+class _FileTarget(BaseModel):
+    """Shared shape: a format discriminator plus a destination `path`."""
     path: str
     fields: list[OutputField] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_type(cls, data):
+        """Let direct construction use the pre-rename spelling.
+
+        `JsonFileTarget(type="json_file", …)` still works — the alias would
+        otherwise resolve to `JsonTarget` and reject its own old literal.
+        Union dispatch is handled separately by `_canonicalise_dest_type`,
+        since the discriminator is read before any validator runs.
+        """
+        return _canonicalise_dest_type(data)
 
     @model_validator(mode="after")
     def _validate_extension(self):
@@ -762,41 +783,56 @@ class JsonFileTarget(BaseModel):
         return self
 
 
-# Back-compat alias for callers still importing the old name.
-JsonFileOutput = JsonFileTarget
+class JsonTarget(_FileTarget):
+    type: Literal["json"]
 
 
-class CsvFileTarget(BaseModel):
-    type: Literal["csv_file"]
-    path: str
-    fields: list[OutputField] = []
-
-    @model_validator(mode="after")
-    def _validate_extension(self):
-        _check_dest_path_extension(self.type, self.path)
-        return self
+class CsvTarget(_FileTarget):
+    type: Literal["csv"]
 
 
-class ExcelFileTarget(BaseModel):
-    type: Literal["excel_file"]
-    path: str
-    fields: list[OutputField] = []
-
-    @model_validator(mode="after")
-    def _validate_extension(self):
-        _check_dest_path_extension(self.type, self.path)
-        return self
+class ExcelTarget(_FileTarget):
+    type: Literal["excel"]
 
 
-class ParquetS3Target(BaseModel):
-    type: Literal["parquet_s3"]
-    bucket_url: str
-    # `storage_options` removed — creds come from the linked s3 Connection.
+class ParquetTarget(_FileTarget):
+    type: Literal["parquet"]
+    # `bucket_url` was the field name back when this was `parquet_s3`.
+    model_config = {"populate_by_name": True}
+    path: str = Field(validation_alias=AliasChoices("path", "bucket_url"))
 
-    @model_validator(mode="after")
-    def _validate_extension(self):
-        _check_dest_path_extension(self.type, self.bucket_url, field_name="bucket_url")
-        return self
+
+# Back-compat aliases — kept for one release so existing imports keep working.
+JsonFileTarget = JsonTarget
+CsvFileTarget = CsvTarget
+ExcelFileTarget = ExcelTarget
+ParquetS3Target = ParquetTarget
+JsonFileOutput = JsonTarget
+
+
+# Persisted `destinations.config->>'type'` values that predate the rename.
+# Alembic 028 rewrites them, but rows written by an older node (or a
+# rolled-back deploy) still arrive with the old spelling.
+_LEGACY_DEST_TYPES: dict[str, str] = {
+    "json_file": "json",
+    "csv_file": "csv",
+    "excel_file": "excel",
+    "parquet_s3": "parquet",
+}
+
+
+def _canonicalise_dest_type(config):
+    """Rewrite a legacy `type` discriminator in a raw config dict.
+
+    Returns the input untouched for anything already canonical, or for
+    non-dicts (an already-parsed target instance).
+    """
+    if not isinstance(config, dict):
+        return config
+    legacy = _LEGACY_DEST_TYPES.get(config.get("type"))
+    if legacy is None:
+        return config
+    return {**config, "type": legacy}
 
 
 class PostgresTarget(BaseModel):
@@ -817,7 +853,7 @@ class SqlDatabaseTarget(BaseModel):
 
 
 OutputTarget = Annotated[
-    JsonFileTarget | CsvFileTarget | ExcelFileTarget | ParquetS3Target | PostgresTarget | SqlDatabaseTarget,
+    JsonTarget | CsvTarget | ExcelTarget | ParquetTarget | PostgresTarget | SqlDatabaseTarget,
     Field(discriminator="type"),
 ]
 
@@ -866,7 +902,8 @@ class DestinationBase(SQLModel):
         if isinstance(self.config, dict) and self.config:
             from pydantic import TypeAdapter
             adapter = TypeAdapter(OutputTarget)
-            self.config = adapter.validate_python(self.config)  # type: ignore[assignment]
+            raw = _canonicalise_dest_type(self.config)
+            self.config = adapter.validate_python(raw)  # type: ignore[assignment]
         return self
 
     def to_api_dict(self) -> dict:
@@ -926,7 +963,8 @@ class Destination(DestinationBase, table=True):
             adapter = TypeAdapter(OutputTarget)
             # Use object.__setattr__ to bypass SQLAlchemy's instrumented
             # attribute machinery.
-            object.__setattr__(self, "config", adapter.validate_python(self.config))
+            raw = _canonicalise_dest_type(self.config)
+            object.__setattr__(self, "config", adapter.validate_python(raw))
         return self
 
 # Back-compat alias — DestinationCreate was the old 3-class name.
@@ -1219,11 +1257,15 @@ SOURCE_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "rest_api": {"rest_api"},
 }
 
+# File formats are location-agnostic: each writes to a local path or to any
+# object store, so they bind to any file-shaped connection.
+_FILE_DEST_CONNECTIONS: set[ConnectionType] = {"local_fs", "s3", "gcs", "azure"}
+
 DESTINATION_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
-    "json_file": {"local_fs"},
-    "csv_file": {"local_fs"},
-    "excel_file": {"local_fs"},
-    "parquet_s3": {"s3"},
+    "json": _FILE_DEST_CONNECTIONS,
+    "csv": _FILE_DEST_CONNECTIONS,
+    "excel": _FILE_DEST_CONNECTIONS,
+    "parquet": _FILE_DEST_CONNECTIONS,
     "postgres": {"postgres"},
     # Shape-level: `sql_database` destinations *may* bind to any SQL-family
     # connection. Runtime-level: whether the active engine has a writer for
@@ -1263,19 +1305,25 @@ ENGINE_READ_SUPPORT: dict[EngineName, set[ConnectionType]] = {
 }
 
 # Writers currently implemented in `dte/engine/writers/*.py`:
-# - local_fs: json_file / csv_file / excel_file
-# - s3: parquet_s3
+# - local_fs / s3 / gcs / azure: json, csv, excel, parquet — all four formats
+#   go through DuckDB's native `COPY … TO`, which writes object-store URIs
+#   once the extension + SECRET are loaded (see `writers/_copy.py`).
 # - postgres: postgres writer (via dlt[postgres])
 # - mysql / snowflake / bigquery: dlt writer extras (optional)
+#
+# Every engine can reach every file target: `writers/_copy.py` streams a
+# non-DuckDB result through Arrow into a scratch DuckDB connection before
+# COPY, so file/object-store outputs are not limited to DuckDB pipelines.
+_FILE_WRITE_TARGETS: set[ConnectionType] = {"local_fs", "s3", "gcs", "azure"}
+
 ENGINE_WRITE_SUPPORT: dict[EngineName, set[ConnectionType]] = {
-    "duckdb":    {"local_fs", "s3", "postgres", "mysql"},
-    "postgres":  {"postgres", "local_fs"},
-    "mysql":     {"mysql", "local_fs"},
-    "sqlite":    {"sqlite", "local_fs"},
-    "bigquery":  {"bigquery", "local_fs"},
-    "snowflake": {"snowflake", "local_fs"},
-    "trino":     {"postgres", "mysql", "snowflake", "bigquery",
-                  "s3", "gcs", "azure"},
+    "duckdb":    _FILE_WRITE_TARGETS | {"postgres", "mysql"},
+    "postgres":  _FILE_WRITE_TARGETS | {"postgres"},
+    "mysql":     _FILE_WRITE_TARGETS | {"mysql"},
+    "sqlite":    _FILE_WRITE_TARGETS | {"sqlite"},
+    "bigquery":  _FILE_WRITE_TARGETS | {"bigquery"},
+    "snowflake": _FILE_WRITE_TARGETS | {"snowflake"},
+    "trino":     _FILE_WRITE_TARGETS | {"postgres", "mysql", "snowflake", "bigquery"},
 }
 
 

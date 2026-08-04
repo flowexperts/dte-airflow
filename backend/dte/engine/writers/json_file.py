@@ -2,24 +2,22 @@ from __future__ import annotations
 
 import ibis
 
-from dte.models.pipeline import JsonFileTarget
+from dte.engine.writers._copy import copy_to
+from dte.models.pipeline import JsonTarget
 
 
-def _sql_str(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+def write(
+    table: ibis.Table,
+    target: JsonTarget,
+    con: ibis.BaseBackend | None = None,
+    credentials: dict | None = None,
+) -> dict:
+    """Stream to a local path or object-store URI via DuckDB's native COPY.
 
-
-def write(table: ibis.Table, target: JsonFileTarget, con: ibis.BaseBackend | None = None) -> dict:
-    """Stream to disk via DuckDB's native COPY.
-
-    Delegates serialisation to DuckDB so we never materialise the full result
-    set in Python memory. Preserves the previous JSON array shape (matches
-    what the frontend `RunOutputPreview` and `runs/{id}/output` reader expect).
+    `ARRAY true` preserves the JSON array shape that `runs/{id}/output` and
+    the frontend `RunOutputPreview` expect — do not switch this to
+    newline-delimited without updating both.
     """
-    backend = table._find_backend()
-    backend.create_view("_dte_json_output", table, overwrite=True)
-    (count,) = backend.con.execute("SELECT COUNT(*) FROM _dte_json_output").fetchone()
-    backend.con.execute(
-        f"COPY _dte_json_output TO {_sql_str(target.path)} (FORMAT JSON, ARRAY true)"
+    return copy_to(
+        table, target.path, "FORMAT JSON, ARRAY true", con=con, credentials=credentials
     )
-    return {"rows_written": int(count), "location": target.path}
