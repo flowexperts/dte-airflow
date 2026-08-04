@@ -17,7 +17,6 @@ import {
   Pill,
   SectionHead,
   Timeline,
-  TimelineRow,
   Topbar,
 } from "@/components/ui";
 import { getDestination, getPipeline, getRun, getRunEvents, getRunQuality, isTerminal, type Destination, type Pipeline, type QualityCheckResult, type Run, type RunEvent } from "@/lib/api";
@@ -87,6 +86,67 @@ function WarningBanner({ quality }: { quality: Run["quality"] }) {
         )}
       </div>
     </Panel>
+  );
+}
+
+function StepDiagnosticRow({
+  index,
+  event,
+  sql,
+}: {
+  index: number;
+  event: RunEvent | undefined;
+  sql: string | undefined;
+}) {
+  const started = event?.started_at ? new Date(event.started_at) : null;
+  const finished = event?.finished_at ? new Date(event.finished_at) : null;
+  const dur =
+    started && finished
+      ? `${Math.max(0, finished.getTime() - started.getTime())}ms`
+      : event?.status === "started"
+        ? "…"
+        : event
+          ? "—"
+          : "";
+  const tone: "ok" | "warn" | "err" =
+    event?.status === "failed" ? "err" : event?.status === "started" ? "warn" : "ok";
+
+  return (
+    <div className="border-b border-border last:border-b-0">
+      <div className="grid grid-cols-[120px_30px_1fr_60px] items-center px-4 py-2.5 font-mono text-[12px]">
+        <span className="text-subtle text-[11.5px] tracking-[0.03em]">
+          {started ? started.toLocaleTimeString() : "—"}
+        </span>
+        <span
+          className="size-1.5 rounded-full justify-self-center"
+          style={{ background: severityTone[tone] }}
+        />
+        <span className="font-[family-name:var(--font-ui)] text-[13px] text-text">
+          step {index}
+          {event && (
+            <>
+              {" "}
+              <InlineCode>{event.op}</InlineCode> {event.status}
+              {event.message ? ` — ${event.message}` : ""}
+            </>
+          )}
+        </span>
+        <span className="text-subtle text-[11.5px] text-right">{dur}</span>
+      </div>
+      {sql && (
+        <details className="group px-4 pb-2.5">
+          <summary className="cursor-pointer select-none font-mono text-[11px] text-subtle hover:text-text list-none flex items-center gap-1.5 py-1 pl-[150px]">
+            <span className="text-[9px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
+            SQL
+          </summary>
+          <div className="mt-1.5 ml-[150px] rounded overflow-hidden">
+            <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
+              <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sql}</pre>
+            </div>
+          </div>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -263,104 +323,60 @@ export default function RunDetail({ params }: { params: Params }) {
               disabled={data.status !== "completed"}
             />
 
-            <details className="group">
-              <summary className="cursor-pointer select-none font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle hover:text-text list-none flex items-center gap-2 py-1">
-                <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
-                Diagnostics
-              </summary>
-              <div className="mt-4 space-y-8">
-                <section>
-                  <SectionHead
-                    title="Execution timeline"
-                    count="· per-step events"
-                  />
-                  <Timeline>
-                    {events.length === 0 ? (
-                      <div className="px-4 py-6 text-center text-subtle text-sm">
-                        No events yet.
-                      </div>
-                    ) : (
-                      events.map((e) => {
-                        const started = e.started_at ? new Date(e.started_at) : null;
-                        const finished = e.finished_at ? new Date(e.finished_at) : null;
-                        const dur =
-                          started && finished
-                            ? `${Math.max(0, finished.getTime() - started.getTime())}ms`
-                            : e.status === "started"
-                              ? "…"
-                              : "—";
-                        const tone: "default" | "warn" | "err" =
-                          e.status === "failed"
-                            ? "err"
-                            : e.status === "started"
-                              ? "warn"
-                              : "default";
-                        return (
-                          <TimelineRow
-                            key={e.step_index}
-                            time={started ? started.toLocaleTimeString() : "—"}
-                            message={
-                              <>
-                                step {e.step_index} <InlineCode>{e.op}</InlineCode>{" "}
-                                {e.status}
-                                {e.message ? ` — ${e.message}` : ""}
-                              </>
-                            }
-                            duration={dur}
-                            tone={tone}
-                          />
-                        );
-                      })
-                    )}
-                  </Timeline>
-                </section>
+            {(() => {
+              const sq = data.sql_query;
+              const sqlByIndex = new Map<number, string>(
+                sq?.step_sqls ? Object.entries(sq.step_sqls).map(([k, v]) => [Number(k), v]) : [],
+              );
+              const stepIndices = new Set<number>(events.map((e) => e.step_index));
+              sqlByIndex.forEach((_, idx) => stepIndices.add(idx));
+              const sortedIndices = [...stepIndices].sort((a, b) => a - b);
+              const eventByIndex = new Map(events.map((e) => [e.step_index, e]));
 
-                {data.sql_query && (
-                  (() => {
-                    const sq = data.sql_query;
-                    const stepEntries = sq.step_sqls ? Object.entries(sq.step_sqls) : [];
-                    const hasSql = stepEntries.length > 0 || !!sq.final_sql;
-                    if (!hasSql) return null;
-                    return (
-                      <section>
-                        <SectionHead
-                          title="Compiled SQL"
-                          count={stepEntries.length + (sq.final_sql ? 1 : 0)}
-                        />
-                        <div className="space-y-3">
-                          {stepEntries.map(([idx, sql]) => (
-                            <details key={idx} className="group">
-                              <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
-                                <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
-                                Step {idx}
-                              </summary>
-                              <div className="mt-2 rounded overflow-hidden">
-                                <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
-                                  <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sql}</pre>
-                                </div>
-                              </div>
-                            </details>
-                          ))}
-                          {sq.final_sql && (
-                            <details className="group" open>
-                              <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
-                                <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
-                                Final query
-                              </summary>
-                              <div className="mt-2 rounded overflow-hidden">
-                                <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
-                                  <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sq.final_sql}</pre>
-                                </div>
-                              </div>
-                            </details>
-                          )}
+              if (sortedIndices.length === 0 && !sq?.final_sql) return null;
+
+              return (
+                <details className="group">
+                  <summary className="cursor-pointer select-none font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle hover:text-text list-none flex items-center gap-2 py-1">
+                    <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
+                    Diagnostics
+                  </summary>
+                  <div className="mt-4 space-y-4">
+                    <SectionHead title="Steps" count={sortedIndices.length} />
+                    <Timeline>
+                      {sortedIndices.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-subtle text-sm">
+                          No events yet.
                         </div>
-                      </section>
-                    );
-                  })()
-                )}
-              </div>
-            </details>
+                      ) : (
+                        sortedIndices.map((idx) => (
+                          <StepDiagnosticRow
+                            key={idx}
+                            index={idx}
+                            event={eventByIndex.get(idx)}
+                            sql={sqlByIndex.get(idx)}
+                          />
+                        ))
+                      )}
+                    </Timeline>
+
+                    {sq?.final_sql && (
+                      <details className="group">
+                        <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
+                          <span className="text-[10px] text-muted group-open:rotate-90 transition-transform inline-block">▶</span>
+                          Final query
+                        </summary>
+                        <div className="mt-2 rounded overflow-hidden">
+                          <div className="bg-code-bg overflow-y-auto" style={{ maxHeight: "320px" }}>
+                            <pre className="p-3 font-mono text-[12px] text-text whitespace-pre overflow-x-auto">{sq.final_sql}</pre>
+                          </div>
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                </details>
+              );
+            })()}
           </>
         )}
       </div>
