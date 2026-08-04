@@ -153,7 +153,7 @@ export function PipelinePreview({
       ? humanizeError(err, { action: "run preview", entity: "pipeline" })
       : humanizeCompilerError(compileErr);
   const displayErr = humanized;
-  const pipelineObj = isLive ? (pipelineId as Pipeline) : null;
+  const pipelineObj = isLive ? (pipelineId as Pipeline) : (savedPipeline ?? null);
 
   return (
     <section>
@@ -315,10 +315,17 @@ function SqlPanel({
   data: PreviewResponse;
   pipeline: Pipeline | null;
 }) {
+  const isQualityPipeline = pipeline?.pipeline_type === "quality";
   const stepSqls = data.step_sqls ?? {};
-  const stepEntries: Array<[number, string]> = Object.entries(stepSqls)
-    .map(([k, v]) => [Number(k), v] as [number, string])
-    .sort((a, b) => a[0] - b[0]);
+  // Transform pipelines capture one SQL block per step (each op is compiled
+  // individually) — showing all of them is noise once the final compiled
+  // query is available. Quality pipelines have no final_sql; one block per
+  // check is the actual content, so keep the per-step breakdown there.
+  const stepEntries: Array<[number, string]> = isQualityPipeline
+    ? Object.entries(stepSqls)
+        .map(([k, v]) => [Number(k), v] as [number, string])
+        .sort((a, b) => a[0] - b[0])
+    : [];
   const finalSql = data.final_sql ?? null;
 
   if (stepEntries.length === 0 && !finalSql) {
