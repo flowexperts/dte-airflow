@@ -38,6 +38,17 @@ export function RunOutputPreview({
 
   const columns = data?.rows?.[0] ? Object.keys(data.rows[0]) : [];
 
+  // Nothing to show and no way to show it — collapse the whole section to one
+  // line rather than heading an empty full-width panel.
+  if (!supported) {
+    return (
+      <div className="flex items-center justify-between gap-4 px-4 py-2.5 rounded-[var(--radius)] bg-surface-2 border border-dashed border-border-2 text-[12.5px] text-subtle">
+        <span>Output preview — not supported for {outputType ?? "unknown"} outputs yet</span>
+        <span className="font-mono text-[11px]">{outputType ?? "unknown"}</span>
+      </div>
+    );
+  }
+
   return (
     <section>
       <SectionHead
@@ -60,12 +71,6 @@ export function RunOutputPreview({
           ) : null
         }
       />
-
-      {!supported && (
-        <div className="text-[12px] text-subtle font-mono px-1">
-          Preview not supported for {outputType ?? "unknown"} outputs yet.
-        </div>
-      )}
 
       {supported && err && (
         <ErrorPanel title={err.title} message={err.message} detail={err.detail} />
