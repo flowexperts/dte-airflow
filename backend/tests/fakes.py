@@ -114,6 +114,7 @@ class FakeRunStore:
             "started_at": _utcnow_iso(),
             "finished_at": None,
             "params": None,
+            "sql_query": None,
         }
         return run_id
 

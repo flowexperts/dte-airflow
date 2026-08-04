@@ -900,12 +900,16 @@ async def _run_body(
             with tr.start_as_current_span("compile"):
                 events_buf: list[tuple[int, str, str, str | None]] = []
                 quality_results = []
+                step_sqls: dict[int, str] = {}
 
                 def _cb(idx, op, status, msg=None):
                     events_buf.append((idx, op, status, msg))
 
                 def _on_quality_result(step_idx, qresult):
                     quality_results.append(qresult)
+
+                def _capture_sql(idx: int, sql: str):
+                    step_sqls[idx] = sql
 
                 try:
                     compile_pipeline(
@@ -914,10 +918,13 @@ async def _run_body(
                         on_step=_cb,
                         engine=engine,
                         on_quality_result=_on_quality_result,
+                        on_step_sql=_capture_sql,
                     )
                 finally:
                     for idx, op, status, msg in events_buf:
                         await re_store.record(run_id, idx, op, status, msg)
+            if step_sqls:
+                await r_store.update(run_id, sql_query={"step_sqls": {str(k): v for k, v in step_sqls.items()}})
 
             await r_store.set_quality(run_id, [r.model_dump() for r in quality_results])
 
@@ -939,20 +946,36 @@ async def _run_body(
         with tr.start_as_current_span("compile"):
             # Compiler emits synchronously; buffer here and flush async.
             events_buf: list[tuple[int, str, str, str | None]] = []
+            step_sqls: dict[int, str] = {}
 
             def _cb(idx, op, status, msg=None):
                 events_buf.append((idx, op, status, msg))
+
+            def _capture_sql(idx: int, sql: str):
+                step_sqls[idx] = sql
 
             try:
                 compiled = compile_pipeline(
                     pipeline, tables,
                     output=destination.config, lookup_tables=lookups,
                     on_step=_cb,
+                    on_step_sql=_capture_sql,
                     engine=engine,
                 )
             finally:
                 for idx, op, status, msg in events_buf:
                     await re_store.record(run_id, idx, op, status, msg)
+            dialect = getattr(engine, "dialect", "duckdb")
+            final_sql: str | None = None
+            try:
+                final_sql = str(ibis.to_sql(compiled.limit(settings.run_max_rows), dialect=dialect))
+            except Exception:
+                pass
+            if step_sqls or final_sql:
+                await r_store.update(run_id, sql_query={
+                    "step_sqls": {str(k): v for k, v in step_sqls.items()},
+                    "final_sql": final_sql,
+                })
             compiled = compiled.limit(settings.run_max_rows)
 
         with tr.start_as_current_span("write") as span:
