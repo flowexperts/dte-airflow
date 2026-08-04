@@ -469,15 +469,21 @@ async def _compile_body_pipeline(
     # `.sources`, `.output_id`, `.steps` all works — validators already fired.
     pipeline = Pipeline(**body.model_dump())
     decrypt_context_var.set("pipeline_dry_run")
+    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
     try:
         pipeline = interpolate_pipeline(pipeline, resolve_context(pipeline, params))
-        sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
+        if is_quality:
+            sources = await _resolve_sources(pipeline, s_store, c_store)
+            destination = None
+        else:
+            sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
         engine = DuckDBEngine()
         registry = BackendRegistry(duckdb_con=engine.con)
         tables = {s.id: load_source(s, registry, conn, creds) for s, conn, creds in sources}
         compiled = compile_pipeline(
-            pipeline, tables, output=destination.config,
+            pipeline, tables,
+            output=destination.config if destination else None,
             lookup_tables=lookups, on_step_schema=on_step_schema,
             on_step_sql=on_step_sql,
             engine=engine,
@@ -615,13 +621,18 @@ async def preview_pipeline(
     def _capture_sql(idx: int, sql: str):
         step_sqls[idx] = sql
 
+    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
     error: str | None = None
     compiled = None
     engine = None
     try:
         parsed_params = _parse_params_query(params)
         pipeline = interpolate_pipeline(pipeline, resolve_context(pipeline, parsed_params))
-        sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
+        if is_quality:
+            sources = await _resolve_sources(pipeline, s_store, c_store)
+            destination = None
+        else:
+            sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
         # Preview runs against whichever backend each source resolves to
         # (postgres source → postgres pushdown). DuckDBEngine here is just
@@ -631,8 +642,9 @@ async def preview_pipeline(
         registry = BackendRegistry(duckdb_con=engine.con)
         tables = {s.id: load_source(s, registry, conn, creds) for s, conn, creds in sources}
         compiled = compile_pipeline(
-            pipeline, tables, output=destination.config, lookup_tables=lookups,
-            engine=engine, on_step_sql=_capture_sql,
+            pipeline, tables,
+            output=destination.config if destination else None,
+            lookup_tables=lookups, engine=engine, on_step_sql=_capture_sql,
         )
     except HTTPException:
         raise
