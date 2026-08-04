@@ -283,7 +283,7 @@ def _apply_check_step(
     engine.con.con.execute(f"CREATE OR REPLACE TEMP VIEW {view_name} AS {sql}")
     if on_step_sql is not None:
         try:
-            on_step_sql(idx, f"SELECT * FROM ({sql}) t WHERE NOT ({expr})")
+            on_step_sql(idx, f"SELECT * FROM {view_name} WHERE NOT ({expr})")
         except Exception:
             pass
     try:

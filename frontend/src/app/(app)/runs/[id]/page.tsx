@@ -324,12 +324,12 @@ export default function RunDetail({ params }: { params: Params }) {
                 const hasSql = stepEntries.length > 0 || !!sq.final_sql;
                 if (!hasSql) return null;
                 return (
-                  <Panel>
-                    <PanelHead
-                      label="Compiled SQL"
+                  <section>
+                    <SectionHead
+                      title="Compiled SQL"
                       count={stepEntries.length + (sq.final_sql ? 1 : 0)}
                     />
-                    <div className="p-4 space-y-3">
+                    <div className="space-y-3">
                       {stepEntries.map(([idx, sql]) => (
                         <details key={idx} className="group">
                           <summary className="cursor-pointer select-none font-mono text-[12px] text-subtle hover:text-text list-none flex items-center gap-2 py-1">
@@ -357,7 +357,7 @@ export default function RunDetail({ params }: { params: Params }) {
                         </details>
                       )}
                     </div>
-                  </Panel>
+                  </section>
                 );
               })()
             )}
