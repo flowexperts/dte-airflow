@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import pathlib
+import uuid
 
 import pytest
 import pytest_asyncio
@@ -361,3 +362,163 @@ async def test_pipeline_gcs_source_to_local_json(client, tmp_path):
     assert len(rows) == 20
     amounts = [r["amount"] for r in rows]
     assert amounts == sorted(amounts, reverse=True)
+
+
+# ─── Pipeline tier: object-store WRITES ───────────────────────────────────
+#
+# Format and location are independent axes, so the writer needs proving on
+# both. The reads above only exercise the loader half.
+#
+# GCS writes require a fake-gcs-server built from PR #2092 -- stock images
+# implement only the JSON upload API, while DuckDB writes via the
+# S3-compatible XML PUT. See docker/docker-compose.storage-test.yml.
+
+_FORMAT_MATRIX = [
+    ("json", ".json", "read_json_auto"),
+    ("csv", ".csv", "read_csv_auto"),
+    ("parquet", ".parquet", "read_parquet"),
+    ("excel", ".xlsx", "read_xlsx"),
+]
+
+
+def _readback_con(kind: str):
+    """A DuckDB connection wired to read back out of the emulator."""
+    import duckdb
+
+    con = duckdb.connect()
+    for ext in ("httpfs", "azure", "excel"):
+        con.execute(f"INSTALL {ext}")
+        con.execute(f"LOAD {ext}")
+    if kind == "gcs":
+        endpoint = _FAKE_GCS.split("://", 1)[-1].rstrip("/")
+        con.execute(
+            "CREATE OR REPLACE SECRET rb (TYPE gcs, KEY_ID 'fake-key', "
+            f"SECRET 'fake-secret', ENDPOINT '{endpoint}', URL_STYLE 'path', USE_SSL false)"
+        )
+    elif kind == "azure":
+        con.execute(
+            f"CREATE OR REPLACE SECRET rb (TYPE azure, CONNECTION_STRING '{_AZURITE_CONN}')"
+        )
+    else:
+        endpoint = _MINIO.split("://", 1)[-1].rstrip("/")
+        con.execute(
+            "CREATE OR REPLACE SECRET rb (TYPE s3, KEY_ID 'minioadmin', "
+            f"SECRET 'minioadmin', ENDPOINT '{endpoint}', URL_STYLE 'path', USE_SSL false)"
+        )
+    return con
+
+
+@pytest.mark.skipif(not _FAKE_GCS, reason="requires FAKE_GCS_ENDPOINT")
+@pytest.mark.parametrize("fmt,ext,reader", _FORMAT_MATRIX)
+async def test_pipeline_writes_format_to_gcs(client, fmt, ext, reader):
+    """Every output format lands in GCS and reads back with the row count."""
+    key = f"out/w-gcs-{fmt}-{uuid.uuid4().hex[:8]}{ext}"
+    uri = f"gcs://dte-test/{key}"
+
+    await _create(client, "/api/connections", {
+        "id": "c-gcs", "connection_type": "gcs",
+        "credentials": {
+            "hmac_key_id": "fake-key", "hmac_secret": "fake-secret",
+            "endpoint_url": _FAKE_GCS,
+        },
+    })
+    await _create(client, "/api/sources", {
+        "id": "s-gcs", "connection_id": "c-gcs", "source_type": "gcs",
+        "config": {"bucket_url": "gcs://dte-test", "file_glob": "orders.json"},
+        "table": "orders_src",
+    })
+    await _create(client, "/api/destinations", {
+        "id": "d-gcs", "connection_id": "c-gcs", "config": {"type": fmt, "path": uri},
+    })
+    await _create(client, "/api/pipelines", {
+        "id": "pl-gcs-w", "name": f"gcs write {fmt}",
+        "sources": ["s-gcs"], "steps": [], "output_id": "d-gcs",
+    })
+
+    run = await _trigger_and_wait(client, "pl-gcs-w")
+    assert run["status"] == "completed", run.get("error")
+    assert run["rows_written"] == 20
+
+    con = _readback_con("gcs")
+    assert con.execute(f"SELECT count(*) FROM {reader}('{uri}')").fetchone()[0] == 20
+
+
+@pytest.mark.skipif(not _AZURITE, reason="requires AZURITE_ENDPOINT")
+@pytest.mark.parametrize("fmt,ext,reader", _FORMAT_MATRIX)
+async def test_pipeline_writes_format_to_azure(client, fmt, ext, reader):
+    """Same matrix against Azurite."""
+    key = f"out/w-az-{fmt}-{uuid.uuid4().hex[:8]}{ext}"
+    uri = f"{_AZURE_PREFIX}dte-test/{key}"
+
+    await _create(client, "/api/connections", {
+        "id": "c-az", "connection_type": "azure",
+        "credentials": {"connection_string": _AZURITE_CONN},
+    })
+    await _create(client, "/api/sources", {
+        "id": "s-az", "connection_id": "c-az", "source_type": "azure",
+        "config": {"bucket_url": f"{_AZURE_PREFIX}dte-test", "file_glob": "orders.json"},
+        "table": "orders_src",
+    })
+    await _create(client, "/api/destinations", {
+        "id": "d-az", "connection_id": "c-az", "config": {"type": fmt, "path": uri},
+    })
+    await _create(client, "/api/pipelines", {
+        "id": "pl-az-w", "name": f"azure write {fmt}",
+        "sources": ["s-az"], "steps": [], "output_id": "d-az",
+    })
+
+    run = await _trigger_and_wait(client, "pl-az-w")
+    assert run["status"] == "completed", run.get("error")
+    assert run["rows_written"] == 20
+
+    con = _readback_con("azure")
+    assert con.execute(f"SELECT count(*) FROM {reader}('{uri}')").fetchone()[0] == 20
+
+
+@pytest.mark.skipif(not (_MINIO and _FAKE_GCS), reason="requires MINIO + FAKE_GCS")
+async def test_pipeline_cross_cloud_s3_csv_to_gcs_parquet(client):
+    """The headline case: read CSV from S3, transform, write Parquet to GCS.
+
+    Source format, destination format, and cloud all differ in one run.
+    """
+    key = f"out/x-cloud-{uuid.uuid4().hex[:8]}.parquet"
+    uri = f"gcs://dte-test/{key}"
+
+    await _create(client, "/api/connections", {
+        "id": "c-s3", "connection_type": "s3",
+        "credentials": {
+            "aws_access_key_id": "minioadmin", "aws_secret_access_key": "minioadmin",
+            "endpoint_url": _MINIO,
+        },
+    })
+    await _create(client, "/api/connections", {
+        "id": "c-gcs2", "connection_type": "gcs",
+        "credentials": {
+            "hmac_key_id": "fake-key", "hmac_secret": "fake-secret",
+            "endpoint_url": _FAKE_GCS,
+        },
+    })
+    await _create(client, "/api/sources", {
+        "id": "s-s3-csv", "connection_id": "c-s3", "source_type": "s3",
+        "config": {"bucket_url": "s3://dte-test", "file_glob": "orders.csv"},
+        "table": "orders_csv", "format": "csv",
+    })
+    await _create(client, "/api/destinations", {
+        "id": "d-gcs-parquet", "connection_id": "c-gcs2",
+        "config": {"type": "parquet", "path": uri},
+    })
+    await _create(client, "/api/pipelines", {
+        "id": "pl-x-cloud", "name": "s3 csv to gcs parquet",
+        "sources": ["s-s3-csv"],
+        "steps": [{"op": "filter", "expr": "status = 'paid'"}],
+        "output_id": "d-gcs-parquet",
+    })
+
+    run = await _trigger_and_wait(client, "pl-x-cloud")
+    assert run["status"] == "completed", run.get("error")
+    assert 0 < run["rows_written"] < 20  # filter removed some rows
+
+    con = _readback_con("gcs")
+    rows = con.execute(f"SELECT status FROM read_parquet('{uri}')").fetchall()
+    assert len(rows) == run["rows_written"]
+    assert {r[0] for r in rows} == {"paid"}

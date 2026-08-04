@@ -184,18 +184,35 @@ Make it configurable rather than adding a second script:
    the form Azurite requires. Deliberately excluded from `_SCHEME_BACKEND` so a typo
    raises instead of silently misrouting.
 4. **GCS writes: emulator limitation, not a code limitation.** `gcs://` writes fail
-   against fake-gcs-server with HTTP 400 — it does not implement the XML API `PUT`
-   DuckDB uses (a raw `PUT` returns `invalid uploadType`; only its JSON upload
-   endpoint works, and there is no flag to enable the XML API). Real GCS implements
-   it. The `gcs://` write path itself is verified working for all four formats
-   against an XML-API-capable S3-compatible server.
+   against *published* fake-gcs-server images with HTTP 400 — they implement only the
+   JSON upload API, not the XML `PUT` DuckDB uses (a raw `PUT` returns
+   `invalid uploadType`). Real GCS implements the XML interop API, so this never
+   affected production. No URL style, secret type (`gcs` or `s3`), or `-public-host`
+   value changes it.
 
-   **Consequence for local testing:** the demo `conn-gcs` connection points its
-   `endpoint_url` at MinIO, so `gcs://` reads *and* writes both work end to end.
-   fake-gcs-server remains in the compose file and still backs the read-only
-   integration tests from plan 044.
+   **Resolved** by building fake-gcs from the unmerged upstream PR
+   [#2092](https://github.com/fsouza/fake-gcs-server/pull/2092) ("Support XML API",
+   the conflict-resolved successor to #1164; upstream issue #331 is open since 2020).
+   That build adds `xmlPutObject` *and* returns the per-part `ETag` DuckDB's multipart
+   uploader needs — without the ETag, objects land with correct bytes but every write
+   still raises `Unexpected response when uploading part to S3`, which is worse than
+   an outright failure. Verified against PR #2092: all four formats round-trip through
+   `gcs://`, plus a 200k-row parquet that exercises a genuine multipart upload.
 
-All four formats verified writing to **and** reading back from s3 and azure.
+   `docker/docker-compose.storage-test.yml` therefore pins a locally built
+   `fake-gcs-server:xml-pr2092` image, with build instructions inline. Swap back to
+   `fsouza/fake-gcs-server:latest` once #2092 merges.
+
+   **Host vs container caveat.** fake-gcs's `publicHostMatcher` demands exact hostname
+   equality (port stripped), so `-public-host` must match the ENDPOINT the client uses.
+   `localhost` serves the host-run test suite; a container reaching the emulator as
+   `host.docker.internal` gets 404s on the XML API — a routing failure that looks
+   nothing like a config error. One value cannot serve both. The host suite wins, so
+   the Docker demo pipelines keep pointing `conn-gcs` at MinIO.
+
+All four formats verified writing to **and** reading back from s3, azure and gcs —
+covered by `tests/integration/test_cloud_storage.py` (20 tests), including a
+cross-cloud `csv @ s3 → parquet @ gcs` run.
 
 ---
 

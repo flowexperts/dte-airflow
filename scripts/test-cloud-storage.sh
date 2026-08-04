@@ -26,7 +26,10 @@ BACKEND="$PROJECT_ROOT/backend"
 export MINIO_ENDPOINT="http://localhost:9000"
 export AZURITE_ENDPOINT="http://localhost:10000"
 export AZURITE_CONN="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
-export FAKE_GCS_ENDPOINT="http://localhost:4443"
+# Override both to this machine's LAN IP to make the emulator usable from
+# containers as well as the host — see docker/docker-compose.storage-test.yml.
+export FAKE_GCS_PUBLIC_HOST="${FAKE_GCS_PUBLIC_HOST:-localhost}"
+export FAKE_GCS_ENDPOINT="${FAKE_GCS_ENDPOINT:-http://${FAKE_GCS_PUBLIC_HOST}:4443}"
 
 cleanup() {
   echo "==> Tearing down..."
@@ -105,9 +108,9 @@ for name, blob in payloads.items():
 print(f"seeded: s3://{BUCKET}/{{{','.join(payloads)}}}")
 
 # ── fake-gcs-server ──────────────────────────────────────────────────────
-# Reads only. fake-gcs-server does not implement the XML API PUT that
-# DuckDB uses to write, so `gcs://` *writes* must target an S3-compatible
-# server (MinIO) instead — see plans/045 for the detail.
+# Seeded over the JSON upload API, which every fake-gcs build supports.
+# Writes back out go over the XML PUT, which only the PR #2092 build has —
+# see docker/docker-compose.storage-test.yml and plans/045.
 base = os.environ["FAKE_GCS_ENDPOINT"]
 r = httpx.post(f"{base}/storage/v1/b?project=test", json={"name": BUCKET})
 if r.status_code not in (200, 409):
@@ -139,7 +142,7 @@ if [[ "$MODE" == "start" ]]; then
 
   MinIO      S3        $MINIO_ENDPOINT      (console :9001, minioadmin/minioadmin)
   Azurite    Azure     $AZURITE_ENDPOINT
-  fake-gcs   GCS       $FAKE_GCS_ENDPOINT   (reads only - see plans/045)
+  fake-gcs   GCS       $FAKE_GCS_ENDPOINT   (reads + writes; needs the PR #2092 image)
 
   Bucket/container 'dte-test' holds orders.{json,csv,parquet,xlsx}.
 
