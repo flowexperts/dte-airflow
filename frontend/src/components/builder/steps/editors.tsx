@@ -1464,197 +1464,274 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
 
 type StepEditorProps = { step: StepShape; set: Setter };
 
-/** Shared severity toggle used in every check editor. */
-function SeverityField({ step, onChange }: { step: StepShape; onChange: (v: string) => void }) {
-  return (
-    <Field label="On failure">
-      <Segmented<"fail" | "warn">
-        options={[
-          { value: "fail", label: "Fail" },
-          { value: "warn", label: "Warn" },
-        ]}
-        value={(step.severity as "fail" | "warn") ?? "fail"}
-        onChange={onChange}
-      />
-    </Field>
-  );
-}
-
-function CheckNotNullEditor({ step, set }: StepEditorProps) {
+function CheckEditor({ step, set }: StepEditorProps) {
   const allFields = useStepFields();
-  return (
-    <div className="flex flex-col gap-2">
-      <Field label="Column">
-        <FieldPicker
-          value={(step.column as string) ?? ""}
-          onChange={(v) => set({ ...step, column: v })}
-          options={allFields}
-          placeholder="Pick a column"
-          variant="tree"
-        />
-      </Field>
-      <SeverityField step={step} onChange={(v) => set({ ...step, severity: v })} />
-    </div>
-  );
-}
+  const declaredParams = usePipelineParams();
+  const paramsListId = `check-params-${useId()}`;
 
-function CheckUniqueEditor({ step, set }: StepEditorProps) {
-  const allFields = useStepFields();
-  return (
-    <div className="flex flex-col gap-2">
-      <Field label="Column">
-        <FieldPicker
-          value={(step.column as string) ?? ""}
-          onChange={(v) => set({ ...step, column: v })}
-          options={allFields}
-          placeholder="Pick a column"
-          variant="tree"
-        />
-      </Field>
-      <SeverityField step={step} onChange={(v) => set({ ...step, severity: v })} />
-    </div>
-  );
-}
+  const initialMode: "basic" | "advanced" = step.expr ? "advanced" : "basic";
+  const [mode, setMode] = useState<"basic" | "advanced">(initialMode);
 
-function CheckRangeEditor({ step, set }: StepEditorProps) {
-  const allFields = useStepFields();
-  return (
-    <div className="flex flex-col gap-2">
-      <Field label="Column">
-        <FieldPicker
-          value={(step.column as string) ?? ""}
-          onChange={(v) => set({ ...step, column: v })}
-          options={allFields}
-          placeholder="Pick a column"
-          variant="tree"
-        />
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Min (optional)">
-          <Input
-            type="number"
-            value={step.min != null ? String(step.min) : ""}
-            onChange={(e) => set({ ...step, min: e.target.value !== "" ? Number(e.target.value) : null })}
-            placeholder="0"
-          />
-        </Field>
-        <Field label="Max (optional)">
-          <Input
-            type="number"
-            value={step.max != null ? String(step.max) : ""}
-            onChange={(e) => set({ ...step, max: e.target.value !== "" ? Number(e.target.value) : null })}
-            placeholder="1000"
-          />
-        </Field>
-      </div>
-      <SeverityField step={step} onChange={(v) => set({ ...step, severity: v })} />
-    </div>
+  const [rules, setRules] = useState<FilterRule[]>(() => {
+    if (step.expr) return tryParseBasicSql(step.expr as string) ?? [];
+    return [];
+  });
+  const [advancedText, setAdvancedText] = useState<string>(
+    (step.expr as string) ?? "",
   );
-}
 
-function CheckRegexEditor({ step, set }: StepEditorProps) {
-  const allFields = useStepFields();
-  return (
-    <div className="flex flex-col gap-2">
-      <Field label="Column">
-        <FieldPicker
-          value={(step.column as string) ?? ""}
-          onChange={(v) => set({ ...step, column: v })}
-          options={allFields}
-          placeholder="Pick a column"
-          variant="tree"
-        />
-      </Field>
-      <Field label="Pattern" hint="regular expression — DuckDB regexp_matches syntax">
-        <Input
-          value={(step.pattern as string) ?? ""}
-          onChange={(e) => set({ ...step, pattern: e.target.value })}
-          placeholder="^[A-Z]{2}-\d{4}$"
-        />
-      </Field>
-      <SeverityField step={step} onChange={(v) => set({ ...step, severity: v })} />
-    </div>
-  );
-}
+  const commitRules = (next: FilterRule[]) => {
+    setRules(next);
+    if (mode === "basic") set({ ...step, expr: rulesToSql(next) });
+  };
 
-function CheckAcceptedValuesEditor({ step, set }: StepEditorProps) {
-  const allFields = useStepFields();
-  const values = (step.values as string[]) ?? [];
-  return (
-    <div className="flex flex-col gap-2">
-      <Field label="Column">
-        <FieldPicker
-          value={(step.column as string) ?? ""}
-          onChange={(v) => set({ ...step, column: v })}
-          options={allFields}
-          placeholder="Pick a column"
-          variant="tree"
-        />
-      </Field>
-      <Field label="Accepted values" hint="comma-separated list of allowed values">
-        <Textarea
-          value={values.join(", ")}
-          onChange={(e) =>
-            set({
-              ...step,
-              values: e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-          placeholder="active, pending, closed"
-        />
-      </Field>
-      <SeverityField step={step} onChange={(v) => set({ ...step, severity: v })} />
-    </div>
-  );
-}
+  const addRule = () =>
+    commitRules([
+      ...rules,
+      { field: "", op: "=", value: "", join: "AND" },
+    ]);
+  const updateRule = (i: number, patch: Partial<FilterRule>) =>
+    commitRules(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const removeRule = (i: number) =>
+    commitRules(rules.filter((_, j) => j !== i));
 
-function CheckRowCountEditor({ step, set }: StepEditorProps) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Min rows (optional)">
-          <Input
-            type="number"
-            value={step.min != null ? String(step.min) : ""}
-            onChange={(e) => set({ ...step, min: e.target.value !== "" ? Number(e.target.value) : null })}
-            placeholder="1"
-          />
-        </Field>
-        <Field label="Max rows (optional)">
-          <Input
-            type="number"
-            value={step.max != null ? String(step.max) : ""}
-            onChange={(e) => set({ ...step, max: e.target.value !== "" ? Number(e.target.value) : null })}
-            placeholder="10000"
-          />
-        </Field>
-      </div>
-      <SeverityField step={step} onChange={(v) => set({ ...step, severity: v })} />
-    </div>
-  );
-}
+  const handleAdvancedChange = (text: string) => {
+    setAdvancedText(text);
+    set({ ...step, expr: text });
+  };
 
-function CheckCustomSqlEditor({ step, set }: StepEditorProps) {
+  const switchToBasic = () => {
+    const parsed = tryParseBasicSql(advancedText);
+    if (parsed !== null) {
+      setRules(parsed);
+      set({ ...step, expr: rulesToSql(parsed) });
+    }
+    setMode("basic");
+  };
+
+  const switchToAdvanced = () => {
+    if (advancedText === "") {
+      const basicSql = rulesToSql(rules);
+      if (basicSql) {
+        setAdvancedText(basicSql);
+        set({ ...step, expr: basicSql });
+      }
+    }
+    setMode("advanced");
+  };
+
+  const previewExpr = mode === "basic" ? rulesToSql(rules) : advancedText;
+
   return (
-    <div className="flex flex-col gap-2">
-      <Field label="Label" hint="human-readable name for this check">
+    <div className="grid gap-3">
+      <Field label="Label">
         <Input
           value={(step.label as string) ?? ""}
           onChange={(e) => set({ ...step, label: e.target.value })}
-          placeholder="No negative amounts"
+          placeholder="Describe what this assertion checks (optional)"
         />
       </Field>
-      <Field label="SQL assertion" hint="raw DuckDB WHERE clause — rows failing this are flagged">
-        <Textarea
-          value={(step.sql as string) ?? ""}
-          onChange={(e) => set({ ...step, sql: e.target.value })}
-          placeholder="amount >= 0 AND status IS NOT NULL"
+      <Field label="On failure">
+        <Segmented<"fail" | "warn">
+          options={[
+            { value: "fail", label: "Fail" },
+            { value: "warn", label: "Warn" },
+          ]}
+          value={(step.severity as "fail" | "warn") ?? "fail"}
+          onChange={(v) => set({ ...step, severity: v })}
         />
       </Field>
-      <SeverityField step={step} onChange={(v) => set({ ...step, severity: v })} />
+      <div className="flex items-center justify-between">
+        <div className="inline-flex border border-border rounded-[var(--radius)] bg-surface p-0.5">
+          {(["basic", "advanced"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                if (m === "basic" && mode === "advanced") switchToBasic();
+                else if (m === "advanced" && mode === "basic") switchToAdvanced();
+              }}
+              className={cn(
+                "px-3 py-1 text-[12.5px] font-medium rounded-[3px] transition-colors capitalize",
+                m === mode
+                  ? "bg-[color:var(--accent-tint)] text-accent"
+                  : "text-muted hover:text-text",
+              )}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+        <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+          {mode === "basic" ? "structured · safe" : "raw sql"}
+        </span>
+      </div>
+
+      {mode === "basic" ? (
+        <div className="space-y-1.5">
+          {rules.length === 0 && (
+            <div className="font-mono text-[11.5px] text-subtle">
+              No conditions. Add one below.
+            </div>
+          )}
+          {rules.map((r, i) => {
+            const noValue = OPS_WITHOUT_VALUE.has(r.op);
+            const fieldMeta = allFields.find((f) => f.name === r.field);
+            const inputType = fieldInputType(fieldMeta?.type);
+            const dynVars =
+              inputType === "date"
+                ? SYSTEM_VARS.filter((v) => v !== "now")
+                : inputType === "datetime-local"
+                  ? SYSTEM_VARS
+                  : [];
+            return (
+              <div
+                key={i}
+                className="grid grid-cols-[60px_1.4fr_120px_1.4fr_28px] gap-2 items-center"
+              >
+                {i === 0 ? (
+                  <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
+                    where
+                  </span>
+                ) : (
+                  <select
+                    value={r.join}
+                    onChange={(e) => updateRule(i, { join: e.target.value as "AND" | "OR" })}
+                    className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
+                  >
+                    <option value="AND">AND</option>
+                    <option value="OR">OR</option>
+                  </select>
+                )}
+                <FieldPicker
+                  value={r.field}
+                  onChange={(v) => updateRule(i, { field: v })}
+                  options={allFields}
+                  placeholder="field"
+                  variant="tree"
+                />
+                <select
+                  value={r.op}
+                  onChange={(e) => updateRule(i, { op: e.target.value as FilterOp })}
+                  className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
+                >
+                  {FILTER_OPS.map((op) => (
+                    <option key={op} value={op}>
+                      {op}
+                    </option>
+                  ))}
+                </select>
+                {r.op === "BETWEEN" ? (
+                  (() => {
+                    const [lo = "", hi = ""] = (r.value ?? "")
+                      .split(",")
+                      .map((s) => s.trim());
+                    const commit = (nlo: string, nhi: string) => {
+                      const parts = [nlo.trim(), nhi.trim()];
+                      updateRule(i, {
+                        value: parts.every((s) => s === "") ? "" : parts.join(", "),
+                      });
+                    };
+                    return (
+                      <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1">
+                        <DateValueField
+                          value={lo}
+                          onChange={(v) => commit(v, hi)}
+                          baseType={inputType}
+                          dynVars={dynVars}
+                          placeholder="min"
+                          list={paramsListId}
+                        />
+                        <span className="text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+                          and
+                        </span>
+                        <DateValueField
+                          value={hi}
+                          onChange={(v) => commit(lo, v)}
+                          baseType={inputType}
+                          dynVars={dynVars}
+                          placeholder="max"
+                          list={paramsListId}
+                        />
+                      </div>
+                    );
+                  })()
+                ) : (
+                  (() => {
+                    const suppressed = r.op === "IN" || r.op === "LIKE" || noValue;
+                    return (
+                      <DateValueField
+                        value={r.value}
+                        onChange={(v) => updateRule(i, { value: v })}
+                        baseType={suppressed ? "text" : inputType}
+                        dynVars={suppressed ? [] : dynVars}
+                        placeholder={r.op === "IN" ? "a, b, c" : "value"}
+                        disabled={noValue}
+                        list={paramsListId}
+                      />
+                    );
+                  })()
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeRule(i)}
+                  className="text-subtle hover:text-red text-sm"
+                  aria-label="Remove condition"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={addRule}
+            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+          >
+            + Add condition
+          </button>
+          {previewExpr && (
+            <div className="mt-2">
+              <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
+                Generated SQL
+              </div>
+              <code className="block font-mono text-[12px] text-muted bg-code-bg border border-border rounded px-2.5 py-1.5 whitespace-pre-wrap break-words">
+                {previewExpr}
+              </code>
+            </div>
+          )}
+          <datalist id={paramsListId}>
+            {declaredParams.map((p) => (
+              <option
+                key={`p-${p.name}`}
+                value={`{{params.${p.name}}}`}
+                label={`${p.name} · ${p.type}`}
+              />
+            ))}
+            {SYSTEM_VARS.map((v) => (
+              <option
+                key={`s-${v}`}
+                value={`{{${v}}}`}
+                label={`${v} · dynamic`}
+              />
+            ))}
+          </datalist>
+        </div>
+      ) : (
+        <Field
+          label="Expression"
+          hint="raw DuckDB WHERE clause — rows failing this condition are flagged. You are responsible for quoting — for safe, structured input use Basic."
+        >
+          <Textarea
+            value={advancedText}
+            onChange={(e) => handleAdvancedChange(e.target.value)}
+            placeholder="amount > 0 AND status = 'completed'"
+          />
+          <VariablePickerHint
+            onInsert={(token) => handleAdvancedChange(advancedText + token)}
+          />
+        </Field>
+      )}
     </div>
   );
 }
@@ -1692,14 +1769,8 @@ export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
     case "aggregate": return <AggregateEditor step={step} set={set} />;
     case "join":      return <JoinEditor step={step} set={set} />;
     case "pivot":     return <PivotEditor step={step} set={set} />;
-    case "select":               return <SelectEditor step={step} set={set} />;
-    case "check_not_null":       return <CheckNotNullEditor step={step} set={set} />;
-    case "check_unique":         return <CheckUniqueEditor step={step} set={set} />;
-    case "check_range":          return <CheckRangeEditor step={step} set={set} />;
-    case "check_regex":          return <CheckRegexEditor step={step} set={set} />;
-    case "check_accepted_values": return <CheckAcceptedValuesEditor step={step} set={set} />;
-    case "check_row_count":      return <CheckRowCountEditor step={step} set={set} />;
-    case "check_custom_sql":     return <CheckCustomSqlEditor step={step} set={set} />;
-    case "profile":              return <ProfileEditor step={step} set={set} />;
+    case "select":    return <SelectEditor step={step} set={set} />;
+    case "check":     return <CheckEditor step={step} set={set} />;
+    case "profile":   return <ProfileEditor step={step} set={set} />;
   }
 }

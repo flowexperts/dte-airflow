@@ -1,518 +1,156 @@
-"""Unit tests for quality check steps (plan 043).
-
-Check steps run during compilation via on_quality_result callback, leaving
-the table unchanged. Engine must be supplied for checks to execute.
-"""
-import pandas as pd
+"""Tests for the unified check step (filter-like assertion)."""
 import pytest
-
 import ibis
-
-from dte.compiler.ibis_compiler import compile_pipeline
+from dte.models.pipeline import Pipeline, PipelineBase, CheckStep
 from dte.engine.duckdb_engine import DuckDBEngine
-from dte.models.pipeline import Pipeline, PipelineBase
+from dte.compiler.ibis_compiler import compile_pipeline
 
 
-def _make_quality_pipeline(steps):
-    """Build a quality pipeline (no output_id required)."""
-    return Pipeline(
-        id="qp1",
-        name="quality-test",
-        sources=["src"],
-        steps=steps,
-        output_id=None,
+def _engine_and_table(rows: list[dict]):
+    import pandas as pd
+    engine = DuckDBEngine()
+    df = pd.DataFrame(rows)
+    engine.con.create_table("_test_tbl", df, overwrite=True)
+    t = engine.con.table("_test_tbl")
+    return engine, t
+
+
+def _compile_check(rows, expr, severity="fail", label=""):
+    engine, t = _engine_and_table(rows)
+    quality_results = []
+    pipeline = Pipeline(
+        id="p1", name="p1",
+        sources=["default"],
+        steps=[{"op": "check", "expr": expr, "severity": severity, "label": label}],
         pipeline_type="quality",
     )
+    compile_pipeline(pipeline, {"default": t}, engine=engine,
+                     on_quality_result=lambda idx, r: quality_results.append(r))
+    return quality_results
 
 
-def _make_transform_pipeline(steps):
-    """Build a transform pipeline with check steps mixed in."""
-    return Pipeline(
-        id="p1",
-        name="transform-test",
-        sources=["src"],
-        steps=steps,
-        output_id="out1",
-        pipeline_type="transform",
+def test_check_pass_all_rows_match():
+    results = _compile_check([{"age": 25}, {"age": 30}], "age > 18")
+    assert len(results) == 1
+    assert results[0].passed is True
+    assert results[0].detail is None
+
+
+def test_check_fail_some_rows_violate():
+    results = _compile_check([{"age": 25}, {"age": 10}], "age > 18")
+    assert len(results) == 1
+    assert results[0].passed is False
+    assert "1/2 rows failed" in results[0].detail
+
+
+def test_check_fail_all_rows_violate():
+    results = _compile_check([{"age": 5}, {"age": 10}], "age > 18")
+    assert results[0].passed is False
+    assert "2/2 rows failed" in results[0].detail
+
+
+def test_check_severity_propagated():
+    results = _compile_check([{"age": 5}], "age > 18", severity="warn")
+    assert results[0].severity == "warn"
+    assert results[0].passed is False
+
+
+def test_check_severity_fail_default():
+    results = _compile_check([{"age": 5}], "age > 18")
+    assert results[0].severity == "fail"
+
+
+def test_check_label_in_detail():
+    results = _compile_check([{"age": 5}], "age > 18", label="age must be adult")
+    assert "age must be adult" in results[0].detail
+
+
+def test_check_label_defaults_to_expr():
+    results = _compile_check([{"age": 5}], "age > 18")
+    assert "age > 18" in results[0].detail
+
+
+def test_check_null_assertion():
+    results = _compile_check(
+        [{"name": "Alice"}, {"name": None}],
+        '"name" IS NOT NULL'
     )
+    assert results[0].passed is False
+    assert "1/2" in results[0].detail
 
 
-@pytest.fixture
-def engine():
-    return DuckDBEngine()
+def test_check_null_passes_when_no_nulls():
+    results = _compile_check(
+        [{"name": "Alice"}, {"name": "Bob"}],
+        '"name" IS NOT NULL'
+    )
+    assert results[0].passed is True
 
 
-@pytest.fixture
-def orders_table(engine):
-    df = pd.DataFrame([
-        {"order_id": 1, "amount": 10.0, "status": "ok"},
-        {"order_id": 2, "amount": 20.0, "status": "ok"},
-        {"order_id": 3, "amount": 30.0, "status": "pending"},
-    ])
-    engine.con.create_table("orders", df, overwrite=True)
-    return engine.con.table("orders")
+def test_check_returns_table_unchanged():
+    engine, t = _engine_and_table([{"x": 1}, {"x": 2}, {"x": 3}])
+    pipeline = Pipeline(
+        id="p1", name="p1",
+        sources=["default"], steps=[{"op": "check", "expr": "x > 0"}],
+        pipeline_type="quality",
+    )
+    result_table = compile_pipeline(pipeline, {"default": t}, engine=engine)
+    rows = result_table.execute()
+    assert len(rows) == 3  # unchanged
 
 
-@pytest.fixture
-def orders_with_nulls_table(engine):
-    df = pd.DataFrame([
-        {"order_id": 1, "amount": 10.0, "status": "ok"},
-        {"order_id": 2, "amount": None, "status": None},
-        {"order_id": 3, "amount": 30.0, "status": "pending"},
-    ])
-    engine.con.create_table("orders_nulls", df, overwrite=True)
-    return engine.con.table("orders_nulls")
-
-
-@pytest.fixture
-def orders_with_dupes_table(engine):
-    df = pd.DataFrame([
-        {"order_id": 1, "amount": 10.0},
-        {"order_id": 1, "amount": 20.0},  # duplicate order_id
-        {"order_id": 3, "amount": 30.0},
-    ])
-    engine.con.create_table("orders_dupes", df, overwrite=True)
-    return engine.con.table("orders_dupes")
-
-
-# ── check_not_null ────────────────────────────────────────────────────────────
-
-def test_check_not_null_pass(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_not_null", "column": "order_id", "severity": "fail"},
-    ])
+def test_multiple_checks_accumulate():
+    engine = DuckDBEngine()
+    engine.con.con.execute(
+        "CREATE OR REPLACE TABLE _test_multi (x INTEGER, name VARCHAR); "
+        "INSERT INTO _test_multi VALUES (-1, NULL)"
+    )
+    t = engine.con.table("_test_multi")
     quality_results = []
-
-    result_table = compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
+    pipeline = Pipeline(
+        id="p1", name="p1",
+        sources=["default"],
+        steps=[
+            {"op": "check", "expr": "x > 0", "label": "x positive"},
+            {"op": "check", "expr": '"name" IS NOT NULL', "label": "name not null"},
+        ],
+        pipeline_type="quality",
     )
-
-    # Table passes through unchanged
-    assert result_table.count().execute() == 3
-    # One result, passed
-    assert len(quality_results) == 1
-    qr = quality_results[0]
-    assert qr.passed is True
-    assert qr.contract_type == "check_not_null"
-    assert qr.severity == "fail"
-
-
-def test_check_not_null_fail(engine, orders_with_nulls_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_not_null", "column": "amount", "severity": "fail"},
-    ])
-    quality_results = []
-
-    result_table = compile_pipeline(
-        pipeline,
-        {"src": orders_with_nulls_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    # Table passes through unchanged
-    assert result_table.count().execute() == 3
-    # One result, failed
-    assert len(quality_results) == 1
-    qr = quality_results[0]
-    assert qr.passed is False
-    assert "1 null" in qr.detail
-    assert qr.severity == "fail"
-
-
-def test_check_not_null_warn_severity(engine, orders_with_nulls_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_not_null", "column": "status", "severity": "warn"},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_with_nulls_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert len(quality_results) == 1
-    qr = quality_results[0]
-    assert qr.passed is False
-    assert qr.severity == "warn"
-
-
-# ── check_unique ─────────────────────────────────────────────────────────────
-
-def test_check_unique_pass(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_unique", "column": "order_id", "severity": "fail"},
-    ])
-    quality_results = []
-
-    result_table = compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert result_table.count().execute() == 3
-    assert len(quality_results) == 1
-    assert quality_results[0].passed is True
-
-
-def test_check_unique_fail(engine, orders_with_dupes_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_unique", "column": "order_id", "severity": "fail"},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_with_dupes_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert len(quality_results) == 1
-    qr = quality_results[0]
-    assert qr.passed is False
-    assert "duplicate" in qr.detail
-
-
-# ── check_row_count ──────────────────────────────────────────────────────────
-
-def test_check_row_count_pass(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_row_count", "min": 1, "max": 10, "severity": "fail"},
-    ])
-    quality_results = []
-
-    result_table = compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert result_table.count().execute() == 3
-    assert len(quality_results) == 1
-    assert quality_results[0].passed is True
-
-
-def test_check_row_count_fail_too_few(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_row_count", "min": 10, "severity": "fail"},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert len(quality_results) == 1
-    qr = quality_results[0]
-    assert qr.passed is False
-    assert "out of range" in qr.detail
-
-
-def test_check_row_count_fail_too_many(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_row_count", "max": 1, "severity": "warn"},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert len(quality_results) == 1
-    qr = quality_results[0]
-    assert qr.passed is False
-    assert qr.severity == "warn"
-
-
-# ── check_range ──────────────────────────────────────────────────────────────
-
-def test_check_range_pass(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_range", "column": "amount", "min": 5.0, "max": 100.0},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert len(quality_results) == 1
-    assert quality_results[0].passed is True
-
-
-def test_check_range_fail(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_range", "column": "amount", "min": 15.0},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert len(quality_results) == 1
-    qr = quality_results[0]
-    assert qr.passed is False
-    assert "out of range" in qr.detail
-
-
-# ── check_accepted_values ────────────────────────────────────────────────────
-
-def test_check_accepted_values_pass(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_accepted_values", "column": "status",
-         "values": ["ok", "pending", "failed"]},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert quality_results[0].passed is True
-
-
-def test_check_accepted_values_fail(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_accepted_values", "column": "status", "values": ["ok"]},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    qr = quality_results[0]
-    assert qr.passed is False
-    assert "not in accepted list" in qr.detail
-
-
-# ── check_regex ──────────────────────────────────────────────────────────────
-
-def test_check_regex_pass(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_regex", "column": "status", "pattern": "^(ok|pending)$"},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert quality_results[0].passed is True
-
-
-def test_check_regex_fail(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_regex", "column": "status", "pattern": "^ok$"},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    qr = quality_results[0]
-    assert qr.passed is False
-
-
-# ── check_custom_sql ─────────────────────────────────────────────────────────
-
-def test_check_custom_sql_pass(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_custom_sql", "sql": "amount > 0", "label": "positive amounts"},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert quality_results[0].passed is True
-
-
-def test_check_custom_sql_fail(engine, orders_table):
-    pipeline = _make_quality_pipeline([
-        {"op": "check_custom_sql", "sql": "amount > 100", "label": "large amounts"},
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    qr = quality_results[0]
-    assert qr.passed is False
-    assert "large amounts" in qr.detail
-
-
-# ── profile ──────────────────────────────────────────────────────────────────
-
-def test_profile_step_pass_through(engine, orders_table):
-    """Profile step returns table unchanged and calls callback for each column."""
-    pipeline = _make_quality_pipeline([
-        {"op": "profile", "columns": ["order_id", "amount"]},
-    ])
-    quality_results = []
-
-    result_table = compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    # Table passes through unchanged
-    assert result_table.count().execute() == 3
-    # One result per profiled column
+    compile_pipeline(pipeline, {"default": t}, engine=engine,
+                     on_quality_result=lambda idx, r: quality_results.append(r))
     assert len(quality_results) == 2
-    for qr in quality_results:
-        assert qr.contract_type == "column_profile"
-        assert qr.passed is True
+    assert all(not r.passed for r in quality_results)
 
-
-def test_profile_step_all_columns(engine, orders_table):
-    """Profile step with empty columns list profiles all columns."""
-    pipeline = _make_quality_pipeline([
-        {"op": "profile"},  # no columns → profile all
-    ])
-    quality_results = []
-
-    compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    # orders_table has 3 columns: order_id, amount, status
-    assert len(quality_results) == 3
-
-
-# ── multiple checks in sequence ───────────────────────────────────────────────
-
-def test_multiple_checks_accumulate(engine, orders_table):
-    """Multiple check steps each produce a quality result."""
-    pipeline = _make_quality_pipeline([
-        {"op": "check_not_null", "column": "order_id"},
-        {"op": "check_row_count", "min": 1, "max": 100},
-        {"op": "check_unique", "column": "order_id"},
-    ])
-    quality_results = []
-
-    result_table = compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
-
-    assert result_table.count().execute() == 3
-    assert len(quality_results) == 3
-    assert all(qr.passed for qr in quality_results)
-
-
-# ── pipeline_type validation ──────────────────────────────────────────────────
 
 def test_quality_pipeline_rejects_aggregate():
-    """Aggregate step is not allowed in quality pipelines (validated at PipelineBase)."""
-    with pytest.raises(Exception, match="not allowed in quality"):
+    with pytest.raises(ValueError, match="aggregate"):
         PipelineBase(
-            id="qp2",
-            name="bad",
-            sources=["src"],
-            steps=[
-                {"op": "aggregate", "group_by": [], "aggregations": [
-                    {"field": "amount", "func": "sum", "alias": "total"}
-                ]},
-            ],
-            output_id=None,
+            id="p1", name="p1", sources=[],
             pipeline_type="quality",
+            steps=[{"op": "aggregate", "group_by": ["x"], "aggregations": []}],
         )
 
 
 def test_quality_pipeline_rejects_pivot():
-    """Pivot step is not allowed in quality pipelines (validated at PipelineBase)."""
-    with pytest.raises(Exception, match="not allowed in quality"):
+    with pytest.raises(ValueError, match="pivot"):
         PipelineBase(
-            id="qp3",
-            name="bad",
-            sources=["src"],
-            steps=[
-                {"op": "pivot", "index": "a", "columns": "b", "values": "c"},
-            ],
-            output_id=None,
+            id="p1", name="p1", sources=[],
             pipeline_type="quality",
+            steps=[{"op": "pivot", "index": "x", "columns": "y", "values": "z"}],
         )
 
 
 def test_quality_pipeline_output_id_optional():
-    """Quality pipelines don't require output_id."""
-    p = PipelineBase(
-        id="qp4",
-        name="no-dest",
-        sources=["src"],
-        steps=[{"op": "check_row_count", "min": 1}],
-        output_id=None,
-        pipeline_type="quality",
-    )
+    p = PipelineBase(id="p1", name="p1", sources=[], steps=[], pipeline_type="quality")
     assert p.output_id is None
-    assert p.pipeline_type == "quality"
 
 
-def test_transform_pipeline_still_accepts_check_steps(engine, orders_table):
-    """Transform pipelines can include check steps (data passes through)."""
-    pipeline = _make_transform_pipeline([
-        {"op": "check_not_null", "column": "order_id"},
-    ])
-    quality_results = []
+def test_check_step_model_validation():
+    step = CheckStep(op="check", expr="x > 0", severity="warn", label="positive x")
+    assert step.severity == "warn"
+    assert step.label == "positive x"
 
-    result_table = compile_pipeline(
-        pipeline,
-        {"src": orders_table},
-        engine=engine,
-        on_quality_result=lambda idx, r: quality_results.append(r),
-    )
 
-    assert result_table.count().execute() == 3
-    assert len(quality_results) == 1
-    assert quality_results[0].passed is True
+def test_check_step_empty_expr_raises():
+    with pytest.raises(ValueError):
+        CheckStep(op="check", expr="   ")

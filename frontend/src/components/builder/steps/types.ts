@@ -8,13 +8,7 @@ export type StepOp =
   | "join"
   | "pivot"
   | "select"
-  | "check_not_null"
-  | "check_unique"
-  | "check_range"
-  | "check_regex"
-  | "check_accepted_values"
-  | "check_row_count"
-  | "check_custom_sql"
+  | "check"
   | "profile";
 
 export type MapMode = "lookup" | "expression" | "calculation";
@@ -60,13 +54,7 @@ export const STEP_OPS: { op: StepOp; label: string; mode?: MapMode; category: "t
   { op: "join",      label: "Join",                category: "transform" },
   { op: "pivot",     label: "Pivot",               category: "transform" },
   { op: "select",    label: "Select / Drop fields", category: "transform" },
-  { op: "check_not_null",       label: "Check: Not Null",        category: "quality" },
-  { op: "check_unique",         label: "Check: Unique",          category: "quality" },
-  { op: "check_range",          label: "Check: Range",           category: "quality" },
-  { op: "check_regex",          label: "Check: Regex",           category: "quality" },
-  { op: "check_accepted_values", label: "Check: Accepted Values", category: "quality" },
-  { op: "check_row_count",      label: "Check: Row Count",       category: "quality" },
-  { op: "check_custom_sql",     label: "Check: Custom SQL",      category: "quality" },
+  { op: "check",                label: "Check",                  category: "quality" },
   { op: "profile",              label: "Profile Columns",        category: "quality" },
 ];
 
@@ -83,13 +71,7 @@ export function emptyStep(op: StepOp, mode?: MapMode): StepShape {
     case "join":      return { op, left: "", right: "", on: "", how: "inner", output_id: "" };
     case "pivot":     return { op, index: "", columns: "", values: "", agg: "sum" };
     case "select":              return { op, fields: [] };
-    case "check_not_null":      return { op, column: "", severity: "fail" };
-    case "check_unique":        return { op, column: "", severity: "fail" };
-    case "check_range":         return { op, column: "", min: null, max: null, severity: "fail" };
-    case "check_regex":         return { op, column: "", pattern: "", severity: "fail" };
-    case "check_accepted_values": return { op, column: "", values: [], severity: "fail" };
-    case "check_row_count":     return { op, min: null, max: null, severity: "fail" };
-    case "check_custom_sql":    return { op, sql: "", label: "", severity: "fail" };
+    case "check":               return { op, expr: "", label: "", severity: "fail" };
     case "profile":             return { op, columns: [] };
   }
 }

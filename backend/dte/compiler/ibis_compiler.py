@@ -218,10 +218,9 @@ def _dispatch_single_table_step(
             keep = [c for c in table.columns if c not in drop_set]
             return table.select(keep)
         return _apply_output_fields(table, s.fields)
-    elif op in ("check_not_null", "check_unique", "check_range", "check_regex",
-                "check_accepted_values", "check_row_count", "check_custom_sql"):
-        return _apply_check(table, step, idx=idx, engine=engine,
-                            on_quality_result=on_quality_result)
+    elif op == "check":
+        return _apply_check_step(table, step, idx=idx, engine=engine,
+                                 on_quality_result=on_quality_result)
     elif op == "profile":
         return _apply_profile(table, step, idx=idx, engine=engine,
                               on_quality_result=on_quality_result)
@@ -251,126 +250,54 @@ def _apply_pivot(table: ibis.Table, step: PivotStep) -> ibis.Table:
     return con.table("_dte_pivot_result")
 
 
-def _apply_check(
+def _apply_check_step(
     table: ibis.Table,
     step: dict,
-    idx: int,
-    engine,
-    on_quality_result,
+    idx: int = 0,
+    engine: "BaseEngine | None" = None,
+    on_quality_result=None,
 ) -> ibis.Table:
-    """Run a check step against the table, call on_quality_result, return table unchanged."""
-    from dte.models.quality import QualityResult
-    import uuid as _uuid_mod
-    import json as _json
+    """Assert a SQL condition holds for all rows.
 
-    op = step["op"]
+    Counts rows where NOT (expr) — violations. Returns the table unchanged.
+    Calls on_quality_result(idx, QualityResult) if the callback is provided.
+    """
+    import uuid as _uuid
+    from dte.models.quality import QualityResult
+
+    expr = step.get("expr", "")
     severity = step.get("severity", "fail")
-    column = step.get("column", "")
+    label = step.get("label") or expr
 
     if engine is None:
-        # No engine supplied — skip check silently and pass table through.
         return table
 
-    con = engine.con
-
     view_name = f"__check_v_{idx}__"
-    sql_str = ibis.to_sql(table)
-    con.con.execute(f"CREATE OR REPLACE TEMP VIEW {view_name} AS {sql_str}")
-
+    sql = ibis.to_sql(table)
+    engine.con.con.execute(f"CREATE OR REPLACE TEMP VIEW {view_name} AS {sql}")
     try:
-        if op == "check_not_null":
-            count = con.con.execute(
-                f'SELECT COUNT(*) FROM {view_name} WHERE "{column}" IS NULL'
-            ).fetchone()[0]
-            passed = count == 0
-            detail = f"{count} null values found in '{column}'" if not passed else None
-
-        elif op == "check_unique":
-            count = con.con.execute(
-                f'SELECT COUNT(*) FROM (SELECT "{column}", COUNT(*) cnt FROM {view_name} GROUP BY 1 HAVING cnt > 1)'
-            ).fetchone()[0]
-            passed = count == 0
-            detail = f"{count} duplicate groups found in '{column}'" if not passed else None
-
-        elif op == "check_range":
-            min_val = step.get("min")
-            max_val = step.get("max")
-            clauses = []
-            if min_val is not None:
-                clauses.append(f'"{column}" < {min_val}')
-            if max_val is not None:
-                clauses.append(f'"{column}" > {max_val}')
-            if clauses:
-                where = " OR ".join(clauses)
-                count = con.con.execute(
-                    f"SELECT COUNT(*) FROM {view_name} WHERE {where}"
-                ).fetchone()[0]
-            else:
-                count = 0
-            passed = count == 0
-            detail = f"{count} values out of range in '{column}'" if not passed else None
-
-        elif op == "check_regex":
-            pattern = step.get("pattern", "")
-            escaped = pattern.replace("'", "''")
-            count = con.con.execute(
-                f"SELECT COUNT(*) FROM {view_name} WHERE NOT regexp_matches(\"{column}\", '{escaped}')"
-            ).fetchone()[0]
-            passed = count == 0
-            detail = f"{count} values don't match pattern in '{column}'" if not passed else None
-
-        elif op == "check_accepted_values":
-            values = step.get("values", [])
-            vals_sql = ", ".join(
-                f"'{str(v).replace(chr(39), chr(39)+chr(39))}'" if isinstance(v, str)
-                else str(v)
-                for v in values
-            )
-            count = con.con.execute(
-                f'SELECT COUNT(*) FROM {view_name} WHERE "{column}" NOT IN ({vals_sql})'
-            ).fetchone()[0]
-            passed = count == 0
-            detail = f"{count} values not in accepted list in '{column}'" if not passed else None
-
-        elif op == "check_row_count":
-            total = con.con.execute(f"SELECT COUNT(*) FROM {view_name}").fetchone()[0]
-            min_val = step.get("min")
-            max_val = step.get("max")
-            passed = True
-            if min_val is not None and total < min_val:
-                passed = False
-            if max_val is not None and total > max_val:
-                passed = False
-            detail = f"Row count {total} out of range [{min_val}, {max_val}]" if not passed else None
-
-        elif op == "check_custom_sql":
-            sql_expr = step.get("sql", "")
-            count = con.con.execute(
-                f"SELECT COUNT(*) FROM {view_name} WHERE NOT ({sql_expr})"
-            ).fetchone()[0]
-            passed = count == 0
-            label = step.get("label", op)
-            detail = f"{count} rows failed check '{label}'" if not passed else None
-
-        else:
-            return table
-
+        violation_count = engine.con.con.execute(
+            f"SELECT COUNT(*) FROM {view_name} WHERE NOT ({expr})"
+        ).fetchone()[0]
+        total = engine.con.con.execute(
+            f"SELECT COUNT(*) FROM {view_name}"
+        ).fetchone()[0]
+        passed = violation_count == 0
+        detail = f"{violation_count}/{total} rows failed: {label}" if not passed else None
         result = QualityResult(
-            contract_id=str(_uuid_mod.uuid4()),
-            contract_type=op,
+            contract_id=str(_uuid.uuid4()),
+            contract_type="check",
             passed=passed,
             severity=severity,
             detail=detail,
         )
         if on_quality_result is not None:
             on_quality_result(idx, result)
-
     finally:
         try:
-            con.con.execute(f"DROP VIEW IF EXISTS {view_name}")
+            engine.con.con.execute(f"DROP VIEW IF EXISTS {view_name}")
         except Exception:
             pass
-
     return table
 
 

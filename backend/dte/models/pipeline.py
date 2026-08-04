@@ -723,52 +723,20 @@ class PivotStep(BaseModel):
     agg: Literal["sum", "count", "avg", "min", "max"] = "sum"
 
 
-class CheckNotNullStep(BaseModel):
-    op: Literal["check_not_null"]
-    column: str
+class CheckStep(BaseModel):
+    op: Literal["check"]
+    expr: str
+    label: str = ""
     severity: Literal["warn", "fail"] = "fail"
 
-
-class CheckUniqueStep(BaseModel):
-    op: Literal["check_unique"]
-    column: str
-    severity: Literal["warn", "fail"] = "fail"
-
-
-class CheckRangeStep(BaseModel):
-    op: Literal["check_range"]
-    column: str
-    min: float | None = None
-    max: float | None = None
-    severity: Literal["warn", "fail"] = "fail"
-
-
-class CheckRegexStep(BaseModel):
-    op: Literal["check_regex"]
-    column: str
-    pattern: str
-    severity: Literal["warn", "fail"] = "fail"
-
-
-class CheckAcceptedValuesStep(BaseModel):
-    op: Literal["check_accepted_values"]
-    column: str
-    values: list[str | int | float]
-    severity: Literal["warn", "fail"] = "fail"
-
-
-class CheckRowCountStep(BaseModel):
-    op: Literal["check_row_count"]
-    min: int | None = None
-    max: int | None = None
-    severity: Literal["warn", "fail"] = "fail"
-
-
-class CheckCustomSqlStep(BaseModel):
-    op: Literal["check_custom_sql"]
-    sql: str
-    label: str
-    severity: Literal["warn", "fail"] = "fail"
+    @field_validator("expr")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError(
+                "check step needs a non-empty expression — fill it in or remove the step"
+            )
+        return v
 
 
 class ProfileStep(BaseModel):
@@ -985,13 +953,7 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("select", None): SelectStep,
     ("join", None): JoinStep,
     ("pivot", None): PivotStep,
-    ("check_not_null", None): CheckNotNullStep,
-    ("check_unique", None): CheckUniqueStep,
-    ("check_range", None): CheckRangeStep,
-    ("check_regex", None): CheckRegexStep,
-    ("check_accepted_values", None): CheckAcceptedValuesStep,
-    ("check_row_count", None): CheckRowCountStep,
-    ("check_custom_sql", None): CheckCustomSqlStep,
+    ("check", None): CheckStep,
     ("profile", None): ProfileStep,
 }
 
