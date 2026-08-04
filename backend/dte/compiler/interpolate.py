@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 _STEP_STRING_FIELDS: dict[str, tuple[str, ...]] = {
     "filter": ("expr",),
     "map": ("expr",),  # ExpressionMapStep — LookupMapStep has no expr field
+    "check": ("expr",),
 }
 
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")

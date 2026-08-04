@@ -175,6 +175,15 @@ def test_interpolate_pipeline_rewrites_filter_and_map_expr():
     assert out.steps[2] == {"op": "rename", "mappings": {"a": "b"}}
 
 
+def test_interpolate_pipeline_rewrites_check_expr():
+    p = _pipeline(
+        steps=[{"op": "check", "expr": "ts < '{{today}}'", "severity": "fail"}],
+    )
+    ctx = resolve_context(p)
+    out = interpolate_pipeline(p, ctx)
+    assert out.steps[0]["expr"] == f"ts < '{ctx['today']}'"
+
+
 # ─── Dynamic trigger values ─────────────────────────────────────────────
 
 def test_coerce_dynamic_today_resolves_to_date():
