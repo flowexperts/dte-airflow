@@ -64,8 +64,8 @@ function Sql({ label, sql }: { label: string; sql: string }) {
   );
 }
 
-/** Engineering detail — timeline + compiled SQL — demoted below the fold and
- *  collapsed by default. It is for debugging, never for reading the outcome. */
+/** Engineering detail — timeline + compiled SQL — demoted below the fold but
+ *  open by default. It is for debugging, never for reading the outcome. */
 export function Diagnostics({
   events,
   stepSqls,
@@ -77,7 +77,7 @@ export function Diagnostics({
   finalSql: string | null;
   sqlTabLabel: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<"timeline" | "sql">("timeline");
 
   const indices = new Set<number>(events.map((e) => e.step_index));
