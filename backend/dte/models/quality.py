@@ -69,6 +69,7 @@ class QualityResult(BaseModel):
     """The outcome of evaluating one Contract against actual output data."""
     contract_id: str
     contract_type: str
+    label: str | None = None  # human-readable name for the check (step label or contract column)
     passed: bool
     severity: str  # "warn" | "fail" — copied from the contract at eval time
     detail: str | None = None  # human-readable explanation, e.g. "5 nulls in 1000 rows"

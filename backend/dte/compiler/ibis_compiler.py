@@ -157,6 +157,7 @@ def compile_pipeline(
                 table = _dispatch_single_table_step(
                     table, step, lookups, engine=engine,
                     idx=idx, on_quality_result=on_quality_result,
+                    on_step_sql=on_step_sql,
                 )
                 registry[current_key] = table
         except Exception as e:
@@ -169,7 +170,9 @@ def compile_pipeline(
                 on_step_schema(idx, cols)
             except Exception:  # never let telemetry crash a run
                 pass
-        if on_step_sql is not None:
+        # check/profile steps call on_step_sql themselves with the actual check SQL;
+        # for all other ops capture the resulting table expression.
+        if on_step_sql is not None and op not in ("check", "profile"):
             try:
                 dialect = getattr(engine, "dialect", "duckdb")
                 sql = str(ibis.to_sql(registry[current_key], dialect=dialect))
@@ -191,6 +194,7 @@ def _dispatch_single_table_step(
     engine: BaseEngine | None = None,
     idx: int = 0,
     on_quality_result=None,
+    on_step_sql=None,
 ) -> ibis.Table:
     op = step["op"]
     if op == "filter":
@@ -220,7 +224,8 @@ def _dispatch_single_table_step(
         return _apply_output_fields(table, s.fields)
     elif op == "check":
         return _apply_check_step(table, step, idx=idx, engine=engine,
-                                 on_quality_result=on_quality_result)
+                                 on_quality_result=on_quality_result,
+                                 on_step_sql=on_step_sql)
     elif op == "profile":
         return _apply_profile(table, step, idx=idx, engine=engine,
                               on_quality_result=on_quality_result)
@@ -256,6 +261,7 @@ def _apply_check_step(
     idx: int = 0,
     engine: "BaseEngine | None" = None,
     on_quality_result=None,
+    on_step_sql=None,
 ) -> ibis.Table:
     """Assert a SQL condition holds for all rows.
 
@@ -275,6 +281,11 @@ def _apply_check_step(
     view_name = f"__check_v_{idx}__"
     sql = ibis.to_sql(table)
     engine.con.con.execute(f"CREATE OR REPLACE TEMP VIEW {view_name} AS {sql}")
+    if on_step_sql is not None:
+        try:
+            on_step_sql(idx, f"SELECT * FROM ({sql}) t WHERE NOT ({expr})")
+        except Exception:
+            pass
     try:
         violation_count = engine.con.con.execute(
             f"SELECT COUNT(*) FROM {view_name} WHERE NOT ({expr})"
@@ -283,10 +294,11 @@ def _apply_check_step(
             f"SELECT COUNT(*) FROM {view_name}"
         ).fetchone()[0]
         passed = violation_count == 0
-        detail = f"{violation_count}/{total} rows failed: {label}" if not passed else None
+        detail = f"{violation_count}/{total} rows failed: {label}" if not passed else f"0/{total} rows failed: {label}"
         result = QualityResult(
             contract_id=str(_uuid.uuid4()),
             contract_type="check",
+            label=label,
             passed=passed,
             severity=severity,
             detail=detail,

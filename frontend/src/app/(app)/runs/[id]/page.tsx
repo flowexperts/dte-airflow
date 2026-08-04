@@ -31,10 +31,10 @@ type Params = Promise<{ id: string }>;
 const qualityColumns: Column<QualityCheckResult>[] = [
   {
     key: "contract_type",
-    header: "Contract type",
+    header: "Check",
     width: "200px",
     render: (r) => (
-      <span className="font-mono text-[12px] text-text">{r.contract_type}</span>
+      <span className="font-mono text-[12px] text-text">{r.label ?? r.contract_type}</span>
     ),
   },
   {
@@ -64,7 +64,9 @@ const qualityColumns: Column<QualityCheckResult>[] = [
     header: "Detail",
     width: "1fr",
     render: (r) => (
-      <span className="font-mono text-[11.5px] text-subtle">{r.detail ?? ""}</span>
+      <span className="font-mono text-[11.5px] text-subtle">
+        {r.detail ?? (r.passed ? "All rows passed" : "—")}
+      </span>
     ),
   },
 ];

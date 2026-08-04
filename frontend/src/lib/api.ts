@@ -241,6 +241,7 @@ export type RunStatus =
 export interface QualityCheckResult {
   contract_id: string;
   contract_type: string;
+  label: string | null;
   passed: boolean;
   severity: "warn" | "fail";
   detail: string | null;
