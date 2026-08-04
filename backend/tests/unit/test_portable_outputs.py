@@ -197,6 +197,27 @@ def test_local_write_roundtrip(tmp_path, sample_table, type_name, ext, reader):
     assert n == 2
 
 
+def test_extension_install_survives_missing_home(monkeypatch, tmp_path, sample_table):
+    """Container images often run as a user whose $HOME was never created.
+
+    DuckDB caches extensions under $HOME, so `INSTALL` would fail with
+    "Can't find the home directory", taking out every s3/gcs/azure read and
+    write. Excel needs a real INSTALL, so it exercises the path.
+    """
+    import dte.sources.duckdb_secrets as ds
+
+    monkeypatch.setenv("HOME", "/nonexistent/home/dte")
+    monkeypatch.delenv("DTE_DUCKDB_HOME", raising=False)
+    monkeypatch.setattr(ds, "_INSTALLED_EXTS", set())  # force a real INSTALL
+
+    from dte.engine.writers import write
+
+    out = tmp_path / "out.xlsx"
+    result = write(sample_table, _adapter.validate_python({"type": "excel", "path": str(out)}))
+    assert result["rows_written"] == 2
+    assert out.exists()
+
+
 def test_unknown_scheme_is_rejected(sample_table):
     """A typo'd scheme must not silently create a local file named 'ftp:/...'."""
     from dte.engine.writers import write
