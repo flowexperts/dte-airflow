@@ -164,6 +164,14 @@
   text-transform: uppercase;
   color: var(--subtle);
 }
+.mkt-root .eyebrow-blink {
+  color: var(--accent);
+  animation: mkt-blink 1.4s ease-in-out infinite;
+}
+@keyframes mkt-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
 
 /* --- Hero --- */
 .mkt-root section.hero {
@@ -852,6 +860,29 @@
   color: var(--gold);
   background: color-mix(in oklab, var(--gold) 12%, var(--surface-2));
   border: 1px solid color-mix(in oklab, var(--gold) 35%, var(--border));
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+.mkt-root .steps-card--soon {
+  border-left-color: var(--subtle);
+  opacity: 0.88;
+}
+.mkt-root .steps-card--soon:hover {
+  border-left-color: var(--subtle);
+}
+.mkt-root .steps-soon-badge {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--subtle);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
   border-radius: 3px;
   padding: 2px 6px;
 }

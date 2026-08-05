@@ -54,7 +54,7 @@ export default function Image() {
             maxWidth: 900,
           }}
         >
-          Move and transform data between systems without writing one-off scripts.
+          Build data pipelines without burning tokens or developer time.
         </div>
       </div>
     ),

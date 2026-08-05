@@ -5,8 +5,6 @@ import { CalEmbed } from "./cal-embed";
 import { DemoPlayer } from "./demo-player";
 import "./landing.css";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.example.com";
-
 type PillState = "pending" | "running" | "ok";
 
 const HERO_STEPS = [
@@ -61,6 +59,13 @@ const ALL_STEPS = [
   { label: "Profile",       hint: "null % · distinct count · min/max stats",   cat: "quality"   },
 ] as const;
 
+const UNSTRUCTURED_TILES = [
+  { mono: "PDF", name: "PDF documents", sub: "text extraction" },
+  { mono: "IMG", name: "Images", sub: "OCR · vision" },
+  { mono: "DOC", name: "Docs & free text", sub: "chunking · embeddings" },
+  { mono: "A/V", name: "Audio & video", sub: "transcripts" },
+] as const;
+
 const QUALITY_ROWS = [
   { glyph: "CHK", label: "Check",   hint: "Assert any SQL rule — fail or warn on breach" },
   { glyph: "PRF", label: "Profile", hint: "Null %, distinct count, min/max embedded in the run" },
@@ -100,7 +105,7 @@ export function LandingPage() {
             dt<span className="e">e</span>
           </a>
           <div className="nav-right">
-            <a href="#book" className="btn primary">Book a call</a>
+            <a href="#book" className="btn primary">Request access</a>
           </div>
         </div>
       </nav>
@@ -117,12 +122,13 @@ export function LandingPage() {
               className="lede"
               style={{ fontSize: 20, color: "var(--text)", maxWidth: "none" }}
             >
-              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>Move</em> and
-              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}> transform</em> data between systems <br/> without writing one-off scripts.
+              Build data pipelines without{" "}
+              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>burning tokens</em> or{" "}
+              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>developer time</em>.
             </p>
             <div className="hero-ctas">
               <a href="#book" className="btn primary">
-                Book a discovery call <span className="kbd">↵</span>
+                Request access <span className="kbd">↵</span>
               </a>
               <a href="#demo" className="btn ghost">See the flow</a>
             </div>
@@ -347,11 +353,32 @@ export function LandingPage() {
         </div>
       </section>
 
+      <section id="unstructured" className="steps-section">
+        <div className="wrap">
+          <div className="section-head" style={{ alignItems: "flex-start" }}>
+            <div style={{ minWidth: 0 }}>
+              <span className="section-eyebrow eyebrow-blink">Coming soon</span>
+              <h2 style={{ marginTop: 10 }}>Unstructured data, too.</h2>
+              <p>PDFs, images, audio, and free text — same pipeline model, once it lands.</p>
+            </div>
+          </div>
+          <div className="steps-grid">
+            {UNSTRUCTURED_TILES.map((t) => (
+              <div key={t.mono} className="steps-card steps-card--soon">
+                <span className="steps-soon-badge">SOON</span>
+                <span className="steps-card-label">{t.name}</span>
+                <span className="steps-card-hint">{t.sub}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section id="book" className="book">
         <div className="wrap">
           <div className="book-grid">
             <div className="book-copy">
-              <span className="section-eyebrow">Book a discovery call</span>
+              <span className="section-eyebrow">Request access</span>
               <h2 style={{ marginTop: 14 }}>See DTE on your data. 30 minutes.</h2>
               <p>
                 Bring one real source. We&apos;ll build a pipeline live on the call — map the
@@ -392,8 +419,7 @@ export function LandingPage() {
             <span className="copy">data transformation engine · map once, run anytime</span>
           </div>
           <div className="right">
-            <a href={APP_URL}>Open app</a>
-            <a href="#book">Book a call</a>
+            <a href="#book">Request access</a>
             <span className="copy">© {currentYear}</span>
           </div>
         </div>
