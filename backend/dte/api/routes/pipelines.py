@@ -22,7 +22,6 @@ class TriggerRequest(BaseModel):
 
     params: dict[str, str] = Field(default_factory=dict)
 
-from dte import runs as run_registry
 from dte.api.deps import (
     get_connection_store,
     get_current_user,
@@ -73,6 +72,30 @@ from dte.tracing import tracer
 
 router = APIRouter()
 _log = get_logger("dte.pipelines")
+
+# Process-local registry of in-flight asyncio tasks for the flag-off
+# (DTE_JOB_QUEUE_ENABLED=False) trigger path — the pre-plan-046 `dte.runs`
+# module's job, now private here since it's only ever consulted by
+# `cancel_run` for runs with no `job_id`. Distributed (job-queue) runs
+# don't need this at all: `cancel_run` cancels those via
+# `procrastinate`'s cancel-by-job-id, which works regardless of which
+# worker pod picked the job up. This registry remains process-local by
+# nature — sufficient for a single-container self-hosted deployment,
+# the only topology that ever runs with the flag off.
+_local_run_tasks: dict[str, asyncio.Task] = {}
+
+
+def _register_local_task(run_id: str, task: asyncio.Task) -> None:
+    _local_run_tasks[run_id] = task
+    task.add_done_callback(lambda _t, rid=run_id: _local_run_tasks.pop(rid, None))
+
+
+def _cancel_local_task(run_id: str) -> bool:
+    task = _local_run_tasks.get(run_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True
 
 
 async def _record_revision(
@@ -814,7 +837,7 @@ async def trigger_pipeline(
             tenant_context_var.reset(tok)
 
     task = asyncio.create_task(_task_with_context())
-    run_registry.register(run_id, task)
+    _register_local_task(run_id, task)
     return {"run_id": run_id}
 
 
@@ -881,7 +904,29 @@ async def cancel_run(run_id: str, r_store: RunStore = Depends(get_run_store)):
         raise HTTPException(status_code=404, detail="Run not found")
     if run.get("status") not in ("pending", "running"):
         raise HTTPException(status_code=409, detail=f"Run is already {run.get('status')}")
-    cancelled = run_registry.cancel(run_id)
+
+    job_id = run.get("job_id")
+    if job_id:
+        # Distributed path (plan 046): queue-native cancel. Works
+        # regardless of which worker pod picked up the job — no
+        # process-local state to consult. abort=True covers both a job
+        # still `todo` (marks it cancelled, never dequeued) and a job
+        # `doing` (procrastinate's worker cancels the asyncio task
+        # running it; the existing `except asyncio.CancelledError` handler
+        # in dte.worker.tasks._execute_pipeline already writes
+        # status=failed, error=cancelled).
+        from dte.worker.app import get_running_app
+
+        app = await get_running_app()
+        cancelled = await app.job_manager.cancel_job_by_id_async(job_id, abort=True)
+        if not cancelled:
+            # No job in a cancellable state — it already reached a
+            # terminal status between our read above and this call.
+            await r_store.update(run_id, status="failed", error="cancelled (job already finished)")
+            return {"cancelled": False, "detail": "job already finished"}
+        return {"cancelled": True}
+
+    cancelled = _cancel_local_task(run_id)
     if not cancelled:
         # No local task — likely a stale run from a previous worker. Best-effort
         # mark it cancelled so operators can move on.
