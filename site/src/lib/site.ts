@@ -1,8 +1,8 @@
-export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://dte.example.com").replace(
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://dte.flowexperts.ai").replace(
   /\/$/,
   "",
 );
-export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.example.com";
+export const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://dte.flowexperts.ai";
 
 export const SITE_NAME = "DTE";
 export const SITE_TITLE = "DTE — Data Transformation Engine";
