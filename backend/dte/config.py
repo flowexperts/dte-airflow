@@ -70,6 +70,22 @@ class Settings(BaseSettings):
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     root_key: str | None = None
 
+    # Distributed run execution via a Postgres-backed job queue (plan 046).
+    # Off by default: `POST /trigger` keeps spawning an in-process
+    # asyncio.create_task, exactly as before. When on, trigger enqueues a
+    # procrastinate job instead and a separate `python -m dte.worker`
+    # process executes it.
+    job_queue_enabled: bool = False
+
+    # Whether the deployment's output filesystem is shared across the API
+    # and worker processes (e.g. an RWX NFS/EFS mount), rather than each
+    # pod's own local disk. Only consulted when job_queue_enabled is True:
+    # if the FS is *not* shared, `local_fs`-backed sources/destinations are
+    # rejected at trigger time (422) because the worker pod can't see files
+    # the API pod wrote, or vice versa. Default False — the safe assumption
+    # for a k8s deployment with per-pod ephemeral storage.
+    shared_output_fs: bool = False
+
     @field_validator("cors_origins")
     @classmethod
     def _strip_cors(cls, v: str) -> str:
