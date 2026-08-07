@@ -27,6 +27,7 @@ from dte.store.base import (
     RunStore,
     SourceStore,
 )
+from dte.tenancy import tenant_context_var
 
 _log = get_logger("dte.worker.tasks")
 
@@ -88,3 +89,124 @@ async def _execute_pipeline(
         metrics.pipeline_run_duration_seconds.labels(source_type=src_type).observe(
             time.monotonic() - started
         )
+
+
+async def _fetch_run_actual_tenant_id(run_id: str) -> str | None:
+    """Look up a run row's *true* tenant_id, bypassing RLS.
+
+    This is the one place a raw ``run_id`` off a job payload is trusted
+    before its ``tenant_id`` claim is verified. Uses the ``SET LOCAL
+    row_security = off`` escape hatch migration 016 documents for admin/ops
+    queries — grep-detectable, and this is the reviewed use site for the
+    job-queue worker.
+
+    Returns None if no run with this id exists.
+    """
+    from sqlalchemy import text
+
+    from dte.api.deps import _session_factory
+
+    async with _session_factory()() as session:
+        await session.execute(text("SET LOCAL row_security = off"))
+        result = await session.execute(
+            text("SELECT tenant_id FROM runs WHERE id = :id"), {"id": run_id}
+        )
+        row = result.mappings().fetchone()
+        return row["tenant_id"] if row else None
+
+
+def _default_stores() -> tuple[
+    PipelineStore, RunStore, RunEventStore, SourceStore,
+    DestinationStore, ConnectionStore, LookupTableStore,
+]:
+    from dte.api.deps import (
+        get_connection_store,
+        get_destination_store,
+        get_lookup_table_store,
+        get_pipeline_store,
+        get_run_event_store,
+        get_run_store,
+        get_source_store,
+    )
+
+    return (
+        get_pipeline_store(), get_run_store(), get_run_event_store(),
+        get_source_store(), get_destination_store(), get_connection_store(),
+        get_lookup_table_store(),
+    )
+
+
+async def execute_run_job(
+    *,
+    run_id: str,
+    pipeline_id: str,
+    tenant_id: str,
+    p_store: PipelineStore | None = None,
+    r_store: RunStore | None = None,
+    re_store: RunEventStore | None = None,
+    s_store: SourceStore | None = None,
+    d_store: DestinationStore | None = None,
+    c_store: ConnectionStore | None = None,
+    lt_store: LookupTableStore | None = None,
+    fetch_actual_tenant_id=None,
+) -> None:
+    """Job body for the procrastinate ``execute_run`` task (registered as a
+    task in a later plan-046 step). Called with exactly the payload a
+    worker process receives — plain strings, no live contextvar, no
+    inherited asyncio context.
+
+    Tenant rehydration is security-sensitive (plan 046, "Sharp edge 2"):
+    the contextvar mechanism `dte.tenancy` documents does not cross a
+    process boundary, so this rehydrates ``tenant_context_var`` from the
+    payload **and cross-checks it against the run row's actual tenant_id**
+    (fetched bypassing RLS via `_fetch_run_actual_tenant_id`) before any
+    tenant-scoped store call. A mismatch — or a run id that no longer
+    resolves at all — fails the run (under its *real* tenant, when known),
+    logs at ERROR, and returns without executing anything.
+    """
+    lookup = fetch_actual_tenant_id or _fetch_run_actual_tenant_id
+    actual_tenant_id = await lookup(run_id)
+
+    if actual_tenant_id is None:
+        _log.error(
+            "worker: run row not found, refusing to execute",
+            extra={"run_id": run_id, "pipeline_id": pipeline_id},
+        )
+        return
+
+    stores = (p_store, r_store, re_store, s_store, d_store, c_store, lt_store)
+    if any(s is None for s in stores):
+        stores = _default_stores()
+    p_store, r_store, re_store, s_store, d_store, c_store, lt_store = stores
+
+    if actual_tenant_id != tenant_id:
+        _log.error(
+            "worker: tenant mismatch on job payload — refusing to execute",
+            extra={
+                "run_id": run_id,
+                "pipeline_id": pipeline_id,
+                "payload_tenant_id": tenant_id,
+                "actual_tenant_id": actual_tenant_id,
+            },
+        )
+        # Set the context to the *real* tenant (never the untrusted claim)
+        # so the failure write itself passes RLS.
+        token = tenant_context_var.set(actual_tenant_id)
+        try:
+            await r_store.update(
+                run_id,
+                status="failed",
+                error="tenant mismatch: job payload does not match run tenant",
+            )
+        finally:
+            tenant_context_var.reset(token)
+        return
+
+    token = tenant_context_var.set(actual_tenant_id)
+    try:
+        await _execute_pipeline(
+            pipeline_id, run_id, p_store, r_store, re_store,
+            s_store, d_store, c_store, lt_store,
+        )
+    finally:
+        tenant_context_var.reset(token)
