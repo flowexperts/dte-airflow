@@ -34,6 +34,12 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.48b0,<1.0",
     "slowapi>=0.1.9,<1.0",
     "prometheus-client>=0.20,<1.0",
+    # Postgres-backed job queue (plan 046). Async connector needs psycopg
+    # (v3) — separate from the asyncpg driver SQLAlchemy uses for stores.
+    # [binary] avoids requiring libpq headers at install/build time, same
+    # rationale as the pinned cryptography version above.
+    "procrastinate>=3.0,<4.0",
+    "psycopg[binary,pool]>=3.1,<4.0",
 ]
 
 [project.optional-dependencies]
