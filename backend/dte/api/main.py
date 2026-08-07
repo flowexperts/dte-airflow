@@ -24,6 +24,7 @@ from dte.api.routes.schema import router as schema_router
 from dte.api.routes.sources import router as sources_router
 from dte.api.routes.users import router as users_router
 from dte.config import get_settings
+from dte import metrics  # noqa: F401 — import-side Prometheus counter/histogram registration
 from dte.logging import configure_logging
 from dte.sources.pools import mongo as mongo_pool
 from dte.tracing import configure_tracing

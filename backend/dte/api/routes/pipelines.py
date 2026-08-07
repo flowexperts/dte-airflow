@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import json
-import time
 
 import ibis
 
@@ -44,10 +43,9 @@ from dte.compiler.interpolate import (
 )
 from dte.pipelines.diff import diff_pipeline, summarise_diff
 from dte.config import get_settings
-from dte import metrics
 from dte.engine.duckdb_engine import DuckDBEngine  # noqa: F401 — still used as type hint fallback
 from dte.engine.registry import get_engine
-from dte.logging import decrypt_context_var, get_logger, run_id_var
+from dte.logging import decrypt_context_var, get_logger
 from dte.engine.backend_registry import BackendRegistry
 from dte.models.pipeline import (
     Connection,
@@ -736,6 +734,11 @@ async def trigger_pipeline(
         # This is belt-and-suspenders: create_task already propagates them, but
         # explicit is better than implicit for security-critical code.
         from dte.tenancy import tenant_context_var, get_current_tenant
+        # Local import: dte.worker.tasks imports `_run_body` from this module
+        # at import time, so importing it back at module scope here would be
+        # circular. _execute_pipeline itself is unchanged by plan 046 — only
+        # its address moved (dte.api.routes.pipelines -> dte.worker.tasks).
+        from dte.worker.tasks import _execute_pipeline
         _tid = _ctx.run(get_current_tenant)
         tok = tenant_context_var.set(_tid)
         try:
@@ -777,65 +780,6 @@ async def cancel_run(run_id: str, r_store: RunStore = Depends(get_run_store)):
         await r_store.update(run_id, status="failed", error="cancelled (no local task)")
         return {"cancelled": False, "detail": "no live task on this worker"}
     return {"cancelled": True}
-
-
-async def _execute_pipeline(
-    pipeline_id: str,
-    run_id: str,
-    p_store: PipelineStore,
-    r_store: RunStore,
-    re_store: RunEventStore,
-    s_store: SourceStore,
-    d_store: DestinationStore,
-    c_store: ConnectionStore,
-    lt_store: LookupTableStore,
-):
-    settings = get_settings()
-    token = run_id_var.set(run_id)
-    decrypt_context_var.set("pipeline_run")
-    await r_store.update(run_id, status="running")
-    _log.info("run started", extra={"pipeline_id": pipeline_id})
-    metrics.active_runs.inc()
-    started = time.monotonic()
-    final_status = "failed"  # pessimistic default; success path sets "completed"
-    try:
-        await asyncio.wait_for(
-            _run_body(
-                pipeline_id, run_id, p_store, r_store, re_store,
-                s_store, d_store, c_store, lt_store,
-            ),
-            timeout=settings.run_timeout_seconds,
-        )
-        final_status = "completed"
-    except TimeoutError:
-        _log.warning("run timed out", extra={"pipeline_id": pipeline_id})
-        await r_store.update(
-            run_id,
-            status="failed",
-            error=f"run exceeded timeout of {settings.run_timeout_seconds}s",
-        )
-    except asyncio.CancelledError:
-        _log.info("run cancelled", extra={"pipeline_id": pipeline_id})
-        await r_store.update(run_id, status="failed", error="cancelled")
-        final_status = "cancelled"
-    except Exception as e:
-        _log.exception("run failed", extra={"pipeline_id": pipeline_id})
-        await r_store.update(run_id, status="failed", error=str(e))
-    finally:
-        run_id_var.reset(token)
-        metrics.active_runs.dec()
-        metrics.pipeline_runs_total.labels(status=final_status).inc()
-        # Best-effort source_type label: pick the pipeline's first source kind.
-        # Multi-source runs still surface via HTTP RED metrics on trigger.
-        try:
-            pipeline = await p_store.get(pipeline_id)
-            first_src = await s_store.get(pipeline.sources[0]) if pipeline and pipeline.sources else None
-            src_type = first_src.source_type if first_src else "unknown"
-        except Exception:  # noqa — metric emission must never mask a run error
-            src_type = "unknown"
-        metrics.pipeline_run_duration_seconds.labels(source_type=src_type).observe(
-            time.monotonic() - started
-        )
 
 
 async def _run_body(
