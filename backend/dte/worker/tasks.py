@@ -12,7 +12,9 @@ making it a natural job boundary without needing to touch its body.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
+from datetime import UTC, datetime
 
 from dte import metrics
 from dte.api.routes.pipelines import _run_body
@@ -30,6 +32,13 @@ from dte.store.base import (
 from dte.tenancy import tenant_context_var
 
 _log = get_logger("dte.worker.tasks")
+
+# How often the worker touches runs.last_heartbeat_at while a distributed
+# run is in flight (plan 046 task 8). dte.worker.reaper fails out any
+# `running` run whose heartbeat has gone stale by more than 2x this —
+# see that module's docstring for why a killed worker pod needs this
+# rather than relying on queue-level retry.
+HEARTBEAT_INTERVAL_SECONDS = 30
 
 
 async def _execute_pipeline(
@@ -203,10 +212,39 @@ async def execute_run_job(
         return
 
     token = tenant_context_var.set(actual_tenant_id)
+    heartbeat_task = asyncio.create_task(
+        _heartbeat_loop(run_id, r_store, interval_seconds=HEARTBEAT_INTERVAL_SECONDS)
+    )
     try:
         await _execute_pipeline(
             pipeline_id, run_id, p_store, r_store, re_store,
             s_store, d_store, c_store, lt_store,
         )
     finally:
+        heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
         tenant_context_var.reset(token)
+
+
+async def _heartbeat_loop(
+    run_id: str, r_store: RunStore, *, interval_seconds: float = HEARTBEAT_INTERVAL_SECONDS,
+) -> None:
+    """Touch `runs.last_heartbeat_at` every `interval_seconds` for as long
+    as this task lives. Runs alongside `_execute_pipeline` inside
+    `execute_run_job`; cancelled in that call's `finally` block once the
+    pipeline finishes (or raises). See `dte.worker.reaper` for the other
+    half — failing out runs whose heartbeat goes stale.
+
+    Ticks immediately (heartbeat-then-sleep, not sleep-then-heartbeat) so a
+    run that dies within the first interval still leaves one heartbeat on
+    record, distinguishing "started but the worker vanished almost
+    immediately" from "never got a chance to touch the row at all" (the
+    reaper's `started_at` fallback handles the latter).
+    """
+    while True:
+        try:
+            await r_store.update(run_id, last_heartbeat_at=datetime.now(UTC))
+        except Exception:  # noqa — heartbeat failures must never crash the run
+            _log.exception("heartbeat update failed", extra={"run_id": run_id})
+        await asyncio.sleep(interval_seconds)

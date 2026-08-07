@@ -116,6 +116,7 @@ class FakeRunStore:
             "params": None,
             "sql_query": None,
             "job_id": None,
+            "last_heartbeat_at": None,
         }
         return run_id
 
