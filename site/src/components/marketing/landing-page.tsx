@@ -115,16 +115,12 @@ export function LandingPage() {
         <div className="wrap hero-grid">
           <div>
             <span className="eyebrow">DTE</span>
-            <h1 style={{ marginTop: 22 }}>
+            <h1 className="h-gap-lg">
               Data&nbsp;Transformation<br />Engine.
             </h1>
-            <p
-              className="lede"
-              style={{ fontSize: 20, color: "var(--text)", maxWidth: "none" }}
-            >
+            <p className="lede lede-hero">
               Build data pipelines without{" "}
-              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>burning tokens</em> or{" "}
-              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>developer time</em>.
+              <em>burning tokens</em> or <em>developer time</em>.
             </p>
             <div className="hero-ctas">
               <a href="#book" className="btn primary">
@@ -139,7 +135,7 @@ export function LandingPage() {
               <div className="viz-head">
                 <div className="viz-title">
                   <b>orders_pipeline</b>{" "}
-                  <span style={{ color: "var(--subtle)" }}>— 312 source fields · 6 mapped</span>
+                  <span className="viz-title-sub">— 312 source fields · 6 mapped</span>
                 </div>
                 <div className={`pill ${pill}`}>
                   <span className="dotp" />
@@ -176,10 +172,10 @@ export function LandingPage() {
 
       <section id="demo" className="demo">
         <div className="wrap">
-          <div className="section-head" style={{ alignItems: "flex-start" }}>
-            <div style={{ minWidth: 0 }}>
-              <h2 style={{ marginTop: 10 }}>
-                Transformation Pipeline in minutes. <br />No code, no scripts.
+          <div className="section-head">
+            <div className="section-head-copy">
+              <h2>
+                Transformation Pipeline in minutes.{" "}<br className="brk" />No code, no scripts.
               </h2>
             </div>
           </div>
@@ -191,19 +187,21 @@ export function LandingPage() {
 
       <section id="flow">
         <div className="wrap">
-          <div className="section-head" style={{ alignItems: "flex-start" }}>
-            <div style={{ minWidth: 0 }}>
+          <div className="section-head">
+            <div className="section-head-copy">
               <span className="section-eyebrow">The flow</span>
-              <h2 style={{ marginTop: 10 }}>
-                Any source. Your logic.
-                <br />Any destination.
+              <h2>
+                Any source. Your logic.{" "}<br className="brk" />Any destination.
               </h2>
             </div>
           </div>
 
           <div className="flowgrid">
             <div className="flowcol">
-              <div className="flowcol-title">Sources</div>
+              <div className="flowcol-title">
+                <span className="ft-long">Sources</span>
+                <span className="ft-short">Src</span>
+              </div>
               <div className="flowcol-body">
                 {SOURCE_TILES.map((t) => (
                   <div key={t.mono + t.name} className="tile">
@@ -227,7 +225,10 @@ export function LandingPage() {
             <div className="flowarrow" aria-hidden="true"><span /></div>
 
             <div className="flowcol logic">
-              <div className="flowcol-title accent">Your transformation logic</div>
+              <div className="flowcol-title accent">
+                <span className="ft-long">Your transformation logic</span>
+                <span className="ft-short">Logic</span>
+              </div>
               <div className="flowcol-body">
                 <div className="logic-panel">
                   <div className="logic-head">
@@ -254,7 +255,10 @@ export function LandingPage() {
             <div className="flowarrow" aria-hidden="true"><span /></div>
 
             <div className="flowcol">
-              <div className="flowcol-title">Destinations</div>
+              <div className="flowcol-title">
+                <span className="ft-long">Destinations</span>
+                <span className="ft-short">Dest</span>
+              </div>
               <div className="flowcol-body">
                 {DEST_TILES.map((t) => (
                   <div key={t.mono + t.name} className="tile dest">
@@ -280,10 +284,10 @@ export function LandingPage() {
 
       <section id="steps" className="steps-section">
         <div className="wrap">
-          <div className="section-head" style={{ alignItems: "flex-start" }}>
-            <div style={{ minWidth: 0 }}>
+          <div className="section-head">
+            <div className="section-head-copy">
               <span className="section-eyebrow">STEPS</span>
-              <h2 style={{ marginTop: 10 }}>12 ways to shape your data.</h2>
+              <h2>12 ways to shape your data.</h2>
               <p>Each step is composable and ordered. Mix and match — the pipeline runs them in sequence on every trigger.</p>
             </div>
           </div>
@@ -303,7 +307,10 @@ export function LandingPage() {
         <div className="wrap">
           <div className="qa-grid">
             <div className="qa-copy">
-              <h2>Data Quality?<br /><span style={{ color: "var(--muted)", fontWeight: 400 }}>we got it.</span></h2>
+              <h2>
+                Data Quality?<br />
+                <span className="h2-soft">we got it.</span>
+              </h2>
               <div className="qa-rows">
                 {QUALITY_ROWS.map((r) => (
                   <div key={r.label} className="qa-row">
@@ -355,10 +362,10 @@ export function LandingPage() {
 
       <section id="unstructured" className="steps-section">
         <div className="wrap">
-          <div className="section-head" style={{ alignItems: "flex-start" }}>
-            <div style={{ minWidth: 0 }}>
+          <div className="section-head">
+            <div className="section-head-copy">
               <span className="section-eyebrow eyebrow-blink">Coming soon</span>
-              <h2 style={{ marginTop: 10 }}>Unstructured data, too.</h2>
+              <h2>Unstructured data, too.</h2>
               <p>PDFs, images, audio, and free text — same pipeline model, once it lands.</p>
             </div>
           </div>
@@ -379,7 +386,7 @@ export function LandingPage() {
           <div className="book-grid">
             <div className="book-copy">
               <span className="section-eyebrow">Request access</span>
-              <h2 style={{ marginTop: 14 }}>See DTE on your data. 30 minutes.</h2>
+              <h2 className="h-gap-md">See DTE on your data. 30 minutes.</h2>
               <p>
                 Bring one real source. We&apos;ll build a pipeline live on the call — map the
                 fields, preview the output, and hand you the API to trigger it from your
@@ -393,11 +400,10 @@ export function LandingPage() {
             </div>
             <div className="cal-panel" aria-label="Cal.com scheduler">
               <div className="cal-head">
-                <span>
-                  cal.com ·{" "}
-                  <b style={{ color: "var(--text)" }}>bhavaniravi/dte-demo-call</b>
+                <span className="cal-head-link">
+                  cal.com · <b>bhavaniravi/dte-demo-call</b>
                 </span>
-                <span className="pill ok" style={{ fontSize: "9.5px", padding: "3px 8px" }}>
+                <span className="pill ok pill-xs">
                   <span className="dotp" />live
                 </span>
               </div>
@@ -412,8 +418,8 @@ export function LandingPage() {
 
       <footer>
         <div className="wrap">
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <a href="/" className="brand" style={{ fontSize: 22 }}>
+          <div className="foot-left">
+            <a href="/" className="brand brand-sm">
               dt<span className="e">e</span>
             </a>
             <span className="copy">data transformation engine · map once, run anytime</span>

@@ -2,8 +2,12 @@
 
 .mkt-root {
   --mkt-border-hi: var(--border-2);
-  --mkt-pad: clamp(20px, 4vw, 40px);
+  --mkt-pad: clamp(16px, 4vw, 40px);
   --mkt-content: 1180px;
+  /* flow diagram: overridden per breakpoint so the 5 tracks always fit */
+  --flow-rail: 0px;
+  --flow-arrow-pad: 18px;
+  --flow-arrow-w: 60px;
 
   background: var(--bg);
   color: var(--text);
@@ -30,6 +34,17 @@
 
 .mkt-root a { color: inherit; text-decoration: none; }
 .mkt-root button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+/* Designer-chosen line break — a real <br>, dropped under `phone` so short
+   viewports wrap where the text runs out rather than mid-sentence. It must
+   stay a <br>: an empty display:block span does not contribute a break to
+   min-content, which lets the hero h1 inflate its grid track. Each use site
+   carries an explicit {" "} before it so the words stay separated once the
+   break is gone. */
+.mkt-root .brk { display: block; }
+
+/* Long/short label pair — see .flowcol-title */
+.mkt-root .ft-short { display: none; }
 
 .mkt-root .wrap {
   max-width: var(--mkt-content);
@@ -130,20 +145,28 @@
   margin: 0;
 }
 .mkt-root h1 {
-  font-size: clamp(44px, 6.4vw, 78px);
+  /* Only the floor moved (44px -> 30px): at 44px the unbreakable
+     "Data Transformation" run was ~316px and got clipped, not wrapped, on a
+     360px viewport. The 6.4vw middle term is unchanged so every width above
+     ~470px renders exactly as before. */
+  font-size: clamp(30px, 6.4vw, 78px);
   line-height: 1.02;
   font-weight: 400;
 }
+.mkt-root .h-gap-lg { margin-top: 22px; }
+.mkt-root .h-gap-md { margin-top: 14px; }
 .mkt-root h1 em {
   font-style: normal;
   color: var(--accent);
   font-weight: 500;
 }
 .mkt-root h2 {
-  font-size: clamp(28px, 3.6vw, 44px);
+  /* floor only, as with h1 — 3.6vw middle term matches the original curve */
+  font-size: clamp(24px, 3.6vw, 44px);
   line-height: 1.08;
   letter-spacing: -0.025em;
 }
+.mkt-root .h2-soft { color: var(--muted); font-weight: 400; }
 .mkt-root h3 {
   font-size: 17px;
   line-height: 1.35;
@@ -156,6 +179,16 @@
   line-height: 1.55;
   max-width: 52ch;
   margin: 22px 0 32px;
+}
+.mkt-root p.lede-hero {
+  font-size: clamp(16px, 4.4vw, 20px);
+  color: var(--text);
+  max-width: none;
+}
+.mkt-root p.lede-hero em {
+  font-style: normal;
+  color: var(--accent);
+  font-weight: 500;
 }
 .mkt-root .section-eyebrow {
   font-family: var(--font-mono);
@@ -184,7 +217,7 @@
   gap: clamp(40px, 6vw, 80px);
   align-items: center;
 }
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .mkt-root .hero-grid { grid-template-columns: 1fr; }
   .mkt-root .hero-viz { order: 2; }
 }
@@ -217,6 +250,7 @@
   letter-spacing: 0.02em;
 }
 .mkt-root .viz-title b { color: var(--text); font-weight: 700; }
+.mkt-root .viz-title-sub { color: var(--subtle); }
 .mkt-root .pill {
   display: inline-flex;
   align-items: center;
@@ -240,6 +274,7 @@
   box-shadow: 0 0 0 3px color-mix(in oklab, currentColor 20%, transparent);
   animation: mkt-pulseDot 2s ease-in-out infinite;
 }
+.mkt-root .pill-xs { font-size: 9.5px; padding: 3px 8px; }
 .mkt-root .pill.pending { color: var(--gold); border-color: color-mix(in oklab, var(--gold) 35%, var(--border)); }
 .mkt-root .pill.running { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, var(--border)); }
 .mkt-root .pill.ok      { color: var(--green); border-color: color-mix(in oklab, var(--green) 40%, var(--border)); }
@@ -358,11 +393,13 @@
 }
 .mkt-root .section-head {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 40px;
   margin-bottom: 44px;
 }
+.mkt-root .section-head-copy { min-width: 0; }
+.mkt-root .section-head-copy h2 { margin-top: 10px; }
 .mkt-root .section-head p {
   color: var(--muted);
   max-width: 42ch;
@@ -373,6 +410,10 @@
 .mkt-root .section-head .section-eyebrow { display: block; margin-bottom: 10px; }
 
 /* --- Flow (3 columns) --- */
+/* Five tracks: sources | arrow | logic | arrow | destinations.
+   This stays horizontal at EVERY width — the left-to-right read IS the
+   section's argument. Phones get a rail variant (see the `phone` block)
+   rather than a vertical stack. */
 .mkt-root .flowgrid {
   display: grid;
   grid-template-columns: 1fr auto 1.15fr auto 1fr;
@@ -447,12 +488,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 18px;
+  padding: 0 var(--flow-arrow-pad);
   position: relative;
 }
 .mkt-root .flowarrow span {
   position: relative;
-  width: 60px;
+  width: var(--flow-arrow-w);
   height: 1px;
   background: linear-gradient(90deg, var(--border), color-mix(in oklab, var(--accent) 60%, var(--border)));
   display: inline-block;
@@ -567,9 +608,93 @@
   letter-spacing: 0.04em;
 }
 
+/* --- Flow: tablet (<=1000px) — five tracks intact, weight shed --------- */
 @media (max-width: 1000px) {
-  .mkt-root .flowgrid { grid-template-columns: 1fr; gap: 0; }
-  .mkt-root .flowarrow { padding: 20px 0; transform: rotate(90deg); height: 40px; }
+  .mkt-root {
+    --flow-arrow-pad: 8px;
+    --flow-arrow-w: 28px;
+  }
+  .mkt-root .tile { grid-template-columns: 28px 1fr; gap: 10px; padding: 9px 10px; }
+  .mkt-root .tile .mono { width: 28px; height: 28px; font-size: 10.5px; }
+  .mkt-root .tile .sub { display: none; }
+  .mkt-root .lstep { grid-template-columns: 20px 62px 1fr; gap: 8px; padding: 9px 10px; }
+  .mkt-root .flowcol-title { font-size: 10.5px; letter-spacing: 0.16em; }
+}
+
+/* --- Flow: phone (<=620px) — rail mode ---------------------------------
+   Sources and destinations collapse to 40px badge rails; the logic panel
+   keeps the flexible middle track and drops its expression chips. The
+   diagram still reads left-to-right and still fits 320px without scroll. */
+@media (max-width: 620px) {
+  .mkt-root {
+    --flow-rail: 44px;
+    --flow-arrow-pad: 4px;
+    --flow-arrow-w: 14px;
+  }
+  .mkt-root .flowgrid {
+    grid-template-columns: var(--flow-rail) auto 1fr auto var(--flow-rail);
+    align-items: start;
+  }
+  .mkt-root .flowcol-body { gap: 6px; }
+
+  /* rails */
+  .mkt-root .flowcol:not(.logic) .flowcol-title { text-align: center; }
+  .mkt-root .flowcol:not(.logic) .tile {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+  .mkt-root .flowcol:not(.logic) .tile:hover { background: none; }
+  .mkt-root .flowcol:not(.logic) .tile .mono { width: 40px; height: 40px; font-size: 11px; }
+  .mkt-root .flowcol:not(.logic) .tile.more .mono { border-style: dashed; }
+  /* names must survive for assistive tech — clip, never `display: none` */
+  .mkt-root .flowcol:not(.logic) .tile .lbl {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* the arrow's animated pulse would overflow a 14px stub */
+  .mkt-root .flowarrow { align-items: flex-start; padding-top: 46px; }
+  .mkt-root .flowarrow span::before { display: none; }
+  .mkt-root .flowarrow span::after { border-left-width: 6px; border-top-width: 4px; border-bottom-width: 4px; }
+
+  /* condensed logic panel: index + op only */
+  .mkt-root .logic-panel { padding: 10px 10px 12px; }
+  .mkt-root .logic-head { font-size: 10px; gap: 7px; padding-bottom: 9px; margin-bottom: 9px; }
+  .mkt-root .logic-head .dots i { width: 5px; height: 5px; }
+  .mkt-root .logic-steps { gap: 5px; }
+  .mkt-root .lstep { grid-template-columns: 16px 1fr; gap: 7px; padding: 8px 9px; }
+  .mkt-root .lstep .op { font-size: 11.5px; }
+  .mkt-root .lstep .expr { display: none; }
+  .mkt-root .logic-foot {
+    margin-top: 10px;
+    padding-top: 9px;
+    font-size: 9px;
+    flex-wrap: wrap;
+    gap: 4px;
+    letter-spacing: 0;
+  }
+  .mkt-root .logic-foot .pill { font-size: 8.5px; padding: 3px 7px 3px 6px; gap: 5px; }
+  .mkt-root .logic-foot .pill .dotp { width: 5px; height: 5px; }
+
+  .mkt-root .flowcol-title { font-size: 9.5px; letter-spacing: 0.08em; margin-bottom: 12px; }
+  .mkt-root .ft-long { display: none; }
+  .mkt-root .ft-short { display: inline; }
+}
+
+@media (max-width: 400px) {
+  .mkt-root { --flow-rail: 38px; --flow-arrow-pad: 3px; --flow-arrow-w: 10px; }
+  .mkt-root .flowcol:not(.logic) .tile .mono { width: 34px; height: 34px; font-size: 10px; }
+  .mkt-root .lstep { grid-template-columns: 14px 1fr; gap: 6px; padding: 7px 8px; }
+  .mkt-root .lstep .op { font-size: 11px; }
 }
 
 /* --- Book --- */
@@ -580,7 +705,7 @@
   gap: 40px;
   align-items: start;
 }
-@media (max-width: 900px) { .mkt-root .book-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .mkt-root .book-grid { grid-template-columns: 1fr; } }
 .mkt-root .book-copy h2 { max-width: 14ch; }
 .mkt-root .book-copy p {
   color: var(--muted);
@@ -633,8 +758,10 @@
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--muted);
+  gap: 10px;
   flex: 0 0 auto;
 }
+.mkt-root .cal-panel .cal-head b { color: var(--text); }
 .mkt-root .cal-panel .cal-body {
   flex: 1;
   min-height: 0;
@@ -653,8 +780,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 12px 20px;
 }
+.mkt-root .foot-left { display: flex; align-items: center; gap: 16px; }
+.mkt-root .brand-sm { font-size: 22px; }
 .mkt-root footer .copy {
   color: var(--subtle);
   font-family: var(--font-mono);
@@ -683,7 +813,7 @@
   margin-left: auto;
   margin-right: auto;
 }
-@media (max-width: 720px) {
+@media (max-width: 620px) {
   .mkt-root .demo { padding: 48px 0 32px; }
   .mkt-root .demo-frame { border-radius: 10px; padding: 3px; }
 }
@@ -811,12 +941,32 @@
   gap: 12px;
 }
 
-@media (max-width: 999px) {
+@media (max-width: 1000px) {
   .mkt-root .steps-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-@media (max-width: 480px) {
-  .mkt-root .steps-grid { grid-template-columns: 1fr; }
+/* Phone: 12 full cards stacked one-up was ~12 screens of scroll. Drop to
+   label-only chips, two across — the section's job here is to show the
+   breadth of the step vocabulary, not to explain each one. */
+@media (max-width: 620px) {
+  .mkt-root .steps-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .mkt-root .steps-card {
+    padding: 10px 12px;
+    gap: 4px;
+    border-left-width: 2px;
+    min-height: 0;
+  }
+  .mkt-root .steps-card-hint { display: none; }
+  .mkt-root .steps-card-label { font-size: 12.5px; padding-right: 0; }
+  /* the coming-soon section's eyebrow already says "Coming soon" */
+  .mkt-root .steps-soon-badge { display: none; }
+  .mkt-root .steps-qa-badge {
+    position: static;
+    align-self: flex-start;
+    order: -1;
+    font-size: 8.5px;
+    padding: 1px 5px;
+  }
 }
 
 .mkt-root .steps-card {
@@ -913,7 +1063,7 @@
   gap: 16px;
 }
 
-@media (max-width: 899px) {
+@media (max-width: 1000px) {
   .mkt-root .feat-grid { grid-template-columns: 1fr; }
 }
 
@@ -994,7 +1144,7 @@
   gap: clamp(40px, 6vw, 80px);
   align-items: center;
 }
-@media (max-width: 860px) {
+@media (max-width: 1000px) {
   .mkt-root .qa-grid { grid-template-columns: 1fr; }
 }
 
@@ -1124,6 +1274,10 @@
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mkt-root .qa-check-count {
@@ -1162,6 +1316,79 @@
 .mkt-root .qa-profile-stats b {
   color: var(--text);
   font-weight: 700;
+}
+
+/* ======================================================================
+   Phone (<=620px) — everything that isn't the flow or steps grid.
+   ====================================================================== */
+@media (max-width: 620px) {
+  .mkt-root section { padding: clamp(48px, 8vh, 72px) 0; }
+  .mkt-root .section-head { margin-bottom: 28px; gap: 20px; }
+  .mkt-root nav.top .wrap { height: 54px; }
+  .mkt-root .brand { font-size: 24px; }
+
+  /* hero */
+  .mkt-root section.hero { padding: 40px 0 48px; }
+  .mkt-root .hero-grid { gap: 32px; }
+  .mkt-root .hero-ctas .btn { flex: 1 1 auto; justify-content: center; }
+  .mkt-root .brk { display: none; }
+
+  /* hero viz — the step rows restack so long paths like
+     postgres://warehouse.public.orders read in full */
+  .mkt-root .viz { padding: 14px 14px 18px; }
+  .mkt-root .viz-head { flex-wrap: wrap; gap: 8px; }
+  .mkt-root .viz-title-sub { display: none; }
+  .mkt-root .step {
+    grid-template-columns: 20px 1fr;
+    align-items: start;
+    gap: 4px 10px;
+    padding: 10px 12px;
+  }
+  .mkt-root .step-num { line-height: 1.5; }
+  .mkt-root .step-op { flex-direction: column; align-items: flex-start; gap: 6px; }
+  /* on its own line the chip can wrap, so drop the desktop ellipsis —
+     the point of the hero viz is that you can read the real paths */
+  .mkt-root .step-op .expr {
+    max-width: 100%;
+    font-size: 11px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  .mkt-root .step-tag { grid-column: 2; justify-self: start; font-size: 9.5px; }
+  .mkt-root .viz-foot { flex-wrap: wrap; gap: 4px 12px; justify-content: flex-start; }
+
+  /* quality */
+  .mkt-root .qa-rows { margin-top: 20px; }
+  .mkt-root .qa-row { padding: 11px 12px; gap: 10px; }
+  .mkt-root .qa-glyph { width: 28px; height: 28px; font-size: 10px; }
+  .mkt-root .qa-panel { padding: 12px 12px 14px; }
+  .mkt-root .qa-check { grid-template-columns: 14px 1fr auto; gap: 8px; padding: 8px 10px; }
+  .mkt-root .qa-check-expr { font-size: 10.5px; }
+  .mkt-root .qa-check-count { font-size: 9.5px; }
+  .mkt-root .qa-profile-stats { gap: 8px 14px; font-size: 11px; }
+
+  /* book */
+  .mkt-root .book-grid { gap: 28px; }
+  .mkt-root .cal-panel { height: 620px; }
+  .mkt-root .cal-panel .cal-head { padding: 10px 12px; font-size: 11px; gap: 8px; }
+  .mkt-root .cal-head-link {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mkt-root .cal-panel .cal-body { overflow: auto; -webkit-overflow-scrolling: touch; }
+
+  /* footer */
+  .mkt-root footer .wrap { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .mkt-root footer .right { gap: 14px; }
+}
+
+@media (max-width: 400px) {
+  .mkt-root .steps-card-label { font-size: 12px; }
+  .mkt-root .qa-check-expr { font-size: 10px; }
 }
 
 /* Motion respect */
