@@ -115,6 +115,7 @@ class FakeRunStore:
             "finished_at": None,
             "params": None,
             "sql_query": None,
+            "job_id": None,
         }
         return run_id
 

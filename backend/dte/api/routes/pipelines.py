@@ -720,6 +720,16 @@ async def trigger_pipeline(
         raise HTTPException(status_code=422, detail=str(e))
     latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
     revision_id = latest_rev.id if latest_rev else None
+
+    settings = get_settings()
+    if settings.job_queue_enabled:
+        # Distributed path (plan 046): enqueue a procrastinate job instead
+        # of spawning an in-process task. A separate `python -m dte.worker`
+        # process executes it.
+        run_id, _job_id = await _enqueue_run(pipeline_id, revision_id)
+        await r_store.update(run_id, params=run_context)
+        return {"run_id": run_id}
+
     run_id = await r_store.create(pipeline_id, revision_id=revision_id)
     await r_store.update(run_id, params=run_context)
     # asyncio.create_task in CPython 3.7+ already copies the current context
@@ -752,6 +762,50 @@ async def trigger_pipeline(
     task = asyncio.create_task(_task_with_context())
     run_registry.register(run_id, task)
     return {"run_id": run_id}
+
+
+async def _enqueue_run(pipeline_id: str, revision_id: str | None) -> tuple[str, int]:
+    """Atomically insert the run row and enqueue its `execute_run` job.
+
+    True same-transaction atomicity needs both writes on the same
+    connection/driver. dte's stores use asyncpg (via SQLAlchemy);
+    procrastinate's async connector is psycopg (v3) — a different client
+    library, so an ordinary SQLAlchemy transaction can't span both. Instead
+    this borrows one connection from procrastinate's own psycopg pool,
+    inserts the run row on it with plain SQL (same raw-SQL style
+    `PostgresRunStore.create` uses), and defers the job on *that same
+    connection* via `Task.configure(connection=...)` — procrastinate's
+    documented mechanism for deferring inside a caller-managed transaction.
+    One commit. Run row exists iff job exists, by construction.
+    """
+    import uuid as _uuid
+
+    from dte.tenancy import get_current_tenant
+    from dte.worker.app import EXECUTE_RUN_TASK_NAME, get_running_app
+
+    app = await get_running_app()
+    tid = get_current_tenant()
+    run_id = str(_uuid.uuid4())
+    async with app.connector.pool.connection() as conn:
+        async with conn.transaction():
+            # RLS: `runs` has FORCE ROW LEVEL SECURITY with a USING policy
+            # on tenant_id — the INSERT needs the session var set on *this*
+            # connection, mirroring dte.store.postgres._open_tenant_session.
+            await conn.execute(
+                "SELECT set_config('dte.tenant_id', %s, true)", (tid,)
+            )
+            await conn.execute(
+                "INSERT INTO runs (id, pipeline_id, revision_id, status, tenant_id) "
+                "VALUES (%s, %s, %s, 'pending', %s)",
+                (run_id, pipeline_id, revision_id, tid),
+            )
+            job_id = await app.tasks[EXECUTE_RUN_TASK_NAME].configure(
+                connection=conn,
+            ).defer_async(run_id=run_id, pipeline_id=pipeline_id, tenant_id=tid)
+            await conn.execute(
+                "UPDATE runs SET job_id = %s WHERE id = %s", (job_id, run_id)
+            )
+    return run_id, job_id
 
 
 @router.get("/runs/{run_id}/events", dependencies=[Depends(requires("run:read"))])

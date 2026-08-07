@@ -34,3 +34,11 @@ def test_get_app_builds_without_opening_connection(monkeypatch):
     from procrastinate import App
 
     assert isinstance(app, App)
+
+
+def test_get_app_registers_execute_run_task(monkeypatch):
+    from dte.worker.app import EXECUTE_RUN_TASK_NAME
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://dte:dte@nonexistent-host:5432/dte")
+    app = get_app()
+    assert EXECUTE_RUN_TASK_NAME in app.tasks

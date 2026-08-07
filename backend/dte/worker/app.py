@@ -12,9 +12,12 @@ without a live Postgres instance.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 
 from procrastinate import App, PsycopgConnector
+
+EXECUTE_RUN_TASK_NAME = "execute_run"
 
 
 def psycopg_dsn(database_url: str) -> str:
@@ -47,4 +50,55 @@ def get_app() -> App:
             "same as its stores."
         )
     connector = PsycopgConnector(conninfo=psycopg_dsn(url))
-    return App(connector=connector, import_paths=["dte.worker.tasks"])
+    app = App(connector=connector, import_paths=["dte.worker.tasks"])
+    _register_tasks(app)
+    return app
+
+
+def _register_tasks(app: App) -> None:
+    """Register every dte job task on a freshly-built App.
+
+    A local import — `dte.worker.tasks` imports `_run_body` from
+    `dte.api.routes.pipelines` at module scope, and nothing in this module
+    should force that import chain just to build an (unopened) App.
+    """
+    from dte.worker.tasks import execute_run_job
+
+    app.task(name=EXECUTE_RUN_TASK_NAME)(execute_run_job)
+
+
+_running_app: App | None = None
+_running_app_lock = asyncio.Lock()
+
+
+async def get_running_app() -> App:
+    """Return a process-wide App with its connection pool already open.
+
+    `get_app()` builds a fresh, unopened App on every call by design (cheap,
+    side-effect-free, good for tests — see its docstring). Deferring a job
+    needs an actually-open psycopg pool, and opening one per HTTP request
+    would be wasteful and would leak connections, so this caches one opened
+    App for the life of the process instead — the async equivalent of
+    `dte.api.deps._session_factory`'s `@lru_cache`.
+    """
+    global _running_app
+    if _running_app is not None:
+        return _running_app
+    async with _running_app_lock:
+        if _running_app is None:
+            app = get_app()
+            await app.open_async()
+            _running_app = app
+        return _running_app
+
+
+async def close_running_app() -> None:
+    """Close and forget the singleton opened App.
+
+    Called on app shutdown (see `dte.api.main`'s lifespan) and by tests
+    that need a fresh pool after monkeypatching DATABASE_URL.
+    """
+    global _running_app
+    if _running_app is not None:
+        await _running_app.close_async()
+        _running_app = None
