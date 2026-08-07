@@ -23,7 +23,7 @@ const HERO_STEPS = [
 
 const SOURCE_TILES = [
   { mono: "S3", name: "Amazon S3", sub: "json · csv · parquet" },
-  { mono: "GS", name: "Google Cloud", sub: "gcs · hmac" },
+  { mono: "GCS", name: "Google Cloud", sub: "gcs · hmac" },
   { mono: "AZ", name: "Azure Blob", sub: "connection string" },
   { mono: "PG", name: "Postgres", sub: "table · query" },
   { mono: "MO", name: "MongoDB", sub: "collection" },
@@ -32,13 +32,14 @@ const SOURCE_TILES = [
 ];
 
 const DEST_TILES = [
+  { mono: "S3", name: "Amazon S3", sub: "parquet · columnar" },
+  { mono: "GCS", name: "Google Cloud", sub: "gcs · hmac" },
+  { mono: "AZ", name: "Azure Blob", sub: "connection string" },
   { mono: "PG", name: "Postgres", sub: "upsert · pk" },
   { mono: "SQ", name: "SQL databases", sub: "via dlt" },
-  { mono: "S3", name: "Parquet on S3", sub: "columnar" },
   { mono: "JS", name: "JSON file", sub: "json · jsonl" },
   { mono: "CS", name: "CSV file", sub: "flat" },
   { mono: "XL", name: "Excel", sub: "xlsx" },
-  { mono: "API", name: "REST endpoint", sub: "on request" },
 ];
 
 const LOGIC_STEPS = [
@@ -82,6 +83,7 @@ export function LandingPage() {
   const [pill, setPill] = useState<PillState>("running");
   const [isWide, setIsWide] = useState(false);
   const stepsRef = useRef<HTMLDivElement | null>(null);
+  const flowScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia(WIDE_QUERY);
@@ -108,6 +110,20 @@ export function LandingPage() {
     }, 2400);
     return () => clearInterval(t);
   }, []);
+
+  // Land the swipe rail on orders_pipeline rather than on the sources column:
+  // the pipeline is the point of the section, and starting mid-diagram makes
+  // both directions read as "there is more this way". Rect maths rather than
+  // offsetLeft because .flowscroll is not a positioned offsetParent.
+  useEffect(() => {
+    const rail = flowScrollRef.current;
+    if (!rail || isWide) return;
+    const logic = rail.querySelector<HTMLElement>(".flowcol.logic");
+    if (!logic) return;
+    const railBox = rail.getBoundingClientRect();
+    const logicBox = logic.getBoundingClientRect();
+    rail.scrollLeft += logicBox.left - railBox.left - (railBox.width - logicBox.width) / 2;
+  }, [isWide]);
 
   const currentYear = new Date().getFullYear();
 
@@ -210,6 +226,9 @@ export function LandingPage() {
             </div>
           </div>
 
+          {/* Scroll rail is inert above 620px; on phones it lets the grid keep
+              its real ~720px width instead of dropping labels or scaling down. */}
+          <div className="flowscroll" ref={flowScrollRef}>
           <div className="flowgrid">
             <div className="flowcol">
               <div className="flowcol-title">
@@ -292,6 +311,11 @@ export function LandingPage() {
                 </div>
               </div>
             </div>
+          </div>
+          </div>
+          <div className="flowhint" aria-hidden="true">
+            <span>← sources</span>
+            <span>destinations →</span>
           </div>
         </div>
       </section>
@@ -379,7 +403,9 @@ export function LandingPage() {
           <div className="section-head">
             <div className="section-head-copy">
               <span className="section-eyebrow eyebrow-blink">Coming soon</span>
-              <h2>Unstructured data, too.</h2>
+              <h2>
+                Unstructured data? <span className="h2-accent">Soon.</span>
+              </h2>
               <p>PDFs, images, audio, and free text — same pipeline model, once it lands.</p>
             </div>
           </div>
@@ -400,15 +426,8 @@ export function LandingPage() {
           <div className="book-grid">
             <div className="book-copy">
               <span className="section-eyebrow">Request access</span>
-              <h2 className="h-gap-md">See DTE on your data. 30 minutes.</h2>
-              <p>
-                Bring one real source. We&apos;ll build a pipeline live on the call — map the
-                fields, preview the output, and hand you the API to trigger it from your
-                scheduler. If DTE isn&apos;t a fit, we&apos;ll tell you before the 30 minutes are up.
-              </p>
+              <h2 className="h-gap-md">See DTE in action.</h2>
               <ul className="bullets">
-                <li>Bring one messy source and the person who knows what its fields mean.</li>
-                <li>Leave with a working pipeline and the endpoint your orchestrator will call.</li>
                 <li>No sales pitch. Zero slides.</li>
               </ul>
             </div>

@@ -27,7 +27,11 @@ for (const w of WIDTHS) {
 
   const r = await page.evaluate(() => {
     const dw = document.documentElement.clientWidth;
+    // .flowscroll is a deliberate horizontal scroll rail on phones — its
+    // children are *supposed* to extend past the viewport. Only unintended
+    // overflow counts, so exclude anything inside it.
     const bad = [...document.querySelectorAll(".mkt-root *")]
+      .filter((e) => !e.closest(".flowscroll"))
       .filter((e) => {
         const b = e.getBoundingClientRect();
         return b.width > 0 && (b.right > dw + 1 || b.left < -1);
@@ -45,7 +49,13 @@ for (const w of WIDTHS) {
       heroViz: disp(".hero-viz"),
       calPanel: disp(".cal-panel"),
       calCta: disp(".cal-cta"),
+      // display:none reports top 0, which would sort a hidden section to the
+      // front and read as a reorder bug. Drop them and mark them instead.
+      hidden: [...document.querySelectorAll("main > section")]
+        .filter((s) => getComputedStyle(s).display === "none")
+        .map((s) => s.id || s.className),
       order: [...document.querySelectorAll("main > section")]
+        .filter((s) => getComputedStyle(s).display !== "none")
         .map((s) => ({ id: s.id || s.className, top: s.getBoundingClientRect().top + scrollY }))
         .sort((a, b) => a.top - b.top)
         .map((s) => s.id),
@@ -57,7 +67,10 @@ for (const w of WIDTHS) {
     `${String(w).padStart(5)}px scrollW=${r.scrollW} pageH=${r.pageH} iframes=${r.iframes} ` +
       `heroViz=${r.heroViz} cal=${r.calPanel}/${r.calCta} ${status}`
   );
-  if (w === 360 || w === 1280) console.log(`        order: ${r.order.join(" -> ")}`);
+  if (w === 360 || w === 1280) {
+    console.log(`        order: ${r.order.join(" -> ")}`);
+    if (r.hidden.length) console.log(`        hidden: ${r.hidden.join(", ")}`);
+  }
 
   await page.close();
 }
