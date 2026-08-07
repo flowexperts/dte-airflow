@@ -7,6 +7,11 @@ import "./landing.css";
 
 type PillState = "pending" | "running" | "ok";
 
+const CAL_LINK = "bhavaniravi/dte-demo-call";
+
+/** Matches the `phone` breakpoint in landing.css. Keep the two in sync. */
+const WIDE_QUERY = "(min-width: 621px)";
+
 const HERO_STEPS = [
   { num: "01", op: "Source", expr: "s3://acme-orders/*.json", tag: "filesystem", cls: "src" },
   { num: "02", op: "Filter", expr: <>amount <span className="cmp">&gt;</span> 100</>, tag: "expr", cls: "" },
@@ -75,7 +80,16 @@ const QUALITY_ROWS = [
 export function LandingPage() {
   const [activeStep, setActiveStep] = useState(-1);
   const [pill, setPill] = useState<PillState>("running");
+  const [isWide, setIsWide] = useState(false);
   const stepsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY);
+    const sync = () => setIsWide(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -398,6 +412,11 @@ export function LandingPage() {
                 <li>No sales pitch. Zero slides.</li>
               </ul>
             </div>
+            {/* Desktop gets the inline scheduler. Phones get a plain link out
+                to Cal's own mobile flow — the month-view embed renders ~600px
+                of dead space then clips mid-month in a bounded panel, and the
+                iframe is a heavy payload to ship to a device that never sees
+                it. `isWide` gates the mount, so mobile pays nothing. */}
             <div className="cal-panel" aria-label="Cal.com scheduler">
               <div className="cal-head">
                 <span className="cal-head-link">
@@ -407,10 +426,18 @@ export function LandingPage() {
                   <span className="dotp" />live
                 </span>
               </div>
-              <div className="cal-body">
-                <CalEmbed />
-              </div>
+              <div className="cal-body">{isWide ? <CalEmbed /> : null}</div>
             </div>
+
+            <a
+              className="cal-cta btn primary"
+              href={`https://cal.com/${CAL_LINK}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Book a 30-min slot
+              <span className="cal-cta-sub">cal.com · opens in a new tab</span>
+            </a>
           </div>
         </div>
       </section>

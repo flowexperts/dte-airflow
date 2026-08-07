@@ -768,6 +768,25 @@
   overflow: hidden;
 }
 
+/* Mobile-only booking CTA — replaces .cal-panel under `phone`. */
+.mkt-root .cal-cta {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 18px;
+  text-align: center;
+  white-space: normal;
+  font-size: 15px;
+}
+.mkt-root .cal-cta-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  opacity: 0.72;
+}
+
 /* --- Footer --- */
 .mkt-root footer {
   border-top: 1px solid var(--border);
@@ -814,8 +833,8 @@
   margin-right: auto;
 }
 @media (max-width: 620px) {
-  .mkt-root .demo { padding: 48px 0 32px; }
-  .mkt-root .demo-frame { border-radius: 10px; padding: 3px; }
+  .mkt-root .demo { padding: 8px 0 36px; }
+  .mkt-root .demo-frame { border-radius: 10px; padding: 3px; margin-top: 20px; }
 }
 
 /* Custom video player */
@@ -1322,42 +1341,37 @@
    Phone (<=620px) — everything that isn't the flow or steps grid.
    ====================================================================== */
 @media (max-width: 620px) {
-  .mkt-root section { padding: clamp(48px, 8vh, 72px) 0; }
-  .mkt-root .section-head { margin-bottom: 28px; gap: 20px; }
+  .mkt-root section { padding: 44px 0; }
+  .mkt-root .section-head { margin-bottom: 22px; gap: 16px; }
+  .mkt-root .section-head-copy h2 { margin-top: 8px; }
   .mkt-root nav.top .wrap { height: 54px; }
   .mkt-root .brand { font-size: 24px; }
 
-  /* hero */
-  .mkt-root section.hero { padding: 40px 0 48px; }
-  .mkt-root .hero-grid { gap: 32px; }
-  .mkt-root .hero-ctas .btn { flex: 1 1 auto; justify-content: center; }
-  .mkt-root .brk { display: none; }
+  /* The chip grids already say what these paragraphs say. */
+  .mkt-root #steps .section-head p,
+  .mkt-root #unstructured .section-head p { display: none; }
 
-  /* hero viz — the step rows restack so long paths like
-     postgres://warehouse.public.orders read in full */
-  .mkt-root .viz { padding: 14px 14px 18px; }
-  .mkt-root .viz-head { flex-wrap: wrap; gap: 8px; }
-  .mkt-root .viz-title-sub { display: none; }
-  .mkt-root .step {
-    grid-template-columns: 20px 1fr;
-    align-items: start;
-    gap: 4px 10px;
-    padding: 10px 12px;
-  }
-  .mkt-root .step-num { line-height: 1.5; }
-  .mkt-root .step-op { flex-direction: column; align-items: flex-start; gap: 6px; }
-  /* on its own line the chip can wrap, so drop the desktop ellipsis —
-     the point of the hero viz is that you can read the real paths */
-  .mkt-root .step-op .expr {
-    max-width: 100%;
-    font-size: 11px;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    overflow: visible;
-    text-overflow: clip;
-  }
-  .mkt-root .step-tag { grid-column: 2; justify-self: start; font-size: 9.5px; }
-  .mkt-root .viz-foot { flex-wrap: wrap; gap: 4px 12px; justify-content: flex-start; }
+  /* Roadmap last. On desktop "Coming soon" reads as confidence; on a phone,
+     landing on four unbuilt things immediately before the booking form makes
+     vaporware the last impression. Reorder, don't hide. */
+  .mkt-root main { display: flex; flex-direction: column; }
+  .mkt-root main > section { order: 0; }
+  .mkt-root main > section#unstructured { order: 1; }
+
+  /* --- Hero: one screen -------------------------------------------------
+     Desktop's hero is headline-block + a ~1100px step card. Stacked on a
+     phone that reads as two unrelated things and pushes the demo video
+     three screens down. Mobile drops the card entirely: the same "here is
+     what a pipeline looks like" job is done better by the demo video
+     directly below and by the #flow diagram. Nothing moves behind a tap. */
+  .mkt-root section.hero { padding: 28px 0 36px; }
+  .mkt-root .hero-viz { display: none; }
+  .mkt-root .hero-grid { gap: 0; }
+  .mkt-root .hero-ctas { gap: 8px; }
+  .mkt-root .hero-ctas .btn { flex: 1 1 auto; justify-content: center; padding: 12px 14px; }
+  .mkt-root .brk { display: none; }
+  .mkt-root p.lede-hero { margin: 16px 0 24px; }
+  .mkt-root .h-gap-lg { margin-top: 16px; }
 
   /* quality */
   .mkt-root .qa-rows { margin-top: 20px; }
@@ -1369,17 +1383,12 @@
   .mkt-root .qa-check-count { font-size: 9.5px; }
   .mkt-root .qa-profile-stats { gap: 8px 14px; font-size: 11px; }
 
-  /* book */
-  .mkt-root .book-grid { gap: 28px; }
-  .mkt-root .cal-panel { height: 620px; }
-  .mkt-root .cal-panel .cal-head { padding: 10px 12px; font-size: 11px; gap: 8px; }
-  .mkt-root .cal-head-link {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .mkt-root .cal-panel .cal-body { overflow: auto; -webkit-overflow-scrolling: touch; }
+  /* book — the embed is replaced by a link out to Cal's own mobile flow */
+  .mkt-root .book-grid { gap: 24px; }
+  .mkt-root .cal-panel { display: none; }
+  .mkt-root .cal-cta { display: flex; }
+  .mkt-root .book-copy p { margin-top: 14px; }
+  .mkt-root .book-copy .bullets { margin-top: 20px; gap: 10px; }
 
   /* footer */
   .mkt-root footer .wrap { flex-direction: column; align-items: flex-start; gap: 14px; }
