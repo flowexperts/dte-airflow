@@ -219,6 +219,54 @@ async def _validate_engine_compat(
     return resolved
 
 
+async def _check_shared_fs_guard(
+    pipeline: PipelineBase,
+    s_store: SourceStore,
+    d_store: DestinationStore,
+    c_store: ConnectionStore,
+) -> None:
+    """Reject (422) a trigger when the job queue is on, the output
+    filesystem isn't shared across pods, and the pipeline touches a
+    `local_fs` source or destination (plan 046 "Sharp edge 1"). Only
+    called when `settings.job_queue_enabled and not settings.shared_output_fs`
+    — assumes `_resolve`/`_resolve_sources` already confirmed every id
+    exists, so a missing lookup here is silently skipped rather than
+    re-raised (that 422 already fired).
+    """
+    offending: list[str] = []
+    for sid in pipeline.sources:
+        source = await s_store.get(sid)
+        if not source:
+            continue
+        conn = await c_store.get(source.connection_id)
+        if conn and conn.connection_type == "local_fs":
+            offending.append(sid)
+
+    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    if not is_quality:
+        destination = await d_store.get(pipeline.output_id)
+        if destination:
+            dest_conn = await c_store.get(destination.connection_id)
+            if dest_conn and dest_conn.connection_type == "local_fs":
+                offending.append(destination.id)
+
+    if offending:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "local_fs_not_shared",
+                "message": (
+                    "DTE_JOB_QUEUE_ENABLED is on and DTE_SHARED_OUTPUT_FS is "
+                    "off: local_fs sources/destinations can't cross the "
+                    "API/worker process boundary. Use an s3/gcs/azure "
+                    "connection, or set DTE_SHARED_OUTPUT_FS=true if this "
+                    "deployment mounts a shared RWX volume."
+                ),
+                "offending_ids": offending,
+            },
+        )
+
+
 @router.post("/pipelines", dependencies=[Depends(requires("pipeline:write"))])
 async def create_pipeline(
     pipeline: PipelineBase,
@@ -707,6 +755,13 @@ async def trigger_pipeline(
     # the engine matrix existed, or a source's connection type changed
     # since save.
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
+    settings = get_settings()
+    if settings.job_queue_enabled and not settings.shared_output_fs:
+        # plan 046 "Sharp edge 1": a local_fs source/destination is only
+        # readable by whichever process wrote/reads it. With execution
+        # split across an API pod and a worker pod (and no shared RWX
+        # volume), reject at trigger time rather than failing mid-run.
+        await _check_shared_fs_guard(pipeline, s_store, d_store, c_store)
     user_params = (body.params if body else {}) or {}
     # Resolve the interpolation context up-front so `now`/`today` snapshot at
     # trigger time (not at compile time deep inside the task) and get
@@ -721,7 +776,6 @@ async def trigger_pipeline(
     latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
     revision_id = latest_rev.id if latest_rev else None
 
-    settings = get_settings()
     if settings.job_queue_enabled:
         # Distributed path (plan 046): enqueue a procrastinate job instead
         # of spawning an in-process task. A separate `python -m dte.worker`
