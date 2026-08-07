@@ -1,8 +1,7 @@
 name: Mutation Testing
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: mutation-${{ github.ref }}
