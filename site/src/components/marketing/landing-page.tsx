@@ -7,6 +7,11 @@ import "./landing.css";
 
 type PillState = "pending" | "running" | "ok";
 
+const CAL_LINK = "bhavaniravi/dte-demo-call";
+
+/** Matches the `phone` breakpoint in landing.css. Keep the two in sync. */
+const WIDE_QUERY = "(min-width: 621px)";
+
 const HERO_STEPS = [
   { num: "01", op: "Source", expr: "s3://acme-orders/*.json", tag: "filesystem", cls: "src" },
   { num: "02", op: "Filter", expr: <>amount <span className="cmp">&gt;</span> 100</>, tag: "expr", cls: "" },
@@ -18,7 +23,7 @@ const HERO_STEPS = [
 
 const SOURCE_TILES = [
   { mono: "S3", name: "Amazon S3", sub: "json · csv · parquet" },
-  { mono: "GS", name: "Google Cloud", sub: "gcs · hmac" },
+  { mono: "GCS", name: "Google Cloud", sub: "gcs · hmac" },
   { mono: "AZ", name: "Azure Blob", sub: "connection string" },
   { mono: "PG", name: "Postgres", sub: "table · query" },
   { mono: "MO", name: "MongoDB", sub: "collection" },
@@ -27,13 +32,14 @@ const SOURCE_TILES = [
 ];
 
 const DEST_TILES = [
+  { mono: "S3", name: "Amazon S3", sub: "parquet · columnar" },
+  { mono: "GCS", name: "Google Cloud", sub: "gcs · hmac" },
+  { mono: "AZ", name: "Azure Blob", sub: "connection string" },
   { mono: "PG", name: "Postgres", sub: "upsert · pk" },
   { mono: "SQ", name: "SQL databases", sub: "via dlt" },
-  { mono: "S3", name: "Parquet on S3", sub: "columnar" },
   { mono: "JS", name: "JSON file", sub: "json · jsonl" },
   { mono: "CS", name: "CSV file", sub: "flat" },
   { mono: "XL", name: "Excel", sub: "xlsx" },
-  { mono: "API", name: "REST endpoint", sub: "on request" },
 ];
 
 const LOGIC_STEPS = [
@@ -75,7 +81,17 @@ const QUALITY_ROWS = [
 export function LandingPage() {
   const [activeStep, setActiveStep] = useState(-1);
   const [pill, setPill] = useState<PillState>("running");
+  const [isWide, setIsWide] = useState(false);
   const stepsRef = useRef<HTMLDivElement | null>(null);
+  const flowScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY);
+    const sync = () => setIsWide(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -94,6 +110,20 @@ export function LandingPage() {
     }, 2400);
     return () => clearInterval(t);
   }, []);
+
+  // Land the swipe rail on orders_pipeline rather than on the sources column:
+  // the pipeline is the point of the section, and starting mid-diagram makes
+  // both directions read as "there is more this way". Rect maths rather than
+  // offsetLeft because .flowscroll is not a positioned offsetParent.
+  useEffect(() => {
+    const rail = flowScrollRef.current;
+    if (!rail || isWide) return;
+    const logic = rail.querySelector<HTMLElement>(".flowcol.logic");
+    if (!logic) return;
+    const railBox = rail.getBoundingClientRect();
+    const logicBox = logic.getBoundingClientRect();
+    rail.scrollLeft += logicBox.left - railBox.left - (railBox.width - logicBox.width) / 2;
+  }, [isWide]);
 
   const currentYear = new Date().getFullYear();
 
@@ -115,16 +145,12 @@ export function LandingPage() {
         <div className="wrap hero-grid">
           <div>
             <span className="eyebrow">DTE</span>
-            <h1 style={{ marginTop: 22 }}>
+            <h1 className="h-gap-lg">
               Data&nbsp;Transformation<br />Engine.
             </h1>
-            <p
-              className="lede"
-              style={{ fontSize: 20, color: "var(--text)", maxWidth: "none" }}
-            >
+            <p className="lede lede-hero">
               Build data pipelines without{" "}
-              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>burning tokens</em> or{" "}
-              <em style={{ fontStyle: "normal", color: "var(--accent)", fontWeight: 500 }}>developer time</em>.
+              <em>burning tokens</em> or <em>developer time</em>.
             </p>
             <div className="hero-ctas">
               <a href="#book" className="btn primary">
@@ -139,7 +165,7 @@ export function LandingPage() {
               <div className="viz-head">
                 <div className="viz-title">
                   <b>orders_pipeline</b>{" "}
-                  <span style={{ color: "var(--subtle)" }}>— 312 source fields · 6 mapped</span>
+                  <span className="viz-title-sub">— 312 source fields · 6 mapped</span>
                 </div>
                 <div className={`pill ${pill}`}>
                   <span className="dotp" />
@@ -176,10 +202,10 @@ export function LandingPage() {
 
       <section id="demo" className="demo">
         <div className="wrap">
-          <div className="section-head" style={{ alignItems: "flex-start" }}>
-            <div style={{ minWidth: 0 }}>
-              <h2 style={{ marginTop: 10 }}>
-                Transformation Pipeline in minutes. <br />No code, no scripts.
+          <div className="section-head">
+            <div className="section-head-copy">
+              <h2>
+                Transformation Pipeline in minutes.{" "}<br className="brk" />No code, no scripts.
               </h2>
             </div>
           </div>
@@ -191,19 +217,24 @@ export function LandingPage() {
 
       <section id="flow">
         <div className="wrap">
-          <div className="section-head" style={{ alignItems: "flex-start" }}>
-            <div style={{ minWidth: 0 }}>
+          <div className="section-head">
+            <div className="section-head-copy">
               <span className="section-eyebrow">The flow</span>
-              <h2 style={{ marginTop: 10 }}>
-                Any source. Your logic.
-                <br />Any destination.
+              <h2>
+                Any source. Your logic.{" "}<br className="brk" />Any destination.
               </h2>
             </div>
           </div>
 
+          {/* Scroll rail is inert above 620px; on phones it lets the grid keep
+              its real ~720px width instead of dropping labels or scaling down. */}
+          <div className="flowscroll" ref={flowScrollRef}>
           <div className="flowgrid">
             <div className="flowcol">
-              <div className="flowcol-title">Sources</div>
+              <div className="flowcol-title">
+                <span className="ft-long">Sources</span>
+                <span className="ft-short">Src</span>
+              </div>
               <div className="flowcol-body">
                 {SOURCE_TILES.map((t) => (
                   <div key={t.mono + t.name} className="tile">
@@ -227,7 +258,10 @@ export function LandingPage() {
             <div className="flowarrow" aria-hidden="true"><span /></div>
 
             <div className="flowcol logic">
-              <div className="flowcol-title accent">Your transformation logic</div>
+              <div className="flowcol-title accent">
+                <span className="ft-long">Your transformation logic</span>
+                <span className="ft-short">Logic</span>
+              </div>
               <div className="flowcol-body">
                 <div className="logic-panel">
                   <div className="logic-head">
@@ -254,7 +288,10 @@ export function LandingPage() {
             <div className="flowarrow" aria-hidden="true"><span /></div>
 
             <div className="flowcol">
-              <div className="flowcol-title">Destinations</div>
+              <div className="flowcol-title">
+                <span className="ft-long">Destinations</span>
+                <span className="ft-short">Dest</span>
+              </div>
               <div className="flowcol-body">
                 {DEST_TILES.map((t) => (
                   <div key={t.mono + t.name} className="tile dest">
@@ -275,15 +312,20 @@ export function LandingPage() {
               </div>
             </div>
           </div>
+          </div>
+          <div className="flowhint" aria-hidden="true">
+            <span>← sources</span>
+            <span>destinations →</span>
+          </div>
         </div>
       </section>
 
       <section id="steps" className="steps-section">
         <div className="wrap">
-          <div className="section-head" style={{ alignItems: "flex-start" }}>
-            <div style={{ minWidth: 0 }}>
+          <div className="section-head">
+            <div className="section-head-copy">
               <span className="section-eyebrow">STEPS</span>
-              <h2 style={{ marginTop: 10 }}>12 ways to shape your data.</h2>
+              <h2>12 ways to shape your data.</h2>
               <p>Each step is composable and ordered. Mix and match — the pipeline runs them in sequence on every trigger.</p>
             </div>
           </div>
@@ -303,7 +345,10 @@ export function LandingPage() {
         <div className="wrap">
           <div className="qa-grid">
             <div className="qa-copy">
-              <h2>Data Quality?<br /><span style={{ color: "var(--muted)", fontWeight: 400 }}>we got it.</span></h2>
+              <h2>
+                Data Quality?<br />
+                <span className="h2-soft">we got it.</span>
+              </h2>
               <div className="qa-rows">
                 {QUALITY_ROWS.map((r) => (
                   <div key={r.label} className="qa-row">
@@ -355,10 +400,12 @@ export function LandingPage() {
 
       <section id="unstructured" className="steps-section">
         <div className="wrap">
-          <div className="section-head" style={{ alignItems: "flex-start" }}>
-            <div style={{ minWidth: 0 }}>
+          <div className="section-head">
+            <div className="section-head-copy">
               <span className="section-eyebrow eyebrow-blink">Coming soon</span>
-              <h2 style={{ marginTop: 10 }}>Unstructured data, too.</h2>
+              <h2>
+                Unstructured data? <span className="h2-accent">Soon.</span>
+              </h2>
               <p>PDFs, images, audio, and free text — same pipeline model, once it lands.</p>
             </div>
           </div>
@@ -379,32 +426,37 @@ export function LandingPage() {
           <div className="book-grid">
             <div className="book-copy">
               <span className="section-eyebrow">Request access</span>
-              <h2 style={{ marginTop: 14 }}>See DTE on your data. 30 minutes.</h2>
-              <p>
-                Bring one real source. We&apos;ll build a pipeline live on the call — map the
-                fields, preview the output, and hand you the API to trigger it from your
-                scheduler. If DTE isn&apos;t a fit, we&apos;ll tell you before the 30 minutes are up.
-              </p>
+              <h2 className="h-gap-md">See DTE in action.</h2>
               <ul className="bullets">
-                <li>Bring one messy source and the person who knows what its fields mean.</li>
-                <li>Leave with a working pipeline and the endpoint your orchestrator will call.</li>
                 <li>No sales pitch. Zero slides.</li>
               </ul>
             </div>
+            {/* Desktop gets the inline scheduler. Phones get a plain link out
+                to Cal's own mobile flow — the month-view embed renders ~600px
+                of dead space then clips mid-month in a bounded panel, and the
+                iframe is a heavy payload to ship to a device that never sees
+                it. `isWide` gates the mount, so mobile pays nothing. */}
             <div className="cal-panel" aria-label="Cal.com scheduler">
               <div className="cal-head">
-                <span>
-                  cal.com ·{" "}
-                  <b style={{ color: "var(--text)" }}>bhavaniravi/dte-demo-call</b>
+                <span className="cal-head-link">
+                  cal.com · <b>bhavaniravi/dte-demo-call</b>
                 </span>
-                <span className="pill ok" style={{ fontSize: "9.5px", padding: "3px 8px" }}>
+                <span className="pill ok pill-xs">
                   <span className="dotp" />live
                 </span>
               </div>
-              <div className="cal-body">
-                <CalEmbed />
-              </div>
+              <div className="cal-body">{isWide ? <CalEmbed /> : null}</div>
             </div>
+
+            <a
+              className="cal-cta btn primary"
+              href={`https://cal.com/${CAL_LINK}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Book a 30-min slot
+              <span className="cal-cta-sub">cal.com · opens in a new tab</span>
+            </a>
           </div>
         </div>
       </section>
@@ -412,8 +464,8 @@ export function LandingPage() {
 
       <footer>
         <div className="wrap">
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <a href="/" className="brand" style={{ fontSize: 22 }}>
+          <div className="foot-left">
+            <a href="/" className="brand brand-sm">
               dt<span className="e">e</span>
             </a>
             <span className="copy">data transformation engine · map once, run anytime</span>
