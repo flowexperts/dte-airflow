@@ -3,16 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/cn";
-
-export type Variant = "a" | "b" | "c";
-
-/** Narrow an arbitrary `?v=` into a known variant, defaulting to `a`. */
-export function asVariant(
-  v: string | undefined,
-  allowed: [Variant, ...Variant[]],
-): Variant {
-  return allowed.includes(v as Variant) ? (v as Variant) : allowed[0];
-}
+import type { Variant, VariantOption } from "./_variant-util";
 
 /**
  * Sticky layout switcher. Swaps only the `v` query param so you stay on the
@@ -23,7 +14,7 @@ export function VariantBar({
   options,
   current,
 }: {
-  options: { value: Variant; label: string; note: string }[];
+  options: VariantOption[];
   current: Variant;
 }) {
   const pathname = usePathname();

@@ -7,7 +7,7 @@ import {
   type Destination,
   type Source,
 } from "@/lib/api";
-import { asVariant } from "../../_variant";
+import { asVariant } from "../../_variant-util";
 import { LabPipelineDetail } from "./_detail";
 
 export const dynamic = "force-dynamic";

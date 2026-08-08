@@ -30,7 +30,8 @@ import { usePermissions } from "@/lib/use-permissions";
 import { cn } from "@/lib/cn";
 import { AutoInferSchemas, AutoStepSchemas } from "../../_schema-sync";
 import { LabTriggerButton } from "../../_trigger";
-import { VariantBar, type Variant } from "../../_variant";
+import { VariantBar } from "../../_variant";
+import type { Variant, VariantOption } from "../../_variant-util";
 import {
   destinationPathLabel,
   pipelineShape,
@@ -39,7 +40,7 @@ import {
 import { StepsColumn } from "./_steps-column";
 import { Rail } from "./_rail";
 
-const OPTIONS = [
+const OPTIONS: VariantOption[] = [
   {
     value: "a" as const,
     label: "Canvas",

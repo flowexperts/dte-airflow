@@ -1,7 +1,8 @@
 import { InlineError, PageHeader, Topbar } from "@/components/ui";
 import { listPipelines, type Pipeline } from "@/lib/api";
 import { humanizeError, type HumanError } from "@/lib/errors";
-import { asVariant, VariantBar } from "../_variant";
+import { VariantBar } from "../_variant";
+import { asVariant, type VariantOption } from "../_variant-util";
 import { LabHealthTable } from "./_health-table";
 import { LabPipelineCards } from "./_cards";
 
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<{ v?: string; type?: string }>;
 
-const OPTIONS = [
+const OPTIONS: VariantOption[] = [
   {
     value: "a" as const,
     label: "Health table",
