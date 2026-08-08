@@ -67,6 +67,13 @@ export function AppSidebar() {
             />
           </>
         )}
+        {/* Temporary — remove with the /lab tree once a layout is chosen. */}
+        {can("pipeline:read") && (
+          <>
+            <NavGroup>Lab</NavGroup>
+            <NavItem href="/lab" label="IA variations" indent active={on("/lab")} />
+          </>
+        )}
       </NavSections>
       <NavFooter>
         <span />
