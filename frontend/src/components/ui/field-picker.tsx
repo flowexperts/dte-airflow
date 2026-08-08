@@ -1,16 +1,11 @@
 "use client";
 
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { Input } from "./form";
 import { FieldTreePicker } from "./field-tree-picker";
+import { usePopoverPosition } from "./use-popover-position";
 
 interface FieldOption {
   name: string;
@@ -59,7 +54,6 @@ function FieldPickerFlat({
 }: FieldPickerProps) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -74,25 +68,7 @@ function FieldPickerFlat({
     return options.filter((o) => o.name.toLowerCase().includes(q));
   }, [options, value]);
 
-  // Position/reposition when opening, on scroll, and on resize.
-  useLayoutEffect(() => {
-    if (!open) {
-      setPos(null);
-      return;
-    }
-    const compute = () => {
-      const r = inputRef.current?.getBoundingClientRect();
-      if (!r) return;
-      setPos({ left: r.left, top: r.bottom + 4, width: r.width });
-    };
-    compute();
-    window.addEventListener("scroll", compute, true);
-    window.addEventListener("resize", compute);
-    return () => {
-      window.removeEventListener("scroll", compute, true);
-      window.removeEventListener("resize", compute);
-    };
-  }, [open]);
+  const pos = usePopoverPosition(inputRef, open, { preferredMaxHeight: 224 });
 
   useEffect(() => {
     if (!open) return;
@@ -142,7 +118,10 @@ function FieldPickerFlat({
   };
 
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
+    // `min-w-0` matters: as a grid item this would otherwise floor at the
+    // input's ~175px min-content width and steal space from its siblings,
+    // which is what crushes the value field in the filter rules grid.
+    <div ref={containerRef} className={cn("relative min-w-0", className)}>
       <Input
         ref={inputRef}
         value={value}
@@ -160,14 +139,8 @@ function FieldPickerFlat({
         createPortal(
           <div
             ref={popoverRef}
-            style={{
-              position: "fixed",
-              left: pos.left,
-              top: pos.top,
-              width: pos.width,
-              zIndex: 1000,
-            }}
-            className="max-h-56 overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg"
+            style={pos.style}
+            className="overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg"
             role="listbox"
           >
             {filtered.map((o, i) => (

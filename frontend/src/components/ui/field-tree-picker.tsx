@@ -1,15 +1,10 @@
 "use client";
 
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 import { Input } from "./form";
+import { usePopoverPosition } from "./use-popover-position";
 import {
   buildTree,
   collectLeaves,
@@ -108,7 +103,6 @@ export function FieldTreePicker(props: Props) {
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -144,24 +138,17 @@ export function FieldTreePicker(props: Props) {
     [filtered, effectiveExpanded],
   );
 
-  useLayoutEffect(() => {
-    if (!open) {
-      setPos(null);
-      return;
-    }
-    const compute = () => {
-      const r = inputRef.current?.getBoundingClientRect();
-      if (!r) return;
-      setPos({ left: r.left, top: r.bottom + 4, width: r.width });
-    };
-    compute();
-    window.addEventListener("scroll", compute, true);
-    window.addEventListener("resize", compute);
-    return () => {
-      window.removeEventListener("scroll", compute, true);
-      window.removeEventListener("resize", compute);
-    };
-  }, [open]);
+  /* Each nesting level costs 12px of indent (see the row's paddingLeft below)
+   * on top of the chevron and checkbox, so a deep tree in a narrow trigger
+   * leaves almost nothing for the label. Widen the popover by the depth it
+   * actually has to render. */
+  const maxDepth = useMemo(
+    () => rows.reduce((m, r) => Math.max(m, r.depth), 0),
+    [rows],
+  );
+  const pos = usePopoverPosition(inputRef, open, {
+    minWidth: 220 + maxDepth * 12,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -309,14 +296,8 @@ export function FieldTreePicker(props: Props) {
         createPortal(
           <div
             ref={popoverRef}
-            style={{
-              position: "fixed",
-              left: pos.left,
-              top: pos.top,
-              width: pos.width,
-              zIndex: 1000,
-            }}
-            className="max-h-72 overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg py-0.5"
+            style={pos.style}
+            className="overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg py-0.5"
             role="listbox"
           >
             {rows.map((row, i) => {
@@ -407,13 +388,7 @@ export function FieldTreePicker(props: Props) {
         createPortal(
           <div
             ref={popoverRef}
-            style={{
-              position: "fixed",
-              left: pos.left,
-              top: pos.top,
-              width: pos.width,
-              zIndex: 1000,
-            }}
+            style={pos.style}
             className="border border-border rounded-[var(--radius)] bg-surface shadow-lg px-2.5 py-2 text-[12px] text-subtle"
           >
             {options.length === 0

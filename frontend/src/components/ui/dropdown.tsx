@@ -2,7 +2,6 @@
 
 import {
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,6 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
+import { usePopoverPosition } from "./use-popover-position";
 
 export type DropdownOption<T extends string> =
   | { kind?: "option"; value: T; label: ReactNode; meta?: ReactNode; disabled?: boolean }
@@ -38,7 +38,6 @@ export function Dropdown<T extends string>({
 }: DropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,24 +63,7 @@ export function Dropdown<T extends string>({
     return null;
   }, [options, value]);
 
-  useLayoutEffect(() => {
-    if (!open) {
-      setPos(null);
-      return;
-    }
-    const compute = () => {
-      const r = triggerRef.current?.getBoundingClientRect();
-      if (!r) return;
-      setPos({ left: r.left, top: r.bottom + 4, width: r.width });
-    };
-    compute();
-    window.addEventListener("scroll", compute, true);
-    window.addEventListener("resize", compute);
-    return () => {
-      window.removeEventListener("scroll", compute, true);
-      window.removeEventListener("resize", compute);
-    };
-  }, [open]);
+  const pos = usePopoverPosition(triggerRef, open);
 
   useEffect(() => {
     if (!open) return;
@@ -169,14 +151,8 @@ export function Dropdown<T extends string>({
         createPortal(
           <div
             ref={popoverRef}
-            style={{
-              position: "fixed",
-              left: pos.left,
-              top: pos.top,
-              width: pos.width,
-              zIndex: 1000,
-            }}
-            className="max-h-72 overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg py-1"
+            style={pos.style}
+            className="overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg py-1"
             role="listbox"
           >
             {options.map((o, i) => {
