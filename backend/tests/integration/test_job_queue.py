@@ -79,14 +79,14 @@ async def _seed_pipeline(session_factory, suffix: str, tmp_path) -> str:
 
 
 async def test_enqueue_run_atomic_insert_and_defer(session_factory, tmp_path):
-    """`_enqueue_run` inserts the run row and defers the job on the same
+    """`enqueue_run` inserts the run row and defers the job on the same
     psycopg connection/transaction — run.job_id must line up with a real
     `procrastinate_jobs` row carrying the same payload."""
-    from dte.api.routes.pipelines import _enqueue_run
+    from dte.worker.tasks import enqueue_run
 
     pid = await _seed_pipeline(session_factory, uuid.uuid4().hex[:8], tmp_path)
 
-    run_id, job_id = await _enqueue_run(pid, None)
+    run_id, job_id = await enqueue_run(pid, None, tenant_id="default")
 
     r_store = PostgresRunStore(session_factory)
     run = await r_store.get(run_id)
@@ -109,15 +109,44 @@ async def test_enqueue_run_atomic_insert_and_defer(session_factory, tmp_path):
     await r_store.delete_for_pipeline(pid)
 
 
-async def test_execute_run_job_processes_enqueued_run(session_factory, tmp_path):
-    """End-to-end: enqueue via `_enqueue_run`, then run the worker's job
-    body directly (as the worker process would after dequeuing) and check
-    the run reaches a terminal state."""
-    from dte.api.routes.pipelines import _enqueue_run
-    from dte.worker.tasks import execute_run_job
+async def test_enqueue_run_threads_schedule_id_onto_run_row(session_factory, tmp_path):
+    """plan 047 task 4: a run created on behalf of a schedule carries
+    schedule_id — the UI's way to distinguish "ran because a human
+    clicked" from "ran because it was 2am". A manually-triggered run (no
+    schedule_id passed) still lands NULL, unaffected."""
+    from dte.models.pipeline import ScheduleBase
+    from dte.store.postgres import PostgresScheduleStore
+    from dte.worker.tasks import enqueue_run
 
     pid = await _seed_pipeline(session_factory, uuid.uuid4().hex[:8], tmp_path)
-    run_id, _job_id = await _enqueue_run(pid, None)
+    sch_store = PostgresScheduleStore(session_factory)
+    sid = f"sch-{uuid.uuid4().hex[:8]}"
+    await sch_store.save(ScheduleBase(
+        id=sid, pipeline_id=pid, cron_expr="0 2 * * *", tenant_id="default",
+    ))
+
+    run_id, _job_id = await enqueue_run(pid, None, tenant_id="default", schedule_id=sid)
+
+    r_store = PostgresRunStore(session_factory)
+    run = await r_store.get(run_id)
+    assert run["schedule_id"] == sid
+
+    manual_run_id, _ = await enqueue_run(pid, None, tenant_id="default")
+    manual_run = await r_store.get(manual_run_id)
+    assert manual_run["schedule_id"] is None
+
+    await r_store.delete_for_pipeline(pid)
+    await sch_store.delete(sid)
+
+
+async def test_execute_run_job_processes_enqueued_run(session_factory, tmp_path):
+    """End-to-end: enqueue via `enqueue_run`, then run the worker's job
+    body directly (as the worker process would after dequeuing) and check
+    the run reaches a terminal state."""
+    from dte.worker.tasks import enqueue_run, execute_run_job
+
+    pid = await _seed_pipeline(session_factory, uuid.uuid4().hex[:8], tmp_path)
+    run_id, _job_id = await enqueue_run(pid, None, tenant_id="default")
 
     await execute_run_job(run_id=run_id, pipeline_id=pid, tenant_id="default")
 

@@ -265,20 +265,20 @@ async def test_trigger_with_job_queue_and_shared_fs_allows_local_fs(
     client, scenario_ids, fixtures_dir, out_dir, monkeypatch
 ):
     """Same setup, but DTE_SHARED_OUTPUT_FS=true opts back in — the guard
-    must not fire. `_enqueue_run` itself needs a real Postgres +
+    must not fire. `enqueue_run` itself needs a real Postgres +
     procrastinate connection pool (this suite runs against in-memory fake
     stores, no DATABASE_URL), so it's stubbed here — this test's scope is
     strictly "did the guard block the request", not the enqueue plumbing
     covered by tests/integration/test_job_queue.py."""
-    import dte.api.routes.pipelines as pipelines_mod
+    import dte.worker.tasks as tasks_mod
 
     monkeypatch.setenv("DTE_JOB_QUEUE_ENABLED", "true")
     monkeypatch.setenv("DTE_SHARED_OUTPUT_FS", "true")
 
-    async def fake_enqueue_run(pipeline_id, revision_id):
+    async def fake_enqueue_run(pipeline_id, revision_id, *, tenant_id, schedule_id=None):
         return "stub-run-id", 1
 
-    monkeypatch.setattr(pipelines_mod, "_enqueue_run", fake_enqueue_run)
+    monkeypatch.setattr(tasks_mod, "enqueue_run", fake_enqueue_run)
 
     src_id, dst_id, _ = await _seed_orders(client, scenario_ids, fixtures_dir, out_dir, "err_shared_fs.json")
     pipe_id = scenario_ids("pipeline")

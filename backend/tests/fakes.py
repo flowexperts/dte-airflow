@@ -118,6 +118,7 @@ class FakeRunStore:
             "sql_query": None,
             "job_id": None,
             "last_heartbeat_at": None,
+            "schedule_id": None,
         }
         return run_id
 
