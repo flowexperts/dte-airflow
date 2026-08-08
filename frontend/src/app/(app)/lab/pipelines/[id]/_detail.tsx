@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Button,
+  Field,
+  Input,
   Item,
   PageHeader,
   Panel,
@@ -15,6 +17,9 @@ import {
 import { SchemaProvider } from "@/components/builder/schema-context";
 import { PipelineParamsProvider } from "@/components/builder/params-context";
 import { HistoryPanel } from "@/components/builder/history/HistoryPanel";
+import { SourcesPanel } from "@/components/builder/sources";
+import { DestinationPicker } from "@/components/builder/DestinationPicker";
+import { InputsPanel } from "@/components/builder/InputsPanel";
 import type { StepShape } from "@/components/builder/steps/types";
 import { labelFor } from "@/components/builder/steps/types";
 import { stepTitle } from "@/components/builder/steps/summary";
@@ -42,23 +47,30 @@ import { Rail } from "./_rail";
 
 const OPTIONS: VariantOption[] = [
   {
-    value: "a" as const,
+    value: "a",
     label: "Canvas",
-    note: "Spec on the left, run and preview on the right. Edit in place.",
+    note: "Spec on the left, run and preview on the right. Everything edits in place.",
   },
   {
-    value: "b" as const,
+    value: "b",
     label: "Console",
     note: "Outline · focused node · rail. Never scrolls the spec.",
   },
   {
-    value: "c" as const,
+    value: "c",
     label: "Ribbon",
     note: "Flow across the top as the navigation; selected node below.",
   },
 ];
 
-function SourcesCard({ sources, ids }: { sources: (Source | null)[]; ids: string[] }) {
+/** Read-only sources, for viewers without write permission. */
+function SourcesCard({
+  sources,
+  ids,
+}: {
+  sources: (Source | null)[];
+  ids: string[];
+}) {
   return (
     <Panel>
       <PanelHead label="Sources" count={ids.length} />
@@ -89,40 +101,40 @@ function SourcesCard({ sources, ids }: { sources: (Source | null)[]; ids: string
 }
 
 /**
- * Output card — or, for a quality pipeline, the thing that actually belongs
- * here. The current detail page renders "Output → (destination not found)" for
- * every quality pipeline, which is worse than showing nothing.
+ * What a quality pipeline has instead of an output. The current detail page
+ * renders "Output → (destination not found)" here, which is worse than saying
+ * nothing — a quality pipeline is not missing a destination, it doesn't have one.
  */
-function OutputCard({
+function QualityReportCard({ pipeline }: { pipeline: Pipeline }) {
+  const checks = (pipeline.steps ?? []).filter(
+    (s) => s.op === "check" || s.op === "profile",
+  ).length;
+  return (
+    <Panel>
+      <PanelHead label="Output" count={<span className="text-subtle">report</span>} />
+      <div className="px-4 py-3.5">
+        <p className="text-[13px] text-muted m-0">
+          Quality pipelines write no data. Each run evaluates{" "}
+          <b className="text-text font-medium">
+            {checks} check{checks === 1 ? "" : "s"}
+          </b>{" "}
+          and reports pass/fail.
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
+function DestinationCard({
   pipeline,
   destination,
 }: {
   pipeline: Pipeline;
   destination: Destination | null;
 }) {
-  if (pipeline.pipeline_type === "quality") {
-    const checks = (pipeline.steps ?? []).filter(
-      (s) => s.op === "check" || s.op === "profile",
-    ).length;
-    return (
-      <Panel>
-        <PanelHead label="Output" count={<span className="text-subtle">report</span>} />
-        <div className="px-4 py-3.5">
-          <p className="text-[13px] text-muted m-0">
-            Quality pipelines write no data. Each run evaluates{" "}
-            <b className="text-text font-medium">
-              {checks} check{checks === 1 ? "" : "s"}
-            </b>{" "}
-            and reports pass/fail.
-          </p>
-        </div>
-      </Panel>
-    );
-  }
-
   return (
     <Panel>
-      <PanelHead label="Output" count={1} />
+      <PanelHead label="Destination" count={1} />
       {destination ? (
         <Item
           glyph="¶"
@@ -142,7 +154,6 @@ function OutputCard({
   );
 }
 
-/** Shared node list for variants B and C. */
 function nodeList(pipeline: Pipeline) {
   const steps = (pipeline.steps ?? []) as StepShape[];
   return [
@@ -154,7 +165,7 @@ function nodeList(pipeline: Pipeline) {
     })),
     {
       key: "output",
-      label: pipeline.pipeline_type === "quality" ? "Report" : "Output",
+      label: pipeline.pipeline_type === "quality" ? "Report" : "Destination",
       detail: pipeline.output_id || "—",
     },
   ];
@@ -165,13 +176,11 @@ export function LabPipelineDetail({
   sources,
   destination,
   variant,
-  initialEdit,
 }: {
   initialPipeline: Pipeline;
   sources: (Source | null)[];
   destination: Destination | null;
   variant: Variant;
-  initialEdit: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -179,19 +188,19 @@ export function LabPipelineDetail({
   const canEdit = can("pipeline:write");
 
   const [pipeline, setPipeline] = useState<Pipeline>(initialPipeline);
-  const [editing, setEditing] = useState(initialEdit && canEdit);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [openStep, setOpenStep] = useState<number | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string>("sources");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const steps = (pipeline.steps ?? []) as StepShape[];
   const quality = pipeline.pipeline_type === "quality";
-  const readOnly = !editing;
 
-  const setSteps = (next: StepShape[]) => {
-    setPipeline((p) => ({ ...p, steps: next as Pipeline["steps"] }));
+  /** Every mutation goes through here so `dirty` can't drift from the state. */
+  const patch = (next: Partial<Pipeline>) => {
+    setPipeline((p) => ({ ...p, ...next }));
     setDirty(true);
   };
 
@@ -209,15 +218,91 @@ export function LabPipelineDetail({
     }
   };
 
-  const stepsColumn = (
+  const sourcesBlock = canEdit ? (
+    <SourcesPanel
+      sources={pipeline.sources ?? []}
+      onChange={(next) => patch({ sources: next })}
+    />
+  ) : (
+    <SourcesCard sources={sources} ids={pipeline.sources ?? []} />
+  );
+
+  const outputBlock = quality ? (
+    <QualityReportCard pipeline={pipeline} />
+  ) : canEdit ? (
+    <DestinationPicker
+      outputId={pipeline.output_id ?? ""}
+      onChange={(output_id) => patch({ output_id })}
+    />
+  ) : (
+    <DestinationCard pipeline={pipeline} destination={destination} />
+  );
+
+  const stepsBlock = (
     <StepsColumn
       steps={steps}
-      onChange={setSteps}
+      onChange={(next) => patch({ steps: next as Pipeline["steps"] })}
       pipelineType={quality ? "quality" : "transform"}
       openIndex={openStep}
       onOpenChange={setOpenStep}
-      readOnly={readOnly}
+      readOnly={!canEdit}
     />
+  );
+
+  /* Name and inputs are real but rarely-touched. Behind a disclosure so they
+   * don't push the steps — the thing you came to change — down the page. */
+  const settingsBlock = (
+    <Panel>
+      <button
+        type="button"
+        onClick={() => setSettingsOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-hover transition-colors text-left"
+      >
+        <span className="flex items-center gap-2">
+          <span
+            className={cn(
+              "text-[9px] text-muted inline-block transition-transform",
+              settingsOpen && "rotate-90",
+            )}
+          >
+            ▶
+          </span>
+          <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle">
+            Settings
+          </span>
+        </span>
+        <span className="text-xs text-subtle">
+          name · {(pipeline.params ?? []).length} input
+          {(pipeline.params ?? []).length === 1 ? "" : "s"}
+        </span>
+      </button>
+      {settingsOpen && (
+        <div className="border-t border-border px-3.5 py-3.5 space-y-4">
+          {canEdit ? (
+            <Field label="Name" hint="editable; unique per workspace">
+              <Input
+                value={pipeline.name}
+                onChange={(e) => patch({ name: e.target.value })}
+              />
+            </Field>
+          ) : (
+            <Field label="Name">
+              <span className="text-[13px] text-muted">{pipeline.name}</span>
+            </Field>
+          )}
+          <div className="font-mono text-[11px] text-subtle">id: {pipeline.id}</div>
+          <div className="font-mono text-[11px] text-subtle">
+            type: {quality ? "quality" : "transform"}
+          </div>
+          {canEdit && (
+            <InputsPanel
+              params={pipeline.params ?? []}
+              onChange={(params) => patch({ params })}
+            />
+          )}
+        </div>
+      )}
+    </Panel>
   );
 
   const rail = (
@@ -231,15 +316,16 @@ export function LabPipelineDetail({
 
   const nodes = nodeList(pipeline);
 
-  /** Variants B and C show one node at a time; A shows the whole spec. */
+  const selectNode = (key: string) => {
+    setSelectedNode(key);
+    const m = /^step-(\d+)$/.exec(key);
+    setOpenStep(m?.[1] ? Number(m[1]) : null);
+  };
+
   const focusedNode = () => {
-    if (selectedNode === "sources") {
-      return <SourcesCard sources={sources} ids={pipeline.sources ?? []} />;
-    }
-    if (selectedNode === "output") {
-      return <OutputCard pipeline={pipeline} destination={destination} />;
-    }
-    return stepsColumn;
+    if (selectedNode === "sources") return sourcesBlock;
+    if (selectedNode === "output") return outputBlock;
+    return stepsBlock;
   };
 
   return (
@@ -264,21 +350,10 @@ export function LabPipelineDetail({
               )}
               {canEdit && (
                 <Button
-                  size="sm"
-                  onClick={() => {
-                    setEditing((v) => !v);
-                    setOpenStep(null);
-                  }}
-                >
-                  {editing ? "Done editing" : "Edit"}
-                </Button>
-              )}
-              {dirty && (
-                <Button
-                  variant="primary"
+                  variant={dirty ? "primary" : "default"}
                   size="sm"
                   onClick={save}
-                  disabled={saving}
+                  disabled={saving || !dirty}
                 >
                   {saving ? "Saving…" : "Save"}
                 </Button>
@@ -304,9 +379,10 @@ export function LabPipelineDetail({
         {variant === "a" && (
           <div className="px-14 py-8 grid grid-cols-1 xl:grid-cols-[1.25fr_1fr] gap-6 items-start">
             <div className="space-y-5 min-w-0">
-              <SourcesCard sources={sources} ids={pipeline.sources ?? []} />
-              {stepsColumn}
-              <OutputCard pipeline={pipeline} destination={destination} />
+              {sourcesBlock}
+              {stepsBlock}
+              {outputBlock}
+              {settingsBlock}
             </div>
             <div className="min-w-0 xl:sticky xl:top-[100px] space-y-5">
               {rail}
@@ -329,11 +405,7 @@ export function LabPipelineDetail({
                 <button
                   key={n.key}
                   type="button"
-                  onClick={() => {
-                    setSelectedNode(n.key);
-                    const m = /^step-(\d+)$/.exec(n.key);
-                    setOpenStep(m?.[1] ? Number(m[1]) : null);
-                  }}
+                  onClick={() => selectNode(n.key)}
                   className={cn(
                     "w-full text-left px-3.5 py-2 border-b border-border last:border-b-0 transition-colors",
                     selectedNode === n.key
@@ -353,7 +425,10 @@ export function LabPipelineDetail({
                 </button>
               ))}
             </Panel>
-            <div className="min-w-0">{focusedNode()}</div>
+            <div className="min-w-0 space-y-5">
+              {focusedNode()}
+              {settingsBlock}
+            </div>
             <div className="min-w-0 xl:sticky xl:top-[100px]">{rail}</div>
           </div>
         )}
@@ -368,11 +443,7 @@ export function LabPipelineDetail({
                     {i > 0 && <span className="text-subtle text-sm">→</span>}
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedNode(n.key);
-                        const m = /^step-(\d+)$/.exec(n.key);
-                        setOpenStep(m?.[1] ? Number(m[1]) : null);
-                      }}
+                      onClick={() => selectNode(n.key)}
                       className={cn(
                         "min-w-[150px] max-w-[220px] text-left px-3 py-2.5 rounded-[var(--radius)] border transition-colors",
                         selectedNode === n.key
@@ -397,7 +468,10 @@ export function LabPipelineDetail({
               </div>
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6 items-start">
-              <div className="min-w-0">{focusedNode()}</div>
+              <div className="min-w-0 space-y-5">
+                {focusedNode()}
+                {settingsBlock}
+              </div>
               <div className="min-w-0 xl:sticky xl:top-[100px]">{rail}</div>
             </div>
           </div>

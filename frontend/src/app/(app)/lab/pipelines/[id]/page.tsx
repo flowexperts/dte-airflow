@@ -13,7 +13,7 @@ import { LabPipelineDetail } from "./_detail";
 export const dynamic = "force-dynamic";
 
 type Params = Promise<{ id: string }>;
-type SearchParams = Promise<{ v?: string; edit?: string }>;
+type SearchParams = Promise<{ v?: string }>;
 
 export default async function LabPipelineDetailPage({
   params,
@@ -23,7 +23,7 @@ export default async function LabPipelineDetailPage({
   searchParams: SearchParams;
 }) {
   const { id } = await params;
-  const { v, edit } = await searchParams;
+  const { v } = await searchParams;
   const variant = asVariant(v, ["a", "b", "c"]);
 
   try {
@@ -45,7 +45,6 @@ export default async function LabPipelineDetailPage({
         sources={sources}
         destination={destination}
         variant={variant}
-        initialEdit={edit === "1"}
       />
     );
   } catch (e) {

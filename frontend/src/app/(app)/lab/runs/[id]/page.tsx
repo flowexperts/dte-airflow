@@ -50,7 +50,7 @@ type Params = Promise<{ id: string }>;
  *  current UI is missing — a failed run tells you what broke but not where,
  *  so you navigate back and count step indices by hand. */
 function stepHref(pipelineId: string, index: number) {
-  return `/lab/pipelines/${encodeURIComponent(pipelineId)}?edit=1#step-${index}`;
+  return `/lab/pipelines/${encodeURIComponent(pipelineId)}#step-${index}`;
 }
 
 function FixLink({

@@ -40,12 +40,24 @@ export function StepsColumn({
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const openRef = useRef<HTMLDivElement>(null);
 
-  // Deep-linked step (?edit=1#step-3 from a failed run) scrolls itself in.
+  // Deep-linked step (#step-3 from a failed run) scrolls itself in.
   useEffect(() => {
     if (openIndex !== null) {
       openRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }, [openIndex]);
+
+  const openStepFromHash = () => {
+    const m = /^#step-(\d+)$/.exec(window.location.hash);
+    if (m?.[1]) onOpenChange(Number(m[1]));
+  };
+
+  useEffect(() => {
+    openStepFromHash();
+    window.addEventListener("hashchange", openStepFromHash);
+    return () => window.removeEventListener("hashchange", openStepFromHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount + hash only
+  }, []);
 
   const isQuality = pipelineType === "quality";
   const label = isQuality ? "Checks" : "Steps";
