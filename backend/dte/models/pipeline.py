@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
-from sqlalchemy import Column, Text, func
+from sqlalchemy import Column, DateTime, ForeignKey, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as SMField
 from sqlmodel import SQLModel
@@ -1240,6 +1240,80 @@ class PipelineRevision(PipelineRevisionBase, table=True):
     )
     changed_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
+    )
+
+
+# ─── Schedules (plan 047) ───────────────────────────────────────────────
+
+OverlapPolicy = Literal["skip", "allow"]
+
+
+class ScheduleBase(SQLModel):
+    """API/domain fields for a recurring trigger of one pipeline.
+
+    `cron_expr` + `timezone` are validated for parseability by
+    `dte.scheduling.cron.next_fire_after` at the API layer (task 3) — kept
+    out of a Pydantic validator here because computing the *next* fire
+    time needs a `now`, which the model doesn't have.  `params` are
+    validated against the pipeline's declared `PipelineParam`s the same
+    way, also at the API layer, since that needs the `Pipeline` row.
+
+    `next_run_at`/`last_run_id`/`last_fired_at` are ticker-owned — set by
+    `dte.worker.scheduler`, not by the CRUD API.
+    """
+    id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
+    pipeline_id: str
+    cron_expr: str
+    timezone: str = "UTC"
+    params: dict[str, str] = SMField(default_factory=dict)
+    enabled: bool = True
+    overlap: OverlapPolicy = "skip"
+    next_run_at: datetime | None = None
+    last_run_id: str | None = None
+    last_fired_at: datetime | None = None
+    tenant_id: str = "default"
+
+
+class Schedule(ScheduleBase, table=True):
+    __tablename__ = "schedules"
+
+    id: str = SMField(  # type: ignore[override]
+        default_factory=lambda: str(_uuid.uuid4()), primary_key=True
+    )
+    pipeline_id: str = SMField(  # type: ignore[override]
+        sa_column=Column(Text, ForeignKey("pipelines.id", ondelete="CASCADE"), nullable=False)
+    )
+    cron_expr: str = SMField(sa_column=Column(Text, nullable=False))  # type: ignore[override]
+    timezone: str = SMField(  # type: ignore[override]
+        default="UTC", sa_column=Column(Text, nullable=False, server_default="UTC")
+    )
+    params: dict = SMField(  # type: ignore[override]
+        default_factory=dict, sa_column=Column(JSONB, nullable=False)
+    )
+    # Override: Literal → str for SQLAlchemy mapping (SQLModel 0.0.39 gotcha).
+    overlap: str = SMField(  # type: ignore[override]
+        default="skip", sa_column=Column(Text, nullable=False, server_default="skip")
+    )
+    tenant_id: str = SMField(  # type: ignore[override]
+        default="default", sa_column=Column(Text, nullable=False, server_default="default")
+    )
+    # Explicit timezone=True: these three are *app-supplied* aware
+    # datetimes (unlike created_at/updated_at below, which are DB-filled
+    # via server_default and never bound as a Python value). Without it,
+    # SQLModel infers a naive TIMESTAMP column and asyncpg rejects the
+    # aware datetime the API/ticker actually sends.
+    next_run_at: datetime | None = SMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    last_fired_at: datetime | None = SMField(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    created_at: datetime | None = SMField(
+        default=None, sa_column=Column(server_default=func.now())
+    )
+    updated_at: datetime | None = SMField(
+        default=None,
+        sa_column=Column(server_default=func.now(), onupdate=func.now()),
     )
 
 

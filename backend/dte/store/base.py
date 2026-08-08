@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -11,6 +12,8 @@ if TYPE_CHECKING:
         Pipeline,
         PipelineRevision,
         PipelineRevisionBase,
+        Schedule,
+        ScheduleBase,
         Source,
         SourceBase,
     )
@@ -129,3 +132,18 @@ class UserStore(Protocol):
 class RoleStore(Protocol):
     async def get(self, id: str) -> "Role | None": ...
     async def list(self) -> "list[Role]": ...
+
+
+@runtime_checkable
+class ScheduleStore(Protocol):
+    """Stores recurring-trigger rows (plan 047). `advance` is the
+    ticker-owned update path — `next_run_at` plus optionally
+    `last_run_id`/`last_fired_at` when a tick actually deferred a run
+    (an overlap-skip only advances `next_run_at`)."""
+
+    async def get(self, id: str) -> "Schedule | None": ...
+    async def save(self, schedule: "ScheduleBase | Schedule") -> None: ...
+    async def list_for_pipeline(self, pipeline_id: str) -> "list[Schedule]": ...
+    async def list_due(self, now: datetime) -> "list[Schedule]": ...
+    async def advance(self, id: str, **fields) -> None: ...
+    async def delete(self, id: str) -> bool: ...

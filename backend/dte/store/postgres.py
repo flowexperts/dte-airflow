@@ -1,9 +1,11 @@
 import json
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from sqlalchemy import func as sa_func
 from sqlalchemy import text
+from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import select
@@ -18,6 +20,8 @@ from dte.models.pipeline import (
     Pipeline,
     PipelineRevision,
     PipelineRevisionBase,
+    Schedule,
+    ScheduleBase,
     Source,
     SourceBase,
 )
@@ -490,6 +494,90 @@ class PostgresLookupTableStore:
     async def delete(self, id: str) -> bool:
         async with _open_tenant_session(self._factory) as s:
             row = await s.get(LookupTable, id)
+            if row is None:
+                return False
+            await s.delete(row)
+            await s.commit()
+            return True
+
+
+class PostgresScheduleStore:
+    """ORM-backed schedule store (plan 047). `get`/`save`/`list_for_pipeline`/
+    `delete` are tenant-scoped like every other store — normal request-path
+    RLS applies.
+
+    `list_due` and `advance` are different: the ticker (`dte.worker.scheduler`)
+    is a single system-level periodic task with no per-request tenant
+    context, and it must see every tenant's due schedules in one query, not
+    just whichever tenant happened to be set in the calling contextvar. Both
+    bypass RLS via `SET LOCAL row_security = off` — the same escape hatch
+    migration 016 documents and `dte.worker.tasks._fetch_run_actual_tenant_id`
+    / `dte.worker.reaper` use. `list_due` returns full `Schedule` rows
+    (including `tenant_id`) so the ticker can defer each job under its
+    schedule's real tenant.
+    """
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def get(self, id: str) -> Schedule | None:
+        async with _open_tenant_session(self._factory) as s:
+            return await s.get(Schedule, id)
+
+    async def save(self, schedule: "ScheduleBase | Schedule") -> None:
+        values = schedule.model_dump(exclude={"created_at", "updated_at"})
+        stmt = pg_insert(Schedule).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Schedule.id],
+            set_={
+                "pipeline_id": stmt.excluded.pipeline_id,
+                "cron_expr": stmt.excluded.cron_expr,
+                "timezone": stmt.excluded.timezone,
+                "params": stmt.excluded.params,
+                "enabled": stmt.excluded.enabled,
+                "overlap": stmt.excluded.overlap,
+                "next_run_at": stmt.excluded.next_run_at,
+                "last_run_id": stmt.excluded.last_run_id,
+                "last_fired_at": stmt.excluded.last_fired_at,
+            },
+        )
+        async with _open_tenant_session(self._factory) as s:
+            await s.execute(stmt)
+            await s.commit()
+
+    async def list_for_pipeline(self, pipeline_id: str) -> list[Schedule]:
+        stmt = (
+            select(Schedule)
+            .where(Schedule.pipeline_id == pipeline_id)
+            .order_by(Schedule.created_at.desc())
+        )
+        async with _open_tenant_session(self._factory) as s:
+            return list((await s.execute(stmt)).scalars().all())
+
+    async def list_due(self, now: datetime) -> list[Schedule]:
+        async with self._factory() as s:
+            await s.execute(text("SET LOCAL row_security = off"))
+            stmt = (
+                select(Schedule)
+                .where(Schedule.enabled.is_(True))
+                .where(Schedule.next_run_at.is_not(None))
+                .where(Schedule.next_run_at <= now)
+            )
+            return list((await s.execute(stmt)).scalars().all())
+
+    async def advance(self, id: str, **fields) -> None:
+        if not fields:
+            return
+        async with self._factory() as s:
+            await s.execute(text("SET LOCAL row_security = off"))
+            await s.execute(
+                sa_update(Schedule).where(Schedule.id == id).values(**fields)
+            )
+            await s.commit()
+
+    async def delete(self, id: str) -> bool:
+        async with _open_tenant_session(self._factory) as s:
+            row = await s.get(Schedule, id)
             if row is None:
                 return False
             await s.delete(row)

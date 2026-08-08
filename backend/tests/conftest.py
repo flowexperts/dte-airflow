@@ -29,6 +29,7 @@ from dte.api.deps import (
     get_current_user,
     get_current_tenant_id,
     get_lookup_table_store,
+    get_schedule_store,
 )
 from dte.models.pipeline import Connection
 from dte.models.user import Role, User, UserBase
@@ -45,6 +46,7 @@ from tests.fakes import (
     FakeRoleStore,
     FakeUserStore,
     FakeLookupTableStore,
+    FakeScheduleStore,
 )
 
 
@@ -101,7 +103,7 @@ def fake_stores():
     role_store._data["editor"] = Role(id="editor", name="editor", permissions=list(EDITOR_PERMISSIONS))
     role_store._data["viewer"] = Role(id="viewer", name="viewer", permissions=list(VIEWER_PERMISSIONS))
 
-    p, r, re, s, d, c, u, lt, pr = (
+    p, r, re, s, d, c, u, lt, pr, sch = (
         FakePipelineStore(),
         FakeRunStore(),
         FakeRunEventStore(),
@@ -111,6 +113,7 @@ def fake_stores():
         FakeUserStore(role_store=role_store),
         FakeLookupTableStore(),
         FakePipelineRevisionStore(),
+        FakeScheduleStore(),
     )
     # Every test gets a `local_fs` connection pre-seeded — most sources /
     # destinations use it, tests don't have to re-declare it every time.
@@ -125,6 +128,7 @@ def fake_stores():
     app.dependency_overrides[get_role_store] = lambda: role_store
     app.dependency_overrides[get_lookup_table_store] = lambda: lt
     app.dependency_overrides[get_pipeline_revision_store] = lambda: pr
+    app.dependency_overrides[get_schedule_store] = lambda: sch
     # Bypass auth for existing tests — auth-flow tests opt out per-test.
     app.dependency_overrides[get_current_user] = lambda: _fake_test_user()
     # Bypass tenant_id dep — tests always use the "default" tenant.
@@ -140,6 +144,7 @@ def fake_stores():
         "role": role_store,
         "lookup_table": lt,
         "pipeline_revision": pr,
+        "schedule": sch,
     }
     app.dependency_overrides.clear()
 
