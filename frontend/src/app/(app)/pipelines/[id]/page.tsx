@@ -24,6 +24,7 @@ import { TriggerButton } from "@/components/trigger-button";
 import { RunsTable } from "@/components/runs-table";
 import { PipelinePreview } from "@/components/pipeline-preview";
 import { HistoryPanel } from "@/components/builder/history/HistoryPanel";
+import { SchedulePanel } from "@/components/builder/schedules/SchedulePanel";
 
 export const revalidate = 30; // list/detail shell — SWR handles freshness client-side (P2 #26)
 
@@ -124,6 +125,8 @@ export default async function PipelineDetail({ params }: { params: Params }) {
           </div>
 
           <PipelinePreview pipelineId={pipeline.id} />
+
+          <SchedulePanel pipelineId={pipeline.id} pipelineParams={pipeline.params} />
 
           <section>
             <SectionHead title="Recent runs" count={`· ${runs.length}`} />
