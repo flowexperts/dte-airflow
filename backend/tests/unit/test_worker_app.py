@@ -42,3 +42,25 @@ def test_get_app_registers_execute_run_task(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://dte:dte@nonexistent-host:5432/dte")
     app = get_app()
     assert EXECUTE_RUN_TASK_NAME in app.tasks
+
+
+def test_get_app_registers_periodic_ticker_when_schedules_enabled(monkeypatch):
+    from dte.worker.app import TICK_TASK_NAME
+    from dte.worker.scheduler import TICK_TASK_NAME as SCHEDULER_TICK_TASK_NAME
+
+    assert TICK_TASK_NAME == SCHEDULER_TICK_TASK_NAME
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://dte:dte@nonexistent-host:5432/dte")
+    monkeypatch.setenv("DTE_SCHEDULES_ENABLED", "true")
+    app = get_app()
+    assert TICK_TASK_NAME in app.tasks
+    assert (TICK_TASK_NAME, "") in app.periodic_registry.periodic_tasks
+
+
+def test_get_app_does_not_register_ticker_when_schedules_disabled(monkeypatch):
+    from dte.worker.app import TICK_TASK_NAME
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://dte:dte@nonexistent-host:5432/dte")
+    monkeypatch.delenv("DTE_SCHEDULES_ENABLED", raising=False)
+    app = get_app()
+    assert TICK_TASK_NAME not in app.tasks

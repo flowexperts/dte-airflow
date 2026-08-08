@@ -86,6 +86,21 @@ class Settings(BaseSettings):
     # for a k8s deployment with per-pod ephemeral storage.
     shared_output_fs: bool = False
 
+    # Recurring pipeline triggers (plan 047). Off by default, and depends
+    # on job_queue_enabled — the ticker defers `execute_run` jobs the same
+    # way the API's flag-on trigger path does, so scheduling on top of the
+    # in-process asyncio.create_task path (job_queue_enabled=False) would
+    # mean a scheduler that dies with an API replica. Gates whether
+    # dte.worker.app registers the periodic ticker task at all, so a
+    # single-container self-hosted deployment that never sets this doesn't
+    # pay for an extra minute-tick DB query.
+    schedules_enabled: bool = False
+
+    # A schedule tick that's due but more than this many seconds late is
+    # skipped rather than fired — firing a 2am nightly job at 11am is
+    # usually worse than not firing it. See dte.worker.scheduler.run_tick.
+    schedule_grace_seconds: int = 900
+
     @field_validator("cors_origins")
     @classmethod
     def _strip_cors(cls, v: str) -> str:

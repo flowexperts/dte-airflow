@@ -18,6 +18,7 @@ import os
 from procrastinate import App, PsycopgConnector
 
 EXECUTE_RUN_TASK_NAME = "execute_run"
+TICK_TASK_NAME = "scheduler_tick"
 
 
 def psycopg_dsn(database_url: str) -> str:
@@ -62,9 +63,22 @@ def _register_tasks(app: App) -> None:
     `dte.api.routes.pipelines` at module scope, and nothing in this module
     should force that import chain just to build an (unopened) App.
     """
+    from dte.config import get_settings
     from dte.worker.tasks import execute_run_job
 
     app.task(name=EXECUTE_RUN_TASK_NAME)(execute_run_job)
+
+    # Recurring triggers (plan 047) — gated behind DTE_SCHEDULES_ENABLED so
+    # a deployment that never uses schedules doesn't pay for an extra
+    # minute-tick DB query. Depends on the job queue itself (schedules_enabled
+    # implies job_queue_enabled — see Settings.schedules_enabled docstring);
+    # this only controls whether the *ticker* runs, not whether jobs can be
+    # deferred at all.
+    if get_settings().schedules_enabled:
+        from dte.worker.scheduler import tick_task
+
+        tick = app.task(name=TICK_TASK_NAME)(tick_task)
+        app.periodic(cron="* * * * *")(tick)
 
 
 _running_app: App | None = None
