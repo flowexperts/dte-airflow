@@ -41,12 +41,13 @@ The first account to sign up becomes admin.
 
 ## Where data lives
 
-Docker Compose mounts `./data` at the repo root into the backend container as `/data`. Files that users read/write through the **Local files** connection live here. Include this directory in backups.
+Docker Compose bind-mounts `/tmp/dte-samples` into the backend (and worker) containers at the same path. Files that users read/write through the **Local files** connection live here. Include this directory in backups — and note `/tmp` is not durable across a reboot on most systems, so point production installs at a real path or use object storage.
 
 Pipeline metadata — pipelines, sources, destinations, connections, run history — lives in the Postgres volume `pgdata`. Include this in backups too.
 
 ## Next
 
 - [Secrets & environment](secrets.md)
+- [Scaling and execution](scaling.md)
 - [Upgrading](upgrading.md)
 - [Architecture overview](../architecture/overview.md)
