@@ -671,6 +671,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pipelines/{pipeline_id}/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Schedules For Pipeline */
+        get: operations["list_schedules_for_pipeline_api_pipelines__pipeline_id__schedules_get"];
+        put?: never;
+        /** Create Schedule */
+        post: operations["create_schedule_api_pipelines__pipeline_id__schedules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/schedules/{schedule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Schedule */
+        get: operations["get_schedule_api_schedules__schedule_id__get"];
+        /** Update Schedule */
+        put: operations["update_schedule_api_schedules__schedule_id__put"];
+        post?: never;
+        /** Delete Schedule */
+        delete: operations["delete_schedule_api_schedules__schedule_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users": {
         parameters: {
             query?: never;
@@ -776,10 +813,21 @@ export interface components {
          * ConnectionBase
          * @description API/domain fields.  `credentials` is validated against the dlt spec
          *     class for the given `connection_type` and stored as a cleaned dict.
+         *
+         *     Identity model
+         *     --------------
+         *     - `id`: opaque, server-generated (default: UUID4 string). Clients that
+         *       omit it get a fresh one; clients that supply it (legacy migration
+         *       scripts, historic tests) keep working. Never edited after creation.
+         *     - `name`: user-facing label, editable, unique per (tenant_id, class).
+         *       If omitted at construction we default to `id` so historic call
+         *       sites (e.g. `ConnectionBase(id="local_fs", ...)`) still round-trip.
          */
         ConnectionBase: {
             /** Id */
-            id: string;
+            id?: string;
+            /** Name */
+            name?: string | null;
             /**
              * Connection Type
              * @enum {string}
@@ -812,10 +860,16 @@ export interface components {
          *     `connection_id` references a Connection row.
          *     `config` is declared as `dict` for SQLModel JSONB mapping, but is narrowed
          *     to the typed `OutputTarget` union by `_narrow_config` at validation time.
+         *
+         *     Identity: `id` is server-generated (UUID4 by default). `name` is the
+         *     editable, unique-per-tenant label; defaults to `id` when omitted so
+         *     historic callers keep working.
          */
         DestinationBase: {
             /** Id */
-            id: string;
+            id?: string;
+            /** Name */
+            name?: string | null;
             /** Connection Id */
             connection_id: string;
             /** Config */
@@ -850,11 +904,15 @@ export interface components {
         };
         /**
          * LookupTableBase
-         * @description API/domain fields. `id` required so FastAPI raises 422 on missing.
+         * @description API/domain fields.
+         *
+         *     Identity: `id` is server-generated (UUID4 by default). `name` is the
+         *     editable, unique-per-tenant label; defaults to `id` when omitted so
+         *     historic callers keep working.
          */
         LookupTableBase: {
             /** Id */
-            id: string;
+            id?: string;
             /** Name */
             name?: string | null;
             /** Mappings */
@@ -872,7 +930,7 @@ export interface components {
         /** Pipeline */
         Pipeline: {
             /** Id */
-            id: string;
+            id?: string;
             /** Name */
             name: string;
             /** Sources */
@@ -882,14 +940,21 @@ export interface components {
                 [key: string]: unknown;
             }[];
             /** Output Id */
-            output_id: string;
+            output_id?: string | null;
             /**
              * Engine
              * @default duckdb
              */
             engine: string;
+            /**
+             * Pipeline Type
+             * @default transform
+             */
+            pipeline_type: string;
             /** Quality Contracts */
             quality_contracts?: unknown[];
+            /** Params */
+            params?: unknown[];
             /**
              * Tenant Id
              * @default default
@@ -902,12 +967,14 @@ export interface components {
         };
         /**
          * PipelineBase
-         * @description API/domain fields. `id: str` is required — FastAPI raises 422 if
-         *     the client omits it.
+         * @description API/domain fields.
+         *
+         *     Identity: `id` is server-generated (UUID4 by default). `name` is the
+         *     editable, unique-per-tenant label — required from day one.
          */
         PipelineBase: {
             /** Id */
-            id: string;
+            id?: string;
             /** Name */
             name: string;
             /** Sources */
@@ -917,20 +984,54 @@ export interface components {
                 [key: string]: unknown;
             }[];
             /** Output Id */
-            output_id: string;
+            output_id?: string | null;
             /**
              * Engine
              * @default auto
              * @enum {string}
              */
             engine: "auto" | "duckdb" | "postgres" | "mysql" | "sqlite" | "bigquery" | "snowflake" | "trino";
+            /**
+             * Pipeline Type
+             * @default transform
+             * @enum {string}
+             */
+            pipeline_type: "transform" | "quality";
             /** Quality Contracts */
             quality_contracts?: unknown[];
+            /** Params */
+            params?: components["schemas"]["PipelineParam"][];
             /**
              * Tenant Id
              * @default default
              */
             tenant_id: string;
+        };
+        /**
+         * PipelineParam
+         * @description Declared trigger-time input on a pipeline.
+         *
+         *     Referenced from filter/map expressions as ``{{params.<name>}}``. Values
+         *     are supplied on the trigger request body and validated against the
+         *     declared ``type`` before interpolation.
+         */
+        PipelineParam: {
+            /** Name */
+            name: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "string" | "int" | "float" | "date" | "timestamp" | "boolean";
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            /** Default */
+            default?: string | null;
+            /** Description */
+            description?: string | null;
         };
         /** RegisterBody */
         RegisterBody: {
@@ -950,6 +1051,39 @@ export interface components {
             name: string;
             /** Permissions */
             permissions: string[];
+        };
+        /**
+         * ScheduleWriteRequest
+         * @description Shared shape for POST (create) and PUT (full replace) bodies.
+         *     `pipeline_id` isn't here — it's the path param on create and immutable
+         *     on update; ticker-owned fields (`next_run_at`, `last_run_id`,
+         *     `last_fired_at`) aren't client-settable either.
+         */
+        ScheduleWriteRequest: {
+            /** Id */
+            id?: string | null;
+            /** Cron Expr */
+            cron_expr: string;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Overlap
+             * @default skip
+             * @enum {string}
+             */
+            overlap: "skip" | "allow";
         };
         /**
          * SchemaFieldNode
@@ -972,10 +1106,16 @@ export interface components {
          *
          *     `source_type` is the strict `SourceKind` Literal for API validation.
          *     `format` is the strict `_FileFormat | None` Literal.
+         *
+         *     Identity: `id` is server-generated (UUID4 by default). `name` is the
+         *     editable, unique-per-tenant label; defaults to `id` when omitted so
+         *     historic callers keep working.
          */
         SourceBase: {
             /** Id */
-            id: string;
+            id?: string;
+            /** Name */
+            name?: string | null;
             /** Connection Id */
             connection_id: string;
             /**
@@ -1006,6 +1146,17 @@ export interface components {
              * @default bearer
              */
             token_type: string;
+        };
+        /**
+         * TriggerRequest
+         * @description Optional trigger-time params. Keys are user-defined; values are
+         *     strings substituted into filter/map `{{params.<key>}}` placeholders.
+         */
+        TriggerRequest: {
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
         };
         /** UserPublic */
         UserPublic: {
@@ -1503,6 +1654,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                params?: string | null;
             };
             header?: never;
             path?: never;
@@ -1538,6 +1690,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                params?: string | null;
             };
             header?: never;
             path: {
@@ -1576,7 +1729,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TriggerRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -2645,6 +2802,167 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_schedules_for_pipeline_api_pipelines__pipeline_id__schedules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_schedule_api_pipelines__pipeline_id__schedules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_schedule_api_schedules__schedule_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_schedule_api_schedules__schedule_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_schedule_api_schedules__schedule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

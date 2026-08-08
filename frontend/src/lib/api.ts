@@ -275,6 +275,9 @@ export interface Run {
   location: string | null;
   started_at: string | null;
   finished_at: string | null;
+  /** Set when this run was fired by a schedule rather than a manual
+   *  trigger (plan 047 task 4 / migration 033). Null for manual runs. */
+  schedule_id?: string | null;
   /** Resolved trigger-time context: `{ params: {…}, now, today, yesterday, … }`.
    *  Only populated for runs started after plan 040 shipped. */
   params?: RunParams | null;
@@ -703,6 +706,61 @@ export const inferSchema = (source: Source) =>
   apiFetch<{ fields: SchemaField[] }>(`/api/schema/infer`, {
     method: "POST",
     body: JSON.stringify(source),
+  });
+
+// ---------- Schedules (plan 047) ----------
+
+/** `ScheduleBase` mirror — routes return the untyped `Schedule` SQLModel
+ *  as a dict, same as `Run`, so this is hand-typed rather than generated. */
+export type OverlapPolicy = "skip" | "allow";
+
+export interface Schedule {
+  id: string;
+  pipeline_id: string;
+  cron_expr: string;
+  timezone: string;
+  params: Record<string, string>;
+  enabled: boolean;
+  overlap: OverlapPolicy;
+  /** Ticker-owned bookkeeping — never client-settable. */
+  next_run_at: string | null;
+  last_run_id: string | null;
+  last_fired_at: string | null;
+}
+
+/** Matches `ScheduleWriteRequest` on the backend — shared POST/PUT body. */
+export interface ScheduleWriteRequest {
+  id?: string;
+  cron_expr: string;
+  timezone: string;
+  params: Record<string, string>;
+  enabled: boolean;
+  overlap: OverlapPolicy;
+}
+
+export const listSchedulesForPipeline = (pipelineId: string) =>
+  apiFetch<Schedule[]>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/schedules`,
+  );
+
+export const createSchedule = (pipelineId: string, body: ScheduleWriteRequest) =>
+  apiFetch<Schedule>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/schedules`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const getSchedule = (id: string) =>
+  apiFetch<Schedule>(`/api/schedules/${encodeURIComponent(id)}`);
+
+export const updateSchedule = (id: string, body: ScheduleWriteRequest) =>
+  apiFetch<Schedule>(`/api/schedules/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteSchedule = (id: string) =>
+  apiFetch<void>(`/api/schedules/${encodeURIComponent(id)}`, {
+    method: "DELETE",
   });
 
 export const isTerminal = (status: RunStatus | undefined): boolean =>
