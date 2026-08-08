@@ -52,6 +52,16 @@ export function RunsTable({ runs }: { runs: Run[] }) {
       render: (r) => <Pill status={pillFor(r.status)} />,
     },
     {
+      key: "trigger",
+      header: "Trigger",
+      width: "100px",
+      render: (r) => (
+        <span className="font-mono text-[11px] text-subtle">
+          {r.schedule_id ? "Scheduled" : "Manual"}
+        </span>
+      ),
+    },
+    {
       key: "rows",
       header: "Rows",
       width: "110px",
