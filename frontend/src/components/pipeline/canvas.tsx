@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Button,
@@ -16,13 +15,10 @@ import {
 } from "@/components/ui";
 import { SchemaProvider } from "@/components/builder/schema-context";
 import { PipelineParamsProvider } from "@/components/builder/params-context";
-import { HistoryPanel } from "@/components/builder/history/HistoryPanel";
 import { SourcesPanel } from "@/components/builder/sources";
 import { DestinationPicker } from "@/components/builder/DestinationPicker";
 import { InputsPanel } from "@/components/builder/InputsPanel";
 import type { StepShape } from "@/components/builder/steps/types";
-import { labelFor } from "@/components/builder/steps/types";
-import { stepTitle } from "@/components/builder/steps/summary";
 import {
   updatePipeline,
   type Destination,
@@ -33,35 +29,15 @@ import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
 import { usePermissions } from "@/lib/use-permissions";
 import { cn } from "@/lib/cn";
-import { AutoInferSchemas, AutoStepSchemas } from "../../_schema-sync";
-import { LabTriggerButton } from "../../_trigger";
-import { VariantBar } from "../../_variant";
-import type { Variant, VariantOption } from "../../_variant-util";
+import { AutoInferSchemas, AutoStepSchemas } from "./schema-sync";
+import { TriggerRunButton } from "./trigger";
 import {
   destinationPathLabel,
   pipelineShape,
   sourcePathLabel,
-} from "../../_lib";
-import { StepsColumn } from "./_steps-column";
-import { Rail } from "./_rail";
-
-const OPTIONS: VariantOption[] = [
-  {
-    value: "a",
-    label: "Canvas",
-    note: "Spec on the left, run and preview on the right. Everything edits in place.",
-  },
-  {
-    value: "b",
-    label: "Console",
-    note: "Outline · focused node · rail. Never scrolls the spec.",
-  },
-  {
-    value: "c",
-    label: "Ribbon",
-    note: "Flow across the top as the navigation; selected node below.",
-  },
-];
+} from "./helpers";
+import { StepsColumn } from "./steps-column";
+import { Rail } from "./rail";
 
 /** Read-only sources, for viewers without write permission. */
 function SourcesCard({
@@ -154,33 +130,14 @@ function DestinationCard({
   );
 }
 
-function nodeList(pipeline: Pipeline) {
-  const steps = (pipeline.steps ?? []) as StepShape[];
-  return [
-    { key: "sources", label: "Sources", detail: `${pipeline.sources?.length ?? 0}` },
-    ...steps.map((s, i) => ({
-      key: `step-${i}`,
-      label: labelFor(s),
-      detail: stepTitle(s),
-    })),
-    {
-      key: "output",
-      label: pipeline.pipeline_type === "quality" ? "Report" : "Destination",
-      detail: pipeline.output_id || "—",
-    },
-  ];
-}
-
-export function LabPipelineDetail({
+export function PipelineCanvas({
   initialPipeline,
   sources,
   destination,
-  variant,
 }: {
   initialPipeline: Pipeline;
   sources: (Source | null)[];
   destination: Destination | null;
-  variant: Variant;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -192,7 +149,6 @@ export function LabPipelineDetail({
   const [saving, setSaving] = useState(false);
   const [openStep, setOpenStep] = useState<number | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [selectedNode, setSelectedNode] = useState<string>("sources");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const steps = (pipeline.steps ?? []) as StepShape[];
@@ -314,20 +270,6 @@ export function LabPipelineDetail({
     />
   );
 
-  const nodes = nodeList(pipeline);
-
-  const selectNode = (key: string) => {
-    setSelectedNode(key);
-    const m = /^step-(\d+)$/.exec(key);
-    setOpenStep(m?.[1] ? Number(m[1]) : null);
-  };
-
-  const focusedNode = () => {
-    if (selectedNode === "sources") return sourcesBlock;
-    if (selectedNode === "output") return outputBlock;
-    return stepsBlock;
-  };
-
   return (
     <SchemaProvider>
       <PipelineParamsProvider params={pipeline.params}>
@@ -337,8 +279,7 @@ export function LabPipelineDetail({
         <Topbar
           crumbs={[
             { label: "Workspace", href: "/" },
-            { label: "Lab", href: "/lab" },
-            { label: "Pipelines", href: "/lab/pipelines" },
+            { label: "Pipelines", href: "/pipelines" },
             { label: pipeline.name },
           ]}
           actions={
@@ -358,7 +299,7 @@ export function LabPipelineDetail({
                   {saving ? "Saving…" : "Save"}
                 </Button>
               )}
-              <LabTriggerButton
+              <TriggerRunButton
                 pipeline={pipeline}
                 variant="primary"
                 onStarted={setActiveRunId}
@@ -373,118 +314,28 @@ export function LabPipelineDetail({
           lede={pipelineShape(pipeline)}
         />
 
-        <VariantBar options={OPTIONS} current={variant} />
-
-        {/* ---------------- A · canvas ---------------- */}
-        {variant === "a" && (
-          <div className="px-14 py-8 grid grid-cols-1 xl:grid-cols-[1.25fr_1fr] gap-6 items-start">
-            <div className="space-y-5 min-w-0">
-              {sourcesBlock}
-              {stepsBlock}
-              {outputBlock}
-              {settingsBlock}
-            </div>
-            <div className="min-w-0 xl:sticky xl:top-[100px] space-y-5">
-              {rail}
-              <Panel>
-                <PanelHead label="History" />
-                <div className="px-1.5 py-1.5">
-                  <HistoryPanel pipelineId={pipeline.id} />
-                </div>
-              </Panel>
-            </div>
+        {/* The rail yields width while a step is open. The editors need ~620px
+            for their rules rows and only get ~536px at an even split — but
+            hiding the rail outright would take the live preview away at exactly
+            the moment you're changing a filter and want to see its effect. */}
+        <div
+          className={cn(
+            "px-14 py-8 grid grid-cols-1 gap-6 items-start",
+            "transition-[grid-template-columns] duration-200",
+            openStep === null
+              ? "xl:grid-cols-[1.25fr_1fr]"
+              : "xl:grid-cols-[1fr_340px]",
+          )}
+        >
+          <div className="space-y-5 min-w-0">
+            {sourcesBlock}
+            {stepsBlock}
+            {outputBlock}
+            {settingsBlock}
           </div>
-        )}
-
-        {/* ---------------- B · console ---------------- */}
-        {variant === "b" && (
-          <div className="px-14 py-8 grid grid-cols-1 lg:grid-cols-[210px_1fr] xl:grid-cols-[210px_1fr_360px] gap-6 items-start">
-            <Panel className="lg:sticky lg:top-[100px]">
-              <PanelHead label="Outline" count={nodes.length} />
-              {nodes.map((n) => (
-                <button
-                  key={n.key}
-                  type="button"
-                  onClick={() => selectNode(n.key)}
-                  className={cn(
-                    "w-full text-left px-3.5 py-2 border-b border-border last:border-b-0 transition-colors",
-                    selectedNode === n.key
-                      ? "bg-[color:var(--accent-tint)]"
-                      : "hover:bg-hover",
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "font-mono text-[10px] tracking-[0.15em] uppercase",
-                      selectedNode === n.key ? "text-accent" : "text-subtle",
-                    )}
-                  >
-                    {n.label}
-                  </div>
-                  <div className="text-[12px] text-muted truncate">{n.detail}</div>
-                </button>
-              ))}
-            </Panel>
-            <div className="min-w-0 space-y-5">
-              {focusedNode()}
-              {settingsBlock}
-            </div>
-            <div className="min-w-0 xl:sticky xl:top-[100px]">{rail}</div>
-          </div>
-        )}
-
-        {/* ---------------- C · ribbon ---------------- */}
-        {variant === "c" && (
-          <div className="px-14 py-8 space-y-6">
-            <div className="overflow-x-auto pb-1">
-              <div className="flex items-stretch gap-2 min-w-max">
-                {nodes.map((n, i) => (
-                  <div key={n.key} className="flex items-center gap-2">
-                    {i > 0 && <span className="text-subtle text-sm">→</span>}
-                    <button
-                      type="button"
-                      onClick={() => selectNode(n.key)}
-                      className={cn(
-                        "min-w-[150px] max-w-[220px] text-left px-3 py-2.5 rounded-[var(--radius)] border transition-colors",
-                        selectedNode === n.key
-                          ? "border-accent bg-[color:var(--accent-tint)]"
-                          : "border-border bg-surface hover:border-border-2",
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "font-mono text-[10px] tracking-[0.15em] uppercase",
-                          selectedNode === n.key ? "text-accent" : "text-subtle",
-                        )}
-                      >
-                        {n.label}
-                      </div>
-                      <div className="text-[12.5px] text-text truncate mt-0.5">
-                        {n.detail}
-                      </div>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6 items-start">
-              <div className="min-w-0 space-y-5">
-                {focusedNode()}
-                {settingsBlock}
-              </div>
-              <div className="min-w-0 xl:sticky xl:top-[100px]">{rail}</div>
-            </div>
-          </div>
-        )}
-
-        <div className="px-14 pb-8">
-          <Link
-            href={`/pipelines/${encodeURIComponent(pipeline.id)}`}
-            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle no-underline hover:text-text"
-          >
-            ← compare with the current page
-          </Link>
+          <div className="min-w-0 xl:sticky xl:top-[100px]">{rail}</div>
         </div>
+
       </PipelineParamsProvider>
     </SchemaProvider>
   );

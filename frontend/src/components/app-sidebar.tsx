@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
   Sidebar,
@@ -15,6 +15,10 @@ import { type CurrentUser, clearToken } from "@/lib/api";
 
 export function AppSidebar() {
   const pathname = usePathname() ?? "";
+  // usePathname() excludes the query string, so the old
+  // `pathname.includes("type=quality")` test never matched and neither
+  // sub-item ever highlighted.
+  const typeParam = useSearchParams()?.get("type") ?? null;
   const router = useRouter();
   const on = (prefix: string) =>
     prefix === "/"
@@ -57,21 +61,14 @@ export function AppSidebar() {
               href="/pipelines?type=transform"
               label="Transform"
               indent
-              active={on("/pipelines") && pathname.includes("type=transform")}
+              active={on("/pipelines") && typeParam !== "quality"}
             />
             <NavItem
               href="/pipelines?type=quality"
               label="Quality Check"
               indent
-              active={on("/pipelines") && pathname.includes("type=quality")}
+              active={on("/pipelines") && typeParam === "quality"}
             />
-          </>
-        )}
-        {/* Temporary — remove with the /lab tree once a layout is chosen. */}
-        {can("pipeline:read") && (
-          <>
-            <NavGroup>Lab</NavGroup>
-            <NavItem href="/lab" label="IA variations" indent active={on("/lab")} />
           </>
         )}
       </NavSections>

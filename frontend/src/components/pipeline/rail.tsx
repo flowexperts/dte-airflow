@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import useSWR from "swr";
-import { Panel, PanelHead, Pill } from "@/components/ui";
+import { Panel, PanelHead, Pill, Tabs, type TabOption } from "@/components/ui";
 import { PipelinePreview } from "@/components/pipeline-preview";
+import { HistoryPanel } from "@/components/builder/history/HistoryPanel";
 import { QualityPanel } from "@/components/run/quality-panel";
 import { StatRail, StatRow } from "@/components/run/stat-rail";
 import {
@@ -21,7 +23,9 @@ import {
   type QualityCheckResult,
   type Run,
 } from "@/lib/api";
-import { RunTone, relativeTime, runOutcome } from "../../_lib";
+import { RunTone, relativeTime, runOutcome } from "./helpers";
+
+type RailTab = "preview" | "runs" | "history";
 
 /**
  * The live run, shown where you triggered it.
@@ -39,7 +43,7 @@ function LiveRun({
   quality: boolean;
   onDismiss: () => void;
 }) {
-  const { data: run } = useSWR<Run>(["lab-run", runId], () => getRun(runId), {
+  const { data: run } = useSWR<Run>(["run", runId], () => getRun(runId), {
     refreshInterval: (latest) => (isTerminal(latest?.status) ? 0 : 2000),
   });
 
@@ -47,7 +51,7 @@ function LiveRun({
     results: QualityCheckResult[];
     count: number;
   }>(
-    quality && isTerminal(run?.status) ? ["lab-run-quality", runId] : null,
+    quality && isTerminal(run?.status) ? ["run-quality", runId] : null,
     () => getRunQuality(runId),
   );
   const results = qualityResp?.results ?? [];
@@ -126,7 +130,7 @@ function LiveRun({
 
           <div className="px-4 py-2.5 border-t border-border">
             <Link
-              href={`/lab/runs/${encodeURIComponent(runId)}`}
+              href={`/runs/${encodeURIComponent(runId)}`}
               className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent no-underline hover:text-accent-h"
             >
               Full run detail →
@@ -146,7 +150,7 @@ function RecentRuns({
   quality: boolean;
 }) {
   const { data: runs = [] } = useSWR<Run[]>(
-    ["lab-runs", pipelineId],
+    ["pipeline-runs", pipelineId],
     () => listPipelineRuns(pipelineId, 8),
     {
       refreshInterval: (latest) =>
@@ -157,15 +161,14 @@ function RecentRuns({
   );
 
   return (
-    <Panel>
-      <PanelHead label="Recent runs" count={runs.length || undefined} />
+    <>
       {runs.length === 0 ? (
         <div className="px-4 py-4 text-sm text-subtle">Never run.</div>
       ) : (
         runs.map((r) => (
           <Link
             key={r.id}
-            href={`/lab/runs/${encodeURIComponent(r.id)}`}
+            href={`/runs/${encodeURIComponent(r.id)}`}
             className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border last:border-b-0 no-underline hover:bg-hover transition-colors"
           >
             <RunTone run={r}>
@@ -177,12 +180,19 @@ function RecentRuns({
           </Link>
         ))
       )}
-    </Panel>
+    </>
   );
 }
 
-/** Right-hand rail: what's happening now, what the data looks like, what
- *  happened before. */
+/**
+ * Right-hand rail: what's running now, what the data looks like, what happened
+ * before, and how the spec got here.
+ *
+ * Tabbed rather than stacked. Four panels in one column meant scrolling to
+ * reach history, and each got only a fraction of an already narrow rail — but
+ * these are things you consult at different moments, not read together, so
+ * showing one at a time costs nothing and gives each the full width.
+ */
 export function Rail({
   pipeline,
   activeRunId,
@@ -195,9 +205,18 @@ export function Rail({
   showPreview: boolean;
 }) {
   const quality = pipeline.pipeline_type === "quality";
+  const [tab, setTab] = useState<RailTab>(showPreview ? "preview" : "runs");
+
+  const tabs: TabOption<RailTab>[] = [
+    ...(showPreview ? [{ value: "preview" as const, label: "Preview" }] : []),
+    { value: "runs" as const, label: "Runs" },
+    { value: "history" as const, label: "History" },
+  ];
 
   return (
     <div className="space-y-5">
+      {/* The live run stays pinned above the tabs — it's the one thing you
+          want in view regardless of what else you're looking at. */}
       {activeRunId && (
         <LiveRun
           runId={activeRunId}
@@ -205,8 +224,23 @@ export function Rail({
           onDismiss={onDismissRun}
         />
       )}
-      {showPreview && <PipelinePreview pipelineId={pipeline} />}
-      <RecentRuns pipelineId={pipeline.id} quality={quality} />
+
+      <Panel>
+        <Tabs options={tabs} value={tab} onChange={setTab} />
+        {tab === "preview" && showPreview && (
+          <div className="p-3">
+            <PipelinePreview pipelineId={pipeline} />
+          </div>
+        )}
+        {tab === "runs" && (
+          <RecentRuns pipelineId={pipeline.id} quality={quality} />
+        )}
+        {tab === "history" && (
+          <div className="p-1.5">
+            <HistoryPanel pipelineId={pipeline.id} />
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }

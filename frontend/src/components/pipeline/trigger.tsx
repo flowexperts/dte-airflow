@@ -17,7 +17,7 @@ import { humanizeError } from "@/lib/errors";
  * `onStarted` lets a caller keep the user in place and show the run inline.
  * Without it we fall back to navigating, matching the existing behaviour.
  */
-export function LabTriggerButton({
+export function TriggerRunButton({
   pipeline,
   variant = "micro",
   onStarted,
@@ -66,7 +66,7 @@ export function LabTriggerButton({
             if (onStarted) {
               onStarted(run_id);
             } else {
-              router.push(`/lab/runs/${encodeURIComponent(run_id)}`);
+              router.push(`/runs/${encodeURIComponent(run_id)}`);
             }
           } catch (e) {
             toast.error(humanizeError(e, { action: "start", entity: "pipeline" }));

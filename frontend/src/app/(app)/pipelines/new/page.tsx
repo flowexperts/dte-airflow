@@ -13,7 +13,7 @@ const empty: Pipeline = {
 export default function NewPipeline() {
   return (
     <RequirePermission perm="pipeline:write">
-      <BuilderForm initial={empty} mode="create" livePreview />
+      <BuilderForm initial={empty} />
     </RequirePermission>
   );
 }
