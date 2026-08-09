@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Panel, PanelHead } from "@/components/ui";
+import { AddStep, Panel, PanelHead } from "@/components/ui";
 import { StepEditor } from "@/components/builder/steps/editors";
 import { StepIndexProvider } from "@/components/builder/schema-context";
 import { StepSummary, stepTitle } from "@/components/builder/steps/summary";
@@ -14,12 +14,16 @@ import {
 import { cn } from "@/lib/cn";
 
 /**
- * The ordered steps, readable first and editable second.
+ * The ordered steps.
  *
- * The existing StepsPanel mounts every step's full editor permanently, which
- * makes a long pipeline unreadable. Here a step is a one-line summary until you
- * open it — the same component either way, so a step never reads differently
- * depending on which page you're on.
+ * Every step shows its editor — no click to expand. Reading a step and
+ * changing it are the same act often enough that a disclosure just adds a
+ * click, and a collapsed row hides the dropdowns that make the step
+ * comprehensible in the first place.
+ *
+ * `openIndex` no longer gates the editor; it marks the step a deep link
+ * (`#step-3` from a failed run) pointed at, so it can be scrolled to and
+ * highlighted.
  */
 export function StepsColumn({
   steps,
@@ -32,18 +36,18 @@ export function StepsColumn({
   steps: StepShape[];
   onChange: (steps: StepShape[]) => void;
   pipelineType: "transform" | "quality";
+  /** Deep-linked step, highlighted and scrolled to. */
   openIndex: number | null;
   onOpenChange: (i: number | null) => void;
   readOnly: boolean;
 }) {
   const [addAt, setAddAt] = useState<number | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
-  const openRef = useRef<HTMLDivElement>(null);
+  const targetRef = useRef<HTMLDivElement>(null);
 
-  // Deep-linked step (#step-3 from a failed run) scrolls itself in.
   useEffect(() => {
     if (openIndex !== null) {
-      openRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      targetRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   }, [openIndex]);
 
@@ -78,9 +82,9 @@ export function StepsColumn({
   };
 
   /** Insert at an explicit position — the old panel could only append. */
-  const insertAt = (i: number, op: StepShape) => {
+  const insertAt = (i: number, step: StepShape) => {
     const next = [...steps];
-    next.splice(i, 0, op);
+    next.splice(i, 0, step);
     onChange(next);
     setAddAt(null);
     onOpenChange(i);
@@ -93,115 +97,115 @@ export function StepsColumn({
     if (!moved) return;
     next.splice(to, 0, moved);
     onChange(next);
-    onOpenChange(null);
   };
 
-  const AddRow = ({ at }: { at: number }) =>
-    readOnly ? null : addAt === at ? (
-      <div className="px-3.5 py-3 bg-surface-2 border-b border-border">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
-          {ops.map((o) => (
-            <button
-              key={`${o.op}-${o.mode ?? ""}`}
-              type="button"
-              onClick={() => insertAt(at, emptyStep(o.op, o.mode))}
-              className="px-2 py-1.5 rounded-sm border border-border bg-surface text-[12px] text-text hover:border-accent hover:text-accent transition-colors"
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={() => setAddAt(null)}
-          className="mt-2 font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-text"
-        >
-          Cancel
-        </button>
+  /** The op menu, shared by the between-rows inserts and the footer button. */
+  const OpMenu = ({ at }: { at: number }) => (
+    <div className="px-3.5 py-3 bg-surface-2 border-b border-border">
+      <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-2">
+        {at === steps.length ? `Add ${isQuality ? "check" : "step"}` : `Insert at ${at + 1}`}
       </div>
-    ) : (
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
+        {ops.map((o) => (
+          <button
+            key={`${o.op}-${o.mode ?? ""}`}
+            type="button"
+            onClick={() => insertAt(at, emptyStep(o.op, o.mode))}
+            className="px-2 py-1.5 rounded-sm border border-border bg-surface text-[12px] text-text hover:border-accent hover:text-accent transition-colors"
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => setAddAt(null)}
+        className="mt-2 font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-text"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+
+  /* Between-rows insert. Faint rather than invisible — an affordance that only
+   * exists on hover is one nobody finds. The footer button below is the
+   * primary, always-visible way in. */
+  const InsertRow = ({ at }: { at: number }) => {
+    if (readOnly) return null;
+    if (addAt === at) return <OpMenu at={at} />;
+    return (
       <button
         type="button"
         onClick={() => setAddAt(at)}
         className="group w-full flex items-center gap-2 px-3.5 py-1 border-b border-border text-left"
         aria-label={`Insert step at position ${at + 1}`}
       >
-        <span className="font-mono text-[11px] text-transparent group-hover:text-accent w-[22px] text-center transition-colors">
+        <span className="font-mono text-[11px] text-subtle group-hover:text-accent w-[22px] text-center transition-colors">
           +
         </span>
-        <span className="flex-1 h-px bg-transparent group-hover:bg-[color:var(--accent-tint)] transition-colors" />
+        <span className="flex-1 h-px bg-border group-hover:bg-accent transition-colors" />
       </button>
     );
+  };
 
   return (
     <Panel>
       <PanelHead
         label={label}
-        count={
-          steps.length === 0 ? (
-            <span className="text-subtle">none</span>
-          ) : (
-            steps.length
-          )
-        }
+        count={steps.length === 0 ? <span className="text-subtle">none</span> : steps.length}
       />
 
       {steps.length === 0 && (
         <div className="px-4 py-6 text-center text-sm text-subtle">
           {readOnly
             ? `No ${label.toLowerCase()} defined.`
-            : `No ${label.toLowerCase()} yet — use + below.`}
+            : `No ${label.toLowerCase()} yet.`}
         </div>
       )}
 
       {steps.map((step, i) => {
-        const open = openIndex === i;
+        const targeted = openIndex === i;
         return (
           <div key={i}>
-            <AddRow at={i} />
+            {steps.length > 0 && i > 0 && <InsertRow at={i} />}
             <div
               id={`step-${i}`}
-              ref={open ? openRef : undefined}
+              ref={targeted ? targetRef : undefined}
               className={cn(
-                "border-b border-border scroll-mt-32",
-                open && "bg-surface-2",
+                "border-b border-border scroll-mt-32 transition-colors",
+                targeted && "bg-[color:var(--accent-tint)]",
               )}
-              draggable={!readOnly && !open}
-              onDragStart={() => setDragFrom(i)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => {
                 if (dragFrom !== null) move(dragFrom, i);
                 setDragFrom(null);
               }}
-              onDragEnd={() => setDragFrom(null)}
             >
-              <div className="grid grid-cols-[36px_1fr_auto] group">
-                <div className="py-3 text-center font-mono text-[11px] text-subtle border-r border-border group-hover:text-accent">
+              {/* Header: what this step is, plus its controls. */}
+              <div className="grid grid-cols-[36px_1fr_auto] items-start group">
+                <div className="py-3 text-center font-mono text-[11px] text-subtle border-r border-border self-stretch">
                   {i + 1}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => onOpenChange(open ? null : i)}
-                  className="py-3 px-3.5 min-w-0 text-left hover:bg-hover transition-colors"
-                  aria-expanded={open}
-                >
-                  <div className="flex items-center gap-2.5 mb-1.5">
+                <div className="px-3.5 py-2.5 min-w-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
                     <span className="font-mono text-[10px] font-bold tracking-[0.15em] uppercase text-accent px-1.5 py-0.5 rounded-sm bg-[color:var(--accent-tint)] shrink-0">
                       {labelFor(step)}
                     </span>
-                    <span className="text-[14.5px] font-medium text-text truncate">
+                    <span className="text-[13.5px] text-muted truncate">
                       {stepTitle(step)}
                     </span>
                   </div>
-                  {!open && <StepSummary step={step} />}
-                </button>
+                </div>
 
-                <div className="flex items-center gap-1 px-2 border-l border-border">
+                <div className="flex items-center gap-1 px-2 py-2.5">
                   {!readOnly && (
                     <>
                       <span
-                        className="px-1 text-subtle cursor-grab select-none"
+                        draggable
+                        onDragStart={() => setDragFrom(i)}
+                        onDragEnd={() => setDragFrom(null)}
+                        className="px-1 text-subtle hover:text-accent cursor-grab select-none"
                         title="Drag to reorder"
                       >
                         ⋮⋮
@@ -219,26 +223,33 @@ export function StepsColumn({
                 </div>
               </div>
 
-              {open && (
-                <div className="px-3.5 pb-3.5 pl-[50px]">
-                  {readOnly ? (
-                    <StepSummary step={step} />
-                  ) : (
-                    <StepIndexProvider index={i}>
-                      <StepEditor
-                        step={step}
-                        set={(patch) => update(i, patch as Partial<StepShape>)}
-                      />
-                    </StepIndexProvider>
-                  )}
-                </div>
-              )}
+              {/* Editor, always present. */}
+              <div className="@container px-3.5 pb-3.5 pl-[50px]">
+                {readOnly ? (
+                  <StepSummary step={step} />
+                ) : (
+                  <StepIndexProvider index={i}>
+                    <StepEditor
+                      step={step}
+                      set={(patch) => update(i, patch as Partial<StepShape>)}
+                    />
+                  </StepIndexProvider>
+                )}
+              </div>
             </div>
           </div>
         );
       })}
 
-      <AddRow at={steps.length} />
+      {!readOnly &&
+        (addAt === steps.length ? (
+          <OpMenu at={steps.length} />
+        ) : (
+          <AddStep
+            onClick={() => setAddAt(steps.length)}
+            label={isQuality ? "Add check" : "Add step"}
+          />
+        ))}
     </Panel>
   );
 }

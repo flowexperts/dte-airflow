@@ -61,14 +61,22 @@ export function AppSidebar() {
               href="/pipelines?type=transform"
               label="Transform"
               indent
-              active={on("/pipelines") && typeParam !== "quality"}
+              active={on("/pipelines") && !on("/pipelines/new") && typeParam !== "quality"}
             />
             <NavItem
               href="/pipelines?type=quality"
               label="Quality Check"
               indent
-              active={on("/pipelines") && typeParam === "quality"}
+              active={on("/pipelines") && !on("/pipelines/new") && typeParam === "quality"}
             />
+            {can("pipeline:write") && (
+              <NavItem
+                href="/pipelines/new"
+                label="+ New pipeline"
+                indent
+                active={on("/pipelines/new")}
+              />
+            )}
           </>
         )}
       </NavSections>

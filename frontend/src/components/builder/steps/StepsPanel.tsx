@@ -62,7 +62,7 @@ export function StepsPanel({
             <div className="text-center font-mono text-[11px] text-subtle py-3 border-r border-border">
               {i + 1}
             </div>
-            <div className="px-3.5 py-2.5">
+            <div className="@container px-3.5 py-2.5">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-mono text-[10px] font-bold tracking-[0.15em] uppercase text-accent px-1.5 py-0.5 rounded-sm bg-[color:var(--accent-tint)]">
                   {labelFor(step)}

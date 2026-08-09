@@ -314,19 +314,11 @@ export function PipelineCanvas({
           lede={pipelineShape(pipeline)}
         />
 
-        {/* The rail yields width while a step is open. The editors need ~620px
-            for their rules rows and only get ~536px at an even split — but
-            hiding the rail outright would take the live preview away at exactly
-            the moment you're changing a filter and want to see its effect. */}
-        <div
-          className={cn(
-            "px-14 py-8 grid grid-cols-1 gap-6 items-start",
-            "transition-[grid-template-columns] duration-200",
-            openStep === null
-              ? "xl:grid-cols-[1.25fr_1fr]"
-              : "xl:grid-cols-[1fr_340px]",
-          )}
-        >
+        {/* Every step editor is open, so the spec column always needs the room:
+            the rules rows want ~620px and an even split gives ~536px. A fixed
+            340px rail keeps the live preview on screen while leaving ~700px at
+            1440 and ~1160px at 1920. */}
+        <div className="px-14 py-8 grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
           <div className="space-y-5 min-w-0">
             {sourcesBlock}
             {stepsBlock}
