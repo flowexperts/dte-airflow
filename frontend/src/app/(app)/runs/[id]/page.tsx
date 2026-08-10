@@ -391,9 +391,26 @@ export default function RunDetail({ params }: { params: Params }) {
   return (
     <>
       <Topbar
+        /* "Runs" was a dead label under a Workspace root, so the trail
+           described nowhere you could go back to — and skipped the pipeline
+           entirely, which is the only thing a run belongs to. Now it walks
+           the real containment: workspace → pipelines → this pipeline →
+           its Runs tab → this run. */
         crumbs={[
           { label: "Workspace", href: "/" },
-          { label: "Runs" },
+          { label: "Pipelines", href: "/pipelines" },
+          ...(data?.pipeline_id
+            ? [
+                {
+                  label: pipeline?.name ?? data.pipeline_id,
+                  href: `/pipelines/${encodeURIComponent(data.pipeline_id)}`,
+                },
+                {
+                  label: "Runs",
+                  href: `/pipelines/${encodeURIComponent(data.pipeline_id)}?tab=runs`,
+                },
+              ]
+            : [{ label: "Runs" }]),
           { label: id.slice(0, 8) },
         ]}
         actions={

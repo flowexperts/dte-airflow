@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Button,
   Field,
@@ -165,7 +165,25 @@ export function PipelineCanvas({
   const [openStep, setOpenStep] = useState<number | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [view, setView] = useState<PipelineView>("spec");
+  /* The tab lives in the URL (`?tab=runs`), not just in state, so it can be
+   * linked to — a run's breadcrumb points back at the pipeline's Runs tab,
+   * and Back returns to the tab you were on. Written with the History API
+   * rather than router.replace: this is a client-side view switch, and a
+   * router navigation would re-run the server component for no gain. */
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [view, setView] = useState<PipelineView>(
+    tabParam === "runs" || tabParam === "history" ? tabParam : "spec",
+  );
+
+  const changeView = (next: PipelineView) => {
+    setView(next);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (next === "spec") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState(null, "", url);
+  };
 
   /* Fetched at the canvas level, not inside the Runs pane: the tab badge
      shows last-run health on every tab, so the spec view answers "is this
@@ -417,7 +435,7 @@ export function PipelineCanvas({
               { value: "history", label: "History" },
             ]}
             value={view}
-            onChange={setView}
+            onChange={changeView}
             className="max-w-md border-b-0"
           />
         </div>
@@ -459,7 +477,7 @@ export function PipelineCanvas({
 
         {view === "runs" && (
           <div className="px-14 py-8">
-            <RunsPane runs={runs} />
+            <RunsPane pipelineId={pipeline.id} />
           </div>
         )}
 
