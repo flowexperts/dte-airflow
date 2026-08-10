@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Field,
@@ -16,6 +10,7 @@ import {
   Segmented,
   Textarea,
 } from "@/components/ui";
+import { usePopoverPosition } from "@/components/ui/use-popover-position";
 import { useStepFields } from "../schema-context";
 import { usePipelineParams } from "../params-context";
 import { toDisplay } from "@/components/ui";
@@ -43,28 +38,16 @@ function DynamicValueMenu({
   widthRef?: React.RefObject<HTMLElement | null>;
 }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
-  useLayoutEffect(() => {
-    if (!open) return;
-    const compute = () => {
-      const anchor = widthRef?.current ?? triggerRef.current;
-      const trigger = triggerRef.current;
-      if (!anchor || !trigger) return;
-      const ar = anchor.getBoundingClientRect();
-      const tr = trigger.getBoundingClientRect();
-      setPos({ left: ar.left, top: tr.bottom + 4, width: ar.width });
-    };
-    compute();
-    window.addEventListener("scroll", compute, true);
-    window.addEventListener("resize", compute);
-    return () => {
-      window.removeEventListener("scroll", compute, true);
-      window.removeEventListener("resize", compute);
-    };
-  }, [open, widthRef]);
+  /* Anchor to the input wrapper when we have one — the trigger is a 20px
+   * glyph sitting inside it, so anchoring to the trigger would give a 20px
+   * popover. usePopoverPosition handles the flip and viewport clamp. */
+  const pos = usePopoverPosition(
+    (widthRef ?? triggerRef) as React.RefObject<HTMLElement | null>,
+    open,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -96,14 +79,8 @@ function DynamicValueMenu({
         createPortal(
           <div
             ref={popRef}
-            style={{
-              position: "fixed",
-              left: pos.left,
-              top: pos.top,
-              width: pos.width,
-              zIndex: 1000,
-            }}
-            className="max-h-72 overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg py-1"
+            style={pos.style}
+            className="overflow-auto border border-border rounded-[var(--radius)] bg-surface shadow-lg py-1"
             role="listbox"
           >
             {vars.map((v) => (
@@ -586,10 +563,16 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   // suggest the same declared inputs to every value cell in this step.
   const paramsListId = `filter-params-${useId()}`;
 
-  // Mode is local UI state — not persisted on the step. On first mount, if
-  // there's an existing expr, default to Advanced.
-  const initialMode: "basic" | "advanced" = step.expr ? "advanced" : "basic";
-  const [mode, setMode] = useState<"basic" | "advanced">(initialMode);
+  // Mode is local UI state — not persisted on the step. Prefer Basic: it is
+  // the structured, injection-safe editor and where most conditions belong.
+  // We open in Advanced only when the saved SQL can't be represented as
+  // rules, because an empty Basic tab would read as "the filter is gone".
+  const parsedOnMount = useRef<FilterRule[] | null>(
+    step.expr ? tryParseBasicSql(step.expr as string) : [],
+  );
+  const [mode, setMode] = useState<"basic" | "advanced">(
+    parsedOnMount.current === null ? "advanced" : "basic",
+  );
 
   // Each tab keeps its own independent local state so switching tabs never
   // destroys content the user typed on the other tab.
@@ -599,10 +582,9 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   //
   // On first mount we try to pre-populate Basic by parsing the existing expr
   // so a round-trippable expression shows up immediately in Basic mode.
-  const [rules, setRules] = useState<FilterRule[]>(() => {
-    if (step.expr) return tryParseBasicSql(step.expr as string) ?? [];
-    return [];
-  });
+  const [rules, setRules] = useState<FilterRule[]>(
+    () => parsedOnMount.current ?? [],
+  );
   const [advancedText, setAdvancedText] = useState<string>(
     (step.expr as string) ?? "",
   );
@@ -713,17 +695,17 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
             return (
               <div
                 key={i}
-                className="grid grid-cols-[60px_1.4fr_120px_1.4fr_28px] gap-2 items-center"
+                className="flex flex-wrap items-center gap-2"
               >
                 {i === 0 ? (
-                  <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
+                  <span className="w-[60px] shrink-0 font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
                     where
                   </span>
                 ) : (
                   <select
                     value={r.join}
                     onChange={(e) => updateRule(i, { join: e.target.value as "AND" | "OR" })}
-                    className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
+                    className="w-[60px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
                   >
                     <option value="AND">AND</option>
                     <option value="OR">OR</option>
@@ -735,11 +717,12 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                   options={allFields}
                   placeholder="field"
                   variant="tree"
+                  className="basis-[190px] grow"
                 />
                 <select
                   value={r.op}
                   onChange={(e) => updateRule(i, { op: e.target.value as FilterOp })}
-                  className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
+                  className="w-[120px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
                 >
                   {FILTER_OPS.map((op) => (
                     <option key={op} value={op}>
@@ -747,6 +730,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                     </option>
                   ))}
                 </select>
+                <div className="basis-[210px] grow min-w-0">
                 {r.op === "BETWEEN" ? (
                   (() => {
                     const [lo = "", hi = ""] = (r.value ?? "")
@@ -759,7 +743,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                       });
                     };
                     return (
-                      <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1">
+                      <div className="flex flex-wrap items-center gap-1">
                         <DateValueField
                           value={lo}
                           onChange={(v) => commit(v, hi)}
@@ -768,7 +752,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                           placeholder="min"
                           list={paramsListId}
                         />
-                        <span className="text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+                        <span className="w-4 shrink-0 text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
                           and
                         </span>
                         <DateValueField
@@ -799,10 +783,11 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
                     );
                   })()
                 )}
+                </div>
                 <button
                   type="button"
                   onClick={() => removeRule(i)}
-                  className="text-subtle hover:text-red text-sm"
+                  className="w-[28px] shrink-0 text-subtle hover:text-red text-sm"
                   aria-label="Remove condition"
                 >
                   ×
@@ -1469,13 +1454,17 @@ function CheckEditor({ step, set }: StepEditorProps) {
   const declaredParams = usePipelineParams();
   const paramsListId = `check-params-${useId()}`;
 
-  const initialMode: "basic" | "advanced" = step.expr ? "advanced" : "basic";
-  const [mode, setMode] = useState<"basic" | "advanced">(initialMode);
+  // Basic unless the saved SQL can't round-trip — see FilterEditor.
+  const parsedOnMount = useRef<FilterRule[] | null>(
+    step.expr ? tryParseBasicSql(step.expr as string) : [],
+  );
+  const [mode, setMode] = useState<"basic" | "advanced">(
+    parsedOnMount.current === null ? "advanced" : "basic",
+  );
 
-  const [rules, setRules] = useState<FilterRule[]>(() => {
-    if (step.expr) return tryParseBasicSql(step.expr as string) ?? [];
-    return [];
-  });
+  const [rules, setRules] = useState<FilterRule[]>(
+    () => parsedOnMount.current ?? [],
+  );
   const [advancedText, setAdvancedText] = useState<string>(
     (step.expr as string) ?? "",
   );
@@ -1587,17 +1576,17 @@ function CheckEditor({ step, set }: StepEditorProps) {
             return (
               <div
                 key={i}
-                className="grid grid-cols-[60px_1.4fr_120px_1.4fr_28px] gap-2 items-center"
+                className="flex flex-wrap items-center gap-2"
               >
                 {i === 0 ? (
-                  <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
+                  <span className="w-[60px] shrink-0 font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
                     where
                   </span>
                 ) : (
                   <select
                     value={r.join}
                     onChange={(e) => updateRule(i, { join: e.target.value as "AND" | "OR" })}
-                    className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
+                    className="w-[60px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
                   >
                     <option value="AND">AND</option>
                     <option value="OR">OR</option>
@@ -1609,11 +1598,12 @@ function CheckEditor({ step, set }: StepEditorProps) {
                   options={allFields}
                   placeholder="field"
                   variant="tree"
+                  className="basis-[190px] grow"
                 />
                 <select
                   value={r.op}
                   onChange={(e) => updateRule(i, { op: e.target.value as FilterOp })}
-                  className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
+                  className="w-[120px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
                 >
                   {FILTER_OPS.map((op) => (
                     <option key={op} value={op}>
@@ -1621,6 +1611,7 @@ function CheckEditor({ step, set }: StepEditorProps) {
                     </option>
                   ))}
                 </select>
+                <div className="basis-[210px] grow min-w-0">
                 {r.op === "BETWEEN" ? (
                   (() => {
                     const [lo = "", hi = ""] = (r.value ?? "")
@@ -1633,7 +1624,7 @@ function CheckEditor({ step, set }: StepEditorProps) {
                       });
                     };
                     return (
-                      <div className="grid grid-cols-[1fr_16px_1fr] items-center gap-1">
+                      <div className="flex flex-wrap items-center gap-1">
                         <DateValueField
                           value={lo}
                           onChange={(v) => commit(v, hi)}
@@ -1642,7 +1633,7 @@ function CheckEditor({ step, set }: StepEditorProps) {
                           placeholder="min"
                           list={paramsListId}
                         />
-                        <span className="text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+                        <span className="w-4 shrink-0 text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
                           and
                         </span>
                         <DateValueField
@@ -1672,10 +1663,11 @@ function CheckEditor({ step, set }: StepEditorProps) {
                     );
                   })()
                 )}
+                </div>
                 <button
                   type="button"
                   onClick={() => removeRule(i)}
-                  className="text-subtle hover:text-red text-sm"
+                  className="w-[28px] shrink-0 text-subtle hover:text-red text-sm"
                   aria-label="Remove condition"
                 >
                   ×

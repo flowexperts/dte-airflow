@@ -2,8 +2,12 @@
 
 .mkt-root {
   --mkt-border-hi: var(--border-2);
-  --mkt-pad: clamp(20px, 4vw, 40px);
+  --mkt-pad: clamp(16px, 4vw, 40px);
   --mkt-content: 1180px;
+  /* flow diagram: overridden per breakpoint so the 5 tracks always fit */
+  --flow-rail: 0px;
+  --flow-arrow-pad: 18px;
+  --flow-arrow-w: 60px;
 
   background: var(--bg);
   color: var(--text);
@@ -30,6 +34,22 @@
 
 .mkt-root a { color: inherit; text-decoration: none; }
 .mkt-root button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+/* Designer-chosen line break — a real <br>, dropped under `phone` so short
+   viewports wrap where the text runs out rather than mid-sentence. It must
+   stay a <br>: an empty display:block span does not contribute a break to
+   min-content, which lets the hero h1 inflate its grid track. Each use site
+   carries an explicit {" "} before it so the words stay separated once the
+   break is gone. */
+.mkt-root .brk { display: block; }
+
+/* Long/short label pair — see .flowcol-title. Short form is phone-only and
+   currently unused; the swipe rail shows the full titles. */
+.mkt-root .ft-short { display: none; }
+
+/* Scroll rail around .flowgrid. Inert above `phone` — see the media block. */
+.mkt-root .flowscroll { overflow: visible; }
+.mkt-root .flowhint { display: none; }
 
 .mkt-root .wrap {
   max-width: var(--mkt-content);
@@ -130,20 +150,29 @@
   margin: 0;
 }
 .mkt-root h1 {
-  font-size: clamp(44px, 6.4vw, 78px);
+  /* Only the floor moved (44px -> 30px): at 44px the unbreakable
+     "Data Transformation" run was ~316px and got clipped, not wrapped, on a
+     360px viewport. The 6.4vw middle term is unchanged so every width above
+     ~470px renders exactly as before. */
+  font-size: clamp(30px, 6.4vw, 78px);
   line-height: 1.02;
   font-weight: 400;
 }
+.mkt-root .h-gap-lg { margin-top: 22px; }
+.mkt-root .h-gap-md { margin-top: 14px; }
 .mkt-root h1 em {
   font-style: normal;
   color: var(--accent);
   font-weight: 500;
 }
 .mkt-root h2 {
-  font-size: clamp(28px, 3.6vw, 44px);
+  /* floor only, as with h1 — 3.6vw middle term matches the original curve */
+  font-size: clamp(24px, 3.6vw, 44px);
   line-height: 1.08;
   letter-spacing: -0.025em;
 }
+.mkt-root .h2-soft { color: var(--muted); font-weight: 400; }
+.mkt-root .h2-accent { color: var(--accent); }
 .mkt-root h3 {
   font-size: 17px;
   line-height: 1.35;
@@ -156,6 +185,16 @@
   line-height: 1.55;
   max-width: 52ch;
   margin: 22px 0 32px;
+}
+.mkt-root p.lede-hero {
+  font-size: clamp(16px, 4.4vw, 20px);
+  color: var(--text);
+  max-width: none;
+}
+.mkt-root p.lede-hero em {
+  font-style: normal;
+  color: var(--accent);
+  font-weight: 500;
 }
 .mkt-root .section-eyebrow {
   font-family: var(--font-mono);
@@ -184,7 +223,7 @@
   gap: clamp(40px, 6vw, 80px);
   align-items: center;
 }
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .mkt-root .hero-grid { grid-template-columns: 1fr; }
   .mkt-root .hero-viz { order: 2; }
 }
@@ -217,6 +256,7 @@
   letter-spacing: 0.02em;
 }
 .mkt-root .viz-title b { color: var(--text); font-weight: 700; }
+.mkt-root .viz-title-sub { color: var(--subtle); }
 .mkt-root .pill {
   display: inline-flex;
   align-items: center;
@@ -240,6 +280,7 @@
   box-shadow: 0 0 0 3px color-mix(in oklab, currentColor 20%, transparent);
   animation: mkt-pulseDot 2s ease-in-out infinite;
 }
+.mkt-root .pill-xs { font-size: 9.5px; padding: 3px 8px; }
 .mkt-root .pill.pending { color: var(--gold); border-color: color-mix(in oklab, var(--gold) 35%, var(--border)); }
 .mkt-root .pill.running { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, var(--border)); }
 .mkt-root .pill.ok      { color: var(--green); border-color: color-mix(in oklab, var(--green) 40%, var(--border)); }
@@ -358,11 +399,13 @@
 }
 .mkt-root .section-head {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 40px;
   margin-bottom: 44px;
 }
+.mkt-root .section-head-copy { min-width: 0; }
+.mkt-root .section-head-copy h2 { margin-top: 10px; }
 .mkt-root .section-head p {
   color: var(--muted);
   max-width: 42ch;
@@ -373,6 +416,10 @@
 .mkt-root .section-head .section-eyebrow { display: block; margin-bottom: 10px; }
 
 /* --- Flow (3 columns) --- */
+/* Five tracks: sources | arrow | logic | arrow | destinations.
+   This stays horizontal at EVERY width — the left-to-right read IS the
+   section's argument. Phones get a rail variant (see the `phone` block)
+   rather than a vertical stack. */
 .mkt-root .flowgrid {
   display: grid;
   grid-template-columns: 1fr auto 1.15fr auto 1fr;
@@ -447,12 +494,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 18px;
+  padding: 0 var(--flow-arrow-pad);
   position: relative;
 }
 .mkt-root .flowarrow span {
   position: relative;
-  width: 60px;
+  width: var(--flow-arrow-w);
   height: 1px;
   background: linear-gradient(90deg, var(--border), color-mix(in oklab, var(--accent) 60%, var(--border)));
   display: inline-block;
@@ -567,20 +614,97 @@
   letter-spacing: 0.04em;
 }
 
+/* --- Flow: tablet (<=1000px) — five tracks intact, weight shed --------- */
 @media (max-width: 1000px) {
-  .mkt-root .flowgrid { grid-template-columns: 1fr; gap: 0; }
-  .mkt-root .flowarrow { padding: 20px 0; transform: rotate(90deg); height: 40px; }
+  .mkt-root {
+    --flow-arrow-pad: 8px;
+    --flow-arrow-w: 28px;
+  }
+  .mkt-root .tile { grid-template-columns: 28px 1fr; gap: 10px; padding: 9px 10px; }
+  .mkt-root .tile .mono { width: 28px; height: 28px; font-size: 10.5px; }
+  .mkt-root .tile .sub { display: none; }
+  .mkt-root .lstep { grid-template-columns: 20px 62px 1fr; gap: 8px; padding: 9px 10px; }
+  .mkt-root .flowcol-title { font-size: 10.5px; letter-spacing: 0.16em; }
+}
+
+/* --- Flow: phone (<=620px) — swipeable, full fidelity -------------------
+   The full diagram needs ~720px: ~150px per tile column to fit "connection
+   string" on one line, ~300px for the logic panel with its expression chips,
+   plus two arrows. A 360px phone offers 328px. Rather than shrink the type
+   below legibility or drop the names and expressions, the grid keeps its
+   real width inside a scroll-snap rail and the section scrolls sideways.
+   Nothing is removed and nothing is scaled down. */
+@media (max-width: 620px) {
+  .mkt-root {
+    --flow-arrow-pad: 6px;
+    --flow-arrow-w: 26px;
+  }
+
+  /* full-bleed: the rail runs edge to edge so the cut-off column reads as
+     "more this way" rather than as a broken container */
+  .mkt-root .flowscroll {
+    margin-inline: calc(var(--mkt-pad) * -1);
+    padding-inline: var(--mkt-pad);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mkt-root .flowscroll::-webkit-scrollbar { display: none; }
+
+  .mkt-root .flowgrid {
+    grid-template-columns: 150px auto 300px auto 150px;
+    width: max-content;
+    align-items: stretch;
+  }
+  .mkt-root .flowcol { scroll-snap-align: start; }
+  .mkt-root .flowcol.logic { scroll-snap-align: center; }
+
+  /* The rail lands on the logic column, but that column is ~270px shorter
+     than the 9-tile destinations column. Left alone it reads as a broken
+     empty panel on landing, so stretch the panel to the row height and pin
+     its footer to the bottom. */
+  .mkt-root .flowcol.logic .flowcol-body { flex: 1; }
+  .mkt-root .logic-panel { display: flex; flex-direction: column; height: 100%; }
+  .mkt-root .logic-steps { flex: 1; }
+  .mkt-root .logic-foot { margin-top: auto; }
+
+  .mkt-root .tile { grid-template-columns: 28px 1fr; gap: 10px; padding: 9px 10px; }
+  .mkt-root .tile .mono { width: 28px; height: 28px; font-size: 10.5px; }
+  .mkt-root .tile .sub { display: block; }
+  .mkt-root .lstep { grid-template-columns: 20px 62px 1fr; gap: 8px; padding: 9px 10px; }
+  .mkt-root .flowcol-title { font-size: 10px; letter-spacing: 0.16em; }
+  .mkt-root .flowarrow { align-items: flex-start; padding-top: 44px; }
+
+  /* The rail lands centred on orders_pipeline, so the affordance has to point
+     both ways — otherwise the sources column reads as missing, not as offscreen. */
+  .mkt-root .flowhint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 14px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--subtle);
+  }
 }
 
 /* --- Book --- */
 .mkt-root section.book { padding-bottom: clamp(60px, 8vh, 100px); }
+/* Single stack at every width: copy on top, scheduler full-width beneath.
+   Given a wide container Cal's month_view splits itself into event details
+   on the left and the date grid on the right, which is the layout we want —
+   the old 1fr/1.4fr split squeezed it into a narrow column where the month
+   grid rendered below a tall gap and then clipped. */
 .mkt-root .book-grid {
   display: grid;
-  grid-template-columns: 1fr 1.4fr;
-  gap: 40px;
+  grid-template-columns: 1fr;
+  gap: 32px;
   align-items: start;
 }
-@media (max-width: 900px) { .mkt-root .book-grid { grid-template-columns: 1fr; } }
 .mkt-root .book-copy h2 { max-width: 14ch; }
 .mkt-root .book-copy p {
   color: var(--muted);
@@ -633,12 +757,33 @@
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--muted);
+  gap: 10px;
   flex: 0 0 auto;
 }
+.mkt-root .cal-panel .cal-head b { color: var(--text); }
 .mkt-root .cal-panel .cal-body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Mobile-only booking CTA — replaces .cal-panel under `phone`. */
+.mkt-root .cal-cta {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 18px;
+  text-align: center;
+  white-space: normal;
+  font-size: 15px;
+}
+.mkt-root .cal-cta-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  opacity: 0.72;
 }
 
 /* --- Footer --- */
@@ -653,8 +798,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 12px 20px;
 }
+.mkt-root .foot-left { display: flex; align-items: center; gap: 16px; }
+.mkt-root .brand-sm { font-size: 22px; }
 .mkt-root footer .copy {
   color: var(--subtle);
   font-family: var(--font-mono);
@@ -683,9 +831,9 @@
   margin-left: auto;
   margin-right: auto;
 }
-@media (max-width: 720px) {
-  .mkt-root .demo { padding: 48px 0 32px; }
-  .mkt-root .demo-frame { border-radius: 10px; padding: 3px; }
+@media (max-width: 620px) {
+  .mkt-root .demo { padding: 8px 0 36px; }
+  .mkt-root .demo-frame { border-radius: 10px; padding: 3px; margin-top: 20px; }
 }
 
 /* Custom video player */
@@ -811,12 +959,32 @@
   gap: 12px;
 }
 
-@media (max-width: 999px) {
+@media (max-width: 1000px) {
   .mkt-root .steps-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-@media (max-width: 480px) {
-  .mkt-root .steps-grid { grid-template-columns: 1fr; }
+/* Phone: 12 full cards stacked one-up was ~12 screens of scroll. Drop to
+   label-only chips, two across — the section's job here is to show the
+   breadth of the step vocabulary, not to explain each one. */
+@media (max-width: 620px) {
+  .mkt-root .steps-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .mkt-root .steps-card {
+    padding: 10px 12px;
+    gap: 4px;
+    border-left-width: 2px;
+    min-height: 0;
+  }
+  .mkt-root .steps-card-hint { display: none; }
+  .mkt-root .steps-card-label { font-size: 12.5px; padding-right: 0; }
+  /* the coming-soon section's eyebrow already says "Coming soon" */
+  .mkt-root .steps-soon-badge { display: none; }
+  .mkt-root .steps-qa-badge {
+    position: static;
+    align-self: flex-start;
+    order: -1;
+    font-size: 8.5px;
+    padding: 1px 5px;
+  }
 }
 
 .mkt-root .steps-card {
@@ -913,7 +1081,7 @@
   gap: 16px;
 }
 
-@media (max-width: 899px) {
+@media (max-width: 1000px) {
   .mkt-root .feat-grid { grid-template-columns: 1fr; }
 }
 
@@ -994,7 +1162,7 @@
   gap: clamp(40px, 6vw, 80px);
   align-items: center;
 }
-@media (max-width: 860px) {
+@media (max-width: 1000px) {
   .mkt-root .qa-grid { grid-template-columns: 1fr; }
 }
 
@@ -1124,6 +1292,10 @@
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mkt-root .qa-check-count {
@@ -1162,6 +1334,63 @@
 .mkt-root .qa-profile-stats b {
   color: var(--text);
   font-weight: 700;
+}
+
+/* ======================================================================
+   Phone (<=620px) — everything that isn't the flow or steps grid.
+   ====================================================================== */
+@media (max-width: 620px) {
+  .mkt-root section { padding: 44px 0; }
+  .mkt-root .section-head { margin-bottom: 22px; gap: 16px; }
+  .mkt-root .section-head-copy h2 { margin-top: 8px; }
+  .mkt-root nav.top .wrap { height: 54px; }
+  .mkt-root .brand { font-size: 24px; }
+
+  /* "12 ways to shape your data" is desktop-only. The flow diagram above it
+     already shows the ops in a running pipeline, so on a phone the chip grid
+     re-lists them without adding an argument. #unstructured keeps the same
+     .steps-grid / .steps-card rules below. */
+  .mkt-root main > section#steps { display: none; }
+  .mkt-root #unstructured .section-head p { display: none; }
+
+
+  /* --- Hero: one screen -------------------------------------------------
+     Desktop's hero is headline-block + a ~1100px step card. Stacked on a
+     phone that reads as two unrelated things and pushes the demo video
+     three screens down. Mobile drops the card entirely: the same "here is
+     what a pipeline looks like" job is done better by the demo video
+     directly below and by the #flow diagram. Nothing moves behind a tap. */
+  .mkt-root section.hero { padding: 28px 0 36px; }
+  .mkt-root .hero-viz { display: none; }
+  .mkt-root .hero-grid { gap: 0; }
+  .mkt-root .hero-ctas { gap: 8px; }
+  .mkt-root .hero-ctas .btn { flex: 1 1 auto; justify-content: center; padding: 12px 14px; }
+  .mkt-root .brk { display: none; }
+  .mkt-root p.lede-hero { margin: 16px 0 24px; }
+  .mkt-root .h-gap-lg { margin-top: 16px; }
+
+  /* quality — the three Check/Profile/Preview rows carry the claim on their
+     own. The orders_pipeline mock panel is a second telling of the same
+     thing and costs ~500px, so it is desktop-only. */
+  .mkt-root .qa-panel { display: none; }
+  .mkt-root .qa-rows { margin-top: 20px; }
+  .mkt-root .qa-row { padding: 11px 12px; gap: 10px; }
+  .mkt-root .qa-glyph { width: 28px; height: 28px; font-size: 10px; }
+
+  /* book — the embed is replaced by a link out to Cal's own mobile flow */
+  .mkt-root .book-grid { gap: 24px; }
+  .mkt-root .cal-panel { display: none; }
+  .mkt-root .cal-cta { display: flex; }
+  .mkt-root .book-copy p { margin-top: 14px; }
+  .mkt-root .book-copy .bullets { margin-top: 20px; gap: 10px; }
+
+  /* footer */
+  .mkt-root footer .wrap { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .mkt-root footer .right { gap: 14px; }
+}
+
+@media (max-width: 400px) {
+  .mkt-root .steps-card-label { font-size: 12px; }
 }
 
 /* Motion respect */

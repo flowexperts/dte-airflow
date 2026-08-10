@@ -52,6 +52,9 @@ export function RunsTable({ runs }: { runs: Run[] }) {
       render: (r) => <Pill status={pillFor(r.status)} />,
     },
     {
+      /* Why it ran. Beside Status because an unexpected failure asks "did
+         something trigger this, or did someone?" before it asks anything
+         else. */
       key: "trigger",
       header: "Trigger",
       width: "100px",
@@ -60,6 +63,27 @@ export function RunsTable({ runs }: { runs: Run[] }) {
           {r.schedule_id ? "Scheduled" : "Manual"}
         </span>
       ),
+    },
+    {
+      /* Which spec produced this. Sits next to Status because the two are
+         read as a pair when a run fails: "it broke — on which version?"
+         Links to the read-only revision so the answer is one click, not a
+         diff hunt through History. */
+      key: "revision",
+      header: "Version",
+      width: "110px",
+      render: (r) =>
+        r.revision_id ? (
+          <Link
+            href={`/pipelines/${encodeURIComponent(r.pipeline_id)}/revisions/${encodeURIComponent(r.revision_id)}`}
+            className="font-mono text-[12px] text-muted hover:text-accent"
+            title={`Pipeline as it stood for this run (${r.revision_id})`}
+          >
+            {r.revision_id.slice(0, 8)}
+          </Link>
+        ) : (
+          <span className="font-mono text-[12px] text-subtle">—</span>
+        ),
     },
     {
       key: "rows",

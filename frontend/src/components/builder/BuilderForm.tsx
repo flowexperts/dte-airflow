@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, Input, PageHeader, Segmented, Topbar } from "@/components/ui";
 import {
@@ -8,7 +8,6 @@ import {
   createPipeline,
   isPipelineGateError,
   pipelineStepSchemas,
-  updatePipeline,
   type Pipeline,
 } from "@/lib/api";
 import { SourcesPanel } from "./sources";
@@ -97,23 +96,12 @@ function AutoStepSchemas({ pipeline }: { pipeline: Pipeline }) {
   return null;
 }
 
-export function BuilderForm({
-  initial,
-  mode,
-  preview,
-  livePreview,
-}: {
-  initial: Pipeline;
-  mode: "create" | "edit";
-  /** Right-hand split-pane content — a static node (e.g. saved-pipeline
-   *  preview keyed by id). Ignored when `livePreview` is set. */
-  preview?: ReactNode;
-  /** When true, BuilderForm renders `<PipelinePreview pipelineId={pipeline}>`
-   *  itself, feeding the live builder state each edit (plan 038 item 6).
-   *  Cannot be handled via a callback prop because server components can't
-   *  pass functions across the client boundary. */
-  livePreview?: boolean;
-}) {
+/**
+ * Creation flow for a new pipeline. Editing an existing one happens on
+ * `/pipelines/[id]` — the canvas edits in place — so this form no longer
+ * carries an edit mode.
+ */
+export function BuilderForm({ initial }: { initial: Pipeline }) {
   const router = useRouter();
   const [pipeline, setPipeline] = useState<Pipeline>(initial);
   const [saving, setSaving] = useState(false);
@@ -191,17 +179,11 @@ export function BuilderForm({
     setSubmitErr(null);
     setFieldErrors({});
     try {
-      let destinationId = pipeline.id;
-      if (mode === "create") {
-        // Server generates the id — use the response, not the draft.
-        // Strip the placeholder empty id so the backend's default_factory fires.
-        const { id: _drop, ...body } = pipeline;
-        const created = await createPipeline(body as Pipeline);
-        destinationId = created.id;
-      } else {
-        await updatePipeline(pipeline.id, pipeline);
-      }
-      router.push(`/pipelines/${encodeURIComponent(destinationId)}`);
+      // Server generates the id — use the response, not the draft. Strip the
+      // placeholder empty id so the backend's default_factory fires.
+      const { id: _drop, ...body } = pipeline;
+      const created = await createPipeline(body as Pipeline);
+      router.push(`/pipelines/${encodeURIComponent(created.id)}`);
     } catch (e) {
       setSubmitErr(formatSaveError(e));
       setSaving(false);
@@ -223,28 +205,22 @@ export function BuilderForm({
             placeholder="Orders — nightly cohort"
           />
         </Field>
-        {mode === "edit" && (
-          <div className="text-xs text-subtle font-mono">id: {pipeline.id}</div>
-        )}
       </div>
-      {mode === "edit" ? (
-        <Field label="Pipeline type">
-          <span className="font-mono text-[12px] text-muted capitalize">
-            {pipeline.pipeline_type ?? "transform"}
-          </span>
-        </Field>
-      ) : (
-        <Field label="Pipeline type" hint="Transform writes output data; Quality asserts conditions on it.">
-          <Segmented<"transform" | "quality">
-            options={[
-              { value: "transform", label: "Transform" },
-              { value: "quality", label: "Quality" },
-            ]}
-            value={pipeline.pipeline_type ?? "transform"}
-            onChange={(v) => setPipeline((p: Pipeline) => ({ ...p, pipeline_type: v }))}
-          />
-        </Field>
-      )}
+      <Field
+        label="Pipeline type"
+        hint="Transform writes output data; Quality asserts conditions on it."
+      >
+        <Segmented<"transform" | "quality">
+          options={[
+            { value: "transform", label: "Transform" },
+            { value: "quality", label: "Quality" },
+          ]}
+          value={pipeline.pipeline_type ?? "transform"}
+          onChange={(v) =>
+            setPipeline((p: Pipeline) => ({ ...p, pipeline_type: v }))
+          }
+        />
+      </Field>
     </div>
   );
 
@@ -257,7 +233,7 @@ export function BuilderForm({
         crumbs={[
           { label: "Workspace", href: "/" },
           { label: "Pipelines", href: "/pipelines" },
-          { label: mode === "create" ? "New" : `Edit · ${initial.name}` },
+          { label: "New" },
         ]}
         actions={
           <>
@@ -282,14 +258,11 @@ export function BuilderForm({
         }
       />
       <PageHeader
-        title={mode === "create" ? "New pipeline" : `Editing ${initial.name}`}
-        sub={mode === "edit" ? pipeline.id : undefined}
+        title="New pipeline"
       />
 
-      {preview || livePreview ? (() => {
-        const previewNode = livePreview
-          ? <PipelinePreview pipelineId={pipeline} />
-          : preview;
+      {(() => {
+        const previewNode = <PipelinePreview pipelineId={pipeline} />;
         return (
         <div
           className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] overflow-hidden"
@@ -341,52 +314,7 @@ export function BuilderForm({
           </div>
         </div>
       );
-      })() : (
-        <div className="px-14 py-8 space-y-6">
-          {submitErr && (
-            <div className="p-3 border border-red rounded bg-code-bg text-red font-mono text-[12.5px]">
-              {submitErr}
-            </div>
-          )}
-
-          {fieldGrid}
-
-          <SourcesPanel
-            sources={pipeline.sources ?? []}
-            onChange={(sources) => {
-              setPipeline({ ...pipeline, sources });
-              touchField("sources", sources);
-            }}
-            error={fieldErrors.sources}
-          />
-
-          {isQuality ? (
-            <p className="text-muted text-sm">
-              Quality pipelines produce a quality report, not a data output.
-            </p>
-          ) : (
-            <DestinationPicker
-              outputId={pipeline.output_id ?? ""}
-              onChange={(output_id) => {
-                setPipeline({ ...pipeline, output_id });
-                touchField("output_id", output_id);
-              }}
-              error={fieldErrors.output_id}
-            />
-          )}
-
-          <InputsPanel
-            params={pipeline.params ?? []}
-            onChange={(params) => setPipeline({ ...pipeline, params })}
-          />
-
-          <StepsPanel
-            steps={(pipeline.steps ?? []) as StepShape[]}
-            onChange={(steps) => setPipeline({ ...pipeline, steps })}
-            pipelineType={pipeline.pipeline_type ?? "transform"}
-          />
-        </div>
-      )}
+      })()}
      </PipelineParamsProvider>
     </SchemaProvider>
   );

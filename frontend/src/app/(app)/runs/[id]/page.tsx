@@ -33,6 +33,7 @@ import {
 import { RunOutputPreview } from "@/components/run-output-preview";
 import { Diagnostics } from "@/components/run/diagnostics";
 import { QualityPanel, QualityStrip } from "@/components/run/quality-panel";
+import { FailedSteps, FixStepLink } from "@/components/run/failed-steps";
 import { StatRail, StatRow } from "@/components/run/stat-rail";
 import { VerdictBanner } from "@/components/run/verdict-banner";
 import {
@@ -44,6 +45,21 @@ import {
   type Tone,
 } from "@/components/run/helpers";
 import { humanizeCompilerError } from "@/lib/errors";
+import type { StepShape } from "@/components/builder/steps/types";
+
+/** Quality results carry the label their `check` step declared, which is the
+ *  only handle we have to point back at it. Unlabelled checks get no link
+ *  rather than a wrong one. */
+function checkStepIndex(
+  pipeline: Pipeline | undefined,
+  label: string | null | undefined,
+): number {
+  if (!pipeline || !label) return -1;
+  const steps = (pipeline.steps ?? []) as StepShape[];
+  return steps.findIndex(
+    (s) => (s.op === "check" || s.op === "profile") && s.label === label,
+  );
+}
 
 type Params = Promise<{ id: string }>;
 
@@ -52,9 +68,13 @@ function RevisionLink({ run }: { run: Run }) {
   return (
     <>
       Compiled from revision{" "}
+      {/* The revision, not the pipeline. Pointing at the live pipeline showed
+          whatever it looks like now — which is exactly the spec that did NOT
+          produce this run once anyone has edited since. */}
       <Link
-        href={`/pipelines/${encodeURIComponent(run.pipeline_id)}`}
+        href={`/pipelines/${encodeURIComponent(run.pipeline_id)}/revisions/${encodeURIComponent(run.revision_id)}`}
         className="text-accent hover:underline"
+        title="Open the pipeline as it stood for this run (read-only)"
       >
         {run.revision_id.slice(0, 8)}
       </Link>
@@ -97,10 +117,12 @@ function QualityRunBody({
   run,
   results,
   events,
+  pipeline,
 }: {
   run: Run;
   results: QualityCheckResult[];
   events: RunEvent[];
+  pipeline: Pipeline | undefined;
 }) {
   const tally = qualityTally(results, run.quality);
   const bad = tally.failed + tally.warned;
@@ -141,9 +163,25 @@ function QualityRunBody({
         )
       )}
 
+      <FailedSteps events={events} pipeline={pipeline} />
+
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_268px] xl:grid-cols-[1fr_320px] gap-5 items-start">
         {results.length > 0 ? (
-          <QualityPanel results={results} totalRows={null} failedCount={bad} />
+          <QualityPanel
+            results={results}
+            totalRows={null}
+            failedCount={bad}
+            actionFor={(r) => {
+              const idx = checkStepIndex(pipeline, r.label);
+              return !r.passed && idx >= 0 && pipeline ? (
+                <FixStepLink
+                  pipelineId={pipeline.id}
+                  index={idx}
+                  label="Edit check"
+                />
+              ) : null;
+            }}
+          />
         ) : (
           <Panel>
             <PanelHead label="Quality checks" />
@@ -197,12 +235,14 @@ function TransformRunBody({
   results,
   events,
   destination,
+  pipeline,
 }: {
   run: Run;
   runId: string;
   results: QualityCheckResult[];
   events: RunEvent[];
   destination: Destination | undefined;
+  pipeline: Pipeline | undefined;
 }) {
   const tally = qualityTally(results, run.quality);
   const bad = tally.failed + tally.warned;
@@ -242,6 +282,8 @@ function TransformRunBody({
         )
       )}
 
+      <FailedSteps events={events} pipeline={pipeline} />
+
       <MetricRow className="lg:grid-cols-4">
         <Metric
           label="Rows written"
@@ -274,7 +316,21 @@ function TransformRunBody({
       />
 
       {results.length > 0 && (
-        <QualityStrip results={results} totalRows={rows} failedCount={bad} />
+        <QualityStrip
+          results={results}
+          totalRows={rows}
+          failedCount={bad}
+          actionFor={(r) => {
+            const idx = checkStepIndex(pipeline, r.label);
+            return !r.passed && idx >= 0 && pipeline ? (
+              <FixStepLink
+                pipelineId={pipeline.id}
+                index={idx}
+                label="Edit check"
+              />
+            ) : null;
+          }}
+        />
       )}
 
       <TriggerParams run={run} />
@@ -369,7 +425,12 @@ export default function RunDetail({ params }: { params: Params }) {
           ) : isLoading || !data ? (
             <div className="text-subtle font-mono text-sm">Loading…</div>
           ) : isQuality ? (
-            <QualityRunBody run={data} results={results} events={events} />
+            <QualityRunBody
+              run={data}
+              results={results}
+              events={events}
+              pipeline={pipeline}
+            />
           ) : (
             <TransformRunBody
               run={data}
@@ -377,6 +438,7 @@ export default function RunDetail({ params }: { params: Params }) {
               results={results}
               events={events}
               destination={destination}
+              pipeline={pipeline}
             />
           )}
         </div>

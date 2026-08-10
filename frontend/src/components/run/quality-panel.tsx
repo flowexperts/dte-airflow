@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Panel, PanelHead, Pill } from "@/components/ui";
 import type { QualityCheckResult } from "@/lib/api";
 import { checkTone, parseViolations, toneVar } from "./helpers";
@@ -13,12 +13,15 @@ function statusLabel(r: QualityCheckResult): string {
 export function QualityCheckRow({
   result,
   totalRows,
+  action,
 }: {
   result: QualityCheckResult;
   /** Denominator for the violation bar. Null when the run wrote nothing to
    *  measure against (quality pipelines) — the bar is dropped rather than
    *  invented. */
   totalRows: number | null;
+  /** Trailing affordance, e.g. a link back to the check that failed. */
+  action?: ReactNode;
 }) {
   const tone = checkTone(result);
   const violations = result.passed ? null : parseViolations(result.detail);
@@ -50,8 +53,11 @@ export function QualityCheckRow({
             </span>
           )}
         </div>
-        <div className="text-[12.5px] text-muted mt-1">
-          {result.detail ?? (result.passed ? "All rows passed" : "—")}
+        <div className="flex items-baseline gap-3">
+          <div className="text-[12.5px] text-muted mt-1 min-w-0">
+            {result.detail ?? (result.passed ? "All rows passed" : "—")}
+          </div>
+          {action && <span className="ml-auto">{action}</span>}
         </div>
         {pct !== null && (
           <div className="flex items-center gap-2.5 mt-2.5">
@@ -79,10 +85,14 @@ export function QualityPanel({
   results,
   totalRows,
   failedCount,
+  actionFor,
 }: {
   results: QualityCheckResult[];
   totalRows: number | null;
   failedCount: number;
+  /** Per-result trailing affordance. Client-only — never pass this from a
+   *  server component. */
+  actionFor?: (r: QualityCheckResult) => ReactNode;
 }) {
   return (
     <Panel>
@@ -98,7 +108,12 @@ export function QualityPanel({
         }
       />
       {results.map((r) => (
-        <QualityCheckRow key={r.contract_id} result={r} totalRows={totalRows} />
+        <QualityCheckRow
+          key={r.contract_id}
+          result={r}
+          totalRows={totalRows}
+          action={actionFor?.(r)}
+        />
       ))}
     </Panel>
   );
@@ -111,10 +126,14 @@ export function QualityStrip({
   results,
   totalRows,
   failedCount,
+  actionFor,
 }: {
   results: QualityCheckResult[];
   totalRows: number | null;
   failedCount: number;
+  /** Per-result trailing affordance. Client-only — never pass this from a
+   *  server component. */
+  actionFor?: (r: QualityCheckResult) => ReactNode;
 }) {
   const [open, setOpen] = useState(failedCount > 0);
 
@@ -142,7 +161,12 @@ export function QualityStrip({
       {open && (
         <div className="border-t border-border">
           {results.map((r) => (
-            <QualityCheckRow key={r.contract_id} result={r} totalRows={totalRows} />
+            <QualityCheckRow
+              key={r.contract_id}
+              result={r}
+              totalRows={totalRows}
+              action={actionFor?.(r)}
+            />
           ))}
         </div>
       )}

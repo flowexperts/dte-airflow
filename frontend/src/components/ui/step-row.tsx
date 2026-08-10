@@ -105,14 +105,21 @@ export function KVItem({
   );
 }
 
-export function AddStep({ onClick }: { onClick?: () => void }) {
+export function AddStep({
+  onClick,
+  label = "Add step",
+}: {
+  onClick?: () => void;
+  /** Quality pipelines add checks, not steps. */
+  label?: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       className="w-full text-center py-3 px-3.5 border-t border-dashed border-border font-medium text-xs text-subtle hover:text-accent hover:bg-[color:var(--accent-tint)] transition-colors"
     >
-      <span className="text-accent font-bold mr-1">+</span> Add step
+      <span className="text-accent font-bold mr-1">+</span> {label}
     </button>
   );
 }

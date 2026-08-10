@@ -3,6 +3,7 @@
 import { Button, Dropdown, Field, Input, Panel, PanelHead } from "@/components/ui";
 import type { ParamType, PipelineParam } from "@/lib/api";
 import { compatibleFor, type SystemVar } from "@/lib/system-vars";
+import { cn } from "@/lib/cn";
 
 const TYPES: ParamType[] = [
   "string",
@@ -36,7 +37,7 @@ export function InputsPanel({
   return (
     <Panel>
       <PanelHead label="Inputs" count={params.length} />
-      <div className="px-4 py-3 space-y-3">
+      <div className="@container px-4 py-3 space-y-3">
         {params.length === 0 && (
           <div className="font-mono text-[11.5px] text-subtle">
             No inputs declared. Add one to reference it as{" "}
@@ -47,16 +48,24 @@ export function InputsPanel({
         {params.map((p, i) => (
           <div
             key={i}
-            className="grid grid-cols-[1.2fr_120px_90px_1.2fr_1.5fr_28px] gap-2 items-end"
+            /* Stacked card below 720px; the original single row above it. The
+               6-column form needs ~820px and was overflowing a Panel that
+               clips (overflow-hidden), so the tail simply vanished. */
+            className={cn(
+              "grid grid-cols-2 gap-2 items-end",
+              "rounded-[var(--radius)] border border-border p-2.5",
+              "@[720px]:grid-cols-[1.2fr_120px_90px_1.2fr_1.5fr_28px]",
+              "@[720px]:border-0 @[720px]:p-0 @[720px]:rounded-none",
+            )}
           >
-            <Field label={i === 0 ? "Name" : undefined}>
+            <Field label="Name" className="col-span-2 @[720px]:col-span-1">
               <Input
                 value={p.name}
                 onChange={(e) => update(i, { name: e.target.value })}
                 placeholder="start_date"
               />
             </Field>
-            <Field label={i === 0 ? "Type" : undefined}>
+            <Field label="Type">
               <select
                 value={p.type}
                 onChange={(e) => update(i, { type: e.target.value as ParamType })}
@@ -69,7 +78,7 @@ export function InputsPanel({
                 ))}
               </select>
             </Field>
-            <Field label={i === 0 ? "Required" : undefined}>
+            <Field label="Required">
               <label className="inline-flex items-center gap-1.5 text-[12.5px] text-muted">
                 <input
                   type="checkbox"
@@ -79,7 +88,7 @@ export function InputsPanel({
                 required
               </label>
             </Field>
-            <Field label={i === 0 ? "Default" : undefined}>
+            <Field label="Default" className="col-span-2 @[720px]:col-span-1">
               {(() => {
                 const dynOpts = compatibleFor(p.type);
                 const raw = p.default ?? "";
@@ -119,7 +128,7 @@ export function InputsPanel({
                 </datalist>
               )}
             </Field>
-            <Field label={i === 0 ? "Description" : undefined}>
+            <Field label="Description" className="col-span-2 @[720px]:col-span-1">
               <Input
                 value={p.description ?? ""}
                 onChange={(e) =>
@@ -131,7 +140,7 @@ export function InputsPanel({
             <button
               type="button"
               onClick={() => remove(i)}
-              className="text-subtle hover:text-red text-sm h-[30px]"
+              className="col-span-2 justify-self-end text-subtle hover:text-red text-sm h-[30px] @[720px]:col-span-1"
               aria-label="Remove input"
             >
               ×
