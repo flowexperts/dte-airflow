@@ -69,14 +69,10 @@ export function AppSidebar() {
               indent
               active={on("/pipelines") && !on("/pipelines/new") && typeParam === "quality"}
             />
-            {can("pipeline:write") && (
-              <NavItem
-                href="/pipelines/new"
-                label="+ New pipeline"
-                indent
-                active={on("/pipelines/new")}
-              />
-            )}
+            {/* No "+ New pipeline" here. Creation belongs on the list page,
+                where the primary button sits beside the thing being added.
+                In the nav it read as a third kind of pipeline next to
+                Transform and Quality Check. */}
           </>
         )}
       </NavSections>
