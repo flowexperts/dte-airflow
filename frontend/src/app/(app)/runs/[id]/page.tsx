@@ -68,9 +68,13 @@ function RevisionLink({ run }: { run: Run }) {
   return (
     <>
       Compiled from revision{" "}
+      {/* The revision, not the pipeline. Pointing at the live pipeline showed
+          whatever it looks like now — which is exactly the spec that did NOT
+          produce this run once anyone has edited since. */}
       <Link
-        href={`/pipelines/${encodeURIComponent(run.pipeline_id)}`}
+        href={`/pipelines/${encodeURIComponent(run.pipeline_id)}/revisions/${encodeURIComponent(run.revision_id)}`}
         className="text-accent hover:underline"
+        title="Open the pipeline as it stood for this run (read-only)"
       >
         {run.revision_id.slice(0, 8)}
       </Link>
