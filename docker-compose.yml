@@ -62,6 +62,9 @@ services:
       # here; a real deployment needs an actual RWX volume).
       DTE_JOB_QUEUE_ENABLED: "true"
       DTE_SHARED_OUTPUT_FS: "true"
+      # Schedules (plan 047). The ticker itself runs on the worker; the API
+      # needs this on to expose the /schedules routes.
+      DTE_SCHEDULES_ENABLED: "true"
     command: >
       sh -c "ALEMBIC_URL=$$(echo $$DATABASE_URL | sed 's|+asyncpg||') &&
              DATABASE_URL=$$ALEMBIC_URL alembic upgrade head &&
@@ -99,6 +102,9 @@ services:
       DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:-}
       DTE_JOB_QUEUE_ENABLED: "true"
       DTE_SHARED_OUTPUT_FS: "true"
+      # The schedule ticker is a periodic task registered on this process.
+      # Without this the worker runs jobs but never fires schedules.
+      DTE_SCHEDULES_ENABLED: "true"
     command: python -m dte.worker
     volumes:
       - ./backend/dte:/app/dte

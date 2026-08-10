@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Button,
   Field,
@@ -20,6 +20,7 @@ import { PipelineParamsProvider } from "@/components/builder/params-context";
 import { SourcesPanel } from "@/components/builder/sources";
 import { DestinationPicker } from "@/components/builder/DestinationPicker";
 import { InputsPanel } from "@/components/builder/InputsPanel";
+import { SchedulePanel } from "@/components/builder/schedules/SchedulePanel";
 import type { StepShape } from "@/components/builder/steps/types";
 import {
   updatePipeline,
@@ -164,7 +165,25 @@ export function PipelineCanvas({
   const [openStep, setOpenStep] = useState<number | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [view, setView] = useState<PipelineView>("spec");
+  /* The tab lives in the URL (`?tab=runs`), not just in state, so it can be
+   * linked to — a run's breadcrumb points back at the pipeline's Runs tab,
+   * and Back returns to the tab you were on. Written with the History API
+   * rather than router.replace: this is a client-side view switch, and a
+   * router navigation would re-run the server component for no gain. */
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [view, setView] = useState<PipelineView>(
+    tabParam === "runs" || tabParam === "history" ? tabParam : "spec",
+  );
+
+  const changeView = (next: PipelineView) => {
+    setView(next);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (next === "spec") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState(null, "", url);
+  };
 
   /* Fetched at the canvas level, not inside the Runs pane: the tab badge
      shows last-run health on every tab, so the spec view answers "is this
@@ -226,8 +245,47 @@ export function PipelineCanvas({
     />
   );
 
-  /* Name and inputs are real but rarely-touched. Behind a disclosure so they
-   * don't push the steps — the thing you came to change — down the page. */
+  /* The name, first — it is what the page is about and the first thing
+   * anyone renames. Behind a disclosure it was three clicks from the top of
+   * a page already titled with it. Identity (id, type) rides along because
+   * it answers "am I on the right pipeline?", asked in the same glance. */
+  const identityBlock = (
+    <Panel>
+      <PanelHead label="Pipeline" />
+      <div className="px-3.5 py-3.5 space-y-3">
+        {canEdit ? (
+          <Field label="Name" hint="editable; unique per workspace">
+            <Input
+              value={pipeline.name}
+              onChange={(e) => patch({ name: e.target.value })}
+            />
+          </Field>
+        ) : (
+          <Field label="Name">
+            <span className="text-[13px] text-muted">{pipeline.name}</span>
+          </Field>
+        )}
+        <div className="font-mono text-[11px] text-subtle">
+          {pipeline.id} · {quality ? "quality" : "transform"}
+        </div>
+      </div>
+    </Panel>
+  );
+
+  /* Inputs sit immediately above the schedule, because a schedule supplies
+   * values for them: the schedule form collects one value per declared
+   * input, and a required input with no value fails every scheduled run.
+   * Declaring has to come before scheduling, so it reads in that order. */
+  /* No wrapping Panel — InputsPanel brings its own Panel and header. */
+  const inputsBlock = canEdit ? (
+    <InputsPanel
+      params={pipeline.params ?? []}
+      onChange={(params) => patch({ params })}
+    />
+  ) : null;
+
+  /* What's left after name and inputs moved out. Kept collapsed — nothing
+   * here is touched during ordinary editing. */
   const settingsBlock = (
     <Panel>
       <button
@@ -245,41 +303,32 @@ export function PipelineCanvas({
             ▶
           </span>
           <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle">
-            Settings
+            Advanced
           </span>
-        </span>
-        <span className="text-xs text-subtle">
-          name · {(pipeline.params ?? []).length} input
-          {(pipeline.params ?? []).length === 1 ? "" : "s"}
         </span>
       </button>
       {settingsOpen && (
         <div className="border-t border-border px-3.5 py-3.5 space-y-4">
-          {canEdit ? (
-            <Field label="Name" hint="editable; unique per workspace">
-              <Input
-                value={pipeline.name}
-                onChange={(e) => patch({ name: e.target.value })}
-              />
-            </Field>
-          ) : (
-            <Field label="Name">
-              <span className="text-[13px] text-muted">{pipeline.name}</span>
-            </Field>
-          )}
-          <div className="font-mono text-[11px] text-subtle">id: {pipeline.id}</div>
           <div className="font-mono text-[11px] text-subtle">
-            type: {quality ? "quality" : "transform"}
+            engine: {pipeline.engine ?? "duckdb"}
           </div>
-          {canEdit && (
-            <InputsPanel
-              params={pipeline.params ?? []}
-              onChange={(params) => patch({ params })}
-            />
-          )}
         </div>
       )}
     </Panel>
+  );
+
+  /* When it runs, sitting with where it reads from and writes to.
+   *
+   * A schedule is part of the pipeline's contract — in, out, and when — not
+   * an operational afterthought, so it belongs in the spec column beside the
+   * endpoints rather than on a settings page you have to go find. Placed
+   * after the destination so the column reads in → out → when, with the
+   * steps (the body) following.
+   *
+   * Hidden on a revision: schedules are not versioned, so showing one beside
+   * a historical spec would imply a cadence that spec never carried. */
+  const scheduleBlock = revision ? null : (
+    <SchedulePanel pipelineId={pipeline.id} pipelineParams={pipeline.params} />
   );
 
   /* No rail on a revision. Preview compiles the *saved* pipeline, so showing
@@ -386,7 +435,7 @@ export function PipelineCanvas({
               { value: "history", label: "History" },
             ]}
             value={view}
-            onChange={setView}
+            onChange={changeView}
             className="max-w-md border-b-0"
           />
         </div>
@@ -412,8 +461,11 @@ export function PipelineCanvas({
                   Vertical rather than side by side because both are
                   full-width forms, and reading down keeps the in → out
                   direction the steps below continue. */}
+              {identityBlock}
               {sourcesBlock}
               {outputBlock}
+              {inputsBlock}
+              {scheduleBlock}
               {stepsBlock}
               {settingsBlock}
             </div>
@@ -425,7 +477,7 @@ export function PipelineCanvas({
 
         {view === "runs" && (
           <div className="px-14 py-8">
-            <RunsPane runs={runs} />
+            <RunsPane pipelineId={pipeline.id} />
           </div>
         )}
 

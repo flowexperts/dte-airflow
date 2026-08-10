@@ -275,6 +275,9 @@ export interface Run {
   location: string | null;
   started_at: string | null;
   finished_at: string | null;
+  /** Set when this run was fired by a schedule rather than a manual
+   *  trigger (plan 047 task 4 / migration 033). Null for manual runs. */
+  schedule_id?: string | null;
   /** Resolved trigger-time context: `{ params: {…}, now, today, yesterday, … }`.
    *  Only populated for runs started after plan 040 shipped. */
   params?: RunParams | null;
@@ -363,10 +366,46 @@ async function readTokenServer(): Promise<string | null> {
   return store.get(TOKEN_COOKIE_NAME)?.value ?? null;
 }
 
+/** A page of results plus how many there are in total. */
+export interface Page<T> {
+  items: T[];
+  total: number;
+}
+
+/**
+ * Same request as `apiFetch`, but keeps `X-Total-Count`.
+ *
+ * The list endpoints return a plain array and put the total in a header, so a
+ * pager that only sees the parsed body can move forward but never knows how
+ * far it has to go. When the header is missing — an older backend, or a
+ * response the browser can't read cross-origin — `total` falls back to the
+ * page length, which degrades to "one page" rather than to a broken count.
+ */
+export async function apiFetchPage<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<Page<T>> {
+  const { data, res } = await apiRequest<T[]>(path, init);
+  const header = res.headers.get("X-Total-Count");
+  const parsed = header === null ? NaN : Number(header);
+  const items = data ?? [];
+  return {
+    items,
+    total: Number.isFinite(parsed) ? parsed : items.length,
+  };
+}
+
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  return (await apiRequest<T>(path, init)).data;
+}
+
+async function apiRequest<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ data: T; res: Response }> {
   const url = path.startsWith("http") ? path : `${BASE}${path}`;
   const token = typeof window === "undefined" ? await readTokenServer() : readToken();
   const res = await fetch(url, {
@@ -401,8 +440,8 @@ export async function apiFetch<T>(
     const detailStr = typeof detail === "string" ? detail : JSON.stringify(detail);
     throw new ApiError(res.status, detailStr, url, detail);
   }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  if (res.status === 204) return { data: undefined as T, res };
+  return { data: (await res.json()) as T, res };
 }
 
 export interface CurrentUser {
@@ -509,6 +548,12 @@ export const listPipelineRuns = (id: string, limit = 50) =>
     `/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}`,
   );
 
+/** Paged variant — carries the total so the pager can size itself. */
+export const listPipelineRunsPage = (id: string, limit: number, offset: number) =>
+  apiFetchPage<Run>(
+    `/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}&offset=${offset}`,
+  );
+
 // ---------- Pipeline revisions (plan 037) ----------
 
 export interface PipelineRevision {
@@ -550,6 +595,15 @@ export interface RevisionDiffResponse {
 export const listPipelineRevisions = (id: string, limit = 100) =>
   apiFetch<PipelineRevision[]>(
     `/api/pipelines/${encodeURIComponent(id)}/revisions?limit=${limit}`,
+  );
+
+export const listPipelineRevisionsPage = (
+  id: string,
+  limit: number,
+  offset: number,
+) =>
+  apiFetchPage<PipelineRevision>(
+    `/api/pipelines/${encodeURIComponent(id)}/revisions?limit=${limit}&offset=${offset}`,
   );
 
 export const getPipelineRevision = (pipelineId: string, revisionId: string) =>
@@ -703,6 +757,61 @@ export const inferSchema = (source: Source) =>
   apiFetch<{ fields: SchemaField[] }>(`/api/schema/infer`, {
     method: "POST",
     body: JSON.stringify(source),
+  });
+
+// ---------- Schedules (plan 047) ----------
+
+/** `ScheduleBase` mirror — routes return the untyped `Schedule` SQLModel
+ *  as a dict, same as `Run`, so this is hand-typed rather than generated. */
+export type OverlapPolicy = "skip" | "allow";
+
+export interface Schedule {
+  id: string;
+  pipeline_id: string;
+  cron_expr: string;
+  timezone: string;
+  params: Record<string, string>;
+  enabled: boolean;
+  overlap: OverlapPolicy;
+  /** Ticker-owned bookkeeping — never client-settable. */
+  next_run_at: string | null;
+  last_run_id: string | null;
+  last_fired_at: string | null;
+}
+
+/** Matches `ScheduleWriteRequest` on the backend — shared POST/PUT body. */
+export interface ScheduleWriteRequest {
+  id?: string;
+  cron_expr: string;
+  timezone: string;
+  params: Record<string, string>;
+  enabled: boolean;
+  overlap: OverlapPolicy;
+}
+
+export const listSchedulesForPipeline = (pipelineId: string) =>
+  apiFetch<Schedule[]>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/schedules`,
+  );
+
+export const createSchedule = (pipelineId: string, body: ScheduleWriteRequest) =>
+  apiFetch<Schedule>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/schedules`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const getSchedule = (id: string) =>
+  apiFetch<Schedule>(`/api/schedules/${encodeURIComponent(id)}`);
+
+export const updateSchedule = (id: string, body: ScheduleWriteRequest) =>
+  apiFetch<Schedule>(`/api/schedules/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteSchedule = (id: string) =>
+  apiFetch<void>(`/api/schedules/${encodeURIComponent(id)}`, {
+    method: "DELETE",
   });
 
 export const isTerminal = (status: RunStatus | undefined): boolean =>

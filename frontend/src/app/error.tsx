@@ -3,6 +3,20 @@
 import { useEffect } from "react";
 import { humanizeError } from "@/lib/errors";
 
+/**
+ * `redirect()` and `notFound()` signal by throwing, and this boundary sits
+ * above them — so without this check a 401 bouncing to /login renders as the
+ * literal string "NEXT_REDIRECT" instead of navigating. Re-throw so Next's
+ * own handler upstream can act on it.
+ *
+ * Digest prefixes come from next/dist/client/components/redirect-error.js and
+ * http-access-fallback.js.
+ */
+const isNextControlFlow = (e: { digest?: string }) =>
+  typeof e.digest === "string" &&
+  (e.digest.startsWith("NEXT_REDIRECT") ||
+    e.digest.startsWith("NEXT_HTTP_ERROR_FALLBACK"));
+
 export default function GlobalError({
   error,
   reset,
@@ -11,8 +25,11 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
+    if (isNextControlFlow(error)) return;
     console.error("App error boundary caught:", error);
   }, [error]);
+
+  if (isNextControlFlow(error)) throw error;
 
   const human = humanizeError(error);
 

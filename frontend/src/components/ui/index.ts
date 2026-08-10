@@ -30,6 +30,7 @@ export { Item, Tag } from "./item";
 export { Metric, MetricRow } from "./metric";
 export { Timeline, TimelineRow, InlineCode } from "./timeline";
 export { Field, Input, Textarea, Segmented } from "./form";
+export { Pagination } from "./pagination";
 export { Tabs } from "./tabs";
 export type { TabOption } from "./tabs";
 export { usePopoverPosition } from "./use-popover-position";

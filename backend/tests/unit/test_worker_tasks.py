@@ -35,6 +35,29 @@ def test_execute_pipeline_lives_in_worker_tasks_module():
     assert hasattr(pipelines_mod, "_run_body")
 
 
+def test_enqueue_run_lives_in_worker_tasks_module():
+    """plan 047 task 4: enqueue_run (formerly _enqueue_run, private to
+    pipelines.py) moves to dte.worker.tasks so the ticker
+    (dte.worker.scheduler, task 5) can share it instead of duplicating the
+    same-connection insert-then-defer dance."""
+    import dte.api.routes.pipelines as pipelines_mod
+    import dte.worker.tasks as tasks_mod
+
+    assert hasattr(tasks_mod, "enqueue_run")
+    assert not hasattr(pipelines_mod, "_enqueue_run")
+
+
+def test_enqueue_run_accepts_tenant_id_and_schedule_id():
+    import inspect
+
+    from dte.worker.tasks import enqueue_run
+
+    params = inspect.signature(enqueue_run).parameters
+    assert list(params) == ["pipeline_id", "revision_id", "tenant_id", "schedule_id"]
+    assert params["tenant_id"].kind == inspect.Parameter.KEYWORD_ONLY
+    assert params["schedule_id"].default is None
+
+
 def test_execute_pipeline_signature_unchanged():
     """The extracted function keeps the exact positional-arg contract the
     trigger endpoint (and any future queue payload) depends on."""

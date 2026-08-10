@@ -40,6 +40,10 @@ dependencies = [
     # rationale as the pinned cryptography version above.
     "procrastinate>=3.0,<4.0",
     "psycopg[binary,pool]>=3.1,<4.0",
+    # Cron scheduling (plan 047). Already a transitive dep of procrastinate
+    # (its @app.periodic uses it internally) — declared explicitly since
+    # dte.scheduling.cron imports it directly.
+    "croniter>=2.0,<7.0",
 ]
 
 [project.optional-dependencies]

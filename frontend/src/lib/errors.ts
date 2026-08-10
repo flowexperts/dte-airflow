@@ -247,3 +247,23 @@ export function humanizeCompilerError(raw: string | null | undefined): HumanErro
     kind: "server",
   };
 }
+
+/**
+ * Re-throw Next's control-flow errors, swallow everything else.
+ *
+ * `redirect()` and `notFound()` signal by throwing. A bare
+ * `.catch(() => null)` around a server-side fetch therefore eats the 401
+ * bounce to /login and renders the page as if the resource were merely
+ * missing. Use this instead: `getSource(id).catch(orNull<Source>)`.
+ */
+export function orNull<T>(e: unknown): T | null {
+  const digest = (e as { digest?: unknown })?.digest;
+  if (
+    typeof digest === "string" &&
+    (digest.startsWith("NEXT_REDIRECT") ||
+      digest.startsWith("NEXT_HTTP_ERROR_FALLBACK"))
+  ) {
+    throw e;
+  }
+  return null;
+}

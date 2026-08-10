@@ -15,6 +15,7 @@ from dte.models.pipeline import (
     LookupTable, LookupTableBase,
     Pipeline, PipelineBase,
     PipelineRevision, PipelineRevisionBase,
+    Schedule, ScheduleBase,
     Source, SourceBase,
 )
 from dte.models.user import Role, User, UserBase
@@ -117,6 +118,7 @@ class FakeRunStore:
             "sql_query": None,
             "job_id": None,
             "last_heartbeat_at": None,
+            "schedule_id": None,
         }
         return run_id
 
@@ -128,8 +130,14 @@ class FakeRunStore:
         if run.get("status") in _TERMINAL_STATUSES and run.get("finished_at") is None:
             run["finished_at"] = _utcnow_iso()
 
-    async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
-        return [r for r in self._data.values() if r["pipeline_id"] == pipeline_id][:limit]
+    async def list_for_pipeline(
+        self, pipeline_id: str, limit: int = 50, offset: int = 0
+    ) -> list[dict]:
+        rows = [r for r in self._data.values() if r["pipeline_id"] == pipeline_id]
+        return rows[offset : offset + limit]
+
+    async def count_for_pipeline(self, pipeline_id: str) -> int:
+        return sum(1 for r in self._data.values() if r["pipeline_id"] == pipeline_id)
 
     async def delete_for_pipeline(self, pipeline_id: str) -> int:
         to_remove = [rid for rid, r in self._data.items() if r["pipeline_id"] == pipeline_id]
@@ -167,11 +175,14 @@ class FakePipelineRevisionStore:
         return self._data.get(id)
 
     async def list_for_pipeline(
-        self, pipeline_id: str, limit: int = 100
+        self, pipeline_id: str, limit: int = 100, offset: int = 0
     ) -> list[PipelineRevision]:
         items = [r for r in self._data.values() if r.pipeline_id == pipeline_id]
         items.sort(key=lambda r: r.changed_at or _utcnow(), reverse=True)
-        return items[:limit]
+        return items[offset : offset + limit]
+
+    async def count_for_pipeline(self, pipeline_id: str) -> int:
+        return sum(1 for r in self._data.values() if r.pipeline_id == pipeline_id)
 
     async def latest_for_pipeline(self, pipeline_id: str) -> PipelineRevision | None:
         items = await self.list_for_pipeline(pipeline_id, limit=1)
@@ -441,6 +452,49 @@ class FakeLookupTableStore:
             reverse=True,
         )
         return items[offset:offset + limit]
+
+    async def delete(self, id: str) -> bool:
+        if id in self._data:
+            del self._data[id]
+            return True
+        return False
+
+
+class FakeScheduleStore:
+    """In-memory schedule store for tests. `list_due`/`advance` mirror the
+    ticker-facing (RLS-bypassing) side of `PostgresScheduleStore` — no
+    tenant filtering, since the real ticker deliberately sees every
+    tenant's due schedules in one pass."""
+
+    def __init__(self):
+        self._data: dict[str, Schedule] = {}
+
+    async def get(self, id: str) -> Schedule | None:
+        return self._data.get(id)
+
+    async def save(self, schedule: "ScheduleBase | Schedule") -> None:
+        existing = self._data.get(schedule.id)
+        row = Schedule(**schedule.model_dump(exclude={"created_at", "updated_at"}))
+        row.created_at = existing.created_at if existing else _utcnow()
+        row.updated_at = _utcnow()
+        self._data[row.id] = row
+
+    async def list_for_pipeline(self, pipeline_id: str) -> list[Schedule]:
+        items = [s for s in self._data.values() if s.pipeline_id == pipeline_id]
+        return sorted(items, key=lambda s: s.created_at or _utcnow(), reverse=True)
+
+    async def list_due(self, now: datetime) -> list[Schedule]:
+        return [
+            s for s in self._data.values()
+            if s.enabled and s.next_run_at is not None and s.next_run_at <= now
+        ]
+
+    async def advance(self, id: str, **fields) -> None:
+        row = self._data.get(id)
+        if row is None:
+            return
+        for k, v in fields.items():
+            setattr(row, k, v)
 
     async def delete(self, id: str) -> bool:
         if id in self._data:

@@ -27,6 +27,7 @@ from dte.store.postgres import (
     PostgresRoleStore,
     PostgresRunEventStore,
     PostgresRunStore,
+    PostgresScheduleStore,
     PostgresSourceStore,
     PostgresUserStore,
 )
@@ -82,6 +83,10 @@ def get_role_store():
 
 def get_lookup_table_store():
     return PostgresLookupTableStore(_session_factory())
+
+
+def get_schedule_store():
+    return PostgresScheduleStore(_session_factory())
 
 
 # Swagger UI Authorize button wires to this URL.

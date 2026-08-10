@@ -18,6 +18,7 @@ from dte.api.routes.connections import router as connections_router
 from dte.api.routes.destinations import router as destinations_router
 from dte.api.routes.health import router as health_router
 from dte.api.routes.lookup_tables import router as lookup_tables_router
+from dte.api.routes.schedules import router as schedules_router
 from dte.api.routes.pipelines import router as pipelines_router
 from dte.api.routes.runs import router as runs_router
 from dte.api.routes.schema import router as schema_router
@@ -80,6 +81,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # allow_headers governs the *request*; response headers stay invisible to
+    # cross-origin JS unless named here. Without this the pager reads
+    # undefined for X-Total-Count in the browser while passing in tests.
+    expose_headers=["X-Total-Count"],
 )
 
 register_error_handlers(app)
@@ -101,6 +106,7 @@ app.include_router(sources_router, prefix="/api", dependencies=_auth)
 app.include_router(destinations_router, prefix="/api", dependencies=_auth)
 app.include_router(connections_router, prefix="/api", dependencies=_auth)
 app.include_router(lookup_tables_router, prefix="/api", dependencies=_auth)
+app.include_router(schedules_router, prefix="/api", dependencies=_auth)
 app.include_router(users_router, prefix="/api", dependencies=_auth)
 
 # Mount FastAdmin at /admin when DTE_ADMIN_ENABLED=true. Off by default so

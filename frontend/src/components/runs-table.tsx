@@ -52,6 +52,19 @@ export function RunsTable({ runs }: { runs: Run[] }) {
       render: (r) => <Pill status={pillFor(r.status)} />,
     },
     {
+      /* Why it ran. Beside Status because an unexpected failure asks "did
+         something trigger this, or did someone?" before it asks anything
+         else. */
+      key: "trigger",
+      header: "Trigger",
+      width: "100px",
+      render: (r) => (
+        <span className="font-mono text-[11px] text-subtle">
+          {r.schedule_id ? "Scheduled" : "Manual"}
+        </span>
+      ),
+    },
+    {
       /* Which spec produced this. Sits next to Status because the two are
          read as a pair when a run fails: "it broke — on which version?"
          Links to the read-only revision so the answer is one click, not a

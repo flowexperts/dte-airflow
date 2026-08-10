@@ -1,7 +1,7 @@
 """Worker process entrypoint — `python -m dte.worker` (plan 046 task 6).
 
 Runs a procrastinate worker pool that dequeues and executes `execute_run`
-jobs, the same task `_enqueue_run` (dte/api/routes/pipelines.py) defers
+jobs, the same task `dte.worker.tasks.enqueue_run` defers
 when `DTE_JOB_QUEUE_ENABLED` is on. This is a separate deployable from the
 API process — see plan 046's "Deployment topology": `dte-api` stays
 stateless/HPA-scaled on request rate, `dte-worker` scales on run
