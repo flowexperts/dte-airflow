@@ -227,8 +227,47 @@ export function PipelineCanvas({
     />
   );
 
-  /* Name and inputs are real but rarely-touched. Behind a disclosure so they
-   * don't push the steps — the thing you came to change — down the page. */
+  /* The name, first — it is what the page is about and the first thing
+   * anyone renames. Behind a disclosure it was three clicks from the top of
+   * a page already titled with it. Identity (id, type) rides along because
+   * it answers "am I on the right pipeline?", asked in the same glance. */
+  const identityBlock = (
+    <Panel>
+      <PanelHead label="Pipeline" />
+      <div className="px-3.5 py-3.5 space-y-3">
+        {canEdit ? (
+          <Field label="Name" hint="editable; unique per workspace">
+            <Input
+              value={pipeline.name}
+              onChange={(e) => patch({ name: e.target.value })}
+            />
+          </Field>
+        ) : (
+          <Field label="Name">
+            <span className="text-[13px] text-muted">{pipeline.name}</span>
+          </Field>
+        )}
+        <div className="font-mono text-[11px] text-subtle">
+          {pipeline.id} · {quality ? "quality" : "transform"}
+        </div>
+      </div>
+    </Panel>
+  );
+
+  /* Inputs sit immediately above the schedule, because a schedule supplies
+   * values for them: the schedule form collects one value per declared
+   * input, and a required input with no value fails every scheduled run.
+   * Declaring has to come before scheduling, so it reads in that order. */
+  /* No wrapping Panel — InputsPanel brings its own Panel and header. */
+  const inputsBlock = canEdit ? (
+    <InputsPanel
+      params={pipeline.params ?? []}
+      onChange={(params) => patch({ params })}
+    />
+  ) : null;
+
+  /* What's left after name and inputs moved out. Kept collapsed — nothing
+   * here is touched during ordinary editing. */
   const settingsBlock = (
     <Panel>
       <button
@@ -246,38 +285,15 @@ export function PipelineCanvas({
             ▶
           </span>
           <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle">
-            Settings
+            Advanced
           </span>
-        </span>
-        <span className="text-xs text-subtle">
-          name · {(pipeline.params ?? []).length} input
-          {(pipeline.params ?? []).length === 1 ? "" : "s"}
         </span>
       </button>
       {settingsOpen && (
         <div className="border-t border-border px-3.5 py-3.5 space-y-4">
-          {canEdit ? (
-            <Field label="Name" hint="editable; unique per workspace">
-              <Input
-                value={pipeline.name}
-                onChange={(e) => patch({ name: e.target.value })}
-              />
-            </Field>
-          ) : (
-            <Field label="Name">
-              <span className="text-[13px] text-muted">{pipeline.name}</span>
-            </Field>
-          )}
-          <div className="font-mono text-[11px] text-subtle">id: {pipeline.id}</div>
           <div className="font-mono text-[11px] text-subtle">
-            type: {quality ? "quality" : "transform"}
+            engine: {pipeline.engine ?? "duckdb"}
           </div>
-          {canEdit && (
-            <InputsPanel
-              params={pipeline.params ?? []}
-              onChange={(params) => patch({ params })}
-            />
-          )}
         </div>
       )}
     </Panel>
@@ -427,8 +443,10 @@ export function PipelineCanvas({
                   Vertical rather than side by side because both are
                   full-width forms, and reading down keeps the in → out
                   direction the steps below continue. */}
+              {identityBlock}
               {sourcesBlock}
               {outputBlock}
+              {inputsBlock}
               {scheduleBlock}
               {stepsBlock}
               {settingsBlock}

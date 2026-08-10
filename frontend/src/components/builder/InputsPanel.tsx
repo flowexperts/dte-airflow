@@ -52,12 +52,27 @@ export function InputsPanel({
                6-column form needs ~820px and was overflowing a Panel that
                clips (overflow-hidden), so the tail simply vanished. */
             className={cn(
-              "grid grid-cols-2 gap-2 items-end",
+              "relative grid grid-cols-2 gap-2 items-end",
               "rounded-[var(--radius)] border border-border p-2.5",
               "@[720px]:grid-cols-[1.2fr_120px_90px_1.2fr_1.5fr_28px]",
               "@[720px]:border-0 @[720px]:p-0 @[720px]:rounded-none",
             )}
           >
+            {/* Pinned to the card corner while stacked, so it costs no grid
+                row — as a row it left a 30px empty band above the first
+                field. Rejoins the trailing 28px column once the row unstacks. */}
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className={cn(
+                "absolute right-2 top-2 z-10 leading-none text-subtle hover:text-red text-sm",
+                "@[720px]:static @[720px]:order-last @[720px]:col-span-1",
+                "@[720px]:justify-self-end @[720px]:h-[30px]",
+              )}
+              aria-label="Remove input"
+            >
+              ×
+            </button>
             <Field label="Name" className="col-span-2 @[720px]:col-span-1">
               <Input
                 value={p.name}
@@ -137,14 +152,6 @@ export function InputsPanel({
                 placeholder="what this input controls"
               />
             </Field>
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              className="col-span-2 justify-self-end text-subtle hover:text-red text-sm h-[30px] @[720px]:col-span-1"
-              aria-label="Remove input"
-            >
-              ×
-            </button>
           </div>
         ))}
         <Button variant="ghost" size="sm" onClick={add}>
