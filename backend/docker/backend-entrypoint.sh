@@ -1,6 +1,16 @@
 #!/bin/sh
 set -e
 
+# A custom command (e.g. `python -m dte.worker`) runs as-is. Without this the
+# hardcoded `exec uvicorn` below silently swallowed compose's `command:` and
+# the worker service came up as a second API replica.
+#
+# Migrations are skipped on that path on purpose: the `backend` service owns
+# schema upgrades, and workers already wait on its healthcheck.
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 if [ -n "$DATABASE_URL" ]; then
     ALEMBIC_URL=$(echo "$DATABASE_URL" | sed 's|+asyncpg||')
     echo "Running alembic migrations…"
