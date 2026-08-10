@@ -7,6 +7,7 @@ import {
   type Destination,
   type Source,
 } from "@/lib/api";
+import { orNull } from "@/lib/errors";
 import { PipelineCanvas } from "@/components/pipeline/canvas";
 
 export const dynamic = "force-dynamic";
@@ -23,13 +24,11 @@ export default async function PipelineDetail({ params }: { params: Params }) {
     const [sources, destination] = await Promise.all([
       Promise.all(
         (pipeline.sources ?? []).map((sid) =>
-          getSource(sid).catch(() => null as Source | null),
+          getSource(sid).catch(orNull<Source>),
         ),
       ),
       pipeline.output_id
-        ? getDestination(pipeline.output_id).catch(
-            () => null as Destination | null,
-          )
+        ? getDestination(pipeline.output_id).catch(orNull<Destination>)
         : Promise.resolve(null),
     ]);
 
