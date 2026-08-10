@@ -3,9 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { Button, Panel, Tag } from "@/components/ui";
-import { listPipelineRevisions, type PipelineRevision } from "@/lib/api";
+import { Button, Pagination, Panel, Tag } from "@/components/ui";
+import { listPipelineRevisionsPage, type PipelineRevision } from "@/lib/api";
 import { DiffView } from "./DiffView";
+
+const REVISIONS_PAGE_SIZE = 20;
 
 /**
  * Lists revisions newest-first, lets the user pin two to diff. Selection
@@ -16,9 +18,11 @@ import { DiffView } from "./DiffView";
  * helper so PipelineRevision[] flows through with no cast.
  */
 export function HistoryPanel({ pipelineId }: { pipelineId: string }) {
+  const [offset, setOffset] = useState(0);
   const { data, error, isLoading } = useSWR(
-    ["pipeline-revisions", pipelineId],
-    () => listPipelineRevisions(pipelineId),
+    ["pipeline-revisions", pipelineId, offset],
+    () => listPipelineRevisionsPage(pipelineId, REVISIONS_PAGE_SIZE, offset),
+    { keepPreviousData: true },
   );
   const [selected, setSelected] = useState<string[]>([]);
 
@@ -32,7 +36,8 @@ export function HistoryPanel({ pipelineId }: { pipelineId: string }) {
       </div>
     );
   }
-  const revs = data ?? [];
+  const revs = data?.items ?? [];
+  const total = data?.total ?? 0;
   if (revs.length === 0) {
     return (
       <div className="text-[12px] text-subtle px-3 py-4">
@@ -68,6 +73,12 @@ export function HistoryPanel({ pipelineId }: { pipelineId: string }) {
             onToggle={() => toggle(rev.id)}
           />
         ))}
+        <Pagination
+          total={total}
+          limit={REVISIONS_PAGE_SIZE}
+          offset={offset}
+          onChange={setOffset}
+        />
       </Panel>
       {selected.length > 0 && (
         <div className="flex items-center gap-3 text-[12px] text-subtle">

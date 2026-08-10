@@ -130,8 +130,14 @@ class FakeRunStore:
         if run.get("status") in _TERMINAL_STATUSES and run.get("finished_at") is None:
             run["finished_at"] = _utcnow_iso()
 
-    async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
-        return [r for r in self._data.values() if r["pipeline_id"] == pipeline_id][:limit]
+    async def list_for_pipeline(
+        self, pipeline_id: str, limit: int = 50, offset: int = 0
+    ) -> list[dict]:
+        rows = [r for r in self._data.values() if r["pipeline_id"] == pipeline_id]
+        return rows[offset : offset + limit]
+
+    async def count_for_pipeline(self, pipeline_id: str) -> int:
+        return sum(1 for r in self._data.values() if r["pipeline_id"] == pipeline_id)
 
     async def delete_for_pipeline(self, pipeline_id: str) -> int:
         to_remove = [rid for rid, r in self._data.items() if r["pipeline_id"] == pipeline_id]
@@ -169,11 +175,14 @@ class FakePipelineRevisionStore:
         return self._data.get(id)
 
     async def list_for_pipeline(
-        self, pipeline_id: str, limit: int = 100
+        self, pipeline_id: str, limit: int = 100, offset: int = 0
     ) -> list[PipelineRevision]:
         items = [r for r in self._data.values() if r.pipeline_id == pipeline_id]
         items.sort(key=lambda r: r.changed_at or _utcnow(), reverse=True)
-        return items[:limit]
+        return items[offset : offset + limit]
+
+    async def count_for_pipeline(self, pipeline_id: str) -> int:
+        return sum(1 for r in self._data.values() if r.pipeline_id == pipeline_id)
 
     async def latest_for_pipeline(self, pipeline_id: str) -> PipelineRevision | None:
         items = await self.list_for_pipeline(pipeline_id, limit=1)

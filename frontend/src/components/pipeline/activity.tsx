@@ -1,10 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
-import { Panel } from "@/components/ui";
+import { Pagination, Panel } from "@/components/ui";
 import { HistoryPanel } from "@/components/builder/history/HistoryPanel";
 import { RunsTable } from "@/components/runs-table";
-import { listPipelineRuns, type Run } from "@/lib/api";
+import { listPipelineRuns, listPipelineRunsPage, type Run } from "@/lib/api";
 
 /**
  * Past-tense views of a pipeline, as page-level panes rather than a section.
@@ -22,7 +23,9 @@ import { listPipelineRuns, type Run } from "@/lib/api";
  * present tense and re-runs as you type.
  */
 
-/** Shared by the panes and by the tab badge, so one fetch serves both. */
+export const RUNS_PAGE_SIZE = 20;
+
+/** Latest runs only — feeds the tab badge, not the table. */
 export function usePipelineRuns(pipelineId: string) {
   const { data } = useSWR<Run[]>(
     ["pipeline-runs", pipelineId],
@@ -37,8 +40,27 @@ export function usePipelineRuns(pipelineId: string) {
   return data ?? [];
 }
 
-export function RunsPane({ runs }: { runs: Run[] }) {
-  if (runs.length === 0) {
+export function RunsPane({ pipelineId }: { pipelineId: string }) {
+  const [offset, setOffset] = useState(0);
+
+  const { data, isLoading } = useSWR(
+    ["pipeline-runs-page", pipelineId, offset],
+    () => listPipelineRunsPage(pipelineId, RUNS_PAGE_SIZE, offset),
+    {
+      // Hold the previous page while the next one loads, so paging doesn't
+      // collapse the table to an empty state and bounce the scroll position.
+      keepPreviousData: true,
+      refreshInterval: (latest) =>
+        latest?.items.some((r) => r.status === "running" || r.status === "pending")
+          ? 3000
+          : 0,
+    },
+  );
+
+  const runs = data?.items ?? [];
+  const total = data?.total ?? 0;
+
+  if (!isLoading && total === 0) {
     return (
       <Panel>
         <div className="px-4 py-16 text-center text-sm text-subtle">
@@ -47,11 +69,18 @@ export function RunsPane({ runs }: { runs: Run[] }) {
       </Panel>
     );
   }
+
   return (
     <Panel>
       <div className="p-3">
         <RunsTable runs={runs} />
       </div>
+      <Pagination
+        total={total}
+        limit={RUNS_PAGE_SIZE}
+        offset={offset}
+        onChange={setOffset}
+      />
     </Panel>
   );
 }

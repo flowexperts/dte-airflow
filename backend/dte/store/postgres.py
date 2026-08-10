@@ -172,11 +172,13 @@ class PostgresRunStore:
             )
             await s.commit()
 
-    async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
+    async def list_for_pipeline(
+        self, pipeline_id: str, limit: int = 50, offset: int = 0
+    ) -> list[dict]:
         async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks, sql_query, job_id, last_heartbeat_at, schedule_id FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
-                {"pid": pipeline_id, "limit": limit}
+                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks, sql_query, job_id, last_heartbeat_at, schedule_id FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit OFFSET :offset"),
+                {"pid": pipeline_id, "limit": limit, "offset": offset}
             )
             rows = []
             for row in result.mappings().fetchall():
@@ -188,6 +190,17 @@ class PostgresRunStore:
                 d["quality"] = _quality_summary_dicts(raw_quality)
                 rows.append(d)
             return rows
+
+    async def count_for_pipeline(self, pipeline_id: str) -> int:
+        """Total runs, for the pager. Separate query rather than a window
+        function on the page: the page is capped, the count is not, and a
+        COUNT on the (pipeline_id) index is cheap."""
+        async with _open_tenant_session(self._factory) as s:
+            row = await s.execute(
+                text("SELECT COUNT(*) FROM runs WHERE pipeline_id = :pid"),
+                {"pid": pipeline_id},
+            )
+            return int(row.scalar_one())
 
     async def delete_for_pipeline(self, pipeline_id: str) -> int:
         async with _open_tenant_session(self._factory) as s:
@@ -243,16 +256,26 @@ class PostgresPipelineRevisionStore:
             return await s.get(PipelineRevision, id)
 
     async def list_for_pipeline(
-        self, pipeline_id: str, limit: int = 100
+        self, pipeline_id: str, limit: int = 100, offset: int = 0
     ) -> list[PipelineRevision]:
         stmt = (
             select(PipelineRevision)
             .where(PipelineRevision.pipeline_id == pipeline_id)
             .order_by(PipelineRevision.changed_at.desc())
             .limit(limit)
+            .offset(offset)
         )
         async with _open_tenant_session(self._factory) as s:
             return list((await s.execute(stmt)).scalars().all())
+
+    async def count_for_pipeline(self, pipeline_id: str) -> int:
+        stmt = (
+            select(sa_func.count())
+            .select_from(PipelineRevision)
+            .where(PipelineRevision.pipeline_id == pipeline_id)
+        )
+        async with _open_tenant_session(self._factory) as s:
+            return int((await s.execute(stmt)).scalar_one())
 
     async def latest_for_pipeline(self, pipeline_id: str) -> PipelineRevision | None:
         stmt = (

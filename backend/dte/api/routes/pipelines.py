@@ -389,13 +389,18 @@ async def delete_pipeline(
 )
 async def list_pipeline_revisions(
     pipeline_id: str,
+    response: Response,
     limit: int = 100,
+    offset: int = 0,
     p_store: PipelineStore = Depends(get_pipeline_store),
     rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
 ):
     if not await p_store.get(pipeline_id):
         raise HTTPException(status_code=404, detail="Pipeline not found")
-    return await rev_store.list_for_pipeline(pipeline_id, limit=limit)
+    response.headers["X-Total-Count"] = str(
+        await rev_store.count_for_pipeline(pipeline_id)
+    )
+    return await rev_store.list_for_pipeline(pipeline_id, limit=limit, offset=offset)
 
 
 @router.get(

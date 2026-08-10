@@ -77,6 +77,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # allow_headers governs the *request*; response headers stay invisible to
+    # cross-origin JS unless named here. Without this the pager reads
+    # undefined for X-Total-Count in the browser while passing in tests.
+    expose_headers=["X-Total-Count"],
 )
 
 register_error_handlers(app)
