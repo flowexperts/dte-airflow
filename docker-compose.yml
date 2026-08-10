@@ -53,6 +53,15 @@ services:
       # are unstable in arm64 containers on Apple Silicon (SIGILL / exit 132
       # on file change). Polling costs a bit of CPU but is rock solid.
       WATCHFILES_FORCE_POLLING: "true"
+      # Distributed run execution (plan 046): trigger enqueues a
+      # procrastinate job instead of an in-process asyncio.create_task; the
+      # `worker` service below executes it. Both flags must agree with the
+      # worker's — see plan 046, "Sharp edge 1" for why shared_output_fs
+      # must be true when local_fs sources/destinations cross the two
+      # containers (the /tmp/dte-samples bind mount is what makes that true
+      # here; a real deployment needs an actual RWX volume).
+      DTE_JOB_QUEUE_ENABLED: "true"
+      DTE_SHARED_OUTPUT_FS: "true"
     command: >
       sh -c "ALEMBIC_URL=$$(echo $$DATABASE_URL | sed 's|+asyncpg||') &&
              DATABASE_URL=$$ALEMBIC_URL alembic upgrade head &&
@@ -72,6 +81,36 @@ services:
       timeout: 3s
       retries: 6
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dte:dte@postgres:5432/dte
+      DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:-}
+      DTE_JOB_QUEUE_ENABLED: "true"
+      DTE_SHARED_OUTPUT_FS: "true"
+    command: python -m dte.worker
+    volumes:
+      - ./backend/dte:/app/dte
+      # Same bind mount as `backend` — this is what makes DTE_SHARED_OUTPUT_FS
+      # true in dev Compose; a k8s deployment needs a real RWX volume here.
+      - /tmp/dte-samples:/tmp/dte-samples
+    depends_on:
+      # Waits for backend's healthcheck, not just postgres's, so migration
+      # 029 (procrastinate's own schema) has definitely run before the
+      # worker starts polling for jobs.
+      backend:
+        condition: service_healthy
     deploy:
       resources:
         limits:

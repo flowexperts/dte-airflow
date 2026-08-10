@@ -276,6 +276,14 @@ Dev mode mounts `./backend/dte` and `./backend/alembic` into the backend contain
 
 CORS origins are read from `DTE_CORS_ORIGINS` (default `http://localhost:3000`). Secrets backend is chosen at process start based on `DTE_SECRETS_BACKEND` and `DTE_SECRETS_KEY`. Tracing is opt-in via `DTE_TRACING_ENABLED=1`. Auth is JWT-based; the first registered user becomes an admin.
 
+### Distributed run execution (opt-in)
+
+By default a run is an `asyncio.create_task` inside the API process. Setting `DTE_JOB_QUEUE_ENABLED=true` moves execution to a separate `dte-worker` deployable (`python -m dte.worker`): `POST /trigger` inserts the run row and enqueues a procrastinate job **in one transaction** (run row exists ⟺ job exists), and a worker executes it. The queue is Postgres-backed — no second datastore. `_run_body` is identical in both modes; only dispatch differs.
+
+Two consequences. First, `local_fs` sources and destinations can't cross a process boundary, so they're rejected at trigger (422 `local_fs_not_shared`) unless `DTE_SHARED_OUTPUT_FS=true` declares an RWX mount. Second, a killed worker can't clean up after itself, so workers heartbeat every 30s (`runs.last_heartbeat_at`) and a reaper fails out runs stale beyond 2× that. Runs are never auto-retried — they aren't idempotent against a destination.
+
+See `docs/user/self-hosting/scaling.md` for the operator-facing version.
+
 ## Where to look next
 
 - **`CLAUDE.md`** — day-to-day conventions, coding rules, test tiers, worktree workflow. Read this before making a code change.

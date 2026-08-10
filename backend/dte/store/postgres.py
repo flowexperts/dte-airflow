@@ -121,7 +121,7 @@ class PostgresRunStore:
     async def get(self, id: str) -> dict | None:
         async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks, sql_query FROM runs WHERE id = :id"),
+                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks, sql_query, job_id, last_heartbeat_at FROM runs WHERE id = :id"),
                 {"id": id}
             )
             row = result.mappings().fetchone()
@@ -130,6 +130,7 @@ class PostgresRunStore:
             d = dict(row)
             d["started_at"] = d["started_at"].isoformat() if d.get("started_at") else None
             d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
+            d["last_heartbeat_at"] = d["last_heartbeat_at"].isoformat() if d.get("last_heartbeat_at") else None
             raw_quality = list(d.pop("quality_checks") or [])
             d["quality"] = _quality_summary_dicts(raw_quality)
             return d
@@ -170,7 +171,7 @@ class PostgresRunStore:
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50) -> list[dict]:
         async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks, sql_query FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
+                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks, sql_query, job_id, last_heartbeat_at FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit"),
                 {"pid": pipeline_id, "limit": limit}
             )
             rows = []
@@ -178,6 +179,7 @@ class PostgresRunStore:
                 d = dict(row)
                 d["started_at"] = d["started_at"].isoformat() if d.get("started_at") else None
                 d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
+                d["last_heartbeat_at"] = d["last_heartbeat_at"].isoformat() if d.get("last_heartbeat_at") else None
                 raw_quality = list(d.pop("quality_checks") or [])
                 d["quality"] = _quality_summary_dicts(raw_quality)
                 rows.append(d)

@@ -6,7 +6,18 @@
 
 ## Purpose + escalation
 
-DTE is a batch data-transformation platform: FastAPI backend (uvicorn on `:8001`), Postgres 16 (metadata + runs), Next.js frontend (`:3000`), DuckDB in-process for execution. Pipelines run as `asyncio.create_task` inside the backend process — **single-worker uvicorn**; there is no distributed scheduler.
+DTE is a batch data-transformation platform: FastAPI backend (uvicorn on `:8001`), Postgres 16 (metadata + runs), Next.js frontend (`:3000`), DuckDB for execution.
+
+**Check which execution mode this deployment is in before anything else** — the failure modes below differ:
+
+```bash
+docker compose exec backend printenv DTE_JOB_QUEUE_ENABLED
+```
+
+- **Unset / `false` (default)** — pipelines run as `asyncio.create_task` inside the backend process, single-worker uvicorn. Cancel only works on the process that started the run.
+- **`true` (distributed)** — `POST /trigger` enqueues a Postgres-backed procrastinate job; separate `dte-worker` processes (`python -m dte.worker`) execute it. Cancel is queue-native and works across replicas.
+
+Neither mode distributes a *single* run — DuckDB is single-node either way.
 
 Owners:
 
@@ -87,7 +98,8 @@ docker stats --no-stream dte-backend-1
 **Mitigate.**
 
 ```bash
-# Cancel via API (reaches the asyncio task via dte/runs.py in-process registry)
+# Cancel via API. Default mode: reaches the in-process asyncio task.
+# Distributed mode: queue-native abort via the run's job_id — works from any replica.
 curl -X POST http://localhost:8001/api/runs/<RUN_ID>/cancel
 
 # If cancel returns false (task already gone but row stuck), mark failed manually:
@@ -95,11 +107,23 @@ docker compose exec postgres psql -U dte -d dte -c \
   "UPDATE runs SET status='failed', error='manually cancelled — stuck task'
     WHERE id='<RUN_ID>' AND status='running';"
 
-# Last resort: recycle backend (kills ALL in-flight runs — the registry is process-local)
+# Last resort. Default mode: recycle backend (kills ALL in-flight runs).
 docker compose up -d --force-recreate backend
+# Distributed mode: recycle only the workers — API stays up and serving.
+docker compose up -d --force-recreate worker
 ```
 
-**Root-cause.** Check `run_max_rows` guard in `dte/runs.py`. Pipelines that exceed the row ceiling raise `RunTimeout` / `RunCancelled` cleanly; if this isn't happening the guard is disabled or the step is DuckDB-native (raw SQL escape hatch) and bypasses row-count checks. Grep compiler for `con.sql(` to identify raw-SQL steps in the failing pipeline.
+**Distributed mode: prefer waiting to intervening.** Workers heartbeat every 30s and the reaper fails out any `running` run whose heartbeat is >60s stale. A run orphaned by a killed worker cleans itself up within ~a minute — check `last_heartbeat_at` before hand-editing rows:
+
+```bash
+docker compose exec postgres psql -U dte -d dte -c \
+  "SELECT id, status, now() - last_heartbeat_at AS heartbeat_age
+     FROM runs WHERE status='running' ORDER BY started_at;"
+```
+
+A live `heartbeat_age` under 30s means the run is genuinely working, not stuck. Runs are **never** retried automatically — a partially-written destination is not safe to re-run unattended.
+
+**Root-cause.** Check the `run_max_rows` guard (`dte/config.py`, enforced in the execution path — `dte/worker/tasks.py`). Pipelines that exceed the row ceiling raise `RunTimeout` / `RunCancelled` cleanly; if this isn't happening the guard is disabled or the step is DuckDB-native (raw SQL escape hatch) and bypasses row-count checks. Grep compiler for `con.sql(` to identify raw-SQL steps in the failing pipeline.
 
 ### 2. Postgres unreachable / connection pool exhausted
 

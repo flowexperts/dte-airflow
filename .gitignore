@@ -16,3 +16,6 @@ node_modules/
 !.env.local.example
 scripts/demo/out/
 scripts/demo/node_modules/
+
+# Local per-worktree compose port remap (see file header)
+docker-compose.override.yml

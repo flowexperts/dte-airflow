@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import json
-import time
 
 import ibis
 
@@ -23,7 +22,6 @@ class TriggerRequest(BaseModel):
 
     params: dict[str, str] = Field(default_factory=dict)
 
-from dte import runs as run_registry
 from dte.api.deps import (
     get_connection_store,
     get_current_user,
@@ -44,10 +42,9 @@ from dte.compiler.interpolate import (
 )
 from dte.pipelines.diff import diff_pipeline, summarise_diff
 from dte.config import get_settings
-from dte import metrics
 from dte.engine.duckdb_engine import DuckDBEngine  # noqa: F401 — still used as type hint fallback
 from dte.engine.registry import get_engine
-from dte.logging import decrypt_context_var, get_logger, run_id_var
+from dte.logging import decrypt_context_var, get_logger
 from dte.engine.backend_registry import BackendRegistry
 from dte.models.pipeline import (
     Connection,
@@ -75,6 +72,30 @@ from dte.tracing import tracer
 
 router = APIRouter()
 _log = get_logger("dte.pipelines")
+
+# Process-local registry of in-flight asyncio tasks for the flag-off
+# (DTE_JOB_QUEUE_ENABLED=False) trigger path — the pre-plan-046 `dte.runs`
+# module's job, now private here since it's only ever consulted by
+# `cancel_run` for runs with no `job_id`. Distributed (job-queue) runs
+# don't need this at all: `cancel_run` cancels those via
+# `procrastinate`'s cancel-by-job-id, which works regardless of which
+# worker pod picked the job up. This registry remains process-local by
+# nature — sufficient for a single-container self-hosted deployment,
+# the only topology that ever runs with the flag off.
+_local_run_tasks: dict[str, asyncio.Task] = {}
+
+
+def _register_local_task(run_id: str, task: asyncio.Task) -> None:
+    _local_run_tasks[run_id] = task
+    task.add_done_callback(lambda _t, rid=run_id: _local_run_tasks.pop(rid, None))
+
+
+def _cancel_local_task(run_id: str) -> bool:
+    task = _local_run_tasks.get(run_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    return True
 
 
 async def _record_revision(
@@ -219,6 +240,54 @@ async def _validate_engine_compat(
         raise HTTPException(status_code=422, detail=e.payload()) from e
 
     return resolved
+
+
+async def _check_shared_fs_guard(
+    pipeline: PipelineBase,
+    s_store: SourceStore,
+    d_store: DestinationStore,
+    c_store: ConnectionStore,
+) -> None:
+    """Reject (422) a trigger when the job queue is on, the output
+    filesystem isn't shared across pods, and the pipeline touches a
+    `local_fs` source or destination (plan 046 "Sharp edge 1"). Only
+    called when `settings.job_queue_enabled and not settings.shared_output_fs`
+    — assumes `_resolve`/`_resolve_sources` already confirmed every id
+    exists, so a missing lookup here is silently skipped rather than
+    re-raised (that 422 already fired).
+    """
+    offending: list[str] = []
+    for sid in pipeline.sources:
+        source = await s_store.get(sid)
+        if not source:
+            continue
+        conn = await c_store.get(source.connection_id)
+        if conn and conn.connection_type == "local_fs":
+            offending.append(sid)
+
+    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    if not is_quality:
+        destination = await d_store.get(pipeline.output_id)
+        if destination:
+            dest_conn = await c_store.get(destination.connection_id)
+            if dest_conn and dest_conn.connection_type == "local_fs":
+                offending.append(destination.id)
+
+    if offending:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "local_fs_not_shared",
+                "message": (
+                    "DTE_JOB_QUEUE_ENABLED is on and DTE_SHARED_OUTPUT_FS is "
+                    "off: local_fs sources/destinations can't cross the "
+                    "API/worker process boundary. Use an s3/gcs/azure "
+                    "connection, or set DTE_SHARED_OUTPUT_FS=true if this "
+                    "deployment mounts a shared RWX volume."
+                ),
+                "offending_ids": offending,
+            },
+        )
 
 
 @router.post("/pipelines", dependencies=[Depends(requires("pipeline:write"))])
@@ -709,6 +778,13 @@ async def trigger_pipeline(
     # the engine matrix existed, or a source's connection type changed
     # since save.
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
+    settings = get_settings()
+    if settings.job_queue_enabled and not settings.shared_output_fs:
+        # plan 046 "Sharp edge 1": a local_fs source/destination is only
+        # readable by whichever process wrote/reads it. With execution
+        # split across an API pod and a worker pod (and no shared RWX
+        # volume), reject at trigger time rather than failing mid-run.
+        await _check_shared_fs_guard(pipeline, s_store, d_store, c_store)
     user_params = (body.params if body else {}) or {}
     # Resolve the interpolation context up-front so `now`/`today` snapshot at
     # trigger time (not at compile time deep inside the task) and get
@@ -722,6 +798,15 @@ async def trigger_pipeline(
         raise HTTPException(status_code=422, detail=str(e))
     latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
     revision_id = latest_rev.id if latest_rev else None
+
+    if settings.job_queue_enabled:
+        # Distributed path (plan 046): enqueue a procrastinate job instead
+        # of spawning an in-process task. A separate `python -m dte.worker`
+        # process executes it.
+        run_id, _job_id = await _enqueue_run(pipeline_id, revision_id)
+        await r_store.update(run_id, params=run_context)
+        return {"run_id": run_id}
+
     run_id = await r_store.create(pipeline_id, revision_id=revision_id)
     await r_store.update(run_id, params=run_context)
     # asyncio.create_task in CPython 3.7+ already copies the current context
@@ -736,6 +821,11 @@ async def trigger_pipeline(
         # This is belt-and-suspenders: create_task already propagates them, but
         # explicit is better than implicit for security-critical code.
         from dte.tenancy import tenant_context_var, get_current_tenant
+        # Local import: dte.worker.tasks imports `_run_body` from this module
+        # at import time, so importing it back at module scope here would be
+        # circular. _execute_pipeline itself is unchanged by plan 046 — only
+        # its address moved (dte.api.routes.pipelines -> dte.worker.tasks).
+        from dte.worker.tasks import _execute_pipeline
         _tid = _ctx.run(get_current_tenant)
         tok = tenant_context_var.set(_tid)
         try:
@@ -747,8 +837,52 @@ async def trigger_pipeline(
             tenant_context_var.reset(tok)
 
     task = asyncio.create_task(_task_with_context())
-    run_registry.register(run_id, task)
+    _register_local_task(run_id, task)
     return {"run_id": run_id}
+
+
+async def _enqueue_run(pipeline_id: str, revision_id: str | None) -> tuple[str, int]:
+    """Atomically insert the run row and enqueue its `execute_run` job.
+
+    True same-transaction atomicity needs both writes on the same
+    connection/driver. dte's stores use asyncpg (via SQLAlchemy);
+    procrastinate's async connector is psycopg (v3) — a different client
+    library, so an ordinary SQLAlchemy transaction can't span both. Instead
+    this borrows one connection from procrastinate's own psycopg pool,
+    inserts the run row on it with plain SQL (same raw-SQL style
+    `PostgresRunStore.create` uses), and defers the job on *that same
+    connection* via `Task.configure(connection=...)` — procrastinate's
+    documented mechanism for deferring inside a caller-managed transaction.
+    One commit. Run row exists iff job exists, by construction.
+    """
+    import uuid as _uuid
+
+    from dte.tenancy import get_current_tenant
+    from dte.worker.app import EXECUTE_RUN_TASK_NAME, get_running_app
+
+    app = await get_running_app()
+    tid = get_current_tenant()
+    run_id = str(_uuid.uuid4())
+    async with app.connector.pool.connection() as conn:
+        async with conn.transaction():
+            # RLS: `runs` has FORCE ROW LEVEL SECURITY with a USING policy
+            # on tenant_id — the INSERT needs the session var set on *this*
+            # connection, mirroring dte.store.postgres._open_tenant_session.
+            await conn.execute(
+                "SELECT set_config('dte.tenant_id', %s, true)", (tid,)
+            )
+            await conn.execute(
+                "INSERT INTO runs (id, pipeline_id, revision_id, status, tenant_id) "
+                "VALUES (%s, %s, %s, 'pending', %s)",
+                (run_id, pipeline_id, revision_id, tid),
+            )
+            job_id = await app.tasks[EXECUTE_RUN_TASK_NAME].configure(
+                connection=conn,
+            ).defer_async(run_id=run_id, pipeline_id=pipeline_id, tenant_id=tid)
+            await conn.execute(
+                "UPDATE runs SET job_id = %s WHERE id = %s", (job_id, run_id)
+            )
+    return run_id, job_id
 
 
 @router.get("/runs/{run_id}/events", dependencies=[Depends(requires("run:read"))])
@@ -770,72 +904,35 @@ async def cancel_run(run_id: str, r_store: RunStore = Depends(get_run_store)):
         raise HTTPException(status_code=404, detail="Run not found")
     if run.get("status") not in ("pending", "running"):
         raise HTTPException(status_code=409, detail=f"Run is already {run.get('status')}")
-    cancelled = run_registry.cancel(run_id)
+
+    job_id = run.get("job_id")
+    if job_id:
+        # Distributed path (plan 046): queue-native cancel. Works
+        # regardless of which worker pod picked up the job — no
+        # process-local state to consult. abort=True covers both a job
+        # still `todo` (marks it cancelled, never dequeued) and a job
+        # `doing` (procrastinate's worker cancels the asyncio task
+        # running it; the existing `except asyncio.CancelledError` handler
+        # in dte.worker.tasks._execute_pipeline already writes
+        # status=failed, error=cancelled).
+        from dte.worker.app import get_running_app
+
+        app = await get_running_app()
+        cancelled = await app.job_manager.cancel_job_by_id_async(job_id, abort=True)
+        if not cancelled:
+            # No job in a cancellable state — it already reached a
+            # terminal status between our read above and this call.
+            await r_store.update(run_id, status="failed", error="cancelled (job already finished)")
+            return {"cancelled": False, "detail": "job already finished"}
+        return {"cancelled": True}
+
+    cancelled = _cancel_local_task(run_id)
     if not cancelled:
         # No local task — likely a stale run from a previous worker. Best-effort
         # mark it cancelled so operators can move on.
         await r_store.update(run_id, status="failed", error="cancelled (no local task)")
         return {"cancelled": False, "detail": "no live task on this worker"}
     return {"cancelled": True}
-
-
-async def _execute_pipeline(
-    pipeline_id: str,
-    run_id: str,
-    p_store: PipelineStore,
-    r_store: RunStore,
-    re_store: RunEventStore,
-    s_store: SourceStore,
-    d_store: DestinationStore,
-    c_store: ConnectionStore,
-    lt_store: LookupTableStore,
-):
-    settings = get_settings()
-    token = run_id_var.set(run_id)
-    decrypt_context_var.set("pipeline_run")
-    await r_store.update(run_id, status="running")
-    _log.info("run started", extra={"pipeline_id": pipeline_id})
-    metrics.active_runs.inc()
-    started = time.monotonic()
-    final_status = "failed"  # pessimistic default; success path sets "completed"
-    try:
-        await asyncio.wait_for(
-            _run_body(
-                pipeline_id, run_id, p_store, r_store, re_store,
-                s_store, d_store, c_store, lt_store,
-            ),
-            timeout=settings.run_timeout_seconds,
-        )
-        final_status = "completed"
-    except TimeoutError:
-        _log.warning("run timed out", extra={"pipeline_id": pipeline_id})
-        await r_store.update(
-            run_id,
-            status="failed",
-            error=f"run exceeded timeout of {settings.run_timeout_seconds}s",
-        )
-    except asyncio.CancelledError:
-        _log.info("run cancelled", extra={"pipeline_id": pipeline_id})
-        await r_store.update(run_id, status="failed", error="cancelled")
-        final_status = "cancelled"
-    except Exception as e:
-        _log.exception("run failed", extra={"pipeline_id": pipeline_id})
-        await r_store.update(run_id, status="failed", error=str(e))
-    finally:
-        run_id_var.reset(token)
-        metrics.active_runs.dec()
-        metrics.pipeline_runs_total.labels(status=final_status).inc()
-        # Best-effort source_type label: pick the pipeline's first source kind.
-        # Multi-source runs still surface via HTTP RED metrics on trigger.
-        try:
-            pipeline = await p_store.get(pipeline_id)
-            first_src = await s_store.get(pipeline.sources[0]) if pipeline and pipeline.sources else None
-            src_type = first_src.source_type if first_src else "unknown"
-        except Exception:  # noqa — metric emission must never mask a run error
-            src_type = "unknown"
-        metrics.pipeline_run_duration_seconds.labels(source_type=src_type).observe(
-            time.monotonic() - started
-        )
 
 
 async def _run_body(
