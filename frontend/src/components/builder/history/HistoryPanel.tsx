@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { Button, Panel, Tag } from "@/components/ui";
 import { listPipelineRevisions, type PipelineRevision } from "@/lib/api";
@@ -81,6 +82,15 @@ export function HistoryPanel({ pipelineId }: { pipelineId: string }) {
   );
 }
 
+/**
+ * Two actions per row, so it can't be one big button.
+ *
+ * Selecting for a diff and opening the revision are different intents —
+ * "compare these two" versus "show me this one". The row body toggles the
+ * diff pin; "View" opens the read-only canvas. A `<Link>` nested inside a
+ * `<button>` is invalid HTML and swallows the click, so the toggle is its own
+ * element sitting beside the link rather than wrapping it.
+ */
 function RevisionRow({
   rev,
   selected,
@@ -94,22 +104,34 @@ function RevisionRow({
   const who = rev.changed_by ?? "system";
   const short = rev.id.slice(0, 8);
   return (
-    <button
-      type="button"
-      onClick={onToggle}
+    <div
       className={
-        "w-full text-left grid grid-cols-[auto_1fr_auto] gap-3 items-center px-3.5 py-3 border-b border-border last:border-b-0 hover:bg-hover transition-colors " +
+        "grid grid-cols-[1fr_auto] gap-3 items-center border-b border-border last:border-b-0 hover:bg-hover transition-colors " +
         (selected ? "bg-[color:var(--accent-tint)]" : "")
       }
     >
-      <span className="font-mono text-[10.5px] text-subtle">{short}</span>
-      <div className="min-w-0">
-        <div className="text-[13px]">{rev.summary ?? "(initial revision)"}</div>
-        <div className="font-mono text-[11px] text-subtle mt-0.5">
-          {when} · {who}
+      <button
+        type="button"
+        onClick={onToggle}
+        className="text-left grid grid-cols-[auto_1fr] gap-3 items-center px-3.5 py-3 min-w-0"
+      >
+        <span className="font-mono text-[10.5px] text-subtle">{short}</span>
+        <div className="min-w-0">
+          <div className="text-[13px]">{rev.summary ?? "(initial revision)"}</div>
+          <div className="font-mono text-[11px] text-subtle mt-0.5">
+            {when} · {who}
+          </div>
         </div>
+      </button>
+      <div className="flex items-center gap-2 pr-3.5">
+        {selected && <Tag>selected</Tag>}
+        <Link
+          href={`/pipelines/${encodeURIComponent(rev.pipeline_id)}/revisions/${encodeURIComponent(rev.id)}`}
+          className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-accent"
+        >
+          View
+        </Link>
       </div>
-      {selected && <Tag>selected</Tag>}
-    </button>
+    </div>
   );
 }
