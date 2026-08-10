@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CronExplainer } from "./CronExplainer";
 import { createPortal } from "react-dom";
 import { Button, Dropdown, Field, Input, Segmented } from "@/components/ui";
 import {
@@ -246,7 +247,10 @@ export function ScheduleForm({
             </Field>
           )}
 
-          {form.mode === "custom" && (
+          {form.mode === "custom" ? (
+            /* No "Composed cron" echo here — on Custom it restated the box
+               directly above it, character for character. The explainer is
+               the useful readback; the raw string is already on screen. */
             <Field label="Cron expression" hint="Standard 5-field cron. Validated server-side.">
               <Input
                 value={form.custom}
@@ -254,14 +258,18 @@ export function ScheduleForm({
                 placeholder="0 2 * * *"
                 className="font-mono"
               />
+              <CronExplainer expr={cronExpr} timezone={timezone} />
+            </Field>
+          ) : (
+            /* On the friendly tabs the cron string is derived and otherwise
+               invisible, so it is worth showing alongside the reading. */
+            <Field label="Composed cron" hint="What actually gets saved.">
+              <div className="font-mono text-[12px] text-text bg-bg border border-border rounded-[var(--radius)] px-2.5 py-1.5">
+                {cronExpr || "—"}
+              </div>
+              <CronExplainer expr={cronExpr} timezone={timezone} />
             </Field>
           )}
-
-          <Field label="Composed cron" hint="What actually gets saved.">
-            <div className="font-mono text-[12px] text-text bg-bg border border-border rounded-[var(--radius)] px-2.5 py-1.5">
-              {cronExpr || "—"}
-            </div>
-          </Field>
 
           <Field label="Timezone" hint="Defaults to your browser's timezone, not UTC.">
             <Dropdown<string>
