@@ -91,10 +91,15 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const q = query.trim().toLowerCase();
+  /* Type is searchable because the sidebar no longer splits Transform from
+   * Quality Check — typing "quality" has to be able to do what that nav
+   * entry did, or removing it would lose a capability. */
   const filtered = q
     ? rows.filter(
         (r) =>
-          r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q),
+          r.name.toLowerCase().includes(q) ||
+          r.id.toLowerCase().includes(q) ||
+          (r.pipeline_type ?? "transform").includes(q),
       )
     : rows;
 
