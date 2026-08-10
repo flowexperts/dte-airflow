@@ -40,6 +40,12 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    # Regex alternative to the exact-match list above. Starlette's
+    # allow_origins has no wildcard support, so any-port matching has to go
+    # through allow_origin_regex. Left unset by default: combined with
+    # allow_credentials=True a permissive pattern is not something to enable
+    # implicitly in production. Dev sets it in docker-compose.yml.
+    cors_origin_regex: str | None = None
 
     # Admin
     admin_enabled: bool = False

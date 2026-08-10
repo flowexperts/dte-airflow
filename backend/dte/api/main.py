@@ -72,6 +72,10 @@ app.mount("/metrics", make_asgi_app())
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_settings.cors_origin_list,
+    # Starlette matches allow_origins exactly, so any-port patterns
+    # (a second frontend on :3002, a worktree dev server) need the regex.
+    # None disables it, leaving the exact list as the only source of truth.
+    allow_origin_regex=_settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

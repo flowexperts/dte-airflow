@@ -30,6 +30,11 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://dte:dte@postgres:5432/dte
       DTE_CORS_ORIGINS: http://localhost:3000
+      # Any localhost / 127.0.0.1 port, so a second frontend (a worktree dev
+      # server on :3002, Vite on :5173) reaches the API without editing this
+      # file. Dev only — deployments should set DTE_CORS_ORIGINS explicitly
+      # and leave this unset, since it pairs with allow_credentials=True.
+      DTE_CORS_ORIGIN_REGEX: ^https?://(localhost|127\.0\.0\.1)(:\d+)?$
       # Fernet key for Connection.credentials encryption at rest.
       # Run `./scripts/bootstrap.sh` to generate. If unset, the backend
       # falls back to EnvSecretResolver (dev-only) and logs a warning.
