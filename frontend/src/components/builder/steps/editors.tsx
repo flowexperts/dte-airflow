@@ -563,10 +563,16 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   // suggest the same declared inputs to every value cell in this step.
   const paramsListId = `filter-params-${useId()}`;
 
-  // Mode is local UI state — not persisted on the step. On first mount, if
-  // there's an existing expr, default to Advanced.
-  const initialMode: "basic" | "advanced" = step.expr ? "advanced" : "basic";
-  const [mode, setMode] = useState<"basic" | "advanced">(initialMode);
+  // Mode is local UI state — not persisted on the step. Prefer Basic: it is
+  // the structured, injection-safe editor and where most conditions belong.
+  // We open in Advanced only when the saved SQL can't be represented as
+  // rules, because an empty Basic tab would read as "the filter is gone".
+  const parsedOnMount = useRef<FilterRule[] | null>(
+    step.expr ? tryParseBasicSql(step.expr as string) : [],
+  );
+  const [mode, setMode] = useState<"basic" | "advanced">(
+    parsedOnMount.current === null ? "advanced" : "basic",
+  );
 
   // Each tab keeps its own independent local state so switching tabs never
   // destroys content the user typed on the other tab.
@@ -576,10 +582,9 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   //
   // On first mount we try to pre-populate Basic by parsing the existing expr
   // so a round-trippable expression shows up immediately in Basic mode.
-  const [rules, setRules] = useState<FilterRule[]>(() => {
-    if (step.expr) return tryParseBasicSql(step.expr as string) ?? [];
-    return [];
-  });
+  const [rules, setRules] = useState<FilterRule[]>(
+    () => parsedOnMount.current ?? [],
+  );
   const [advancedText, setAdvancedText] = useState<string>(
     (step.expr as string) ?? "",
   );
@@ -1449,13 +1454,17 @@ function CheckEditor({ step, set }: StepEditorProps) {
   const declaredParams = usePipelineParams();
   const paramsListId = `check-params-${useId()}`;
 
-  const initialMode: "basic" | "advanced" = step.expr ? "advanced" : "basic";
-  const [mode, setMode] = useState<"basic" | "advanced">(initialMode);
+  // Basic unless the saved SQL can't round-trip — see FilterEditor.
+  const parsedOnMount = useRef<FilterRule[] | null>(
+    step.expr ? tryParseBasicSql(step.expr as string) : [],
+  );
+  const [mode, setMode] = useState<"basic" | "advanced">(
+    parsedOnMount.current === null ? "advanced" : "basic",
+  );
 
-  const [rules, setRules] = useState<FilterRule[]>(() => {
-    if (step.expr) return tryParseBasicSql(step.expr as string) ?? [];
-    return [];
-  });
+  const [rules, setRules] = useState<FilterRule[]>(
+    () => parsedOnMount.current ?? [],
+  );
   const [advancedText, setAdvancedText] = useState<string>(
     (step.expr as string) ?? "",
   );
