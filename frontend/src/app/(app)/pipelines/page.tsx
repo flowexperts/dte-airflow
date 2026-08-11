@@ -6,28 +6,34 @@ import { humanizeError, type HumanError } from "@/lib/errors";
 
 export const revalidate = 30; // list/detail shell — SWR handles freshness client-side (P2 #26)
 
-/**
- * One list, no `?type=` split.
- *
- * Transform and Quality were two nav entries pointing at the same page with a
- * filter applied, which made a *filter* look like two different places. The
- * table already carries a Type tag per row and its search box matches type, so
- * "just the quality ones" is a keystroke rather than a separate destination —
- * and the common question, "what pipelines do I have", stops being split
- * across two screens neither of which answers it.
- */
-export default async function PipelinesPage() {
+type SearchParams = Promise<{ type?: string }>;
+
+export default async function PipelinesPage({ searchParams }: { searchParams: SearchParams }) {
+  const { type } = await searchParams;
+  const pipelineType = type === "quality" ? "quality" : type === "transform" ? "transform" : null;
+
   let pipelines: Pipeline[] = [];
   let error: HumanError | null = null;
   try {
-    pipelines = await listPipelines();
+    const all = await listPipelines();
+    pipelines = pipelineType
+      ? all.filter((p) => (p.pipeline_type ?? "transform") === pipelineType)
+      : all;
   } catch (e) {
     error = humanizeError(e, { action: "load", entity: "pipelines" });
   }
 
-  const title = "Pipelines";
+  const title =
+    pipelineType === "quality"
+      ? "Quality pipelines"
+      : pipelineType === "transform"
+        ? "Transform pipelines"
+        : "Pipelines";
+
   const lede =
-    "Batch transformations and quality checks. Click a row to open it; filter by name, id, or type.";
+    pipelineType === "quality"
+      ? "Data quality checks. Each run asserts conditions and reports pass/fail results."
+      : "Batch data transformations. Click a row to open its builder or run history.";
 
   return (
     <>

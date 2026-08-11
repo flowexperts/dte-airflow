@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
   Sidebar,
@@ -15,6 +15,10 @@ import { type CurrentUser, clearToken } from "@/lib/api";
 
 export function AppSidebar() {
   const pathname = usePathname() ?? "";
+  // usePathname() excludes the query string, so the old
+  // `pathname.includes("type=quality")` test never matched and neither
+  // sub-item ever highlighted.
+  const typeParam = useSearchParams()?.get("type") ?? null;
   const router = useRouter();
   const on = (prefix: string) =>
     prefix === "/"
@@ -50,17 +54,26 @@ export function AppSidebar() {
         {can("lookup_table:read") && (
           <NavItem href="/lookup-tables" label="Lookup tables" active={on("/lookup-tables")} />
         )}
-        {/* One Pipelines entry. Transform and Quality Check were two links
-            to the same page with a filter applied, which dressed a filter up
-            as two destinations — and split "what pipelines do I have" across
-            two screens, neither of which answered it. The list's search box
-            matches type, so it is a keystroke instead.
-
-            Creation is not here either: on /pipelines the primary button sits
-            beside the list it adds to; in the nav it read as another kind of
-            pipeline. */}
         {can("pipeline:read") && (
-          <NavItem href="/pipelines" label="Pipelines" active={on("/pipelines")} />
+          <>
+            <NavGroup>Pipelines</NavGroup>
+            <NavItem
+              href="/pipelines?type=transform"
+              label="Transform"
+              indent
+              active={on("/pipelines") && !on("/pipelines/new") && typeParam !== "quality"}
+            />
+            <NavItem
+              href="/pipelines?type=quality"
+              label="Quality Check"
+              indent
+              active={on("/pipelines") && !on("/pipelines/new") && typeParam === "quality"}
+            />
+            {/* No "+ New pipeline" here. Creation belongs on the list page,
+                where the primary button sits beside the thing being added.
+                In the nav it read as a third kind of pipeline next to
+                Transform and Quality Check. */}
+          </>
         )}
       </NavSections>
       <NavFooter>

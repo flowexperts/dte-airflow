@@ -91,9 +91,9 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
   const [bulkBusy, setBulkBusy] = useState(false);
 
   const q = query.trim().toLowerCase();
-  /* Type is searchable because the sidebar no longer splits Transform from
-   * Quality Check — typing "quality" has to be able to do what that nav
-   * entry did, or removing it would lose a capability. */
+  /* Type is searchable too. The sidebar's Transform / Quality Check split
+   * scopes the whole page; this narrows within whatever is already shown,
+   * which is what you want when a filtered list is still long. */
   const filtered = q
     ? rows.filter(
         (r) =>
