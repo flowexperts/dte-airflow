@@ -385,12 +385,16 @@ def _apply_extract(
 
     provider = extract_provider(step.provider)
     store = get_artifact_store()
-    # Everything that changes the answer must change the key.
-    cache_params = {"granularity": step.granularity, **step.params}
+    # Everything that changes the answer must change the key. `_v` covers the
+    # stored *shape*: v1 payloads dropped `words`, so a v1 hit would serve the
+    # inspector blocks it can never draw boxes from. Bumping busts them, and
+    # re-extraction is local CPU — nothing billable is re-paid.
+    cache_params = {"granularity": step.granularity, "_v": 2, **step.params}
 
     def _mapper(row: dict) -> list[dict]:
         path = row.get(step.source_field)
-        meta = {"provider": step.provider, "ms": 0, "cached": False, "error": None}
+        meta = {"provider": step.provider, "ms": 0, "cached": False,
+                "error": None, "key": None}
 
         try:
             with open(path, "rb") as fh:
@@ -412,6 +416,8 @@ def _apply_extract(
         if not store.exists(dk):
             store.put(dk, content, row.get("media_type") or "application/pdf")
 
+        meta["key"] = key
+
         if store.exists(key):
             payload = json.loads(store.get(key).decode("utf-8"))
             meta.update(cached=True, error=payload.get("error"))
@@ -423,7 +429,11 @@ def _apply_extract(
                 {"granularity": step.granularity, **step.params},
             )
             blocks = [
-                {"text": b.text, "index": b.index, "page": b.page, "bbox": b.bbox}
+                # `words` is what turns a char span into a rectangle. It is by
+                # far the largest part of the payload and the only reason the
+                # inspector can highlight rather than merely quote.
+                {"text": b.text, "index": b.index, "page": b.page,
+                 "bbox": b.bbox, "words": b.words}
                 for b in result.blocks
             ]
             meta.update(ms=result.elapsed_ms, error=result.error)

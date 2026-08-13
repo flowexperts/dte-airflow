@@ -10,6 +10,8 @@ back. These tests pin the consequences of that choice — fan-out, column
 preservation, caching, and per-row failure isolation.
 """
 
+import json
+
 import ibis
 import pytest
 
@@ -286,6 +288,39 @@ def test_unreadable_document_has_no_artifact_ref(corpus):
     (corpus / "a.pdf").unlink()
     out = _extract(engine, table).execute()
     assert out[out["filename"] == "a.pdf"].iloc[0]["artifact_ref"] is None
+
+
+def test_cached_blocks_keep_the_word_boxes(corpus):
+    """Provenance highlighting resolves a char span to a rectangle via
+    per-word boxes. `pdfplumber` computes them; if the cache write drops them
+    the inspector can never draw a box — and because every later run is a
+    cache hit, re-extracting would not bring them back either.
+    """
+    from dte.artifacts import get_artifact_store
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(corpus, engine)).execute()
+    store = get_artifact_store()
+
+    key = out["extract_meta"].iloc[0]["key"]
+    blocks = json.loads(store.get(key).decode("utf-8"))["blocks"]
+    assert blocks[0]["words"], "word boxes dropped on the way into the cache"
+    assert {"x0", "x1", "top", "bottom", "text"} <= set(blocks[0]["words"][0])
+
+
+def test_extract_meta_carries_the_key_of_its_own_artifact(corpus):
+    """A row says which document it came from (`artifact_ref`) but the blocks
+    live under the *derived* key. Without it on the row the inspector has no
+    way to reach the boxes — the doc hash alone can't be turned back into a
+    derived key without knowing the provider and every param."""
+    from dte.artifacts import get_artifact_store
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(corpus, engine)).execute()
+    store = get_artifact_store()
+
+    for meta in out["extract_meta"]:
+        assert store.exists(meta["key"]), meta
 
 
 # ── extract: failure isolation ──────────────────────────────────────────────
