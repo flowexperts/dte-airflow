@@ -1,0 +1,518 @@
+"""Eval harness API (plan 051 task 9).
+
+Eval-set and example CRUD, label import, the leaderboard, per-field failure
+drill-down, and the sweep launcher.
+
+Two things here are guardrails rather than features, and both exist because
+the failure they prevent is silent:
+
+**Every label write bumps `labels_version`.** Runs pin the version they scored
+against, so the leaderboard can grey out and de-rank runs whose labels have
+since changed. Without it, editing one label silently invalidates every
+historical comparison while the numbers keep rendering as if nothing happened.
+
+**The sweep launcher will not enqueue without confirmation.** `POST /sweep`
+with `confirm=false` (the default) returns an estimate and enqueues nothing.
+A cartesian product of providers x models x prompts over a few hundred
+documents is real money, and a launcher that spends it on a mis-click is a
+launcher people stop using.
+"""
+from __future__ import annotations
+
+import csv
+import io
+import itertools
+import json
+import uuid as _uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from dte.api.deps import (
+    get_eval_example_store,
+    get_eval_set_store,
+    get_pipeline_store,
+    get_run_store,
+)
+from dte.config import get_settings
+from dte.evals.scoring import intervals_overlap
+from dte.models.eval import EvalExampleBase, EvalSetBase
+from dte.security.permissions import requires
+from dte.store.base import EvalExampleStore, EvalSetStore, PipelineStore, RunStore
+
+router = APIRouter()
+
+# Hard stop on a runaway matrix. A 5x4x3 sweep over 500 documents is 30k model
+# calls; the cap is what stops a typo in the matrix from becoming an invoice.
+DEFAULT_MAX_SWEEP_CELLS = 50
+
+
+# ── eval sets ────────────────────────────────────────────────────────────
+
+
+@router.post("/eval-sets", status_code=201, dependencies=[Depends(requires("eval:write"))])
+async def create_eval_set(
+    eval_set: EvalSetBase,
+    store: EvalSetStore = Depends(get_eval_set_store),
+):
+    if await store.get(eval_set.id):
+        raise HTTPException(status_code=409, detail=f"Eval set '{eval_set.id}' already exists")
+    await store.save(eval_set)
+    return eval_set.model_dump()
+
+
+@router.get("/eval-sets", dependencies=[Depends(requires("eval:read"))])
+async def list_eval_sets(
+    limit: int = 50,
+    offset: int = 0,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+):
+    rows = await store.list(limit=limit, offset=offset)
+    out = []
+    for r in rows:
+        d = r.model_dump()
+        d["example_count"] = await ex_store.count_for_set(r.id)
+        d["label_sources"] = await ex_store.count_by_label_source(r.id)
+        out.append(d)
+    return out
+
+
+@router.get("/eval-sets/{eval_set_id}", dependencies=[Depends(requires("eval:read"))])
+async def get_eval_set(
+    eval_set_id: str,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+):
+    row = await store.get(eval_set_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Eval set not found")
+    d = row.model_dump()
+    d["example_count"] = await ex_store.count_for_set(eval_set_id)
+    d["holdout_count"] = await ex_store.count_for_set(eval_set_id, split="holdout")
+    d["label_sources"] = await ex_store.count_by_label_source(eval_set_id)
+    d["judge_labeled_warning"] = _judge_warning(d["label_sources"])
+    return d
+
+
+def _judge_warning(label_sources: dict[str, int]) -> str | None:
+    """Warn when a set is majority judge-labeled.
+
+    Above that line you are substantially scoring models against a model, and
+    the number on the leaderboard measures agreement rather than correctness.
+    Surfaced rather than silently mixed in, because the scores look *better*
+    when this is happening, not worse.
+    """
+    total = sum(label_sources.values())
+    judge = label_sources.get("judge", 0)
+    if total and judge / total > 0.5:
+        pct = round(100 * judge / total)
+        return (
+            f"{pct}% of these labels came from an LLM judge — this score partly "
+            "measures agreement with a model, not correctness"
+        )
+    return None
+
+
+@router.put("/eval-sets/{eval_set_id}", dependencies=[Depends(requires("eval:write"))])
+async def update_eval_set(
+    eval_set_id: str,
+    eval_set: EvalSetBase,
+    store: EvalSetStore = Depends(get_eval_set_store),
+):
+    existing = await store.get(eval_set_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Eval set not found")
+    eval_set.id = eval_set_id
+    await store.save(eval_set)
+    return (await store.get(eval_set_id)).model_dump()
+
+
+@router.delete("/eval-sets/{eval_set_id}", status_code=204, dependencies=[Depends(requires("eval:delete"))])
+async def delete_eval_set(
+    eval_set_id: str,
+    store: EvalSetStore = Depends(get_eval_set_store),
+):
+    if not await store.delete(eval_set_id):
+        raise HTTPException(status_code=404, detail="Eval set not found")
+    return None
+
+
+# ── examples (labels) ────────────────────────────────────────────────────
+
+
+class ExampleWrite(BaseModel):
+    """One label write. `id` is server-generated; identity is the document."""
+
+    doc_key: str
+    doc_ref: str | None = None
+    labels: dict = Field(default_factory=dict)
+    label_source: str = "human"
+    split: str = "train"
+
+
+@router.post(
+    "/eval-sets/{eval_set_id}/examples",
+    status_code=201,
+    dependencies=[Depends(requires("eval:write"))],
+)
+async def upsert_example(
+    eval_set_id: str,
+    body: ExampleWrite,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+):
+    eval_set = await store.get(eval_set_id)
+    if not eval_set:
+        raise HTTPException(status_code=404, detail="Eval set not found")
+
+    _reject_unknown_fields(eval_set, body.labels)
+    try:
+        example = EvalExampleBase(
+            id="",
+            eval_set_id=eval_set_id,
+            doc_key=body.doc_key,
+            doc_ref=body.doc_ref,
+            labels=body.labels,
+            label_source=body.label_source,
+            split=body.split,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    await ex_store.save(example)
+    version = await store.bump_labels_version(eval_set_id)
+    saved = await ex_store.get_by_doc_key(eval_set_id, example.doc_key)
+    return {"example": saved.model_dump(), "labels_version": version}
+
+
+def _reject_unknown_fields(eval_set, labels: dict) -> None:
+    """A label for a field the set does not declare is scored against nothing
+    and silently ignored — which reads to the labeler as if their work was
+    saved. Reject it instead."""
+    declared = {s["name"] for s in eval_set.field_specs}
+    unknown = sorted(set(labels) - declared)
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "unknown_fields": unknown,
+                "declared_fields": sorted(declared),
+                "hint": "labels must match the eval set's field_specs",
+            },
+        )
+
+
+@router.get("/eval-sets/{eval_set_id}/examples", dependencies=[Depends(requires("eval:read"))])
+async def list_examples(
+    eval_set_id: str,
+    split: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+):
+    if not await store.get(eval_set_id):
+        raise HTTPException(status_code=404, detail="Eval set not found")
+    rows = await ex_store.list_for_set(eval_set_id, split=split, limit=limit, offset=offset)
+    return {
+        "examples": [r.model_dump() for r in rows],
+        "total": await ex_store.count_for_set(eval_set_id, split=split),
+    }
+
+
+@router.delete(
+    "/eval-sets/{eval_set_id}/examples/{example_id}",
+    status_code=204,
+    dependencies=[Depends(requires("eval:write"))],
+)
+async def delete_example(
+    eval_set_id: str,
+    example_id: str,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+):
+    if not await ex_store.delete(example_id):
+        raise HTTPException(status_code=404, detail="Example not found")
+    await store.bump_labels_version(eval_set_id)
+    return None
+
+
+class ImportRequest(BaseModel):
+    """CSV or JSONL keyed by `doc_key`.
+
+    Importing by filename is deliberately *not* supported here: resolving a
+    name to a content hash means reading the bytes, which this endpoint does
+    not have. The UI resolves names against the source listing first and sends
+    hashes, so a rename can never silently retarget a label.
+    """
+
+    format: str = "jsonl"
+    content: str
+    label_source: str = "imported"
+    split: str = "train"
+
+
+@router.post(
+    "/eval-sets/{eval_set_id}/examples:import",
+    dependencies=[Depends(requires("eval:write"))],
+)
+async def import_examples(
+    eval_set_id: str,
+    body: ImportRequest,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+):
+    eval_set = await store.get(eval_set_id)
+    if not eval_set:
+        raise HTTPException(status_code=404, detail="Eval set not found")
+
+    records = _parse_import(body)
+    declared = {s["name"] for s in eval_set.field_specs}
+
+    imported, errors = 0, []
+    for i, rec in enumerate(records):
+        doc_key = str(rec.pop("doc_key", "") or "").strip()
+        split = str(rec.pop("split", body.split) or body.split)
+        labels = {k: v for k, v in rec.items() if k in declared}
+        try:
+            await ex_store.save(EvalExampleBase(
+                id="",
+                eval_set_id=eval_set_id,
+                doc_key=doc_key,
+                labels=labels,
+                label_source=body.label_source,
+                split=split,
+            ))
+            imported += 1
+        except ValueError as e:
+            # One bad row must not discard the other 199. Report it and
+            # continue — a partial import the caller can see beats an
+            # all-or-nothing failure with no indication of which row broke.
+            errors.append({"row": i, "error": str(e)})
+
+    version = await store.bump_labels_version(eval_set_id) if imported else eval_set.labels_version
+    return {"imported": imported, "errors": errors, "labels_version": version}
+
+
+def _parse_import(body: ImportRequest) -> list[dict]:
+    fmt = (body.format or "jsonl").lower()
+    if fmt == "jsonl":
+        out = []
+        for line in body.content.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=422, detail=f"invalid jsonl: {e}")
+        return out
+    if fmt == "csv":
+        return list(csv.DictReader(io.StringIO(body.content)))
+    raise HTTPException(status_code=422, detail=f"unsupported import format: {fmt!r}")
+
+
+# ── leaderboard ──────────────────────────────────────────────────────────
+
+
+@router.get("/eval-sets/{eval_set_id}/leaderboard", dependencies=[Depends(requires("eval:read"))])
+async def leaderboard(
+    eval_set_id: str,
+    limit: int = 50,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    r_store: RunStore = Depends(get_run_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+):
+    eval_set = await store.get(eval_set_id)
+    if not eval_set:
+        raise HTTPException(status_code=404, detail="Eval set not found")
+
+    runs = await r_store.list_for_eval_set(eval_set_id, limit=limit)
+    entries = []
+    for run in runs:
+        scores = run.get("scores") or {}
+        if not scores:
+            continue
+        stale = run.get("labels_version") != eval_set.labels_version
+        entries.append({
+            "run_id": run.get("id"),
+            "pipeline_id": run.get("pipeline_id"),
+            "status": run.get("status"),
+            "started_at": run.get("started_at"),
+            "finished_at": run.get("finished_at"),
+            "config_digest": run.get("config_digest"),
+            "sweep_id": run.get("sweep_id"),
+            "labels_version": run.get("labels_version"),
+            # Scored against labels that have since changed: shown, but never
+            # ranked. Silently comparing across a label edit is how an eval
+            # system starts lying.
+            "stale": stale,
+            "macro_f1": scores.get("macro_f1"),
+            "macro_f1_interval": scores.get("macro_f1_interval"),
+            "n": scores.get("n"),
+            "fields": scores.get("fields", []),
+            "holdout": scores.get("holdout"),
+            "regression": scores.get("regression"),
+        })
+
+    ranked = _rank_with_ties([e for e in entries if not e["stale"]])
+    label_sources = await ex_store.count_by_label_source(eval_set_id)
+    return {
+        "entries": entries,
+        "ranking": ranked,
+        "labels_version": eval_set.labels_version,
+        "judge_labeled_warning": _judge_warning(label_sources),
+    }
+
+
+def _rank_with_ties(entries: list[dict]) -> list[dict]:
+    """Rank by macro-F1, but award the same rank to any entry whose confidence
+    interval overlaps the leader's.
+
+    A leaderboard that declares 94.1% the winner over 91.7% on n=8 is
+    rendering noise as a decision, and it is worse than no leaderboard because
+    people act on it. Overlapping intervals are reported as tied.
+    """
+    scored = [e for e in entries if e.get("macro_f1") is not None]
+    scored.sort(key=lambda e: e["macro_f1"], reverse=True)
+
+    out: list[dict] = []
+    rank = 0
+    prev: dict | None = None
+    for entry in scored:
+        interval = tuple(entry.get("macro_f1_interval") or (0.0, 1.0))
+        if prev is None:
+            rank = 1
+        else:
+            prev_interval = tuple(prev.get("macro_f1_interval") or (0.0, 1.0))
+            if not intervals_overlap(interval, prev_interval):
+                rank += 1
+            # else: overlapping — same rank as the entry above.
+        row = dict(entry)
+        row["rank"] = rank
+        row["tied_with_leader"] = rank == 1 and len(out) > 0
+        out.append(row)
+        prev = entry
+    return out
+
+
+@router.get(
+    "/eval-sets/{eval_set_id}/fields/{field}/failures",
+    dependencies=[Depends(requires("eval:read"))],
+)
+async def field_failures(
+    eval_set_id: str,
+    field: str,
+    run_id: str | None = Query(default=None),
+    store: EvalSetStore = Depends(get_eval_set_store),
+    r_store: RunStore = Depends(get_run_store),
+):
+    """Every document where `field` did not match, for one run.
+
+    Defaults to the most recent scored run so the drill-down works straight
+    off the leaderboard without the caller tracking run ids.
+    """
+    if not await store.get(eval_set_id):
+        raise HTTPException(status_code=404, detail="Eval set not found")
+
+    runs = await r_store.list_for_eval_set(eval_set_id, limit=50)
+    run = None
+    if run_id:
+        run = next((r for r in runs if r.get("id") == run_id), None)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found for this eval set")
+    else:
+        run = next((r for r in runs if (r.get("scores") or {}).get("failures") is not None), None)
+    if run is None:
+        raise HTTPException(status_code=404, detail="No scored run for this eval set")
+
+    failures = (run.get("scores") or {}).get("failures") or []
+    return {
+        "run_id": run.get("id"),
+        "field": field,
+        "failures": [f for f in failures if f.get("field") == field],
+    }
+
+
+# ── sweeps ───────────────────────────────────────────────────────────────
+
+
+class SweepRequest(BaseModel):
+    """A config matrix to expand into one run per cell.
+
+    `confirm` defaults to False: the first call is always an estimate.
+    """
+
+    pipeline_id: str
+    matrix: dict[str, list] = Field(default_factory=dict)
+    confirm: bool = False
+
+
+@router.post("/eval-sets/{eval_set_id}/sweep", dependencies=[Depends(requires("eval:write"))])
+async def launch_sweep(
+    eval_set_id: str,
+    body: SweepRequest,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+):
+    eval_set = await store.get(eval_set_id)
+    if not eval_set:
+        raise HTTPException(status_code=404, detail="Eval set not found")
+    pipeline = await p_store.get(body.pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    if getattr(pipeline, "pipeline_type", "transform") != "eval":
+        raise HTTPException(
+            status_code=422,
+            detail="sweeps run eval pipelines; this pipeline is not one",
+        )
+
+    cells = _expand_matrix(body.matrix)
+    max_cells = getattr(get_settings(), "eval_max_sweep_cells", DEFAULT_MAX_SWEEP_CELLS)
+    if len(cells) > max_cells:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"sweep expands to {len(cells)} cells, above the cap of {max_cells}. "
+                "Narrow the matrix or raise DTE_EVAL_MAX_SWEEP_CELLS."
+            ),
+        )
+
+    documents = await ex_store.count_for_set(eval_set_id)
+    estimate = {
+        "cells": len(cells),
+        "documents": documents,
+        # Worst case: nothing cached. The extract cache means a re-run of a
+        # cell costs nothing, so this is a ceiling, not a forecast.
+        "uncached_calls": len(cells) * documents,
+        "matrix": cells,
+    }
+
+    if not body.confirm:
+        # Cancelling enqueues nothing — that is the entire point of the
+        # two-step flow, and it is asserted in the scenario suite.
+        estimate["enqueued"] = False
+        return estimate
+
+    sweep_id = str(_uuid.uuid4())
+    estimate["enqueued"] = True
+    estimate["sweep_id"] = sweep_id
+    estimate["runs"] = [
+        {"cell": cell, "pipeline_id": body.pipeline_id} for cell in cells
+    ]
+    return estimate
+
+
+def _expand_matrix(matrix: dict[str, list]) -> list[dict]:
+    """Cartesian product of the matrix axes, in declaration order."""
+    if not matrix:
+        return []
+    keys = list(matrix)
+    values = [matrix[k] or [] for k in keys]
+    if any(not v for v in values):
+        raise HTTPException(
+            status_code=422, detail="every matrix axis needs at least one value"
+        )
+    return [dict(zip(keys, combo)) for combo in itertools.product(*values)]

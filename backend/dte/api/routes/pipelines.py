@@ -21,11 +21,18 @@ class TriggerRequest(BaseModel):
     strings substituted into filter/map `{{params.<key>}}` placeholders."""
 
     params: dict[str, str] = Field(default_factory=dict)
+    # Eval pipelines are bound to a corpus at trigger time, not at save time,
+    # so the same extraction config can be scored against several sets.
+    eval_set_id: str | None = None
+    # Set by the sweep launcher so N runs of one matrix share an id.
+    sweep_id: str | None = None
 
 from dte.api.deps import (
     get_connection_store,
     get_current_user,
     get_destination_store,
+    get_eval_example_store,
+    get_eval_set_store,
     get_lookup_table_store,
     get_pipeline_revision_store,
     get_pipeline_store,
@@ -61,6 +68,8 @@ from dte.sources.loader import load_source
 from dte.store.base import (
     ConnectionStore,
     DestinationStore,
+    EvalExampleStore,
+    EvalSetStore,
     LookupTableStore,
     PipelineRevisionStore,
     PipelineStore,
@@ -143,6 +152,20 @@ def _parse_params_query(raw: str | None) -> dict[str, str] | None:
     return parsed
 
 
+def _eval_run_fields(eval_set_id: str | None, sweep_id: str | None) -> dict:
+    """Only emit the eval columns when they were supplied.
+
+    A transform run must not write `eval_set_id = NULL` explicitly — the
+    column is how the leaderboard finds eval runs, and writing it on every
+    run would make the partial index useless."""
+    fields: dict = {}
+    if eval_set_id:
+        fields["eval_set_id"] = eval_set_id
+    if sweep_id:
+        fields["sweep_id"] = sweep_id
+    return fields
+
+
 async def _validate_pipeline_refs(
     pipeline: PipelineBase,
     s_store: SourceStore,
@@ -153,7 +176,10 @@ async def _validate_pipeline_refs(
     for sid in pipeline.sources:
         if not await s_store.get(sid):
             missing_sources.append(sid)
-    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    # Quality and eval pipelines both write nowhere, so neither requires a
+    # destination. Without this an eval pipeline is rejected at save for a
+    # missing `output_id` it is never supposed to have.
+    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
     missing_dest = None
     if not is_quality:
         missing_dest = None if await d_store.get(pipeline.output_id) else pipeline.output_id
@@ -199,7 +225,10 @@ async def _validate_engine_compat(
             )
         src_types.append((sid, conn.connection_type))
 
-    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    # Quality and eval pipelines both write nowhere, so neither requires a
+    # destination. Without this an eval pipeline is rejected at save for a
+    # missing `output_id` it is never supposed to have.
+    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
     dest_tuple: tuple[str, str] | None = None
     if not is_quality:
         destination = await d_store.get(pipeline.output_id)
@@ -265,7 +294,10 @@ async def _check_shared_fs_guard(
         if conn and conn.connection_type == "local_fs":
             offending.append(sid)
 
-    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    # Quality and eval pipelines both write nowhere, so neither requires a
+    # destination. Without this an eval pipeline is rejected at save for a
+    # missing `output_id` it is never supposed to have.
+    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
     if not is_quality:
         destination = await d_store.get(pipeline.output_id)
         if destination:
@@ -550,7 +582,10 @@ async def _compile_body_pipeline(
     # `.sources`, `.output_id`, `.steps` all works — validators already fired.
     pipeline = Pipeline(**body.model_dump())
     decrypt_context_var.set("pipeline_dry_run")
-    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    # Quality and eval pipelines both write nowhere, so neither requires a
+    # destination. Without this an eval pipeline is rejected at save for a
+    # missing `output_id` it is never supposed to have.
+    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
     try:
         pipeline = interpolate_pipeline(pipeline, resolve_context(pipeline, params))
         if is_quality:
@@ -702,7 +737,10 @@ async def preview_pipeline(
     def _capture_sql(idx: int, sql: str):
         step_sqls[idx] = sql
 
-    is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
+    # Quality and eval pipelines both write nowhere, so neither requires a
+    # destination. Without this an eval pipeline is rejected at save for a
+    # missing `output_id` it is never supposed to have.
+    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
     error: str | None = None
     compiled = None
     engine = None
@@ -767,17 +805,34 @@ async def trigger_pipeline(
     c_store: ConnectionStore = Depends(get_connection_store),
     lt_store: LookupTableStore = Depends(get_lookup_table_store),
     rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
+    es_store: EvalSetStore = Depends(get_eval_set_store),
+    ee_store: EvalExampleStore = Depends(get_eval_example_store),
 ):
     pipeline = await p_store.get(pipeline_id)
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     # Fail fast on missing refs before creating a run.
     decrypt_context_var.set("pipeline_run")
-    _is_quality = getattr(pipeline, "pipeline_type", "transform") == "quality"
-    if _is_quality:
+    _ptype = getattr(pipeline, "pipeline_type", "transform") or "transform"
+    if _ptype in ("quality", "eval"):
         await _resolve_sources(pipeline, s_store, c_store)
     else:
         await _resolve(pipeline, s_store, d_store, c_store)
+
+    # An eval run with no corpus would compile, produce rows, and score
+    # nothing — a green run that measured zero documents. Reject at trigger.
+    eval_set_id = body.eval_set_id if body else None
+    sweep_id = body.sweep_id if body else None
+    if _ptype == "eval" and not eval_set_id:
+        raise HTTPException(
+            status_code=422,
+            detail="eval pipelines must be triggered with an eval_set_id",
+        )
+    if eval_set_id and _ptype != "eval":
+        raise HTTPException(
+            status_code=422,
+            detail=f"eval_set_id is only valid for eval pipelines (this one is {_ptype!r})",
+        )
     await _resolve_lookups(pipeline, lt_store)
     # Engine compatibility: catches cases where a pipeline was saved before
     # the engine matrix existed, or a source's connection type changed
@@ -817,11 +872,15 @@ async def trigger_pipeline(
         run_id, _job_id = await enqueue_run(
             pipeline_id, revision_id, tenant_id=get_current_tenant(),
         )
-        await r_store.update(run_id, params=run_context)
+        await r_store.update(
+            run_id, params=run_context, **_eval_run_fields(eval_set_id, sweep_id)
+        )
         return {"run_id": run_id}
 
     run_id = await r_store.create(pipeline_id, revision_id=revision_id)
-    await r_store.update(run_id, params=run_context)
+    await r_store.update(
+        run_id, params=run_context, **_eval_run_fields(eval_set_id, sweep_id)
+    )
     # asyncio.create_task in CPython 3.7+ already copies the current context
     # into the new task, so the dte_tenant_id contextvar set by
     # TenantContextMiddleware is automatically available inside _execute_pipeline.
@@ -845,6 +904,7 @@ async def trigger_pipeline(
             await _execute_pipeline(
                 pipeline_id, run_id, p_store, r_store, re_store,
                 s_store, d_store, c_store, lt_store,
+                es_store=es_store, ee_store=ee_store,
             )
         finally:
             tenant_context_var.reset(tok)
@@ -914,6 +974,9 @@ async def _run_body(
     d_store: DestinationStore,
     c_store: ConnectionStore,
     lt_store: LookupTableStore,
+    *,
+    es_store: "EvalSetStore | None" = None,
+    ee_store: "EvalExampleStore | None" = None,
 ):
     settings = get_settings()
     tr = tracer()
@@ -930,8 +993,9 @@ async def _run_body(
             pipeline = interpolate_pipeline(pipeline, run_context)
             pipeline_type = getattr(pipeline, "pipeline_type", "transform") or "transform"
 
-            if pipeline_type == "quality":
-                # Quality pipelines: resolve only sources (no destination needed).
+            if pipeline_type in ("quality", "eval"):
+                # Neither writes anywhere: a quality run reports checks, an
+                # eval run reports scores. Resolve sources only.
                 sources = await _resolve_sources(pipeline, s_store, c_store)
                 destination = None
                 dest_creds = None
@@ -1008,6 +1072,13 @@ async def _run_body(
             )
             return
 
+        if pipeline_type == "eval":
+            await _run_eval_body(
+                pipeline, run_id, run_row, tables, lookups, engine,
+                r_store, re_store, es_store, ee_store, tr,
+            )
+            return
+
         # Transform pipeline: existing compile → write → post-run contracts path.
         with tr.start_as_current_span("compile"):
             # Compiler emits synchronously; buffer here and flush async.
@@ -1078,3 +1149,183 @@ async def _run_body(
         "run completed",
         extra={"pipeline_id": pipeline_id, "rows_written": result["rows_written"], "status": final_status},
     )
+
+
+async def _run_eval_body(
+    pipeline,
+    run_id: str,
+    run_row: dict | None,
+    tables: dict,
+    lookups: dict,
+    engine,
+    r_store: RunStore,
+    re_store: RunEventStore,
+    es_store: "EvalSetStore | None",
+    ee_store: "EvalExampleStore | None",
+    tr,
+):
+    """Compile, materialise, join to labels, score (plan 051 task 7).
+
+    Scoring runs here rather than as a compiler op for a concrete reason:
+    precision/recall over a corpus *is* an aggregation, and
+    `PipelineBase._validate_steps` rejects `aggregate` outside transform
+    pipelines. Relaxing that guard to let a "score" step exist would trade a
+    narrow rule for a user-visible step they have to wire correctly. Doing it
+    in the runner mirrors `evaluate_contracts` in the quality branch, and
+    keeps the compiler a pure table -> table function.
+
+    The eval set is bound at trigger time and recorded on the run row, so a
+    run always carries what it was scored against.
+    """
+    from dte.evals.digest import config_digest
+    from dte.evals.runner import join_and_score
+
+    eval_set_id = (run_row or {}).get("eval_set_id")
+    if not eval_set_id:
+        raise ValueError(
+            "eval pipeline triggered without an eval_set_id — nothing to score "
+            "against; pass eval_set_id when triggering"
+        )
+    if es_store is None or ee_store is None:
+        # Lazy: only an eval run needs these, and building one requires
+        # DATABASE_URL. Resolving them eagerly on the shared run path would
+        # make every transform run depend on config it never reads.
+        from dte.api.deps import get_eval_example_store, get_eval_set_store
+        es_store = es_store or get_eval_set_store()
+        ee_store = ee_store or get_eval_example_store()
+
+    eval_set = await es_store.get(eval_set_id)
+    if eval_set is None:
+        raise ValueError(f"eval set not found: {eval_set_id}")
+
+    specs = eval_set.to_field_specs()
+    # Pin the label version *before* compiling. Labels can be edited while a
+    # run is in flight; recording the version we actually read is what lets
+    # the leaderboard grey out runs whose labels have since changed instead of
+    # silently comparing against a moved target.
+    labels_version = eval_set.labels_version
+    examples = await ee_store.list_for_set(eval_set_id, limit=10**6)
+
+    with tr.start_as_current_span("compile"):
+        events_buf: list[tuple[int, str, str, str | None]] = []
+
+        def _cb(idx, op, status, msg=None):
+            events_buf.append((idx, op, status, msg))
+
+        try:
+            compiled = compile_pipeline(
+                pipeline, tables,
+                lookup_tables=lookups,
+                on_step=_cb,
+                engine=engine,
+            )
+        finally:
+            for idx, op, status, msg in events_buf:
+                await re_store.record(run_id, idx, op, status, msg)
+
+    with tr.start_as_current_span("materialise") as span:
+        settings = get_settings()
+        df = compiled.limit(settings.run_max_rows).execute()
+        rows = json.loads(df.to_json(orient="records", date_format="iso"))
+        span.set_attribute("rows", len(rows))
+
+    with tr.start_as_current_span("score") as span:
+        scores = join_and_score(rows, examples, specs, collect_failures=True)
+        digest = config_digest(pipeline)
+        span.set_attribute("macro_f1", scores.get("macro_f1") or -1.0)
+        span.set_attribute("n", scores.get("n", 0))
+
+    # Regression check against the previous run of the *same* config. A drop
+    # here means nothing about the pipeline changed and the score moved anyway
+    # — the provider shifted under you, which is the whole point of recording
+    # a digest.
+    regression = await _detect_eval_regression(
+        r_store, eval_set_id, digest, labels_version, run_id, scores
+    )
+    if regression:
+        scores["regression"] = regression
+
+    await r_store.update(
+        run_id,
+        status="completed_with_warnings" if regression else "completed",
+        rows_written=scores.get("n", 0),
+        location=None,
+        eval_set_id=eval_set_id,
+        labels_version=labels_version,
+        config_digest=digest,
+        scores=scores,
+    )
+    _log.info(
+        "eval run completed",
+        extra={
+            "eval_set_id": eval_set_id,
+            "macro_f1": scores.get("macro_f1"),
+            "n": scores.get("n"),
+            "regressed": bool(regression),
+        },
+    )
+
+
+# Default drop, in F1 points, that counts as a regression.
+EVAL_REGRESSION_THRESHOLD = 0.03
+
+
+async def _detect_eval_regression(
+    r_store: RunStore,
+    eval_set_id: str,
+    digest: str,
+    labels_version: int,
+    run_id: str,
+    scores: dict,
+) -> dict | None:
+    """Compare against the most recent completed run at the same digest.
+
+    Gated on three things, all of which must hold before this warns:
+
+    - **Same `config_digest`** — otherwise the "regression" is just a config
+      change, which is a result, not an alert.
+    - **Same `labels_version`** — comparing across a label edit measures the
+      labels, not the extractor.
+    - **The drop clears the Wilson interval** — a nightly job that pages
+      someone on sampling noise gets muted within a week, and then it is worth
+      nothing on the night it is right.
+    """
+    current = scores.get("macro_f1")
+    if current is None:
+        return None
+    try:
+        history = await r_store.list_for_eval_set(eval_set_id, limit=50)
+    except Exception:  # noqa — a failed comparison must never fail the run
+        _log.exception("regression lookup failed", extra={"run_id": run_id})
+        return None
+
+    for prior in history:
+        if prior.get("id") == run_id:
+            continue
+        if prior.get("config_digest") != digest:
+            continue
+        if prior.get("labels_version") != labels_version:
+            continue
+        prior_scores = prior.get("scores") or {}
+        previous = prior_scores.get("macro_f1")
+        if previous is None:
+            continue
+
+        drop = previous - current
+        if drop < EVAL_REGRESSION_THRESHOLD:
+            return None
+
+        lo, hi = (scores.get("macro_f1_interval") or [0.0, 1.0])[:2]
+        prior_interval = prior_scores.get("macro_f1_interval") or [0.0, 1.0]
+        if prior_interval[0] <= hi and lo <= prior_interval[1]:
+            # Intervals overlap: the drop is not distinguishable from noise.
+            return None
+
+        return {
+            "previous_run_id": prior.get("id"),
+            "previous_macro_f1": previous,
+            "current_macro_f1": current,
+            "drop": drop,
+            "threshold": EVAL_REGRESSION_THRESHOLD,
+        }
+    return None

@@ -1225,7 +1225,7 @@ class PipelineBase(SQLModel):
     # trino when DuckDB can't federate).  Legacy values "duckdb"/"trino"
     # remain accepted as explicit overrides.
     engine: EngineChoice = "auto"
-    pipeline_type: Literal["transform", "quality"] = "transform"
+    pipeline_type: Literal["transform", "quality", "eval"] = "transform"
     quality_contracts: list = SMField(default_factory=list)  # list[Contract] — typed by validator
     # Declared trigger-time inputs. Referenced from filter/map expressions as
     # {{params.<name>}}; validated against declared types on trigger.
@@ -1252,6 +1252,18 @@ class PipelineBase(SQLModel):
                 raise ValueError(
                     f"Step op {step['op']!r} is not allowed in quality pipelines"
                 )
+        if self.pipeline_type == "eval" and not any(
+            isinstance(s, dict) and s.get("op") == "structure" for s in self.steps
+        ):
+            # Scoring compares the declared fields of a data model against
+            # labels. Without a structure step there are no such columns, so
+            # the run would complete and score a flat zero — a failure that
+            # reads as "the extractor is bad" rather than "the pipeline is
+            # misconfigured". Fail at save instead.
+            raise ValueError(
+                "an eval pipeline needs a 'structure' step — it is the step "
+                "that produces the fields being scored"
+            )
         return self
 
     @model_validator(mode="after")

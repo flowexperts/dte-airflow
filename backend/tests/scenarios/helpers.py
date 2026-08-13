@@ -90,9 +90,15 @@ async def create_lookup_table(
     return r.json()
 
 
-async def trigger_and_wait(client, pipeline_id: str, timeout: float = 15.0) -> dict:
-    """Trigger the pipeline and poll /api/runs/{id} until terminal."""
-    r = await client.post(f"/api/pipelines/{pipeline_id}/trigger")
+async def trigger_and_wait(
+    client, pipeline_id: str, timeout: float = 15.0, **body,
+) -> dict:
+    """Trigger the pipeline and poll /api/runs/{id} until terminal.
+
+    `**body` goes straight into the trigger payload — `eval_set_id` for eval
+    pipelines, `params` for parameterised ones.
+    """
+    r = await client.post(f"/api/pipelines/{pipeline_id}/trigger", json=body or None)
     assert r.status_code == 200, f"trigger failed: {r.status_code} {r.text}"
     run_id = r.json()["run_id"]
 
