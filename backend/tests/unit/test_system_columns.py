@@ -101,15 +101,15 @@ def test_the_frontend_list_matches_this_one():
 
     src = (
         Path(__file__).resolve().parents[3]
-        / "frontend/src/components/builder/schema-context.tsx"
+        / "frontend/src/lib/system-columns.ts"
     )
     if not src.exists():  # backend-only checkouts
         pytest.skip("frontend not present")
 
     block = re.search(
-        r"export const SYSTEM_COLUMNS = new Set\(\[(.*?)\]\)", src.read_text(), re.S
+        r"SYSTEM_COLUMNS: ReadonlySet<string> = new Set\(\[(.*?)\]\)", src.read_text(), re.S
     )
-    assert block, "SYSTEM_COLUMNS not found in schema-context.tsx"
+    assert block, "SYSTEM_COLUMNS not found in system-columns.ts"
     assert set(re.findall(r'"([^"]+)"', block.group(1))) == set(SYSTEM_COLUMNS)
 
 

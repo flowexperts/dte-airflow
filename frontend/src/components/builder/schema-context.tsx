@@ -14,6 +14,7 @@ import {
   type Source,
   type SchemaField,
 } from "@/lib/api";
+import { SYSTEM_COLUMNS } from "@/lib/system-columns";
 
 interface SchemaEntry {
   fields: SchemaField[];
@@ -42,19 +43,6 @@ interface SchemaState {
    *  `FieldMultiSelect` wherever `allFields` was used. */
   fieldsAtStep: (index: number) => SchemaField[];
 }
-
-/** Mirrors `SYSTEM_COLUMNS` in `dte/compiler/ibis_compiler.py`.
- *
- *  These ride on every extracted row and a `select` cannot drop them, so
- *  listing them as pickable fields would offer a choice with no effect. Keep
- *  the two lists in step: a name here that the compiler does not protect
- *  becomes a column the user can neither see nor keep. */
-export const SYSTEM_COLUMNS = new Set([
-  "artifact_ref",
-  "extract_meta",
-  "structure_meta",
-  "block_index",
-]);
 
 const SchemaContext = createContext<SchemaState | null>(null);
 

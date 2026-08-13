@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button, ErrorPanel, JsonCell, Panel, PanelHead, SectionHead } from "@/components/ui";
 import { getRunOutput, type PreviewResponse } from "@/lib/api";
 import { InspectRowButton } from "@/components/document-inspector/InspectRowButton";
+import { visibleColumns } from "@/lib/system-columns";
 import { humanizeError, type HumanError } from "@/lib/errors";
 
 const SUPPORTED = new Set(["json", "csv", "excel"]);
@@ -37,7 +38,12 @@ export function RunOutputPreview({
     }
   };
 
-  const columns = data?.rows?.[0] ? Object.keys(data.rows[0]) : [];
+  // System columns ride on every extracted row and cannot be projected
+  // away, so this is where they are kept out of sight. The rows still carry
+  // them, which is what lets Inspect work on a table that never shows them.
+  const columns = visibleColumns(
+    data?.rows?.[0] ? Object.keys(data.rows[0]) : [],
+  );
 
   // Nothing to show and no way to show it — collapse the whole section to one
   // line rather than heading an empty full-width panel.
