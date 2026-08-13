@@ -22,9 +22,12 @@ from typing import Any
 from dte.providers.base import Block, DataModel, StructureResult
 from dte.providers.schema import coerce_row, json_schema_for
 
+# Named per provider: the SDKs live in the `models` extra, not `unstructured`
+# (which is pypdf/pdfplumber). A message naming the wrong extra sends people
+# to install a package that does not fix their error.
 _MISSING_DEP = (
-    "{lib} is not installed — install the optional extra with "
-    '`pip install "dte[unstructured]"`'
+    "the {pkg} SDK is not installed — the {lib} provider needs it. "
+    'Install the optional extra with `pip install "dte[models]"`'
 )
 
 # Default models. Both are the current flagship for their provider; callers
@@ -128,6 +131,7 @@ class _ModelStructureProvider:
 
     name = ""
     _default_model = ""
+    _sdk_package = ""
 
     def _call(self, prompt: str, schema: dict, params: dict) -> tuple[dict, int, int]:
         raise NotImplementedError
@@ -162,7 +166,11 @@ class _ModelStructureProvider:
         try:
             raw, in_tok, out_tok = self._call(prompt, json_schema_for(model), params)
         except ImportError:
-            return done(empty, dict.fromkeys(empty), _MISSING_DEP.format(lib=self.name))
+            return done(
+                empty,
+                dict.fromkeys(empty),
+                _MISSING_DEP.format(pkg=self._sdk_package, lib=self.name),
+            )
         except Exception as exc:  # noqa: BLE001 — one bad document is one bad row
             return done(empty, dict.fromkeys(empty), f"{self.name}: {exc}")
 
@@ -197,6 +205,7 @@ def _locate(text: str, blocks: list[Block], value: Any) -> dict | None:
 class ClaudeStructureProvider(_ModelStructureProvider):
     name = "claude"
     _default_model = DEFAULT_CLAUDE_MODEL
+    _sdk_package = "anthropic"
 
     def _call(self, prompt: str, schema: dict, params: dict):
         import anthropic
@@ -225,6 +234,7 @@ class ClaudeStructureProvider(_ModelStructureProvider):
 class OpenAIStructureProvider(_ModelStructureProvider):
     name = "openai"
     _default_model = DEFAULT_OPENAI_MODEL
+    _sdk_package = "openai"
 
     def _call(self, prompt: str, schema: dict, params: dict):
         import openai

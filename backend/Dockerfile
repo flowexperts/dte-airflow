@@ -11,10 +11,11 @@ COPY dte ./dte
 COPY alembic ./alembic
 COPY alembic.ini ./
 
-# `[unstructured]` pulls pypdf + pdfplumber. Without it the image builds and
-# starts fine, and then every `extract` step fails at runtime with "install the
-# optional extra" — a failure that only shows up on a real document run.
-RUN pip install --no-cache-dir -e ".[unstructured]" && pip install --no-cache-dir "psycopg2-binary>=2.9"
+# `[unstructured]` pulls pypdf + pdfplumber, `[models]` the anthropic and
+# openai SDKs. Without them the image builds and starts fine, and then every
+# extract / structure step fails at runtime with "install the optional extra"
+# — a failure that only shows up on a real document run.
+RUN pip install --no-cache-dir -e ".[unstructured,models]" && pip install --no-cache-dir "psycopg2-binary>=2.9"
 
 # Runtime stage — run as a non-root user for defence-in-depth.
 # Distroless is deferred to plans/036-distroless-runtime.md; requires

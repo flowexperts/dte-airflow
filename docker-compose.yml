@@ -65,6 +65,13 @@ services:
       # Schedules (plan 047). The ticker itself runs on the worker; the API
       # needs this on to expose the /schedules routes.
       DTE_SCHEDULES_ENABLED: "true"
+      # Model-provider keys for the `structure` step (plan 050). Put them in
+      # .env. This is the ONLY safe place for them today: a key set via the
+      # step's `params.api_key` lands in the pipelines JSONB in plaintext.
+      # Plan 050 should grow an `anthropic`/`openai` Connection type so they
+      # go through EncryptedJSON like every other credential.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     command: >
       sh -c "ALEMBIC_URL=$$(echo $$DATABASE_URL | sed 's|+asyncpg||') &&
              DATABASE_URL=$$ALEMBIC_URL alembic upgrade head &&
@@ -105,6 +112,10 @@ services:
       # The schedule ticker is a periodic task registered on this process.
       # Without this the worker runs jobs but never fires schedules.
       DTE_SCHEDULES_ENABLED: "true"
+      # Triggered runs execute here, not in `backend` — without these, Preview
+      # would work and Trigger would fail with an auth error.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     command: python -m dte.worker
     volumes:
       - ./backend/dte:/app/dte
