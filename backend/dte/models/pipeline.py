@@ -167,6 +167,24 @@ def _public_fields(instance) -> dict:
     return out
 
 
+def _blank_id_means_generate(data):
+    """Drop `id` when it is blank so the UUID4 `default_factory` fires.
+
+    `default_factory` only runs when the key is ABSENT. Clients that send
+    `{"id": ""}` — which every "the server will name it" form does — sail past
+    it and write an empty string as the primary key. The row then exists but
+    is unreachable: `GET /sources/` is not a route, and a builder slot holding
+    `""` fails validation with a message about nothing being picked.
+
+    Blank means "you name it", which is what the field's default already says.
+    """
+    if isinstance(data, dict):
+        for key in ("id", "ID"):
+            if key in data and isinstance(data[key], str) and not data[key].strip():
+                data = {k: v for k, v in data.items() if k != key}
+    return data
+
+
 # ─── Connection ───────────────────────────────────────────────────────────────
 #
 # Two-class shape:
@@ -192,6 +210,10 @@ class ConnectionBase(SQLModel):
       If omitted at construction we default to `id` so historic call
       sites (e.g. `ConnectionBase(id="local_fs", ...)`) still round-trip.
     """
+
+    _generate_blank_id = model_validator(mode="before")(
+        classmethod(lambda cls, data: _blank_id_means_generate(data))
+    )
 
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
@@ -457,6 +479,10 @@ class SourceBase(SQLModel):
     editable, unique-per-tenant label; defaults to `id` when omitted so
     historic callers keep working.
     """
+
+    _generate_blank_id = model_validator(mode="before")(
+        classmethod(lambda cls, data: _blank_id_means_generate(data))
+    )
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
     connection_id: str
@@ -591,6 +617,10 @@ class LookupTableBase(SQLModel):
     editable, unique-per-tenant label; defaults to `id` when omitted so
     historic callers keep working.
     """
+
+    _generate_blank_id = model_validator(mode="before")(
+        classmethod(lambda cls, data: _blank_id_means_generate(data))
+    )
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
     mappings: dict[str, str] = SMField(default_factory=dict)
@@ -996,6 +1026,10 @@ class DestinationBase(SQLModel):
     editable, unique-per-tenant label; defaults to `id` when omitted so
     historic callers keep working.
     """
+
+    _generate_blank_id = model_validator(mode="before")(
+        classmethod(lambda cls, data: _blank_id_means_generate(data))
+    )
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
     connection_id: str

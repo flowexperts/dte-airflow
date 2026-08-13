@@ -675,3 +675,55 @@ def test_source_save_leaves_clean_config_untouched():
     )
     assert src.config["bucket_url"] == "/tmp/docs"
     assert src.config["file_glob"] == "**/*.pdf"
+
+
+# ── Blank id means "server, name it" ─────────────────────────────────────
+#
+# `default_factory` only fires when the key is absent, so a client sending
+# {"id": ""} used to write an empty string as the primary key. The row saved,
+# then a pipeline slot holding "" failed validation claiming nothing was
+# picked — an error pointing away from the actual cause.
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_blank_source_id_is_server_generated(blank):
+    src = SourceCreate(
+        id=blank,
+        name="PDF source",
+        connection_id="local_fs",
+        source_type="documents",
+        table="docs",
+        config={"bucket_url": "/tmp/docs", "file_glob": "**/*.pdf"},
+    )
+    assert len(src.id) == 36, f"expected a uuid4, got {src.id!r}"
+
+
+def test_explicit_source_id_is_preserved():
+    src = SourceCreate(
+        id="my-invoices",
+        name="PDF source",
+        connection_id="local_fs",
+        source_type="documents",
+        table="docs",
+        config={"bucket_url": "/tmp/docs", "file_glob": "**/*.pdf"},
+    )
+    assert src.id == "my-invoices"
+
+
+def test_blank_id_generated_for_every_model_with_the_pattern():
+    """Connection, Destination and LookupTable share the default_factory
+    idiom, so they shared the bug."""
+    from dte.models.pipeline import (
+        ConnectionBase,
+        DestinationBase,
+        LookupTableBase,
+    )
+
+    conn = ConnectionBase(id="", name="c", connection_type="local_fs", credentials={})
+    dest = DestinationBase(
+        id="", name="d", connection_id="local_fs",
+        config={"type": "json_file", "path": "/tmp/o.json"},
+    )
+    lut = LookupTableBase(id="", name="l", mappings={"a": "b"})
+    for obj in (conn, dest, lut):
+        assert len(obj.id) == 36, f"{type(obj).__name__} kept a blank id"
