@@ -308,6 +308,29 @@ def test_cached_blocks_keep_the_word_boxes(corpus):
     assert {"x0", "x1", "top", "bottom", "text"} <= set(blocks[0]["words"][0])
 
 
+def test_blocks_carry_page_dimensions(corpus):
+    """Word boxes are in PDF points; a highlight has to be drawn in pixels.
+
+    Without the page's own width and height there is no scale factor, and
+    `bbox` is the bounds of the *content*, not the page — deriving a scale
+    from it silently stretches every box on any page with a margin.
+    """
+    from dte.artifacts import get_artifact_store
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(corpus, engine)).execute()
+    store = get_artifact_store()
+
+    key = out["extract_meta"].iloc[0]["key"]
+    block = json.loads(store.get(key).decode("utf-8"))["blocks"][0]
+    assert block["width"] > 0 and block["height"] > 0
+    # Every word must sit inside the page it claims to be on, or the scale is
+    # being computed against the wrong rectangle.
+    for w in block["words"]:
+        assert 0 <= w["x0"] <= block["width"], w
+        assert 0 <= w["top"] <= block["height"], w
+
+
 def test_extract_meta_carries_the_key_of_its_own_artifact(corpus):
     """A row says which document it came from (`artifact_ref`) but the blocks
     live under the *derived* key. Without it on the row the inspector has no

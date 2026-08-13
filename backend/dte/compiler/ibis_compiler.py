@@ -433,7 +433,8 @@ def _apply_extract(
                 # far the largest part of the payload and the only reason the
                 # inspector can highlight rather than merely quote.
                 {"text": b.text, "index": b.index, "page": b.page,
-                 "bbox": b.bbox, "words": b.words}
+                 "bbox": b.bbox, "words": b.words,
+                 "width": b.width, "height": b.height}
                 for b in result.blocks
             ]
             meta.update(ms=result.elapsed_ms, error=result.error)
