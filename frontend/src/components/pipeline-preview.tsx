@@ -21,6 +21,7 @@ import {
 } from "@/lib/api";
 import { humanizeCompilerError, humanizeError } from "@/lib/errors";
 import { ParamsModal } from "@/components/params-modal";
+import { InspectRowButton } from "@/components/document-inspector/InspectRowButton";
 
 /**
  * PipelinePreview
@@ -263,6 +264,7 @@ export function PipelinePreview({
                         {c}
                       </th>
                     ))}
+                    <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -279,6 +281,11 @@ export function PipelinePreview({
                           <JsonCell value={row[c]} />
                         </td>
                       ))}
+                      {/* Renders nothing unless the row is backed by a
+                          document, so non-document pipelines are unaffected. */}
+                      <td className="px-3 py-2 align-top whitespace-nowrap">
+                        <InspectRowButton row={row as Record<string, unknown>} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

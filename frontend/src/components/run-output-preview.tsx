@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button, ErrorPanel, JsonCell, Panel, PanelHead, SectionHead } from "@/components/ui";
 import { getRunOutput, type PreviewResponse } from "@/lib/api";
+import { InspectRowButton } from "@/components/document-inspector/InspectRowButton";
 import { humanizeError, type HumanError } from "@/lib/errors";
 
 const SUPPORTED = new Set(["json", "csv", "excel"]);
@@ -96,6 +97,7 @@ export function RunOutputPreview({
                         {c}
                       </th>
                     ))}
+                    <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -112,6 +114,11 @@ export function RunOutputPreview({
                           <JsonCell value={row[c]} />
                         </td>
                       ))}
+                      {/* Renders nothing unless the row is backed by a
+                          document, so non-document pipelines are unaffected. */}
+                      <td className="px-3 py-2 align-top whitespace-nowrap">
+                        <InspectRowButton row={row as Record<string, unknown>} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
