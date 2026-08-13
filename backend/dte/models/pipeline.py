@@ -763,6 +763,30 @@ class ProfileStep(BaseModel):
     columns: list[str] = Field(default_factory=list)
 
 
+ExtractGranularity = Literal["page", "document"]
+
+
+class ExtractStep(BaseModel):
+    """Documents in, extracted text blocks out.
+
+    The only op besides `join` that changes row cardinality: at `page`
+    granularity one input row fans out to one row per page.
+
+    A per-document failure fills `extract_meta.error` and leaves the output
+    field NULL — it does **not** fail the run. One bad PDF in 10k must not
+    cost the batch; add a downstream `check` step if you want it fatal.
+    """
+
+    op: Literal["extract"]
+    # Column holding the path to read. Defaults to what a `documents` source
+    # emits, so the common case needs no configuration.
+    source_field: str = "path"
+    provider: Literal["pypdf", "pdfplumber"] = "pdfplumber"
+    granularity: ExtractGranularity = "page"
+    params: dict = Field(default_factory=dict)
+    output_field: str = "content"
+
+
 class OutputField(BaseModel):
     field: str
     alias: str | None = None
@@ -1012,6 +1036,7 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("pivot", None): PivotStep,
     ("check", None): CheckStep,
     ("profile", None): ProfileStep,
+    ("extract", None): ExtractStep,
 }
 
 

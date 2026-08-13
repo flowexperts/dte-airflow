@@ -1,9 +1,38 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Protocol, runtime_checkable
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any, Protocol, runtime_checkable
 
 import ibis
+
+
+@dataclass(frozen=True)
+class EnrichmentSpec:
+    """A per-row Python map applied to a materialised table.
+
+    Enrichment is the one thing in this engine that cannot be a lazy ibis
+    expression. A model call is per-row, slow, rate-limited, retryable and
+    billable; inside a DuckDB scan it would be re-evaluated on every
+    downstream reference. So the seam materialises: SQL out, map in Python,
+    register the result back.
+
+    That is a deliberate laziness break — the same one `_apply_pivot` already
+    makes — and it is what buys retries, per-row progress events, rate
+    limiting and caching.
+
+    `mapper` receives one input row as a dict and returns a list of *new*
+    column dicts. Returning several fans the row out (one page per row);
+    returning none drops it. The engine merges each result over the input row,
+    so upstream columns survive without the mapper having to copy them.
+    """
+
+    name: str
+    mapper: Callable[[dict[str, Any]], list[dict[str, Any]]]
+    # Column name → SQL type, used to build a correctly-typed empty result
+    # when every input row is dropped or the input was empty to begin with.
+    output_schema: dict[str, str] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -68,6 +97,19 @@ class BaseEngine(ABC):
     @abstractmethod
     def execute(self, table: ibis.Table, target, credentials: dict | None = None) -> dict:
         ...
+
+    def apply_enrichment(
+        self, table: ibis.Table, spec: EnrichmentSpec
+    ) -> ibis.Table:
+        """Materialise *table*, map every row through `spec`, register the result.
+
+        Default implementation refuses: a backend that can't run a Python
+        mapper over its rows must say so rather than silently doing something
+        else. `DuckDBEngine` overrides it.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support enrichment steps"
+        )
 
     # ------------------------------------------------------------------
     # Legacy helper — kept for back-compat with call sites that only need

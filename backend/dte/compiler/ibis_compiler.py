@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import ibis
@@ -7,6 +8,7 @@ import ibis.expr.datatypes as dt
 
 from dte.errors import CompilerError
 from dte.models.pipeline import (
+    ExtractStep,
     AggregateStep,
     DatePartGroupBy,
     ExpressionMapStep,
@@ -229,7 +231,108 @@ def _dispatch_single_table_step(
     elif op == "profile":
         return _apply_profile(table, step, idx=idx, engine=engine,
                               on_quality_result=on_quality_result)
+    elif op == "extract":
+        return _apply_extract(table, ExtractStep(**step), engine=engine, idx=idx)
     raise CompilerError(f"unknown step op {op!r}")
+
+
+def _apply_extract(
+    table: ibis.Table,
+    step: "ExtractStep",
+    engine: "BaseEngine | None" = None,
+    idx: int = 0,
+) -> ibis.Table:
+    """Read each document and emit its text blocks.
+
+    Unlike every other step this **materialises** — see `EnrichmentSpec`. It
+    also fans out: at `page` granularity one input row becomes one row per
+    page.
+
+    Results are cached in the artifact store under
+    `sha256(doc_bytes | op | provider | params)`, so a re-run costs nothing and
+    a later `structure` prompt change never re-parses a PDF. Two files with
+    identical bytes share one cache entry.
+    """
+    from dte.artifacts import derived_key, doc_key, get_artifact_store
+    from dte.engine.base import EnrichmentSpec
+    from dte.providers import extract_provider
+
+    if engine is None:
+        raise CompilerError("extract steps require an engine")
+
+    provider = extract_provider(step.provider)
+    store = get_artifact_store()
+    # Everything that changes the answer must change the key.
+    cache_params = {"granularity": step.granularity, **step.params}
+
+    def _mapper(row: dict) -> list[dict]:
+        path = row.get(step.source_field)
+        meta = {"provider": step.provider, "ms": 0, "cached": False, "error": None}
+
+        try:
+            with open(path, "rb") as fh:
+                content = fh.read()
+        except OSError as exc:
+            # A file that vanished between listing and extraction is one bad
+            # row, not a failed run.
+            meta["error"] = f"could not read {path!r}: {exc}"
+            return [_row(step, None, 0, None, None, meta)]
+
+        dk = doc_key(content)
+        key = derived_key(dk, "extract", step.provider, cache_params)
+
+        if store.exists(key):
+            payload = json.loads(store.get(key).decode("utf-8"))
+            meta.update(cached=True, error=payload.get("error"))
+            blocks = payload["blocks"]
+        else:
+            result = provider.extract(
+                content,
+                row.get("media_type") or "application/pdf",
+                {"granularity": step.granularity, **step.params},
+            )
+            blocks = [
+                {"text": b.text, "index": b.index, "page": b.page, "bbox": b.bbox}
+                for b in result.blocks
+            ]
+            meta.update(ms=result.elapsed_ms, error=result.error)
+            store.put(
+                key,
+                json.dumps({"blocks": blocks, "error": result.error}).encode("utf-8"),
+                "application/json",
+            )
+
+        if not blocks:
+            return [_row(step, None, 0, None, f"artifact://{dk}", meta)]
+        return [
+            _row(step, b["text"], b["index"], b["page"], f"artifact://{dk}", meta)
+            for b in blocks
+        ]
+
+    return engine.apply_enrichment(
+        table,
+        EnrichmentSpec(
+            name=f"extract_{idx}",
+            mapper=_mapper,
+            output_schema={
+                step.output_field: "VARCHAR",
+                "block_index": "BIGINT",
+                "page": "BIGINT",
+                "artifact_ref": "VARCHAR",
+                "extract_meta": "JSON",
+            },
+        ),
+    )
+
+
+def _row(step, text, index, page, ref, meta) -> dict:
+    return {
+        step.output_field: text,
+        "block_index": index,
+        "page": page,
+        "artifact_ref": ref,
+        "extract_meta": meta,
+    }
 
 
 def _apply_join(left: ibis.Table, right: ibis.Table, step: JoinStep) -> ibis.Table:
