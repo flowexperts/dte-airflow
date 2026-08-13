@@ -34,8 +34,8 @@ class DuckDBEngine(BaseEngine):
     def con(self) -> ibis.BaseBackend:
         return self._con
 
-    def execute(self, table: ibis.Table, target, credentials: dict | None = None) -> WriteResult:
-        return _write(table, target, self._con, credentials=credentials)
+    def execute(self, table: ibis.Table, target, credentials: dict | None = None, run_id: str | None = None) -> WriteResult:
+        return _write(table, target, self._con, credentials=credentials, run_id=run_id)
 
     def apply_filter_sql(self, table: ibis.Table, expr: str) -> ibis.Table:
         _require_duckdb_backend(table, op="filter (Advanced tab)")

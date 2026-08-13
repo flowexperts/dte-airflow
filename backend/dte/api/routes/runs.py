@@ -111,4 +111,20 @@ async def get_run_output(
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    # Rejoin provenance. It was split off before writing so the destination
+    # holds only the user's columns — this is where the UI gets it back, and
+    # it is why Inspect works on a table whose file contains no hashes.
+    #
+    # By position, because the output file has no row identity. Sound only
+    # because the sidecar was captured from the same materialisation, in the
+    # same order, as the rows that were written.
+    from dte.engine.writers.provenance import read_provenance
+
+    provenance = read_provenance(run_id)
+    if provenance:
+        rows = [
+            {**row, **provenance[i]} if i < len(provenance) else row
+            for i, row in enumerate(rows)
+        ]
+
     return {"rows": rows, "count": len(rows)}

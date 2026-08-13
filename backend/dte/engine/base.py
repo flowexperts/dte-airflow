@@ -62,8 +62,19 @@ class EngineProtocol(Protocol):
         """Add a computed column *output_field* evaluated from *expr* (raw SQL)."""
         ...
 
-    def execute(self, table: ibis.Table, target, credentials: dict | None = None) -> dict:
-        """Execute *table* and write to *target*; return ``{rows_written, location}``."""
+    def execute(
+        self,
+        table: ibis.Table,
+        target,
+        credentials: dict | None = None,
+        run_id: str | None = None,
+    ) -> dict:
+        """Execute *table* and write to *target*; return ``{rows_written, location}``.
+
+        `run_id`, when given, keys the provenance sidecar: system columns are
+        split off to the artifact store so the destination receives only the
+        user's columns.
+        """
         ...
 
 
@@ -95,7 +106,13 @@ class BaseEngine(ABC):
         ...
 
     @abstractmethod
-    def execute(self, table: ibis.Table, target, credentials: dict | None = None) -> dict:
+    def execute(
+        self,
+        table: ibis.Table,
+        target,
+        credentials: dict | None = None,
+        run_id: str | None = None,
+    ) -> dict:
         ...
 
     def apply_enrichment(

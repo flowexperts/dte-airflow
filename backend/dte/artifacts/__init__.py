@@ -14,6 +14,7 @@ from dte.artifacts.store import (
     ArtifactStore,
     derived_key,
     doc_key,
+    run_provenance_key,
     validate_key,
 )
 
@@ -23,6 +24,7 @@ __all__ = [
     "derived_key",
     "doc_key",
     "get_artifact_store",
+    "run_provenance_key",
     "validate_key",
 ]
 

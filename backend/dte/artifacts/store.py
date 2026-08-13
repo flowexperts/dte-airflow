@@ -39,6 +39,19 @@ def doc_key(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def run_provenance_key(run_id: str) -> str:
+    """Key for a run's provenance sidecar.
+
+    Derived from the run id rather than from content, so the API can find it
+    with nothing stored in the database — no column, no migration. The
+    store's immutability contract still holds: a completed run's provenance
+    never changes, so the bytes under this key never change either.
+
+    Namespaced so it can never collide with a document hash.
+    """
+    return hashlib.sha256(f"dte:run-provenance:{run_id}".encode("utf-8")).hexdigest()
+
+
 def _canonical(params: Any) -> str:
     """Order-insensitive, stable JSON. A dict built in a different order must
     hash the same or the cache would miss constantly."""
