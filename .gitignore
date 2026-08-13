@@ -19,3 +19,7 @@ scripts/demo/node_modules/
 
 # Local per-worktree compose port remap (see file header)
 docker-compose.override.yml
+
+# Content-addressed extract cache (plan 050). Relative default resolves
+# against CWD, so a backend run drops it in backend/.
+.dte-artifacts/
