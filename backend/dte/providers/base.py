@@ -59,12 +59,54 @@ class ExtractProvider(Protocol):
     ) -> ExtractResult: ...
 
 
+@dataclass(frozen=True)
+class FieldSpec:
+    """One column the user wants extracted.
+
+    `description` is the primary steering signal for model-backed providers —
+    it is what the model reads to decide what to look for. `pattern` is only
+    consulted by the deterministic `regex` provider.
+    """
+
+    name: str
+    type: str = "string"
+    description: str = ""
+    required: bool = False
+    examples: list[str] = field(default_factory=list)
+    pattern: str | None = None
+
+
+@dataclass(frozen=True)
+class DataModel:
+    fields: list[FieldSpec]
+    instructions: str = ""
+
+
+@dataclass(frozen=True)
+class StructureResult:
+    """Values plus the provenance that makes them checkable.
+
+    `provenance[name]` is `{confidence, page, char_start, char_end, quote}` or
+    None. It is what lets the inspector highlight where a value came from —
+    the difference between "the model said 1240.50" and "I can see where it
+    got 1240.50".
+    """
+
+    values: dict[str, Any]
+    provenance: dict[str, dict | None]
+    provider: str
+    blocks_text: str = ""
+    elapsed_ms: int = 0
+    cached: bool = False
+    error: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 @runtime_checkable
 class StructureProvider(Protocol):
-    """Blocks → the user's declared data model. Implemented in plan 050 phase 2."""
-
     name: str
 
     def structure(
-        self, blocks: list[Block], schema: Any, params: dict
-    ) -> Any: ...
+        self, blocks: list[Block], model: DataModel, params: dict
+    ) -> StructureResult: ...

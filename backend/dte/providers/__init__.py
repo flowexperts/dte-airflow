@@ -11,16 +11,29 @@ before an API key exists. Model-backed providers (`claude`, `openai`) and the
 
 from dte.providers.base import (
     Block,
+    DataModel,
     ExtractProvider,
     ExtractResult,
+    FieldSpec,
     ProviderNotAvailable,
     StructureProvider,
+    StructureResult,
     UnknownProvider,
 )
 from dte.providers.pdf import PdfplumberProvider, PypdfProvider
+from dte.providers.structure import (
+    ClaudeStructureProvider,
+    OpenAIStructureProvider,
+    RegexStructureProvider,
+)
 
 __all__ = [
     "Block",
+    "DataModel",
+    "FieldSpec",
+    "StructureResult",
+    "list_structure_providers",
+    "structure_provider",
     "ExtractProvider",
     "ExtractResult",
     "ProviderNotAvailable",
@@ -35,7 +48,11 @@ EXTRACT_PROVIDERS: dict[str, ExtractProvider] = {
     "pdfplumber": PdfplumberProvider(),
 }
 
-STRUCTURE_PROVIDERS: dict[str, StructureProvider] = {}
+STRUCTURE_PROVIDERS: dict[str, StructureProvider] = {
+    "regex": RegexStructureProvider(),
+    "claude": ClaudeStructureProvider(),
+    "openai": OpenAIStructureProvider(),
+}
 
 
 def list_extract_providers() -> list[str]:
@@ -49,4 +66,18 @@ def extract_provider(name: str) -> ExtractProvider:
         raise UnknownProvider(
             f"unknown extract provider {name!r}; "
             f"available: {', '.join(list_extract_providers())}"
+        ) from None
+
+
+def list_structure_providers() -> list[str]:
+    return sorted(STRUCTURE_PROVIDERS)
+
+
+def structure_provider(name: str) -> StructureProvider:
+    try:
+        return STRUCTURE_PROVIDERS[name]
+    except KeyError:
+        raise UnknownProvider(
+            f"unknown structure provider {name!r}; "
+            f"available: {', '.join(list_structure_providers())}"
         ) from None

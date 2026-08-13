@@ -787,6 +787,70 @@ class ExtractStep(BaseModel):
     output_field: str = "content"
 
 
+class DataModelField(BaseModel):
+    """One column the user wants extracted from a document."""
+
+    name: str
+    type: Literal["string", "int", "float", "boolean", "date", "timestamp"] = "string"
+    description: str = ""
+    required: bool = False
+    examples: list[str] = Field(default_factory=list)
+    # Only consulted by the deterministic `regex` provider.
+    pattern: str | None = None
+
+
+class DataModelSpec(BaseModel):
+    fields: list[DataModelField]
+    instructions: str = ""
+
+    @model_validator(mode="after")
+    def _validate_fields(self) -> DataModelSpec:
+        if not self.fields:
+            raise ValueError(
+                "a structure step must declare at least one field — with none, "
+                "the step produces no columns"
+            )
+        names = [f.name for f in self.fields]
+        dupes = {n for n in names if names.count(n) > 1}
+        if dupes:
+            raise ValueError(f"duplicate field names in data model: {sorted(dupes)}")
+        return self
+
+
+# Sampling parameters are rejected with a 400 on current Claude and OpenAI
+# reasoning models. Catching them here turns a runtime failure on every single
+# row into one clear validation error at save time.
+_REJECTED_PARAMS = {"temperature", "top_p", "top_k"}
+
+
+class StructureStep(BaseModel):
+    """Extracted text in, the user's declared data model out.
+
+    The declared fields become real typed columns. From this step onward the
+    row is ordinary tabular data and every existing step — filter, join,
+    aggregate, check, pivot — works on it unchanged. That is the whole point
+    of splitting extract from structure.
+    """
+
+    op: Literal["structure"]
+    input_field: str = "content"
+    provider: Literal["claude", "openai", "regex"] = "claude"
+    model: DataModelSpec
+    params: dict = Field(default_factory=dict)
+    on_error: Literal["null", "fail"] = "null"
+
+    @model_validator(mode="after")
+    def _reject_sampling_params(self) -> StructureStep:
+        bad = _REJECTED_PARAMS & set(self.params)
+        if bad:
+            raise ValueError(
+                f"{sorted(bad)} are rejected with a 400 by current Claude and "
+                "OpenAI reasoning models — remove them and steer with the "
+                "field descriptions instead"
+            )
+        return self
+
+
 class OutputField(BaseModel):
     field: str
     alias: str | None = None
@@ -1037,6 +1101,7 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("check", None): CheckStep,
     ("profile", None): ProfileStep,
     ("extract", None): ExtractStep,
+    ("structure", None): StructureStep,
 }
 
 
