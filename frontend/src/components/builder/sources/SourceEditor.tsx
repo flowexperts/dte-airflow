@@ -6,11 +6,13 @@ import { SOURCE_KINDS, SOURCE_CONNECTION_COMPAT, type SourceKind } from "./types
 import { FilesystemSourceEditor } from "./FilesystemSourceEditor";
 import { SqlSourceEditor } from "./SqlSourceEditor";
 import { MongoSourceEditor } from "./MongoSourceEditor";
+import { DocumentsSourceEditor } from "./DocumentsSourceEditor";
 import { useSchemasOptional } from "../schema-context";
 import { ConnectionPicker } from "../ConnectionPicker";
 
 const CONFIG_TEMPLATES: Record<SourceKind, Record<string, unknown>> = {
   filesystem:   { bucket_url: "", file_glob: "*.json" },
+  documents:    { bucket_url: "", file_glob: "**/*.pdf" },
   s3:           { bucket_url: "", file_glob: "*.json" },
   gcs:          { bucket_url: "", file_glob: "*.json" },
   azure:        { bucket_url: "", file_glob: "*.json" },
@@ -108,6 +110,9 @@ export function SourceEditor({
           format={source.format ?? null}
           onFormatChange={(fmt) => onChange({ ...source, format: fmt })}
         />
+      )}
+      {kind === "documents" && (
+        <DocumentsSourceEditor config={config} onChange={setConfig} />
       )}
       {kind === "sql_database" && (
         <SqlSourceEditor config={config} onChange={setConfig} />

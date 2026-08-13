@@ -2,7 +2,7 @@ import pytest
 import json
 import ibis
 from dte.models.pipeline import Source, SourceCreate
-from dte.sources.loader import load_source
+from dte.sources.loader import UnsupportedFileFormat, _detect_format, load_source
 
 
 def test_load_local_json_via_dlt(tmp_path):
@@ -146,6 +146,69 @@ def test_load_explicit_format_overrides_extension(tmp_path):
     con = ibis.duckdb.connect()
     df = load_source(src, con, {}).execute()
     assert sorted(df["id"].tolist()) == ["x", "y"]
+
+
+# ── format detection ────────────────────────────────────────────────────────
+#
+# `_detect_format` used to fall back to "json" for any unrecognised extension,
+# so a `*.pdf` glob was silently routed into `read_json_auto` and died with a
+# JSON parse error naming neither the file nor the real problem. Unknown
+# extensions now raise, and the message has to be actionable.
+
+
+@pytest.mark.parametrize(
+    "ext",
+    [".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".parquet", ".pq", ".xlsx"],
+)
+def test_detect_format_known_extensions(ext):
+    """Every supported extension still resolves to a reader family."""
+    assert _detect_format(f"data{ext}", None) in {
+        "json", "jsonl", "csv", "parquet", "excel",
+    }
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["report.pdf", "scan.PDF", "clip.mp3", "notes.txt", "archive.tar.gz"],
+)
+def test_detect_format_unknown_extension_raises(path):
+    with pytest.raises(UnsupportedFileFormat) as exc:
+        _detect_format(path, None)
+    msg = str(exc.value)
+    assert path in msg          # name the offending path
+    assert "format" in msg      # point at the override
+
+
+def test_detect_format_extensionless_raises():
+    """`**/*` has no extension to detect — guessing json is how the old bug
+    surfaced as an unrelated parse error deep inside DuckDB."""
+    with pytest.raises(UnsupportedFileFormat):
+        _detect_format("**/*", None)
+
+
+def test_detect_format_explicit_still_wins_over_unknown_extension():
+    """The 'wrong extension, right content' escape hatch must survive the fix."""
+    assert _detect_format("data.pdf", "csv") == "csv"
+    assert _detect_format("**/*", "jsonl") == "jsonl"
+    assert _detect_format("data.weird", "ndjson") == "jsonl"
+
+
+def test_load_pdf_glob_raises_actionable_error(tmp_path):
+    """End to end: a documents-shaped glob fails at detection, not with a
+    JSON parse error from inside read_json_auto."""
+    (tmp_path / "invoice.pdf").write_bytes(b"%PDF-1.4 not really a pdf")
+
+    src = Source(
+        connection_id="local_fs",
+        id="s_pdf",
+        source_type="filesystem",
+        config={"bucket_url": str(tmp_path), "file_glob": "*.pdf"},
+        table="docs",
+    )
+    con = ibis.duckdb.connect()
+    with pytest.raises(UnsupportedFileFormat) as exc:
+        load_source(src, con, {})
+    assert ".pdf" in str(exc.value)
 
 
 def test_load_returns_ibis_table(tmp_path):
@@ -564,3 +627,103 @@ def test_rest_api_resource_name_overridden_to_source_table(monkeypatch):
 def test_dispatch_registers_rest_api():
     from dte.sources.loader import LOADERS
     assert "rest_api" in LOADERS
+
+
+# ── Whitespace in path-ish config ────────────────────────────────────────
+#
+# A trailing space survives copy-paste and is invisible in the input box. It
+# used to turn a correct glob into "No files matched '**/*.pdf '", an error
+# that reads as if the pattern were wrong. Trimmed at save, and again at glob
+# time so sources stored before the fix keep working.
+
+
+def test_glob_local_tolerates_surrounding_whitespace(tmp_path):
+    from dte.sources.loader import _glob_local
+
+    (tmp_path / "a.pdf").write_bytes(b"%PDF-1.4")
+    (tmp_path / "b.pdf").write_bytes(b"%PDF-1.4")
+
+    clean = _glob_local(str(tmp_path), "**/*.pdf")
+    assert len(clean) == 2
+
+    assert _glob_local(str(tmp_path), "**/*.pdf ") == clean
+    assert _glob_local(str(tmp_path), " **/*.pdf") == clean
+    assert _glob_local(str(tmp_path) + " ", "**/*.pdf") == clean
+
+
+def test_source_save_trims_bucket_url_and_file_glob():
+    src = SourceCreate(
+        id="docs",
+        name="docs",
+        connection_id="local_fs",
+        source_type="documents",
+        table="docs",
+        config={"bucket_url": "  /tmp/docs  ", "file_glob": "**/*.pdf "},
+    )
+    assert src.config["bucket_url"] == "/tmp/docs"
+    assert src.config["file_glob"] == "**/*.pdf"
+
+
+def test_source_save_leaves_clean_config_untouched():
+    src = SourceCreate(
+        id="docs",
+        name="docs",
+        connection_id="local_fs",
+        source_type="documents",
+        table="docs",
+        config={"bucket_url": "/tmp/docs", "file_glob": "**/*.pdf"},
+    )
+    assert src.config["bucket_url"] == "/tmp/docs"
+    assert src.config["file_glob"] == "**/*.pdf"
+
+
+# ── Blank id means "server, name it" ─────────────────────────────────────
+#
+# `default_factory` only fires when the key is absent, so a client sending
+# {"id": ""} used to write an empty string as the primary key. The row saved,
+# then a pipeline slot holding "" failed validation claiming nothing was
+# picked — an error pointing away from the actual cause.
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_blank_source_id_is_server_generated(blank):
+    src = SourceCreate(
+        id=blank,
+        name="PDF source",
+        connection_id="local_fs",
+        source_type="documents",
+        table="docs",
+        config={"bucket_url": "/tmp/docs", "file_glob": "**/*.pdf"},
+    )
+    assert len(src.id) == 36, f"expected a uuid4, got {src.id!r}"
+
+
+def test_explicit_source_id_is_preserved():
+    src = SourceCreate(
+        id="my-invoices",
+        name="PDF source",
+        connection_id="local_fs",
+        source_type="documents",
+        table="docs",
+        config={"bucket_url": "/tmp/docs", "file_glob": "**/*.pdf"},
+    )
+    assert src.id == "my-invoices"
+
+
+def test_blank_id_generated_for_every_model_with_the_pattern():
+    """Connection, Destination and LookupTable share the default_factory
+    idiom, so they shared the bug."""
+    from dte.models.pipeline import (
+        ConnectionBase,
+        DestinationBase,
+        LookupTableBase,
+    )
+
+    conn = ConnectionBase(id="", name="c", connection_type="local_fs", credentials={})
+    dest = DestinationBase(
+        id="", name="d", connection_id="local_fs",
+        config={"type": "json_file", "path": "/tmp/o.json"},
+    )
+    lut = LookupTableBase(id="", name="l", mappings={"a": "b"})
+    for obj in (conn, dest, lut):
+        assert len(obj.id) == 36, f"{type(obj).__name__} kept a blank id"

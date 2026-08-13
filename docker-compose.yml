@@ -65,6 +65,19 @@ services:
       # Schedules (plan 047). The ticker itself runs on the worker; the API
       # needs this on to expose the /schedules routes.
       DTE_SCHEDULES_ENABLED: "true"
+      # Model-provider keys for the `structure` step (plan 050). Put them in
+      # .env. This is the ONLY safe place for them today: a key set via the
+      # step's `params.api_key` lands in the pipelines JSONB in plaintext.
+      # Plan 050 should grow an `anthropic`/`openai` Connection type so they
+      # go through EncryptedJSON like every other credential.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Extract/structure cache. MUST be a shared volume, not the default
+      # relative `.dte-artifacts`: that resolves to /app inside the container
+      # writable layer, so backend and worker each kept their own copy —
+      # previewing then triggering re-billed every model call, and any
+      # `up --build` started cold. Both services mount the same volume below.
+      DTE_ARTIFACT_DIR: /var/lib/dte/artifacts
     command: >
       sh -c "ALEMBIC_URL=$$(echo $$DATABASE_URL | sed 's|+asyncpg||') &&
              DATABASE_URL=$$ALEMBIC_URL alembic upgrade head &&
@@ -73,6 +86,7 @@ services:
       - ./backend/dte:/app/dte
       - ./backend/alembic:/app/alembic
       - /tmp/dte-samples:/tmp/dte-samples
+      - artifacts:/var/lib/dte/artifacts
     ports:
       - "8001:8001"
     depends_on:
@@ -105,12 +119,20 @@ services:
       # The schedule ticker is a periodic task registered on this process.
       # Without this the worker runs jobs but never fires schedules.
       DTE_SCHEDULES_ENABLED: "true"
+      # Triggered runs execute here, not in `backend` — without these, Preview
+      # would work and Trigger would fail with an auth error.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Same volume as `backend` — a cache the two do not share is not a
+      # cache, it is two caches, and Trigger re-pays for what Preview bought.
+      DTE_ARTIFACT_DIR: /var/lib/dte/artifacts
     command: python -m dte.worker
     volumes:
       - ./backend/dte:/app/dte
       # Same bind mount as `backend` — this is what makes DTE_SHARED_OUTPUT_FS
       # true in dev Compose; a k8s deployment needs a real RWX volume here.
       - /tmp/dte-samples:/tmp/dte-samples
+      - artifacts:/var/lib/dte/artifacts
     depends_on:
       # Waits for backend's healthcheck, not just postgres's, so migration
       # 029 (procrastinate's own schema) has definitely run before the
@@ -178,3 +200,6 @@ services:
 
 volumes:
   pgdata:
+  # Content-addressed extract/structure cache, shared by backend and worker.
+  # Survives `up --build`; deleting it only costs a re-parse and re-call.
+  artifacts:

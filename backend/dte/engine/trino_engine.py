@@ -18,7 +18,7 @@ import os
 
 import ibis
 
-from dte.engine.base import BaseEngine
+from dte.engine.base import BaseEngine, EnrichmentSpec
 from dte.engine.writers import WriteResult
 from dte.engine.writers import write as _write
 
@@ -29,6 +29,18 @@ class TrinoRawSqlNotSupported(RuntimeError):
     DuckDB SQL dialect != Trino SQL dialect.  Plan-034 option-a: reject rather
     than silently produce wrong results.  Switch to Basic filter + typed step
     ops for Trino compatibility, or run the pipeline on the DuckDB engine.
+    """
+
+
+class EnrichmentNotSupportedOnBackend(RuntimeError):
+    """Raised when an enrichment step (extract / structure / embed) runs on a
+    backend that cannot execute a Python mapper over its rows.
+
+    Enrichment materialises the table and maps it row by row in the API/worker
+    process. On a pushdown engine that would mean dragging the whole result
+    set out of the cluster, silently discarding the reason to use it. Same
+    refusal shape as `TrinoRawSqlNotSupported`: reject rather than do
+    something surprising.
     """
 
 
@@ -100,6 +112,16 @@ class TrinoEngine(BaseEngine):
     # ------------------------------------------------------------------
     # Execution — same write-layer as DuckDB, ibis handles the dialect
     # ------------------------------------------------------------------
+
+    def apply_enrichment(  # noqa: D102 — see EnrichmentNotSupportedOnBackend
+        self, table: ibis.Table, spec: EnrichmentSpec
+    ) -> ibis.Table:
+        raise EnrichmentNotSupportedOnBackend(
+            f"Enrichment step {spec.name!r} cannot run on Trino: it materialises "
+            "the table and maps rows in Python, which would pull the whole "
+            "result set out of the cluster. Run document pipelines on the "
+            "DuckDB engine."
+        )
 
     def execute(self, table: ibis.Table, target, credentials: dict | None = None) -> WriteResult:
         return _write(table, target, self._con, credentials=credentials)

@@ -167,6 +167,24 @@ def _public_fields(instance) -> dict:
     return out
 
 
+def _blank_id_means_generate(data):
+    """Drop `id` when it is blank so the UUID4 `default_factory` fires.
+
+    `default_factory` only runs when the key is ABSENT. Clients that send
+    `{"id": ""}` — which every "the server will name it" form does — sail past
+    it and write an empty string as the primary key. The row then exists but
+    is unreachable: `GET /sources/` is not a route, and a builder slot holding
+    `""` fails validation with a message about nothing being picked.
+
+    Blank means "you name it", which is what the field's default already says.
+    """
+    if isinstance(data, dict):
+        for key in ("id", "ID"):
+            if key in data and isinstance(data[key], str) and not data[key].strip():
+                data = {k: v for k, v in data.items() if k != key}
+    return data
+
+
 # ─── Connection ───────────────────────────────────────────────────────────────
 #
 # Two-class shape:
@@ -192,6 +210,10 @@ class ConnectionBase(SQLModel):
       If omitted at construction we default to `id` so historic call
       sites (e.g. `ConnectionBase(id="local_fs", ...)`) still round-trip.
     """
+
+    _generate_blank_id = model_validator(mode="before")(
+        classmethod(lambda cls, data: _blank_id_means_generate(data))
+    )
 
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
@@ -270,7 +292,10 @@ ConnectionCreate = ConnectionBase
 
 # ─── Source configs (per source_type) ─────────────────────────────────────
 
-SourceKind = Literal["filesystem", "s3", "gcs", "azure", "sql_database", "mongodb", "rest_api"]
+SourceKind = Literal[
+    "filesystem", "s3", "gcs", "azure", "sql_database", "mongodb", "rest_api",
+    "documents",
+]
 _FileFormat = Literal["json", "jsonl", "ndjson", "csv", "parquet", "excel"]
 
 
@@ -300,6 +325,21 @@ class GcsSourceConfig(_BucketSourceConfig):
 
 class AzureSourceConfig(_BucketSourceConfig):
     pass
+
+
+class DocumentSourceConfig(_BucketSourceConfig):
+    """A directory of documents to *list* — never to parse.
+
+    Loading this source yields one row per file (path, filename, ext,
+    size_bytes, modified_at, media_type). Extraction happens only when an
+    `extract` step runs, which is what keeps `POST /api/schema/infer` instant
+    and free — the builder fires it automatically on every edit.
+
+    `format` is meaningless here: the reader family is decided per-document by
+    the extract provider, not by the glob.
+    """
+
+    file_glob: str = "**/*.pdf"
 
 
 class SqlDatabaseSourceConfig(BaseModel):
@@ -332,6 +372,7 @@ _SOURCE_CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "sql_database": SqlDatabaseSourceConfig,
     "mongodb": MongoDBSourceConfig,
     "rest_api": RestApiSourceConfig,
+    "documents": DocumentSourceConfig,
 }
 
 
@@ -438,6 +479,10 @@ class SourceBase(SQLModel):
     editable, unique-per-tenant label; defaults to `id` when omitted so
     historic callers keep working.
     """
+
+    _generate_blank_id = model_validator(mode="before")(
+        classmethod(lambda cls, data: _blank_id_means_generate(data))
+    )
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
     connection_id: str
@@ -478,6 +523,15 @@ class SourceBase(SQLModel):
         typed = model(**self.config)
         # `by_alias=True` so `schema_` re-serialises as `schema` on the wire.
         self.config = typed.model_dump(exclude_none=True, by_alias=True)
+
+        # Trim the path-ish fields. A trailing space survives copy-paste, is
+        # invisible in the input, and turns a working glob into "No files
+        # matched '**/*.pdf '" — an error that reads as if the pattern itself
+        # were wrong. Nothing legitimate ends one of these in whitespace.
+        for key in ("bucket_url", "file_glob"):
+            value = self.config.get(key)
+            if isinstance(value, str) and value != value.strip():
+                self.config[key] = value.strip()
 
         # Guardrail: if the user pinned a format AND the glob has an
         # extension that belongs to a different reader family, refuse.
@@ -563,6 +617,10 @@ class LookupTableBase(SQLModel):
     editable, unique-per-tenant label; defaults to `id` when omitted so
     historic callers keep working.
     """
+
+    _generate_blank_id = model_validator(mode="before")(
+        classmethod(lambda cls, data: _blank_id_means_generate(data))
+    )
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
     mappings: dict[str, str] = SMField(default_factory=dict)
@@ -744,6 +802,94 @@ class ProfileStep(BaseModel):
     columns: list[str] = Field(default_factory=list)
 
 
+ExtractGranularity = Literal["page", "document"]
+
+
+class ExtractStep(BaseModel):
+    """Documents in, extracted text blocks out.
+
+    The only op besides `join` that changes row cardinality: at `page`
+    granularity one input row fans out to one row per page.
+
+    A per-document failure fills `extract_meta.error` and leaves the output
+    field NULL — it does **not** fail the run. One bad PDF in 10k must not
+    cost the batch; add a downstream `check` step if you want it fatal.
+    """
+
+    op: Literal["extract"]
+    # Column holding the path to read. Defaults to what a `documents` source
+    # emits, so the common case needs no configuration.
+    source_field: str = "path"
+    provider: Literal["pypdf", "pdfplumber"] = "pdfplumber"
+    granularity: ExtractGranularity = "page"
+    params: dict = Field(default_factory=dict)
+    output_field: str = "content"
+
+
+class DataModelField(BaseModel):
+    """One column the user wants extracted from a document."""
+
+    name: str
+    type: Literal["string", "int", "float", "boolean", "date", "timestamp"] = "string"
+    description: str = ""
+    required: bool = False
+    examples: list[str] = Field(default_factory=list)
+    # Only consulted by the deterministic `regex` provider.
+    pattern: str | None = None
+
+
+class DataModelSpec(BaseModel):
+    fields: list[DataModelField]
+    instructions: str = ""
+
+    @model_validator(mode="after")
+    def _validate_fields(self) -> DataModelSpec:
+        if not self.fields:
+            raise ValueError(
+                "a structure step must declare at least one field — with none, "
+                "the step produces no columns"
+            )
+        names = [f.name for f in self.fields]
+        dupes = {n for n in names if names.count(n) > 1}
+        if dupes:
+            raise ValueError(f"duplicate field names in data model: {sorted(dupes)}")
+        return self
+
+
+# Sampling parameters are rejected with a 400 on current Claude and OpenAI
+# reasoning models. Catching them here turns a runtime failure on every single
+# row into one clear validation error at save time.
+_REJECTED_PARAMS = {"temperature", "top_p", "top_k"}
+
+
+class StructureStep(BaseModel):
+    """Extracted text in, the user's declared data model out.
+
+    The declared fields become real typed columns. From this step onward the
+    row is ordinary tabular data and every existing step — filter, join,
+    aggregate, check, pivot — works on it unchanged. That is the whole point
+    of splitting extract from structure.
+    """
+
+    op: Literal["structure"]
+    input_field: str = "content"
+    provider: Literal["claude", "openai", "regex"] = "claude"
+    model: DataModelSpec
+    params: dict = Field(default_factory=dict)
+    on_error: Literal["null", "fail"] = "null"
+
+    @model_validator(mode="after")
+    def _reject_sampling_params(self) -> StructureStep:
+        bad = _REJECTED_PARAMS & set(self.params)
+        if bad:
+            raise ValueError(
+                f"{sorted(bad)} are rejected with a 400 by current Claude and "
+                "OpenAI reasoning models — remove them and steer with the "
+                "field descriptions instead"
+            )
+        return self
+
+
 class OutputField(BaseModel):
     field: str
     alias: str | None = None
@@ -880,6 +1026,10 @@ class DestinationBase(SQLModel):
     editable, unique-per-tenant label; defaults to `id` when omitted so
     historic callers keep working.
     """
+
+    _generate_blank_id = model_validator(mode="before")(
+        classmethod(lambda cls, data: _blank_id_means_generate(data))
+    )
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
     connection_id: str
@@ -993,6 +1143,8 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("pivot", None): PivotStep,
     ("check", None): CheckStep,
     ("profile", None): ProfileStep,
+    ("extract", None): ExtractStep,
+    ("structure", None): StructureStep,
 }
 
 
@@ -1329,6 +1481,10 @@ SOURCE_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "sql_database": {"postgres", "mysql", "sqlite", "snowflake", "bigquery"},
     "mongodb": {"mongodb"},
     "rest_api": {"rest_api"},
+    # Documents live wherever files live. Only local_fs has a loader today;
+    # the object-store kinds are listed so a saved source doesn't have to be
+    # re-pointed when the remote listing lands.
+    "documents": {"local_fs", "s3", "gcs", "azure"},
 }
 
 # File formats are location-agnostic: each writes to a local path or to any

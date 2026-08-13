@@ -77,6 +77,18 @@ def _fake_test_user() -> User:
 
 
 @pytest.fixture(autouse=True)
+def _isolated_artifact_dir(tmp_path, monkeypatch):
+    """Point the extract cache at tmp_path for every test.
+
+    `DEFAULT_ARTIFACT_DIR` is the relative `.dte-artifacts`, which resolves
+    against the CWD — so an unguarded suite run drops a cache directory into
+    `backend/` and, worse, shares it between tests. A per-test directory also
+    means cache-hit assertions start from a known-cold state.
+    """
+    monkeypatch.setenv("DTE_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+
+
+@pytest.fixture(autouse=True)
 def _disable_rate_limiter():
     """Disable the global slowapi limiter for every test.
 

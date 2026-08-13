@@ -11,7 +11,11 @@ COPY dte ./dte
 COPY alembic ./alembic
 COPY alembic.ini ./
 
-RUN pip install --no-cache-dir -e . && pip install --no-cache-dir "psycopg2-binary>=2.9"
+# `[unstructured]` pulls pypdf + pdfplumber, `[models]` the anthropic and
+# openai SDKs. Without them the image builds and starts fine, and then every
+# extract / structure step fails at runtime with "install the optional extra"
+# — a failure that only shows up on a real document run.
+RUN pip install --no-cache-dir -e ".[unstructured,models]" && pip install --no-cache-dir "psycopg2-binary>=2.9"
 
 # Runtime stage — run as a non-root user for defence-in-depth.
 # Distroless is deferred to plans/036-distroless-runtime.md; requires
@@ -34,6 +38,13 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app /app
 
 RUN chown -R dte:dte /app
+
+# Artifact cache mount point. Created here, owned by `dte`, ON PURPOSE: Docker
+# seeds a fresh named volume from the image path, inheriting its ownership. If
+# the directory does not exist in the image, Docker creates the volume root:root
+# and this non-root process cannot write to it — the cache then silently fails
+# on a path that looks correctly configured.
+RUN mkdir -p /var/lib/dte/artifacts && chown -R dte:dte /var/lib/dte
 
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 RUN chmod +x /usr/local/bin/backend-entrypoint.sh

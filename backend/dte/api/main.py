@@ -13,6 +13,7 @@ from dte.api.deps import get_current_user
 from dte.api.limiter import limiter
 from dte.api.error_handlers import register as register_error_handlers
 from dte.api.middleware import RequestContextMiddleware, TenantContextMiddleware
+from dte.api.routes.artifacts import router as artifacts_router
 from dte.api.routes.auth import router as auth_router
 from dte.api.routes.connections import router as connections_router
 from dte.api.routes.destinations import router as destinations_router
@@ -101,6 +102,7 @@ app.include_router(auth_router, prefix="/api")
 _auth = [Depends(get_current_user)]
 app.include_router(pipelines_router, prefix="/api", dependencies=_auth)
 app.include_router(runs_router, prefix="/api", dependencies=_auth)
+app.include_router(artifacts_router, prefix="/api", dependencies=_auth)
 app.include_router(schema_router, prefix="/api", dependencies=_auth)
 app.include_router(sources_router, prefix="/api", dependencies=_auth)
 app.include_router(destinations_router, prefix="/api", dependencies=_auth)

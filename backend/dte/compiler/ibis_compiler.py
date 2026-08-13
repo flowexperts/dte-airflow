@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import ibis
@@ -7,6 +8,8 @@ import ibis.expr.datatypes as dt
 
 from dte.errors import CompilerError
 from dte.models.pipeline import (
+    ExtractStep,
+    StructureStep,
     AggregateStep,
     DatePartGroupBy,
     ExpressionMapStep,
@@ -104,6 +107,7 @@ def compile_pipeline(
     on_step_schema=None,
     on_step_sql=None,
     on_quality_result=None,  # Callable[[int, QualityResult], None] | None
+    on_enrichment_stats=None,  # Callable[[int, dict], None] | None
 ) -> ibis.Table:
     """Compile a pipeline into an ibis expression.
 
@@ -158,6 +162,7 @@ def compile_pipeline(
                     table, step, lookups, engine=engine,
                     idx=idx, on_quality_result=on_quality_result,
                     on_step_sql=on_step_sql,
+                    on_enrichment_stats=on_enrichment_stats,
                 )
                 registry[current_key] = table
         except Exception as e:
@@ -195,6 +200,7 @@ def _dispatch_single_table_step(
     idx: int = 0,
     on_quality_result=None,
     on_step_sql=None,
+    on_enrichment_stats=None,
 ) -> ibis.Table:
     op = step["op"]
     if op == "filter":
@@ -229,7 +235,227 @@ def _dispatch_single_table_step(
     elif op == "profile":
         return _apply_profile(table, step, idx=idx, engine=engine,
                               on_quality_result=on_quality_result)
+    elif op == "extract":
+        return _apply_extract(table, ExtractStep(**step), engine=engine, idx=idx)
+    elif op == "structure":
+        return _apply_structure(
+            table, StructureStep(**step), engine=engine, idx=idx,
+            on_enrichment_stats=on_enrichment_stats,
+        )
     raise CompilerError(f"unknown step op {op!r}")
+
+
+def _apply_structure(
+    table: ibis.Table,
+    step: "StructureStep",
+    engine: "BaseEngine | None" = None,
+    idx: int = 0,
+    on_enrichment_stats=None,
+) -> ibis.Table:
+    """Turn extracted text into the user's declared typed columns.
+
+    Materialises, like every enrichment step. Each declared field becomes a
+    real column; alongside them `structure_meta` carries per-field provenance
+    so the inspector can show *where* a value came from.
+
+    Cached on the hash of the input text plus the full config, so two
+    documents whose pages contain identical text share one call, and re-running
+    an unchanged pipeline costs nothing.
+    """
+    import hashlib
+
+    from dte.artifacts import derived_key, get_artifact_store
+    from dte.engine.base import EnrichmentSpec
+    from dte.providers import structure_provider
+    from dte.providers.base import Block, DataModel, FieldSpec
+
+    if engine is None:
+        raise CompilerError("structure steps require an engine")
+
+    provider = structure_provider(step.provider)
+    store = get_artifact_store()
+
+    data_model = DataModel(
+        fields=[FieldSpec(**f.model_dump()) for f in step.model.fields],
+        instructions=step.model.instructions,
+    )
+    # Everything that changes the answer is in the key: the declared model
+    # (names, types, descriptions all steer the model) and the call params.
+    config = {"model": step.model.model_dump(), "params": step.params}
+
+    stats = {"calls": 0, "cached": 0, "errors": 0,
+             "input_tokens": 0, "output_tokens": 0}
+
+    def _mapper(row: dict) -> list[dict]:
+        text = row.get(step.input_field)
+        blank = {f.name: None for f in step.model.fields}
+
+        if not text or not str(text).strip():
+            return [{**blank, "structure_meta": json.dumps({
+                "provider": step.provider, "cached": False,
+                "error": f"no text in {step.input_field!r}", "ms": 0, "fields": {},
+            })}]
+
+        key = derived_key(
+            hashlib.sha256(str(text).encode("utf-8")).hexdigest(),
+            "structure", step.provider, config,
+        )
+
+        if store.exists(key):
+            payload = json.loads(store.get(key).decode("utf-8"))
+            stats["cached"] += 1
+            meta = {"provider": step.provider, "cached": True,
+                    "error": payload.get("error"), "ms": 0,
+                    "fields": payload.get("provenance", {})}
+            return [{**payload["values"], "structure_meta": json.dumps(meta, default=str)}]
+
+        result = provider.structure(
+            [Block(text=str(text), index=0, page=row.get("page"))],
+            data_model, step.params,
+        )
+        stats["calls"] += 1
+        stats["input_tokens"] += result.input_tokens
+        stats["output_tokens"] += result.output_tokens
+        if result.error:
+            stats["errors"] += 1
+            # `on_error="fail"` turns a per-row problem into a run-level one —
+            # opt-in, because the default of carrying on is right far more often.
+            if step.on_error == "fail":
+                raise CompilerError(
+                    f"structure step {idx} failed on a row: {result.error}"
+                )
+
+        store.put(
+            key,
+            json.dumps({"values": result.values, "provenance": result.provenance,
+                        "error": result.error}, default=str).encode("utf-8"),
+            "application/json",
+        )
+        return [{
+            **result.values,
+            "structure_meta": json.dumps({
+                "provider": step.provider, "cached": False,
+                "error": result.error, "ms": result.elapsed_ms,
+                "fields": result.provenance,
+            }, default=str),
+        }]
+
+    _SQL_TYPE = {"string": "VARCHAR", "int": "BIGINT", "float": "DOUBLE",
+                 "boolean": "BOOLEAN", "date": "VARCHAR", "timestamp": "VARCHAR"}
+    out_schema = {f.name: _SQL_TYPE.get(f.type, "VARCHAR") for f in step.model.fields}
+    out_schema["structure_meta"] = "VARCHAR"  # JSON-encoded; see _mapper
+
+    result_table = engine.apply_enrichment(
+        table,
+        EnrichmentSpec(name=f"structure_{idx}", mapper=_mapper,
+                       output_schema=out_schema),
+    )
+
+    if on_enrichment_stats is not None:
+        try:
+            on_enrichment_stats(idx, {**stats, "provider": step.provider})
+        except Exception:  # never let telemetry crash a run
+            pass
+    return result_table
+
+
+def _apply_extract(
+    table: ibis.Table,
+    step: "ExtractStep",
+    engine: "BaseEngine | None" = None,
+    idx: int = 0,
+) -> ibis.Table:
+    """Read each document and emit its text blocks.
+
+    Unlike every other step this **materialises** — see `EnrichmentSpec`. It
+    also fans out: at `page` granularity one input row becomes one row per
+    page.
+
+    Results are cached in the artifact store under
+    `sha256(doc_bytes | op | provider | params)`, so a re-run costs nothing and
+    a later `structure` prompt change never re-parses a PDF. Two files with
+    identical bytes share one cache entry.
+    """
+    from dte.artifacts import derived_key, doc_key, get_artifact_store
+    from dte.engine.base import EnrichmentSpec
+    from dte.providers import extract_provider
+
+    if engine is None:
+        raise CompilerError("extract steps require an engine")
+
+    provider = extract_provider(step.provider)
+    store = get_artifact_store()
+    # Everything that changes the answer must change the key.
+    cache_params = {"granularity": step.granularity, **step.params}
+
+    def _mapper(row: dict) -> list[dict]:
+        path = row.get(step.source_field)
+        meta = {"provider": step.provider, "ms": 0, "cached": False, "error": None}
+
+        try:
+            with open(path, "rb") as fh:
+                content = fh.read()
+        except OSError as exc:
+            # A file that vanished between listing and extraction is one bad
+            # row, not a failed run.
+            meta["error"] = f"could not read {path!r}: {exc}"
+            return [_row(step, None, 0, None, None, meta)]
+
+        dk = doc_key(content)
+        key = derived_key(dk, "extract", step.provider, cache_params)
+
+        if store.exists(key):
+            payload = json.loads(store.get(key).decode("utf-8"))
+            meta.update(cached=True, error=payload.get("error"))
+            blocks = payload["blocks"]
+        else:
+            result = provider.extract(
+                content,
+                row.get("media_type") or "application/pdf",
+                {"granularity": step.granularity, **step.params},
+            )
+            blocks = [
+                {"text": b.text, "index": b.index, "page": b.page, "bbox": b.bbox}
+                for b in result.blocks
+            ]
+            meta.update(ms=result.elapsed_ms, error=result.error)
+            store.put(
+                key,
+                json.dumps({"blocks": blocks, "error": result.error}).encode("utf-8"),
+                "application/json",
+            )
+
+        if not blocks:
+            return [_row(step, None, 0, None, f"artifact://{dk}", meta)]
+        return [
+            _row(step, b["text"], b["index"], b["page"], f"artifact://{dk}", meta)
+            for b in blocks
+        ]
+
+    return engine.apply_enrichment(
+        table,
+        EnrichmentSpec(
+            name=f"extract_{idx}",
+            mapper=_mapper,
+            output_schema={
+                step.output_field: "VARCHAR",
+                "block_index": "BIGINT",
+                "page": "BIGINT",
+                "artifact_ref": "VARCHAR",
+                "extract_meta": "JSON",
+            },
+        ),
+    )
+
+
+def _row(step, text, index, page, ref, meta) -> dict:
+    return {
+        step.output_field: text,
+        "block_index": index,
+        "page": page,
+        "artifact_ref": ref,
+        "extract_meta": meta,
+    }
 
 
 def _apply_join(left: ibis.Table, right: ibis.Table, step: JoinStep) -> ibis.Table:
