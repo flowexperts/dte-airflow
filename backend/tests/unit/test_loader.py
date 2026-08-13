@@ -2,7 +2,7 @@ import pytest
 import json
 import ibis
 from dte.models.pipeline import Source, SourceCreate
-from dte.sources.loader import load_source
+from dte.sources.loader import UnsupportedFileFormat, _detect_format, load_source
 
 
 def test_load_local_json_via_dlt(tmp_path):
@@ -146,6 +146,69 @@ def test_load_explicit_format_overrides_extension(tmp_path):
     con = ibis.duckdb.connect()
     df = load_source(src, con, {}).execute()
     assert sorted(df["id"].tolist()) == ["x", "y"]
+
+
+# ── format detection ────────────────────────────────────────────────────────
+#
+# `_detect_format` used to fall back to "json" for any unrecognised extension,
+# so a `*.pdf` glob was silently routed into `read_json_auto` and died with a
+# JSON parse error naming neither the file nor the real problem. Unknown
+# extensions now raise, and the message has to be actionable.
+
+
+@pytest.mark.parametrize(
+    "ext",
+    [".json", ".jsonl", ".ndjson", ".csv", ".tsv", ".parquet", ".pq", ".xlsx"],
+)
+def test_detect_format_known_extensions(ext):
+    """Every supported extension still resolves to a reader family."""
+    assert _detect_format(f"data{ext}", None) in {
+        "json", "jsonl", "csv", "parquet", "excel",
+    }
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["report.pdf", "scan.PDF", "clip.mp3", "notes.txt", "archive.tar.gz"],
+)
+def test_detect_format_unknown_extension_raises(path):
+    with pytest.raises(UnsupportedFileFormat) as exc:
+        _detect_format(path, None)
+    msg = str(exc.value)
+    assert path in msg          # name the offending path
+    assert "format" in msg      # point at the override
+
+
+def test_detect_format_extensionless_raises():
+    """`**/*` has no extension to detect — guessing json is how the old bug
+    surfaced as an unrelated parse error deep inside DuckDB."""
+    with pytest.raises(UnsupportedFileFormat):
+        _detect_format("**/*", None)
+
+
+def test_detect_format_explicit_still_wins_over_unknown_extension():
+    """The 'wrong extension, right content' escape hatch must survive the fix."""
+    assert _detect_format("data.pdf", "csv") == "csv"
+    assert _detect_format("**/*", "jsonl") == "jsonl"
+    assert _detect_format("data.weird", "ndjson") == "jsonl"
+
+
+def test_load_pdf_glob_raises_actionable_error(tmp_path):
+    """End to end: a documents-shaped glob fails at detection, not with a
+    JSON parse error from inside read_json_auto."""
+    (tmp_path / "invoice.pdf").write_bytes(b"%PDF-1.4 not really a pdf")
+
+    src = Source(
+        connection_id="local_fs",
+        id="s_pdf",
+        source_type="filesystem",
+        config={"bucket_url": str(tmp_path), "file_glob": "*.pdf"},
+        table="docs",
+    )
+    con = ibis.duckdb.connect()
+    with pytest.raises(UnsupportedFileFormat) as exc:
+        load_source(src, con, {})
+    assert ".pdf" in str(exc.value)
 
 
 def test_load_returns_ibis_table(tmp_path):
