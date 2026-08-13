@@ -208,6 +208,10 @@ _COMPARATORS = {
     "set": _compare_list,
 }
 
+# The field types a spec may declare. Exported so an eval set can reject an
+# unknown comparator at save time rather than at the end of a paid sweep.
+COMPARATOR_TYPES: frozenset[str] = frozenset(_COMPARATORS)
+
 
 def compare(
     expected: Any,

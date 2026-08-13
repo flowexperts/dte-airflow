@@ -10,6 +10,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import select
 
+from dte.models.eval import (
+    EvalExample,
+    EvalExampleBase,
+    EvalSet,
+    EvalSetBase,
+)
 from dte.models.pipeline import (
     Connection,
     ConnectionBase,
@@ -29,12 +35,39 @@ from dte.models.user import Role, User, UserBase, UserRoleLink
 from dte.tenancy import get_current_tenant
 
 
+# The one place the `runs` select list is written. It used to be duplicated
+# verbatim in `get` and `list_for_pipeline`, which meant a new column added to
+# one and forgotten in the other simply vanished from that read path — and
+# `runs` is raw SQL, with no `Run` SQLModel, so nothing would have caught it.
+_RUN_COLUMNS = (
+    "id, pipeline_id, revision_id, status, error, rows_written, location, "
+    "started_at, finished_at, params, quality_checks, sql_query, job_id, "
+    "last_heartbeat_at, schedule_id, eval_set_id, labels_version, "
+    "config_digest, sweep_id, scores"
+)
+
+# Columns that live in jsonb and must be serialised + CAST on write; asyncpg
+# will not auto-encode a Python dict for a text bind.
+_RUN_JSONB_COLUMNS = frozenset({"params", "sql_query", "scores"})
+
+
 def _quality_summary_dicts(results: list[dict]) -> dict:
     """Compute pass/fail/warn counts from a list of raw quality_checks dicts."""
     passed = sum(1 for r in results if r.get("passed"))
     warned = sum(1 for r in results if not r.get("passed") and r.get("severity") == "warn")
     failed = sum(1 for r in results if not r.get("passed") and r.get("severity") == "fail")
     return {"passed": passed, "failed": failed, "warned": warned}
+
+
+def _run_row_to_dict(row) -> dict:
+    """Shared post-processing for every `runs` read path: ISO-format the
+    timestamps and collapse `quality_checks` into its summary."""
+    d = dict(row)
+    for ts in ("started_at", "finished_at", "last_heartbeat_at"):
+        d[ts] = d[ts].isoformat() if d.get(ts) else None
+    raw_quality = list(d.pop("quality_checks") or [])
+    d["quality"] = _quality_summary_dicts(raw_quality)
+    return d
 
 
 @asynccontextmanager
@@ -125,19 +158,11 @@ class PostgresRunStore:
     async def get(self, id: str) -> dict | None:
         async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks, sql_query, job_id, last_heartbeat_at, schedule_id FROM runs WHERE id = :id"),
+                text(f"SELECT {_RUN_COLUMNS} FROM runs WHERE id = :id"),
                 {"id": id}
             )
             row = result.mappings().fetchone()
-            if not row:
-                return None
-            d = dict(row)
-            d["started_at"] = d["started_at"].isoformat() if d.get("started_at") else None
-            d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
-            d["last_heartbeat_at"] = d["last_heartbeat_at"].isoformat() if d.get("last_heartbeat_at") else None
-            raw_quality = list(d.pop("quality_checks") or [])
-            d["quality"] = _quality_summary_dicts(raw_quality)
-            return d
+            return _run_row_to_dict(row) if row else None
 
     async def create(self, pipeline_id: str, revision_id: str | None = None) -> str:
         run_id = str(uuid.uuid4())
@@ -158,7 +183,7 @@ class PostgresRunStore:
         assignments = []
         binds: dict = {"id": id}
         for k, v in fields.items():
-            if k in ("params", "sql_query") and isinstance(v, dict | list):
+            if k in _RUN_JSONB_COLUMNS and isinstance(v, dict | list):
                 assignments.append(f"{k} = CAST(:{k} AS jsonb)")
                 binds[k] = _json.dumps(v)
             else:
@@ -177,19 +202,29 @@ class PostgresRunStore:
     ) -> list[dict]:
         async with _open_tenant_session(self._factory) as s:
             result = await s.execute(
-                text("SELECT id, pipeline_id, revision_id, status, error, rows_written, location, started_at, finished_at, params, quality_checks, sql_query, job_id, last_heartbeat_at, schedule_id FROM runs WHERE pipeline_id = :pid ORDER BY started_at DESC LIMIT :limit OFFSET :offset"),
+                text(
+                    f"SELECT {_RUN_COLUMNS} FROM runs WHERE pipeline_id = :pid "
+                    "ORDER BY started_at DESC LIMIT :limit OFFSET :offset"
+                ),
                 {"pid": pipeline_id, "limit": limit, "offset": offset}
             )
-            rows = []
-            for row in result.mappings().fetchall():
-                d = dict(row)
-                d["started_at"] = d["started_at"].isoformat() if d.get("started_at") else None
-                d["finished_at"] = d["finished_at"].isoformat() if d.get("finished_at") else None
-                d["last_heartbeat_at"] = d["last_heartbeat_at"].isoformat() if d.get("last_heartbeat_at") else None
-                raw_quality = list(d.pop("quality_checks") or [])
-                d["quality"] = _quality_summary_dicts(raw_quality)
-                rows.append(d)
-            return rows
+            return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
+
+    async def list_for_eval_set(
+        self, eval_set_id: str, limit: int = 50, offset: int = 0
+    ) -> list[dict]:
+        """Every run scored against one eval set — the leaderboard's read path.
+        Ordering, paging and shape match `list_for_pipeline` so the two feed
+        the same table component."""
+        async with _open_tenant_session(self._factory) as s:
+            result = await s.execute(
+                text(
+                    f"SELECT {_RUN_COLUMNS} FROM runs WHERE eval_set_id = :esid "
+                    "ORDER BY started_at DESC LIMIT :limit OFFSET :offset"
+                ),
+                {"esid": eval_set_id, "limit": limit, "offset": offset},
+            )
+            return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
 
     async def count_for_pipeline(self, pipeline_id: str) -> int:
         """Total runs, for the pager. Separate query rather than a window
@@ -793,3 +828,154 @@ class PostgresRoleStore:
     async def list(self) -> list[Role]:
         async with self._factory() as s:  # no tenant context — RBAC table, not RLS-protected
             return list((await s.execute(select(Role).order_by(Role.name))).scalars().all())
+
+
+class PostgresEvalSetStore:
+    """Labeled corpora (plan 051). Standard three-verb ORM template."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def get(self, id: str) -> EvalSet | None:
+        async with _open_tenant_session(self._factory) as s:
+            return await s.get(EvalSet, id)
+
+    async def save(self, eval_set: "EvalSetBase | EvalSet") -> None:
+        values = eval_set.model_dump(exclude={"created_at", "updated_at"})
+        stmt = pg_insert(EvalSet).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[EvalSet.id],
+            set_={
+                "name": stmt.excluded.name,
+                "source_id": stmt.excluded.source_id,
+                "field_specs": stmt.excluded.field_specs,
+                # `labels_version` is deliberately absent: it is owned by
+                # `bump_labels_version`, so editing the name of a set can
+                # never invalidate every score recorded against it.
+            },
+        )
+        async with _open_tenant_session(self._factory) as s:
+            await s.execute(stmt)
+            await s.commit()
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[EvalSet]:
+        stmt = (
+            select(EvalSet)
+            .order_by(EvalSet.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        async with _open_tenant_session(self._factory) as s:
+            return list((await s.execute(stmt)).scalars().all())
+
+    async def delete(self, id: str) -> bool:
+        async with _open_tenant_session(self._factory) as s:
+            row = await s.get(EvalSet, id)
+            if row is None:
+                return False
+            await s.delete(row)
+            await s.commit()
+            return True
+
+    async def bump_labels_version(self, id: str) -> int:
+        """Increment in SQL, not read-modify-write: two concurrent labelers
+        must not both read 3 and both write 4, which would leave two different
+        label states sharing one version and silently mis-pin every run."""
+        async with _open_tenant_session(self._factory) as s:
+            result = await s.execute(
+                text(
+                    "UPDATE eval_sets SET labels_version = labels_version + 1 "
+                    "WHERE id = :id RETURNING labels_version"
+                ),
+                {"id": id},
+            )
+            row = result.fetchone()
+            await s.commit()
+            return int(row[0]) if row else 0
+
+
+class PostgresEvalExampleStore:
+    """One labeled document per row (plan 051).
+
+    The upsert targets `(eval_set_id, doc_key)` rather than the primary key:
+    the natural identity of a label is the document it labels, and relabeling
+    must replace rather than accumulate.
+    """
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def get(self, id: str) -> EvalExample | None:
+        async with _open_tenant_session(self._factory) as s:
+            return await s.get(EvalExample, id)
+
+    async def get_by_doc_key(self, eval_set_id: str, doc_key: str) -> EvalExample | None:
+        stmt = (
+            select(EvalExample)
+            .where(EvalExample.eval_set_id == eval_set_id)
+            .where(EvalExample.doc_key == doc_key.lower())
+        )
+        async with _open_tenant_session(self._factory) as s:
+            return (await s.execute(stmt)).scalars().first()
+
+    async def save(self, example: "EvalExampleBase | EvalExample") -> None:
+        values = example.model_dump(exclude={"created_at", "updated_at"})
+        stmt = pg_insert(EvalExample).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[EvalExample.eval_set_id, EvalExample.doc_key],
+            set_={
+                "doc_ref": stmt.excluded.doc_ref,
+                "labels": stmt.excluded.labels,
+                "label_source": stmt.excluded.label_source,
+                "split": stmt.excluded.split,
+                "labels_version": stmt.excluded.labels_version,
+            },
+        )
+        async with _open_tenant_session(self._factory) as s:
+            await s.execute(stmt)
+            await s.commit()
+
+    async def list_for_set(
+        self,
+        eval_set_id: str,
+        split: str | None = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[EvalExample]:
+        stmt = select(EvalExample).where(EvalExample.eval_set_id == eval_set_id)
+        if split is not None:
+            stmt = stmt.where(EvalExample.split == split)
+        stmt = stmt.order_by(EvalExample.created_at.asc()).limit(limit).offset(offset)
+        async with _open_tenant_session(self._factory) as s:
+            return list((await s.execute(stmt)).scalars().all())
+
+    async def count_for_set(self, eval_set_id: str, split: str | None = None) -> int:
+        stmt = (
+            select(sa_func.count())
+            .select_from(EvalExample)
+            .where(EvalExample.eval_set_id == eval_set_id)
+        )
+        if split is not None:
+            stmt = stmt.where(EvalExample.split == split)
+        async with _open_tenant_session(self._factory) as s:
+            return int((await s.execute(stmt)).scalar_one())
+
+    async def count_by_label_source(self, eval_set_id: str) -> dict[str, int]:
+        """Feeds the ">50% judge-labeled" warning. Grouped in SQL because the
+        set can be thousands of rows and the leaderboard asks on every load."""
+        stmt = (
+            select(EvalExample.label_source, sa_func.count())
+            .where(EvalExample.eval_set_id == eval_set_id)
+            .group_by(EvalExample.label_source)
+        )
+        async with _open_tenant_session(self._factory) as s:
+            return {src: int(n) for src, n in (await s.execute(stmt)).all()}
+
+    async def delete(self, id: str) -> bool:
+        async with _open_tenant_session(self._factory) as s:
+            row = await s.get(EvalExample, id)
+            if row is None:
+                return False
+            await s.delete(row)
+            await s.commit()
+            return True

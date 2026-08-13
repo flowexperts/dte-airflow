@@ -316,14 +316,50 @@ step's `params.api_key`: step params are stored unencrypted in
 `pipelines.steps` JSONB and copied into every revision. See
 `plans/052-model-provider-connections.md`.
 
-### Eval scoring core (plan 051)
+### Eval harness (plan 051)
 
-`dte/evals/` — `comparators.py` and `scoring.py`. Pure functions, no I/O, no
-storage; the rest of the harness is unbuilt. Comparators are forgiving on
-formatting and strict on semantics (`$1,240.50` matches `1240.5`; `1240.50`
-does not match `1204.50`). Metrics are precision/recall/F1, never accuracy,
-and correct abstention (`tn`) is counted separately from a silent miss (`fn`)
-— without that split an extractor that answers nothing scores well.
+**Scoring core.** `dte/evals/` — `comparators.py` and `scoring.py`. Pure
+functions, no I/O, no storage. Comparators are forgiving on formatting and
+strict on semantics (`$1,240.50` matches `1240.5`; `1240.50` does not match
+`1204.50`). Metrics are precision/recall/F1, never accuracy, and correct
+abstention (`tn`) is counted separately from a silent miss (`fn`) — without
+that split an extractor that answers nothing scores well.
+
+**Storage** (migration `034`). `eval_sets` holds a labeled corpus for one
+extraction task; `eval_examples` holds one labeled document per row. Models in
+`dte/models/eval.py`, stores in `dte/store/postgres.py`, protocols in
+`store/base.py`, fakes in `tests/fakes.py`. The run path, the labeling paths,
+and the UI are still unbuilt.
+
+- **`doc_key` is `sha256(document bytes)`** — the same key the plan-050
+  artifact store uses. Labels therefore survive renames and directory moves,
+  and join directly against extraction output with no path matching. The model
+  rejects anything that isn't a 64-char hex digest: a filename here would join
+  against nothing and the set would score a permanent zero with no error.
+- **`eval_examples` is upserted on `(eval_set_id, doc_key)`, not on `id`.**
+  The natural identity of a label is the document it labels; without the
+  UNIQUE constraint, relabeling appends a contradictory second row that then
+  gets scored twice.
+- **`labels_version` is owned by `bump_labels_version`, never by `save`.**
+  Every label write bumps it and runs pin what they scored against, so folding
+  it into `save` would let a rename invalidate every historical score. The
+  Postgres increment happens in SQL — two concurrent labelers must not both
+  read 3 and both write 4.
+- **`field_specs` is the scorer's own model.** `EvalSetBase.to_field_specs()`
+  is the single conversion, and an unknown comparator type is rejected at save
+  time — a bad comparator must fail when the set is created, not at the end of
+  a paid sweep.
+- **Five new `runs` columns**: `eval_set_id`, `labels_version`,
+  `config_digest`, `sweep_id`, `scores`. All nullable with no default —
+  "never scored" must stay distinguishable from "scored zero". `runs` is raw
+  SQL with no SQLModel, so the select list now lives in one constant
+  (`_RUN_COLUMNS`) and the jsonb write set in another (`_RUN_JSONB_COLUMNS`);
+  adding a column means editing those two plus the migration. It used to be
+  duplicated across `get` and `list_for_pipeline`, where a column added to one
+  and forgotten in the other simply vanished from that read path.
+- `eval:read` / `eval:write` / `eval:delete` are granted to the seeded roles
+  by migration `034` itself. Adding a value to `Permission` in code only
+  changes what *may* be checked; the `roles` table holds what is granted.
 
 ### Field references and nested columns
 
