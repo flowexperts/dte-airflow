@@ -84,6 +84,13 @@ class LocalArtifactStore:
         except FileNotFoundError:
             return None
 
+    def size(self, key: str) -> int:
+        validate_key(key)
+        try:
+            return self._blob(key).stat().st_size
+        except FileNotFoundError as exc:
+            raise KeyError(f"no artifact stored under {key}") from exc
+
     def open_stream(self, key: str) -> IO[bytes]:
         validate_key(key)
         try:
