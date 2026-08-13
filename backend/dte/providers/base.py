@@ -39,6 +39,11 @@ class Block:
     bbox: dict[str, float] | None = None
     # Per-word boxes, used to resolve a character span to a highlight.
     words: list[dict[str, Any]] = field(default_factory=list)
+    # The page's own size in PDF points. Word boxes are meaningless without
+    # it: rendering needs a scale factor, and `bbox` describes the content,
+    # not the page, so a page with margins would scale wrong.
+    width: float | None = None
+    height: float | None = None
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,8 @@ back. These tests pin the consequences of that choice — fan-out, column
 preservation, caching, and per-row failure isolation.
 """
 
+import json
+
 import ibis
 import pytest
 
@@ -225,6 +227,155 @@ def test_identical_documents_share_one_cache_entry(tmp_path, monkeypatch):
     out = _extract(engine, _documents_table(docs, engine)).execute()
     cached = [m["cached"] for m in out["extract_meta"]]
     assert cached.count(False) == 3 and cached.count(True) == 3
+
+
+# ── extract: the document itself is an artifact ─────────────────────────────
+
+
+def test_extract_stores_the_original_document_under_its_doc_key(corpus):
+    """`artifact_ref` points at the *document*, not the extraction.
+
+    Every row carries `artifact://<sha256 of the PDF bytes>`, which is what
+    the document inspector dereferences to render the page. Storing only the
+    derived extract JSON leaves that ref dangling — the row promises bytes
+    that were never written.
+    """
+    from dte.artifacts import doc_key, get_artifact_store
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(corpus, engine)).execute()
+    store = get_artifact_store()
+
+    original = (corpus / "a.pdf").read_bytes()
+    key = doc_key(original)
+    assert key in {r.removeprefix("artifact://") for r in out["artifact_ref"]}
+
+    assert store.exists(key), "artifact_ref points at bytes that were never stored"
+    assert store.get(key) == original
+    assert store.media_type(key) == "application/pdf"
+
+
+def test_document_bytes_survive_a_cached_re_extract(corpus):
+    """The store write sits before the cache branch, not inside the miss path.
+
+    Otherwise a cache built by an older version — or by a run whose artifacts
+    were partly evicted — can never heal: every subsequent run short-circuits
+    on the derived key and the document is never written.
+    """
+    from dte.artifacts import doc_key, get_artifact_store
+
+    engine = DuckDBEngine()
+    _extract(engine, _documents_table(corpus, engine)).execute()
+
+    store = get_artifact_store()
+    key = doc_key((corpus / "a.pdf").read_bytes())
+    # Simulate the pre-13a cache: extraction cached, document absent.
+    store.delete(key)
+    assert not store.exists(key)
+
+    engine2 = DuckDBEngine()
+    out = _extract(engine2, _documents_table(corpus, engine2)).execute()
+    assert all(m["cached"] for m in out["extract_meta"]), "expected a cache hit"
+    assert store.exists(key), "cached path skipped the document write"
+
+
+def test_unreadable_document_has_no_artifact_ref(corpus):
+    """A row with no bytes must not claim an artifact — a ref that 404s is
+    worse than a null, because the inspector renders an error instead of
+    correctly showing nothing."""
+    engine = DuckDBEngine()
+    table = _documents_table(corpus, engine)
+    (corpus / "a.pdf").unlink()
+    out = _extract(engine, table).execute()
+    assert out[out["filename"] == "a.pdf"].iloc[0]["artifact_ref"] is None
+
+
+def test_cached_blocks_keep_the_word_boxes(corpus):
+    """Provenance highlighting resolves a char span to a rectangle via
+    per-word boxes. `pdfplumber` computes them; if the cache write drops them
+    the inspector can never draw a box — and because every later run is a
+    cache hit, re-extracting would not bring them back either.
+    """
+    from dte.artifacts import get_artifact_store
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(corpus, engine)).execute()
+    store = get_artifact_store()
+
+    key = out["extract_meta"].iloc[0]["key"]
+    blocks = json.loads(store.get(key).decode("utf-8"))["blocks"]
+    assert blocks[0]["words"], "word boxes dropped on the way into the cache"
+    assert {"x0", "x1", "top", "bottom", "text"} <= set(blocks[0]["words"][0])
+
+
+def test_multi_line_pages_produce_separate_words(tmp_path, monkeypatch):
+    """A newline in the source text must become a real line break.
+
+    Emitting the whole page in one PDF text-showing operator makes pdfplumber
+    decode the newline as a literal `(cid:10)` *inside* a word, so
+    `extract_words()` returns run-together tokens like
+    `Freight(cid:10)Invoice`. Provenance highlighting then correctly refuses
+    to box anything — the quote never aligns to a word boundary — and the
+    inspector looks broken on every field.
+    """
+    from dte.artifacts import get_artifact_store
+
+    monkeypatch.setenv("DTE_ARTIFACT_DIR", str(tmp_path / "art"))
+    docs = tmp_path / "d"
+    docs.mkdir()
+    (docs / "a.pdf").write_bytes(build_pdf(["ACME Freight\nInvoice INV-1001\n"]))
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(docs, engine)).execute()
+
+    words = json.loads(
+        get_artifact_store().get(out["extract_meta"].iloc[0]["key"]).decode("utf-8")
+    )["blocks"][0]["words"]
+    texts = [w["text"] for w in words]
+
+    assert not any("cid:" in t for t in texts), texts
+    assert "Invoice" in texts and "INV-1001" in texts, texts
+    # Lines must actually differ vertically, or every word claims one row and
+    # a multi-line highlight collapses into a single wrong box.
+    assert len({round(w["top"]) for w in words}) == 2, words
+
+
+def test_blocks_carry_page_dimensions(corpus):
+    """Word boxes are in PDF points; a highlight has to be drawn in pixels.
+
+    Without the page's own width and height there is no scale factor, and
+    `bbox` is the bounds of the *content*, not the page — deriving a scale
+    from it silently stretches every box on any page with a margin.
+    """
+    from dte.artifacts import get_artifact_store
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(corpus, engine)).execute()
+    store = get_artifact_store()
+
+    key = out["extract_meta"].iloc[0]["key"]
+    block = json.loads(store.get(key).decode("utf-8"))["blocks"][0]
+    assert block["width"] > 0 and block["height"] > 0
+    # Every word must sit inside the page it claims to be on, or the scale is
+    # being computed against the wrong rectangle.
+    for w in block["words"]:
+        assert 0 <= w["x0"] <= block["width"], w
+        assert 0 <= w["top"] <= block["height"], w
+
+
+def test_extract_meta_carries_the_key_of_its_own_artifact(corpus):
+    """A row says which document it came from (`artifact_ref`) but the blocks
+    live under the *derived* key. Without it on the row the inspector has no
+    way to reach the boxes — the doc hash alone can't be turned back into a
+    derived key without knowing the provider and every param."""
+    from dte.artifacts import get_artifact_store
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(corpus, engine)).execute()
+    store = get_artifact_store()
+
+    for meta in out["extract_meta"]:
+        assert store.exists(meta["key"]), meta
 
 
 # ── extract: failure isolation ──────────────────────────────────────────────

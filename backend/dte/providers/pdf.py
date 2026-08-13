@@ -58,8 +58,22 @@ def _reject_media_type(media_type: str) -> str | None:
     return None
 
 
-def _as_document(pages: list[str], words: list[dict[str, Any]]) -> list[Block]:
-    return [Block(text="\n\n".join(pages), index=0, page=None, words=words)]
+def _as_document(
+    pages: list[str],
+    words: list[dict[str, Any]],
+    width: float | None = None,
+    height: float | None = None,
+) -> list[Block]:
+    return [
+        Block(
+            text="\n\n".join(pages),
+            index=0,
+            page=None,
+            words=words,
+            width=width,
+            height=height,
+        )
+    ]
 
 
 class PypdfProvider:
@@ -133,9 +147,11 @@ class PdfplumberProvider:
         try:
             texts: list[str] = []
             per_page_words: list[list[dict[str, Any]]] = []
+            sizes: list[tuple[float, float]] = []
             with pdfplumber.open(io.BytesIO(doc)) as pdf:
                 for page in pdf.pages:
                     texts.append(page.extract_text() or "")
+                    sizes.append((float(page.width), float(page.height)))
                     per_page_words.append(
                         [
                             {
@@ -156,7 +172,11 @@ class PdfplumberProvider:
 
         if granularity == "document":
             flat = [w for page_words in per_page_words for w in page_words]
-            return done(_as_document(texts, flat))
+            # One block spanning pages of possibly different sizes has no
+            # single page size. Report the first rather than inventing a
+            # composite — the inspector renders per page anyway.
+            w0, h0 = sizes[0]
+            return done(_as_document(texts, flat, w0, h0))
 
         return done(
             [
@@ -166,8 +186,12 @@ class PdfplumberProvider:
                     page=i + 1,
                     bbox=_bounds(words),
                     words=words,
+                    width=size[0],
+                    height=size[1],
                 )
-                for i, (text, words) in enumerate(zip(texts, per_page_words))
+                for i, (text, words, size) in enumerate(
+                    zip(texts, per_page_words, sizes)
+                )
             ]
         )
 

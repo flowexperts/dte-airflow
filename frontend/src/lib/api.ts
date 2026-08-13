@@ -814,6 +814,54 @@ export const deleteSchedule = (id: string) =>
     method: "DELETE",
   });
 
+// ── artifacts ───────────────────────────────────────────────────────────────
+//
+// `GET /api/artifacts/{key}` is guarded by `run:read`, so the bytes cannot be
+// reached by pointing an <embed> or pdf.js at the URL — the browser attaches
+// no Authorization header to those loads. Everything here goes through fetch
+// so the token rides along.
+
+/** Strip the `artifact://` scheme rows use to reference stored blobs. */
+export const artifactKey = (ref: string): string =>
+  ref.replace(/^artifact:\/\//, "");
+
+export const isArtifactRef = (v: unknown): v is string =>
+  typeof v === "string" && /^artifact:\/\/[0-9a-f]{64}$/.test(v);
+
+export function artifactUrl(key: string): string {
+  return `${BASE}/api/artifacts/${encodeURIComponent(key)}`;
+}
+
+/** The `Authorization` header pdf.js should send on its range requests. */
+export async function artifactAuthHeaders(): Promise<Record<string, string>> {
+  const token =
+    typeof window === "undefined" ? await readTokenServer() : readToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/** One page of a document as the extract step cached it. */
+export interface ExtractedBlock {
+  text: string;
+  index: number;
+  page: number | null;
+  bbox: { x0: number; top: number; x1: number; bottom: number } | null;
+  words: { text: string; x0: number; x1: number; top: number; bottom: number }[];
+  width: number | null;
+  height: number | null;
+}
+
+/**
+ * Blocks live under the extract step's *derived* key, not the document hash —
+ * a document has as many extractions as it has step configurations. Rows
+ * carry the right key in `extract_meta.key`.
+ */
+export async function getExtractedBlocks(key: string): Promise<ExtractedBlock[]> {
+  const payload = await apiFetch<{ blocks?: ExtractedBlock[] }>(
+    `/api/artifacts/${encodeURIComponent(key)}`,
+  );
+  return payload.blocks ?? [];
+}
+
 export const isTerminal = (status: RunStatus | undefined): boolean =>
   status === "completed" ||
   status === "failed" ||

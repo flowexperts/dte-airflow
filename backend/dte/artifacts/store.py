@@ -76,7 +76,18 @@ class ArtifactStore(Protocol):
 
     def exists(self, key: str) -> bool: ...
 
+    def delete(self, key: str) -> bool:
+        """Drop `key`. Returns whether anything was there. Absent is not an
+        error — deletion is idempotent, and eviction races itself."""
+        ...
+
     def media_type(self, key: str) -> str | None: ...
+
+    def size(self, key: str) -> int:
+        """Byte length, without reading the content. Raises `KeyError` when
+        absent. Range responses need the total to build `Content-Range`, and
+        reading the blob to measure it would defeat the point."""
+        ...
 
     def open_stream(self, key: str) -> IO[bytes]:
         """File-like handle, so large artifacts don't have to be fully

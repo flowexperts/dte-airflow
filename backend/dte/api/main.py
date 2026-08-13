@@ -85,7 +85,15 @@ app.add_middleware(
     # allow_headers governs the *request*; response headers stay invisible to
     # cross-origin JS unless named here. Without this the pager reads
     # undefined for X-Total-Count in the browser while passing in tests.
-    expose_headers=["X-Total-Count"],
+    # The range trio is for the document inspector: pdf.js reads Content-Range
+    # to learn a document's length, and without it falls back to downloading
+    # whole PDFs — which still works, so the regression would be invisible.
+    expose_headers=[
+        "X-Total-Count",
+        "Content-Range",
+        "Accept-Ranges",
+        "Content-Length",
+    ],
 )
 
 register_error_handlers(app)

@@ -97,6 +97,24 @@ def _resolve_field(table: ibis.Table, field_path: str) -> ibis.Expr:
     )
 
 
+# Columns the product depends on rather than the user: `artifact_ref` points
+# at the source document, `extract_meta.key` at the cached parse holding the
+# word boxes, `structure_meta` at per-field provenance, `block_index` at the
+# position within the document.
+#
+# A user `select` cannot drop these. None of them is interesting to look at,
+# so the natural tidy-up removes them — and that silently destroys the ability
+# to verify the output, because the columns that make a row checkable are
+# exactly the ones that read as noise. A projection says which *data* to carry
+# forward, not whether the row remembers where it came from.
+#
+# This is retention through projection only, not a global invariant: an
+# `aggregate` collapses rows and the refs stop meaning anything, so they go.
+SYSTEM_COLUMNS = frozenset(
+    {"artifact_ref", "extract_meta", "structure_meta", "block_index"}
+)
+
+
 def compile_pipeline(
     pipeline: Pipeline,
     tables: dict[str, ibis.Table],
@@ -224,10 +242,13 @@ def _dispatch_single_table_step(
     elif op == "select":
         s = SelectStep(**step)
         if s.drop:
-            drop_set = set(s.drop)
+            # System columns are exempt from a drop. Drop mode is the more
+            # dangerous of the two: the builder derives the keep-set from the
+            # schema, so a user who never typed `artifact_ref` still strips it.
+            drop_set = set(s.drop) - SYSTEM_COLUMNS
             keep = [c for c in table.columns if c not in drop_set]
             return table.select(keep)
-        return _apply_output_fields(table, s.fields)
+        return _apply_output_fields(table, s.fields, keep_system=True)
     elif op == "check":
         return _apply_check_step(table, step, idx=idx, engine=engine,
                                  on_quality_result=on_quality_result,
@@ -385,12 +406,16 @@ def _apply_extract(
 
     provider = extract_provider(step.provider)
     store = get_artifact_store()
-    # Everything that changes the answer must change the key.
-    cache_params = {"granularity": step.granularity, **step.params}
+    # Everything that changes the answer must change the key. `_v` covers the
+    # stored *shape*: v1 payloads dropped `words`, so a v1 hit would serve the
+    # inspector blocks it can never draw boxes from. Bumping busts them, and
+    # re-extraction is local CPU — nothing billable is re-paid.
+    cache_params = {"granularity": step.granularity, "_v": 2, **step.params}
 
     def _mapper(row: dict) -> list[dict]:
         path = row.get(step.source_field)
-        meta = {"provider": step.provider, "ms": 0, "cached": False, "error": None}
+        meta = {"provider": step.provider, "ms": 0, "cached": False,
+                "error": None, "key": None}
 
         try:
             with open(path, "rb") as fh:
@@ -404,6 +429,16 @@ def _apply_extract(
         dk = doc_key(content)
         key = derived_key(dk, "extract", step.provider, cache_params)
 
+        # Every row below carries `artifact://<dk>`, so the bytes behind that
+        # ref have to exist. This sits *outside* the cache branch on purpose:
+        # a cache written before this code — or one whose documents were
+        # evicted — would otherwise never heal, because the derived-key hit
+        # short-circuits past the only write.
+        if not store.exists(dk):
+            store.put(dk, content, row.get("media_type") or "application/pdf")
+
+        meta["key"] = key
+
         if store.exists(key):
             payload = json.loads(store.get(key).decode("utf-8"))
             meta.update(cached=True, error=payload.get("error"))
@@ -415,7 +450,12 @@ def _apply_extract(
                 {"granularity": step.granularity, **step.params},
             )
             blocks = [
-                {"text": b.text, "index": b.index, "page": b.page, "bbox": b.bbox}
+                # `words` is what turns a char span into a rectangle. It is by
+                # far the largest part of the payload and the only reason the
+                # inspector can highlight rather than merely quote.
+                {"text": b.text, "index": b.index, "page": b.page,
+                 "bbox": b.bbox, "words": b.words,
+                 "width": b.width, "height": b.height}
                 for b in result.blocks
             ]
             meta.update(ms=result.elapsed_ms, error=result.error)
@@ -763,8 +803,13 @@ def _resolve_group_by(table: ibis.Table, entry: str | DatePartGroupBy) -> ibis.E
     return expr.name(alias)
 
 
-def _apply_output_fields(table: ibis.Table, fields: list[OutputField]) -> ibis.Table:
+def _apply_output_fields(
+    table: ibis.Table,
+    fields: list[OutputField],
+    keep_system: bool = False,
+) -> ibis.Table:
     selections = []
+    named: set[str] = set()
     for f in fields:
         col = _resolve_field(table, f.field)
         if f.alias:
@@ -773,5 +818,15 @@ def _apply_output_fields(table: ibis.Table, fields: list[OutputField]) -> ibis.T
             # struct traversal — give the projected column a stable name
             # from the leaf segment rather than a compiler-generated one.
             col = col.name(f.field.split(".")[-1])
+        named.add(f.field)
         selections.append(col)
+
+    if keep_system:
+        # Appended, not prepended: these are plumbing, and leading with a wall
+        # of hashes would push the user's actual data off the side of every
+        # table in the UI.
+        selections.extend(
+            table[c] for c in SYSTEM_COLUMNS if c in table.columns and c not in named
+        )
+
     return table.select(selections)

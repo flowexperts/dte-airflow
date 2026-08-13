@@ -47,3 +47,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Copied from node_modules by scripts/copy-pdf-worker.mjs on predev/prebuild.
+# Committing it would pin a build artifact that must match the installed
+# pdfjs-dist exactly — a mismatch fails with "API version does not match".
+/public/pdfjs/

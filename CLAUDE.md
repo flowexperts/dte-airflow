@@ -275,6 +275,37 @@ re-pays for what Preview bought. Compose mounts a named volume; the Dockerfile
 creates the directory owned by `dte` so the fresh volume inherits that
 ownership (a root-owned volume fails silently for the non-root process).
 
+**Document inspector** (`/documents/[key]`, and the Inspect action on run
+output / preview rows). An extracted row carries three distinct references and
+you need all three: `artifact_ref` is the *document* hash, `extract_meta.key`
+is the *derived* key holding the cached parse (word boxes, page size), and
+`structure_meta.fields` holds per-field provenance. A doc hash cannot be
+turned back into a derived key — that needs the provider and every param — so
+`/documents/[key]` shows the document alone; highlights need the row, which is
+why the table action opens a modal instead of navigating.
+
+Highlight geometry (`frontend/src/lib/provenance.ts`) deliberately ignores
+`char_start`/`char_end`. Those index into `page.extract_text()` while boxes
+come from `page.extract_words()` — two independent pdfplumber passes with no
+guaranteed alignment, so trusting them yields highlights that are subtly off,
+which is worse than none: it looks authoritative while pointing at the wrong
+number. The quote is matched against the word sequence instead, anchored at
+word boundaries, normalising away everything but letters and digits (the page
+reads `$1,240.50`; a model quotes `1240.50`). No match → no box, and the UI
+says so.
+
+`tests/fixtures/pdf_builder.py` must emit one text operator **per line**. A
+newline inside a single `Tj` is not a line break in PDF — pdfplumber decodes
+it as `(cid:10)` glued into the neighbouring word, word segmentation
+collapses, and every highlight silently fails to resolve.
+
+The artifact route serves **ranged streams** (`Accept-Ranges`, 206, streamed
+from `store.open_stream`). pdf.js is opened with `disableAutoFetch` so it
+fetches only the pages viewed — without that flag it backgrounds a fetch of
+the whole file and the range support buys nothing. `Content-Range` is in CORS
+`expose_headers`; omit it and pdf.js silently reverts to whole-document
+downloads, which still works and so never surfaces as an error.
+
 **Optional extras**: `[unstructured]` is pypdf + pdfplumber; `[models]` is the
 anthropic + openai SDKs. Both are lazy imports, so a missing extra surfaces
 only on a real run, never in tests.

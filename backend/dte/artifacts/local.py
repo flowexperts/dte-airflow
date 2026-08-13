@@ -67,12 +67,29 @@ class LocalArtifactStore:
         validate_key(key)
         return self._blob(key).exists()
 
+    def delete(self, key: str) -> bool:
+        validate_key(key)
+        existed = self._blob(key).exists()
+        # Blob first: while both exist the entry is valid, and a crash between
+        # the two unlinks leaves an orphan .meta rather than a blob that
+        # `media_type()` can no longer describe.
+        self._blob(key).unlink(missing_ok=True)
+        self._meta(key).unlink(missing_ok=True)
+        return existed
+
     def media_type(self, key: str) -> str | None:
         validate_key(key)
         try:
             return self._meta(key).read_text(encoding="utf-8").strip()
         except FileNotFoundError:
             return None
+
+    def size(self, key: str) -> int:
+        validate_key(key)
+        try:
+            return self._blob(key).stat().st_size
+        except FileNotFoundError as exc:
+            raise KeyError(f"no artifact stored under {key}") from exc
 
     def open_stream(self, key: str) -> IO[bytes]:
         validate_key(key)

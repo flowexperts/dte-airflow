@@ -14,6 +14,7 @@ import {
   type Source,
   type SchemaField,
 } from "@/lib/api";
+import { SYSTEM_COLUMNS } from "@/lib/system-columns";
 
 interface SchemaEntry {
   fields: SchemaField[];
@@ -117,10 +118,16 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
       // a source field (e.g. group_by columns pass through unchanged); new
       // aggregation aliases fall back to "unknown".
       const typeByName = new Map(allFields.map((f) => [f.name, f.type]));
-      return cols.map((name) => ({
-        name,
-        type: typeByName.get(name) ?? "unknown",
-      }));
+      return cols
+        // System columns are carried by the compiler and cannot be dropped
+        // by a projection, so offering them as pickable fields would be
+        // offering a choice that has no effect. Hidden, not removed — the
+        // data is still on every row.
+        .filter((name) => !SYSTEM_COLUMNS.has(name))
+        .map((name) => ({
+          name,
+          type: typeByName.get(name) ?? "unknown",
+        }));
     },
     [allFields, perStepSchemas],
   );

@@ -6,9 +6,29 @@ Merged, priority-ordered backlog across
 (`050.4` = plan 050, task 4).
 
 > **Status as of 2026-08-13.** P0 complete, P1 complete except task 8 (see
-> below), all merged to `main` at `d579e73`. 942 unit tests, 66/67 scenarios
-> (the one failure predates this work). Next four, in the agreed order:
-> **13 → 16–19 → 41 → 14/15**.
+> below). Next four, in the agreed order: **13 → 16–19 → 41 → 14/15**.
+>
+> **Task 13 (document inspector) is complete** on
+> `feature/050-document-inspector`, not yet merged. 958 unit tests, 67/68
+> scenarios (the one failure predates this work), 34 frontend tests, clean
+> typecheck and build. Task **47 came with it** — it turned out to block
+> visual verification of 13.
+>
+> Building it surfaced four prerequisites that did not exist, each found by
+> checking whether the data the UI needed was actually there:
+> - **13a** — `artifact_ref` pointed at a document hash that was never
+>   stored; only the derived extract key was. Every ref 404'd.
+> - **13b.1** — `words` (the per-word boxes that turn a span into a
+>   rectangle) were dropped on the way into the cache. Because every later
+>   run is a cache hit, re-extracting would not have recovered them.
+> - **13b.2** — page width/height were never read from pdfplumber, so there
+>   was no scale factor; `bbox` is content bounds, not page bounds.
+> - **13b.3** — the derived key was on no row, and a doc hash cannot be
+>   turned back into one. Now on `extract_meta.key`.
+>
+> Also done beyond the original scope, because the user asked for 500-page
+> documents to work: the artifact route serves **ranged streams** and pdf.js
+> runs with `disableAutoFetch`, so a large PDF costs only the pages viewed.
 >
 > **Gate A: PASSED.** The materialize-map-rejoin seam holds. Measured, not
 > asserted: 25 PDFs list in 173ms without parsing; a cached extract re-run is
@@ -80,8 +100,8 @@ grouping so the source-plan mapping stays readable.
 
 | # | Task | Src | Size | Notes |
 |---|---|---|---|---|
-| 13 | Document inspector + provenance highlighting + `JsonCell` artifact refs | 050.12 | L | **NEXT.** The differentiator, and 051's labeling loop depends on it. Provenance is already captured and currently unread — see the readiness notes below. |
-| 14 | `POST /api/steps/structure/try` | 050.9 | M | Single-document iteration without saving a pipeline. |
+| 13 | Document inspector + provenance highlighting + `JsonCell` artifact refs | 050.12 | L | ✅ **DONE** on `feature/050-document-inspector`. Needed four unplanned prerequisites — see the status header. |
+| 14 | `POST /api/steps/structure/try` | 050.9 | M | **NEXT after 16–19 and 41.** Single-document iteration without saving a pipeline. |
 | 15 | Variant Compare grid with disagreement highlighting | 050.11 | M | Much weaker without 13 shipped first. |
 
 > **Gate B.** With the inspector in hand, does visual verification already answer
@@ -104,7 +124,7 @@ provenance is the argument for taking them seriously.
 | 44 | Artifact cache eviction | M | Artifacts are never garbage-collected. Every prompt iteration leaves its predecessors behind permanently — 5 documents × 4 configs already produced 20 structure artifacts. Needs an LRU or age policy plus a size metric. No user-visible symptom until a disk fills. |
 | 45 | `POST /api/destinations` must validate `connection_id` exists | S | Sources return 422 for a non-existent connection; destinations return **201** and store a dangling reference that fails only at run time. Found by fat-fingering `local_fs` for `local-fs`. Fix both the single and bulk paths. |
 | 46 | Scenario test that posts what the builder actually posts | S | The blank-id bug reached a running system because every scenario test passes typed, explicit ids, while `emptySource()` sends `{"id": ""}`. A test whose payloads are generated from the frontend's own helpers would have caught it. This is the class of bug the suite is currently blind to. |
-| 47 | Fixture PDFs should contain real line breaks | S | `pdf_builder` writes `\n` inside a text-showing operator, so pdfplumber renders it as `(cid:10)`. Harmless for the current assertions, but it makes the fixtures an unfaithful stand-in for real PDFs and forced a contorted regex during the demo. Use per-line `Td` offsets. |
+| 47 | Fixture PDFs should contain real line breaks | S | ✅ **DONE** with task 13. Not harmless after all: `(cid:10)` glued words together, so `extract_words()` returned run-together tokens and *every* provenance highlight failed to resolve. Fixed with one `Tj` per line advanced by `T*`. |
 
 ---
 
@@ -115,36 +135,25 @@ provenance is the argument for taking them seriously.
 Concrete definitions for the next four items, in build order. Everything below
 was checked against the code on `main`, not inferred from the plans.
 
-### 13 — Document inspector (`feature/050-document-inspector`)
+### 13 — Document inspector (`feature/050-document-inspector`) — ✅ DONE
 
-**⚠️ Blocked on a prerequisite that does not exist yet.** `_apply_extract`
-emits `artifact_ref = f"artifact://{dk}"` where `dk = doc_key(content)` — the
-hash of the original PDF — but only the *derived* extract key is ever written
-to the store. Verified against the live cache: all 25 artifacts are
-`application/json`; no key equals a document hash. So `GET /api/artifacts/{dk}`
-404s today and the inspector has nothing to render.
+Shipped as six commits. The four prerequisites listed in the status header
+were all discovered by checking whether the data the UI needed existed, not
+by reading the plan — the plan assumed it did.
 
-- **13a** (S, do first) — `store.put(dk, content, media_type)` in
-  `_apply_extract`, guarded by `store.exists(dk)`. Test: after an extract run,
-  `GET /api/artifacts/{doc_key}` returns the original bytes with the right
-  content type. Note this changes cache growth from text-sized to
-  document-sized, which makes task 44 (eviction) more pressing, not less.
-- **13b** (M) — `/documents/[key]` route: render the page, overlay the
-  provenance boxes. Data is already there: `structure_meta.fields[name] =
-  {confidence, page, char_start, char_end, quote}`, and `pdfplumber` blocks
-  carry `bbox`. `char_start`/`char_end` index into the *joined* block text, so
-  the inspector must reproduce that join (`"\n\n".join(...)`, see `_joined`)
-  to map an offset back to a word box — otherwise highlights land in the wrong
-  place. `pypdf` returns `bbox: None`; fall back to showing the quote without
-  a box rather than guessing a rectangle.
-- **13c** (S) — `JsonCell` renders `artifact://` refs as links.
-- **13d** (S) — reach it from the run output table and from Preview.
+- **13a** ✅ — document bytes stored under `doc_key`. The write sits *outside*
+  the cache branch so caches written before it can heal; inside the miss path
+  they never would, because the derived-key hit short-circuits past it.
+- **13b** ✅ — `/documents/[key]` plus the in-table modal. Renders with
+  pdf.js on canvas; boxes are positioned divs over it.
+- **13c** ✅ — `JsonCell` renders `artifact://` refs as links.
+- **13d** ✅ — Inspect action on run output and preview rows.
+- **47** ✅ — fixture PDFs emit one text operator per line.
 
-**Acceptance**: click any extracted field, see the exact region of the source
-page it came from. A field the model paraphrased has no span and must say so
-rather than highlighting an approximation — a wrong highlight is worse than
-none, which is why every provider already returns `None` instead of inventing
-one.
+**Acceptance met**: clicking a field boxes the exact region of the page it
+came from, verified against the real sample invoices — `vendor` and `total`
+both resolve, including a quote that omits the currency symbol. A field with
+no span says so instead of highlighting an approximation.
 
 ### 16–19 — Eval storage (`feature/051-eval-core`)
 

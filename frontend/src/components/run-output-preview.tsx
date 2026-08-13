@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Button, ErrorPanel, JsonCell, Panel, PanelHead, SectionHead } from "@/components/ui";
 import { getRunOutput, type PreviewResponse } from "@/lib/api";
+import { InspectRowButton } from "@/components/document-inspector/InspectRowButton";
+import { visibleColumns } from "@/lib/system-columns";
 import { humanizeError, type HumanError } from "@/lib/errors";
 
 const SUPPORTED = new Set(["json", "csv", "excel"]);
@@ -36,7 +38,12 @@ export function RunOutputPreview({
     }
   };
 
-  const columns = data?.rows?.[0] ? Object.keys(data.rows[0]) : [];
+  // System columns ride on every extracted row and cannot be projected
+  // away, so this is where they are kept out of sight. The rows still carry
+  // them, which is what lets Inspect work on a table that never shows them.
+  const columns = visibleColumns(
+    data?.rows?.[0] ? Object.keys(data.rows[0]) : [],
+  );
 
   // Nothing to show and no way to show it — collapse the whole section to one
   // line rather than heading an empty full-width panel.
@@ -88,6 +95,7 @@ export function RunOutputPreview({
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-border bg-surface-2">
+                    <th className="w-8 px-3 py-2" />
                     {columns.map((c) => (
                       <th
                         key={c}
@@ -104,6 +112,12 @@ export function RunOutputPreview({
                       key={i}
                       className="border-b border-border last:border-b-0 hover:bg-hover"
                     >
+                      {/* Renders nothing unless the row is backed by a
+                          document, so non-document pipelines see an empty
+                          8px gutter rather than a dead column. */}
+                      <td className="w-8 px-3 py-2 align-top">
+                        <InspectRowButton row={row as Record<string, unknown>} />
+                      </td>
                       {columns.map((c) => (
                         <td
                           key={c}
