@@ -9,6 +9,7 @@ backend/       Python package `dte`, alembic, tests, Dockerfile
 frontend/      Next.js app
 docker-compose.yml   whole stack (postgres + backend + frontend)
 plans/         feature plans (numbered)
+marketing-plans/  go-to-market plans (numbered) — ICP, motion, pricing, content
 ```
 
 All Python paths in this file are relative to `backend/`.
@@ -165,7 +166,11 @@ Backend `output` is now a Pydantic discriminated union over `type`: `json_file` 
 
 ### Sources
 
-`components/builder/sources/` — the multi-type source editor. Per-kind config editors: `filesystem` (bucket_url/directory + file_glob), `sql_database` (connection_string + table/query), `mongodb` (connection_url + database + collection). Adding a new kind means: add to `SOURCE_KINDS`, add a `CONFIG_TEMPLATES[kind]`, write a `<Kind>SourceEditor.tsx`, dispatch in `SourceEditor.tsx`. `filesystem`'s `bucket_url` must be a **directory** — the label + hint explicitly say so; users hit this repeatedly if the hint is softened.
+`components/builder/sources/` — the multi-type source editor. Per-kind config editors: `filesystem` (bucket_url/directory + file_glob), `sql_database` (connection_string + table/query), `mongodb` (connection_url + database + collection). Adding a new kind means: add to `SOURCE_KINDS`, add a `CONFIG_TEMPLATES[kind]`, write a `<Kind>SourceEditor.tsx`, dispatch in `SourceEditor.tsx`. `filesystem`'s `bucket_url` must be a **directory** — the label + hint explicitly say so; users hit this repeatedly if the hint is softened. `documents` (PDF) gets its own editor with no format dropdown: listing only stats files, so a reader format would be a control that does nothing.
+
+`bucket_url` and `file_glob` are whitespace-trimmed on save (`SourceBase._validate_config`) and again in `_glob_local`. A trailing space survives copy-paste, is invisible in the input, and turns a correct glob into `No files matched '**/*.pdf '` — an error that reads as if the pattern were wrong.
+
+A blank `id` on any of `Connection`, `Source`, `Destination`, `LookupTable` means server-generated. `default_factory` alone does not achieve this — it fires only when the key is **absent**, so `{"id": ""}` from a form would otherwise be written as an empty primary key, producing a row that saves but cannot be referenced. `_blank_id_means_generate` strips the blank key first.
 
 ### Run detail
 
@@ -225,8 +230,69 @@ DuckDBEngine.execute_to_json() → output file + row count
 
 ```python
 op = step["op"]    # "filter"|"rename"|"retype"|"map"|"sort"|"aggregate"|"join"|"pivot"|"select"
+                   # |"check"|"profile"|"extract"|"structure"
 mode = step.get("mode")   # "lookup"|"expression"|"calculation"  — map steps only
 ```
+
+### Unstructured: documents, extract, structure (plan 050)
+
+A `documents` source lists files — path, size, modified time — and **parses
+nothing**. Extraction happens only when an `extract` step runs, which is what
+keeps `POST /api/schema/infer` instant and free while the builder fires it on
+every edit.
+
+```
+documents source → extract (PDF → text) → structure (text → typed columns)
+                                        → every existing step works from here
+```
+
+- **`extract`** fans one document out to one row per page (`granularity`).
+  Providers: `pdfplumber` (word bounding boxes, needed for provenance
+  highlighting) and `pypdf` (faster, text only). A document that fails to
+  parse fills `extract_meta.error` and leaves the text NULL — it does **not**
+  fail the run. Add a `check` step if you want it fatal.
+- **`structure`** turns text into the user's declared fields as real typed
+  columns. Providers: `claude`, `openai`, and `regex` (deterministic, free,
+  offline, exact provenance — and the only one CI can run).
+
+**These two ops break laziness.** Every other step is a lazy ibis expression;
+a model call cannot be. They go through `BaseEngine.apply_enrichment`
+(`dte/engine/base.py`), which materialises, maps in Python, and registers the
+result back — the same shape as `_apply_check_step` and `_apply_profile`.
+`TrinoEngine` raises `EnrichmentNotSupportedOnBackend`.
+
+**Caching is the whole economic argument.** Extract results are keyed by
+document content; structure results by `sha256(text)` + the entire structure
+config. So downstream steps (`select`, `filter`, `aggregate`) are free to
+iterate on, and editing a prompt never re-parses a PDF. But there is no
+partial reuse: changing one field's description re-calls the model for every
+field on every row. Artifacts are never garbage-collected today.
+
+`DTE_ARTIFACT_DIR` **must** point at storage shared by the API and the
+workers. It defaults to the relative `.dte-artifacts`, which resolves inside
+each container — backend and worker then keep separate caches and Trigger
+re-pays for what Preview bought. Compose mounts a named volume; the Dockerfile
+creates the directory owned by `dte` so the fresh volume inherits that
+ownership (a root-owned volume fails silently for the non-root process).
+
+**Optional extras**: `[unstructured]` is pypdf + pdfplumber; `[models]` is the
+anthropic + openai SDKs. Both are lazy imports, so a missing extra surfaces
+only on a real run, never in tests.
+
+**API keys** currently come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in the
+environment, wired to both `backend` and `worker`. Do **not** put a key in the
+step's `params.api_key`: step params are stored unencrypted in
+`pipelines.steps` JSONB and copied into every revision. See
+`plans/052-model-provider-connections.md`.
+
+### Eval scoring core (plan 051)
+
+`dte/evals/` — `comparators.py` and `scoring.py`. Pure functions, no I/O, no
+storage; the rest of the harness is unbuilt. Comparators are forgiving on
+formatting and strict on semantics (`$1,240.50` matches `1240.5`; `1240.50`
+does not match `1204.50`). Metrics are precision/recall/F1, never accuracy,
+and correct abstention (`tn`) is counted separately from a silent miss (`fn`)
+— without that split an extractor that answers nothing scores well.
 
 ### Field references and nested columns
 
@@ -344,6 +410,8 @@ POST   /api/connections/{id}/test         connectivity probe → {ok, elapsed_ms
 ### Before implementing any feature
 
 Write a plan to `plans/<NNN>-<feature-name>.md`. Plans must include: problem statement, architecture change, explicit task list with branch names, and files changed/deleted. See existing plans for format.
+
+Go-to-market plans (ICP, positioning, pricing, channels, content) live in `marketing-plans/` instead — same numbering, no branch names or task lists. If a document has a buyer, a channel, or a price, it belongs there. Start with `marketing-plans/README.md`.
 
 ### Worktree workflow (required for all feature work)
 
