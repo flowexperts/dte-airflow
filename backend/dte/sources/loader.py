@@ -306,8 +306,90 @@ def _merge_rest_credentials(config: dict, credentials: dict) -> dict:
 
 LoaderFn = Callable[[Source, "BackendRegistry", "Connection", dict], ibis.Table]
 
+# Extension → media type for the document listing. Deliberately small: it
+# covers what the extract providers can actually consume plus the modalities
+# plan 050 defers (audio, image, video), so a listing is honest about what it
+# found even before a provider exists for it.
+_MEDIA_TYPES: dict[str, str] = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".html": "text/html",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".tiff": "image/tiff",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+}
+
+
+def _load_documents(
+    source: Source,
+    registry: "BackendRegistry",
+    connection: "Connection",
+    credentials: dict,
+) -> ibis.Table:
+    """List documents — one row per file. **Parses nothing.**
+
+    Extraction happens only when an `extract` step runs. Keeping this lazy is
+    what makes `POST /api/schema/infer` instant and free, which matters
+    because the builder fires it automatically on every edit; if listing
+    parsed PDFs, every keystroke in the UI would cost money.
+
+    Columns: path, filename, ext, size_bytes, modified_at, media_type.
+    From here it is ordinary tabular data — every existing step works on it.
+    """
+    con = registry.duckdb()
+    config = source.config
+    bucket_url = config["bucket_url"]
+    file_glob = config.get("file_glob", "**/*.pdf")
+
+    matched = _glob_local(bucket_url, file_glob)
+    if not matched:
+        raise FileNotFoundError(
+            f"No files matched '{file_glob}' in '{bucket_url}'"
+        )
+
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    rows = []
+    for path in matched:
+        p = Path(path)
+        stat = p.stat()
+        ext = p.suffix.lower()
+        rows.append(
+            {
+                "path": str(p),
+                "filename": p.name,
+                "ext": ext,
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                "media_type": _MEDIA_TYPES.get(ext, "application/octet-stream"),
+            }
+        )
+
+    # Registered via a temp table rather than a reader TVF: the listing is
+    # already materialised in Python (stat() has no SQL equivalent), and this
+    # keeps the result a plain ibis table like every other loader returns.
+    import pyarrow as pa
+
+    con.con.register(f"__doc_listing_{source.table}", pa.Table.from_pylist(rows))
+    con.con.execute(
+        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} AS "
+        f"SELECT * FROM __doc_listing_{source.table}"
+    )
+    return con.table(source.table)
+
+
 LOADERS: dict[str, LoaderFn] = {
     "filesystem": _load_filesystem,
+    "documents": _load_documents,
     "s3": _load_s3,
     "gcs": _load_gcs,
     "azure": _load_azure,
