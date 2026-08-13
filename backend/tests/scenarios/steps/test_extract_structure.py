@@ -200,7 +200,21 @@ async def test_structured_columns_are_ordinary_data_downstream(
 
     rows = read_output_file(out)
     assert {r["invoice_no"] for r in rows} == {"INV-1001", "INV-1003"}
-    assert set(rows[0]) == {"invoice_no", "total"}
+
+    # The projection drops ordinary columns...
+    assert "content" not in rows[0]
+    assert "filename" not in rows[0]
+    # ...but not the ones that say where the row came from. A user tidying
+    # their output must not silently lose the ability to verify it — see
+    # SYSTEM_COLUMNS in the compiler.
+    assert set(rows[0]) == {
+        "invoice_no",
+        "total",
+        "artifact_ref",
+        "extract_meta",
+        "structure_meta",
+        "block_index",
+    }
 
 
 async def test_preview_shows_extracted_fields(

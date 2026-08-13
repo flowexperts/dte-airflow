@@ -43,6 +43,19 @@ interface SchemaState {
   fieldsAtStep: (index: number) => SchemaField[];
 }
 
+/** Mirrors `SYSTEM_COLUMNS` in `dte/compiler/ibis_compiler.py`.
+ *
+ *  These ride on every extracted row and a `select` cannot drop them, so
+ *  listing them as pickable fields would offer a choice with no effect. Keep
+ *  the two lists in step: a name here that the compiler does not protect
+ *  becomes a column the user can neither see nor keep. */
+export const SYSTEM_COLUMNS = new Set([
+  "artifact_ref",
+  "extract_meta",
+  "structure_meta",
+  "block_index",
+]);
+
 const SchemaContext = createContext<SchemaState | null>(null);
 
 export function SchemaProvider({ children }: { children: ReactNode }) {
@@ -117,10 +130,16 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
       // a source field (e.g. group_by columns pass through unchanged); new
       // aggregation aliases fall back to "unknown".
       const typeByName = new Map(allFields.map((f) => [f.name, f.type]));
-      return cols.map((name) => ({
-        name,
-        type: typeByName.get(name) ?? "unknown",
-      }));
+      return cols
+        // System columns are carried by the compiler and cannot be dropped
+        // by a projection, so offering them as pickable fields would be
+        // offering a choice that has no effect. Hidden, not removed — the
+        // data is still on every row.
+        .filter((name) => !SYSTEM_COLUMNS.has(name))
+        .map((name) => ({
+          name,
+          type: typeByName.get(name) ?? "unknown",
+        }));
     },
     [allFields, perStepSchemas],
   );
