@@ -9,7 +9,20 @@ export type StepOp =
   | "pivot"
   | "select"
   | "check"
-  | "profile";
+  | "profile"
+  | "extract"
+  | "structure";
+
+/** One column a `structure` step pulls out of a document. Mirrors the
+ *  backend's `DataModelField`. */
+export interface DataModelField {
+  name: string;
+  type: "string" | "int" | "float" | "boolean" | "date" | "timestamp";
+  description: string;
+  required: boolean;
+  /** Only read by the deterministic `regex` provider. */
+  pattern?: string | null;
+}
 
 export type MapMode = "lookup" | "expression" | "calculation";
 
@@ -43,7 +56,7 @@ export interface StepShape {
   [k: string]: unknown;
 }
 
-export const STEP_OPS: { op: StepOp; label: string; mode?: MapMode; category: "transform" | "quality" }[] = [
+export const STEP_OPS: { op: StepOp; label: string; mode?: MapMode; category: "transform" | "quality" | "extract" }[] = [
   { op: "filter",    label: "Filter",              category: "transform" },
   { op: "rename",    label: "Rename",              category: "transform" },
   { op: "retype",    label: "Retype",              category: "transform" },
@@ -54,6 +67,8 @@ export const STEP_OPS: { op: StepOp; label: string; mode?: MapMode; category: "t
   { op: "join",      label: "Join",                category: "transform" },
   { op: "pivot",     label: "Pivot",               category: "transform" },
   { op: "select",    label: "Select / Drop fields", category: "transform" },
+  { op: "extract",   label: "Extract text",        category: "extract" },
+  { op: "structure", label: "Structure fields",    category: "extract" },
   { op: "check",                label: "Check",                  category: "quality" },
   { op: "profile",              label: "Profile Columns",        category: "quality" },
 ];
@@ -73,6 +88,29 @@ export function emptyStep(op: StepOp, mode?: MapMode): StepShape {
     case "select":              return { op, fields: [] };
     case "check":               return { op, expr: "", label: "", severity: "fail" };
     case "profile":             return { op, columns: [] };
+    case "extract":   return {
+      op,
+      source_field: "path",
+      provider: "pdfplumber",
+      granularity: "page",
+      output_field: "content",
+      params: {},
+    };
+    // One starter field: an empty data model is rejected by the backend, and
+    // a step you can't save is a worse first impression than a placeholder.
+    case "structure": return {
+      op,
+      input_field: "content",
+      provider: "claude",
+      model: {
+        fields: [
+          { name: "", type: "string", description: "", required: false },
+        ] satisfies DataModelField[],
+        instructions: "",
+      },
+      params: {},
+      on_error: "null",
+    };
   }
 }
 

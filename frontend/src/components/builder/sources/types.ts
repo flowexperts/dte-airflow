@@ -2,6 +2,7 @@ import type { Source, ConnectionType } from "@/lib/api";
 
 export type SourceKind =
   | "filesystem"
+  | "documents"
   | "s3" | "gcs" | "azure"
   | "sql_database"
   | "mongodb"
@@ -9,6 +10,7 @@ export type SourceKind =
 
 export const SOURCE_KINDS: { value: SourceKind; label: string }[] = [
   { value: "filesystem",   label: "Local filesystem" },
+  { value: "documents",    label: "Documents (PDF)" },
   { value: "s3",           label: "Amazon S3" },
   { value: "gcs",          label: "Google Cloud Storage" },
   { value: "azure",        label: "Azure Blob" },
@@ -23,6 +25,7 @@ export const SOURCE_KINDS: { value: SourceKind; label: string }[] = [
  */
 export const SOURCE_CONNECTION_COMPAT: Record<SourceKind, ConnectionType[]> = {
   filesystem:   ["local_fs"],
+  documents:    ["local_fs", "s3", "gcs", "azure"],
   s3:           ["s3"],
   gcs:          ["gcs"],
   azure:        ["azure"],

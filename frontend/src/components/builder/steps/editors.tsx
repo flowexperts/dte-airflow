@@ -3,19 +3,21 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  Dropdown,
   Field,
   FieldPicker,
   FieldMultiSelect,
   Input,
   Segmented,
   Textarea,
+  type DropdownOption,
 } from "@/components/ui";
 import { usePopoverPosition } from "@/components/ui/use-popover-position";
 import { useStepFields } from "../schema-context";
 import { usePipelineParams } from "../params-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { StepShape, GroupByEntry, DatePart } from "./types";
+import type { StepShape, GroupByEntry, DatePart, DataModelField } from "./types";
 import { LookupTablePicker } from "../LookupTablePicker";
 import { SYSTEM_VARS, type SystemVar } from "@/lib/system-vars";
 
@@ -1749,6 +1751,260 @@ function ProfileEditor({ step, set }: StepEditorProps) {
   );
 }
 
+/* ------------------------------- Extract ------------------------------- */
+
+const EXTRACT_PROVIDERS: DropdownOption<string>[] = [
+  { value: "pdfplumber", label: "pdfplumber", meta: "word boxes · slower" },
+  { value: "pypdf", label: "pypdf", meta: "text only · faster" },
+];
+
+const EXTRACT_GRANULARITY: DropdownOption<string>[] = [
+  { value: "page", label: "One row per page", meta: "fans out" },
+  { value: "document", label: "One row per document", meta: "1:1" },
+];
+
+function ExtractEditor({ step, set }: StepEditorProps) {
+  const allFields = useStepFields();
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid gap-3 @lg:grid-cols-2">
+        <Field
+          label="Path column"
+          hint="column holding the file path — a documents source emits `path`"
+        >
+          <FieldPicker
+            value={(step.source_field as string) ?? ""}
+            onChange={(v) => set({ ...step, source_field: v })}
+            options={allFields}
+            placeholder="path"
+            variant="tree"
+          />
+        </Field>
+        <Field
+          label="Writes to"
+          hint="column the extracted text lands in"
+        >
+          <Input
+            value={(step.output_field as string) ?? ""}
+            onChange={(e) => set({ ...step, output_field: e.target.value })}
+            placeholder="content"
+          />
+        </Field>
+      </div>
+      <div className="grid gap-3 @lg:grid-cols-2">
+        <Field
+          label="Provider"
+          hint="pdfplumber returns word bounding boxes, needed to highlight a field back to its place on the page. pypdf is faster and returns text only."
+        >
+          <Dropdown<string>
+            value={(step.provider as string) ?? "pdfplumber"}
+            onChange={(v) => set({ ...step, provider: v })}
+            options={EXTRACT_PROVIDERS}
+          />
+        </Field>
+        <Field
+          label="Granularity"
+          hint="page-level fans one document out to one row per page — the usual choice, since it keeps each model call small and gives you a page number for provenance."
+        >
+          <Dropdown<string>
+            value={(step.granularity as string) ?? "page"}
+            onChange={(v) => set({ ...step, granularity: v })}
+            options={EXTRACT_GRANULARITY}
+          />
+        </Field>
+      </div>
+      <p className="font-mono text-[11px] text-subtle">
+        Parsed text is cached by file content, so re-running costs nothing and
+        editing a downstream Structure step never re-parses the PDFs. A
+        document that fails to parse fills <code>extract_meta.error</code> and
+        leaves the text NULL — it does not fail the run. Add a Check step if
+        you want it fatal.
+      </p>
+    </div>
+  );
+}
+
+/* ------------------------------ Structure ------------------------------ */
+
+const STRUCTURE_PROVIDERS: DropdownOption<string>[] = [
+  { value: "claude", label: "Claude", meta: "model · costs money" },
+  { value: "openai", label: "OpenAI", meta: "model · costs money" },
+  { value: "regex", label: "Regex", meta: "deterministic · free" },
+];
+
+const FIELD_TYPES: DropdownOption<string>[] = [
+  { value: "string", label: "string" },
+  { value: "int", label: "int" },
+  { value: "float", label: "float" },
+  { value: "boolean", label: "boolean" },
+  { value: "date", label: "date" },
+  { value: "timestamp", label: "timestamp" },
+];
+
+const ON_ERROR: DropdownOption<string>[] = [
+  { value: "null", label: "Null the row", meta: "run continues" },
+  { value: "fail", label: "Fail the run", meta: "stops everything" },
+];
+
+const emptyModelField = (): DataModelField => ({
+  name: "",
+  type: "string",
+  description: "",
+  required: false,
+});
+
+function StructureEditor({ step, set }: StepEditorProps) {
+  const allFields = useStepFields();
+  const model = (step.model as { fields?: DataModelField[]; instructions?: string }) ?? {};
+  const fields = model.fields ?? [];
+  const provider = (step.provider as string) ?? "claude";
+  const params = (step.params as Record<string, unknown>) ?? {};
+
+  const setModel = (patch: Partial<{ fields: DataModelField[]; instructions: string }>) =>
+    set({ ...step, model: { ...model, ...patch } });
+
+  const updateField = (i: number, patch: Partial<DataModelField>) => {
+    const copy = [...fields];
+    const current = copy[i];
+    if (!current) return;
+    copy[i] = { ...current, ...patch };
+    setModel({ fields: copy });
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid gap-3 @lg:grid-cols-2">
+        <Field label="Reads from" hint="column holding the extracted text">
+          <FieldPicker
+            value={(step.input_field as string) ?? ""}
+            onChange={(v) => set({ ...step, input_field: v })}
+            options={allFields}
+            placeholder="content"
+            variant="tree"
+          />
+        </Field>
+        <Field
+          label="Provider"
+          hint="regex is free, offline, and gives exact provenance — use it for anything with a reliable pattern. Models are for the fields where pattern matching cannot work."
+        >
+          <Dropdown<string>
+            value={provider}
+            onChange={(v) => set({ ...step, provider: v })}
+            options={STRUCTURE_PROVIDERS}
+          />
+        </Field>
+      </div>
+
+      {provider !== "regex" && (
+        <Field
+          label="Model"
+          hint="leave empty for the provider default (claude-opus-5 / gpt-5). Sampling settings like temperature are rejected by these models — steer with field descriptions instead."
+        >
+          <Input
+            value={(params.model as string) ?? ""}
+            onChange={(e) => {
+              const next = { ...params };
+              if (e.target.value) next.model = e.target.value;
+              else delete next.model;
+              set({ ...step, params: next });
+            }}
+            placeholder="claude-opus-5"
+          />
+        </Field>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <div className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+          Fields to extract
+        </div>
+        {fields.map((f, i) => (
+          <div
+            key={i}
+            className="flex flex-col gap-1.5 rounded border border-border bg-code-bg px-2.5 py-2"
+          >
+            <div className="flex items-start gap-1.5">
+              <Input
+                value={f.name}
+                onChange={(e) => updateField(i, { name: e.target.value })}
+                placeholder="invoice_total"
+                className="basis-[180px] grow"
+              />
+              <div className="w-[130px] shrink-0">
+                <Dropdown<string>
+                  value={f.type}
+                  onChange={(v) => updateField(i, { type: v as DataModelField["type"] })}
+                  options={FIELD_TYPES}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setModel({ fields: fields.filter((_, j) => j !== i) })}
+                className="w-[28px] shrink-0 pt-1.5 text-subtle hover:text-red text-sm"
+                aria-label="Remove field"
+              >
+                ×
+              </button>
+            </div>
+            <Input
+              value={f.description}
+              onChange={(e) => updateField(i, { description: e.target.value })}
+              placeholder="what this field is, in the document's own words"
+            />
+            {provider === "regex" && (
+              <Input
+                value={f.pattern ?? ""}
+                onChange={(e) => updateField(i, { pattern: e.target.value || null })}
+                placeholder="Total:\s*\$?([\d,.]+)     ← capture group 1 is the value"
+              />
+            )}
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => setModel({ fields: [...fields, emptyModelField()] })}
+          className="self-start font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+        >
+          + Add field
+        </button>
+        {fields.length === 0 && (
+          <p className="font-mono text-[11px] text-red">
+            At least one field is required — with none the step produces no
+            columns.
+          </p>
+        )}
+      </div>
+
+      <Field
+        label="Instructions"
+        hint="optional, applies to the whole document. Put per-field guidance in that field's description instead."
+      >
+        <Textarea
+          value={model.instructions ?? ""}
+          onChange={(e) => setModel({ instructions: e.target.value })}
+          placeholder="These are freight invoices. Amounts are in USD unless a currency is printed next to them."
+        />
+      </Field>
+
+      <Field
+        label="On error"
+        hint="what happens when one document fails to structure"
+      >
+        <Dropdown<string>
+          value={(step.on_error as string) ?? "null"}
+          onChange={(v) => set({ ...step, on_error: v })}
+          options={ON_ERROR}
+        />
+      </Field>
+
+      <p className="font-mono text-[11px] text-subtle">
+        Each field above becomes a real typed column. From here on the row is
+        ordinary tabular data — filter, join, aggregate and check all work on
+        it unchanged.
+      </p>
+    </div>
+  );
+}
+
 export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
   switch (step.op) {
     case "filter":    return <FilterEditor step={step} set={set} />;
@@ -1764,5 +2020,7 @@ export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
     case "select":    return <SelectEditor step={step} set={set} />;
     case "check":     return <CheckEditor step={step} set={set} />;
     case "profile":   return <ProfileEditor step={step} set={set} />;
+    case "extract":   return <ExtractEditor step={step} set={set} />;
+    case "structure": return <StructureEditor step={step} set={set} />;
   }
 }

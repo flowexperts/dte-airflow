@@ -79,6 +79,15 @@ export function stepTitle(step: StepShape): string {
       const cols = list(step.columns);
       return cols.length === 0 ? "all columns" : n(cols.length, "column");
     }
+    case "extract":
+      return `${str(step.provider) ?? "?"} · per ${str(step.granularity) ?? "page"}`;
+    case "structure": {
+      const fields = list(
+        (step.model as { fields?: unknown[] } | undefined)?.fields,
+      );
+      if (fields.length === 0) return "no fields declared";
+      return `${n(fields.length, "field")} via ${str(step.provider) ?? "?"}`;
+    }
     default:
       return String(step.op);
   }
@@ -215,6 +224,34 @@ export function StepSummary({ step }: { step: StepShape }): ReactNode {
           {cols.map((c) => (
             <KVItem key={c} label={c} />
           ))}
+        </KV>
+      );
+    }
+
+    case "extract":
+      return (
+        <KV>
+          <KVItem label="reads" value={str(step.source_field) ?? "path"} />
+          <KVItem label="writes" value={str(step.output_field) ?? "content"} />
+        </KV>
+      );
+
+    case "structure": {
+      const model = step.model as
+        | { fields?: { name?: string; type?: string }[] }
+        | undefined;
+      const fields = (list(model?.fields) as { name?: string; type?: string }[])
+        .filter((f) => f.name);
+      if (fields.length === 0) return null;
+      const shown = fields.slice(0, 8);
+      return (
+        <KV>
+          {shown.map((f, i) => (
+            <KVItem key={i} label={f.name ?? "?"} value={f.type ?? "string"} />
+          ))}
+          {fields.length > shown.length && (
+            <KVItem label={`+${fields.length - shown.length} more`} />
+          )}
         </KV>
       );
     }
