@@ -270,7 +270,10 @@ ConnectionCreate = ConnectionBase
 
 # ─── Source configs (per source_type) ─────────────────────────────────────
 
-SourceKind = Literal["filesystem", "s3", "gcs", "azure", "sql_database", "mongodb", "rest_api"]
+SourceKind = Literal[
+    "filesystem", "s3", "gcs", "azure", "sql_database", "mongodb", "rest_api",
+    "documents",
+]
 _FileFormat = Literal["json", "jsonl", "ndjson", "csv", "parquet", "excel"]
 
 
@@ -300,6 +303,21 @@ class GcsSourceConfig(_BucketSourceConfig):
 
 class AzureSourceConfig(_BucketSourceConfig):
     pass
+
+
+class DocumentSourceConfig(_BucketSourceConfig):
+    """A directory of documents to *list* — never to parse.
+
+    Loading this source yields one row per file (path, filename, ext,
+    size_bytes, modified_at, media_type). Extraction happens only when an
+    `extract` step runs, which is what keeps `POST /api/schema/infer` instant
+    and free — the builder fires it automatically on every edit.
+
+    `format` is meaningless here: the reader family is decided per-document by
+    the extract provider, not by the glob.
+    """
+
+    file_glob: str = "**/*.pdf"
 
 
 class SqlDatabaseSourceConfig(BaseModel):
@@ -332,6 +350,7 @@ _SOURCE_CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "sql_database": SqlDatabaseSourceConfig,
     "mongodb": MongoDBSourceConfig,
     "rest_api": RestApiSourceConfig,
+    "documents": DocumentSourceConfig,
 }
 
 
@@ -1329,6 +1348,10 @@ SOURCE_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "sql_database": {"postgres", "mysql", "sqlite", "snowflake", "bigquery"},
     "mongodb": {"mongodb"},
     "rest_api": {"rest_api"},
+    # Documents live wherever files live. Only local_fs has a loader today;
+    # the object-store kinds are listed so a saved source doesn't have to be
+    # re-pointed when the remote listing lands.
+    "documents": {"local_fs", "s3", "gcs", "azure"},
 }
 
 # File formats are location-agnostic: each writes to a local path or to any
