@@ -39,6 +39,13 @@ COPY --from=builder /app /app
 
 RUN chown -R dte:dte /app
 
+# Artifact cache mount point. Created here, owned by `dte`, ON PURPOSE: Docker
+# seeds a fresh named volume from the image path, inheriting its ownership. If
+# the directory does not exist in the image, Docker creates the volume root:root
+# and this non-root process cannot write to it — the cache then silently fails
+# on a path that looks correctly configured.
+RUN mkdir -p /var/lib/dte/artifacts && chown -R dte:dte /var/lib/dte
+
 COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
 RUN chmod +x /usr/local/bin/backend-entrypoint.sh
 
