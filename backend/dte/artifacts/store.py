@@ -76,6 +76,11 @@ class ArtifactStore(Protocol):
 
     def exists(self, key: str) -> bool: ...
 
+    def delete(self, key: str) -> bool:
+        """Drop `key`. Returns whether anything was there. Absent is not an
+        error — deletion is idempotent, and eviction races itself."""
+        ...
+
     def media_type(self, key: str) -> str | None: ...
 
     def open_stream(self, key: str) -> IO[bytes]:

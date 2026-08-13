@@ -404,6 +404,14 @@ def _apply_extract(
         dk = doc_key(content)
         key = derived_key(dk, "extract", step.provider, cache_params)
 
+        # Every row below carries `artifact://<dk>`, so the bytes behind that
+        # ref have to exist. This sits *outside* the cache branch on purpose:
+        # a cache written before this code — or one whose documents were
+        # evicted — would otherwise never heal, because the derived-key hit
+        # short-circuits past the only write.
+        if not store.exists(dk):
+            store.put(dk, content, row.get("media_type") or "application/pdf")
+
         if store.exists(key):
             payload = json.loads(store.get(key).decode("utf-8"))
             meta.update(cached=True, error=payload.get("error"))

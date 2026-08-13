@@ -152,6 +152,35 @@ async def test_extract_then_structure_to_typed_columns(
     }
 
 
+async def test_artifact_ref_resolves_over_http_to_the_original_pdf(
+    client, scenario_ids, invoices_dir, out_dir
+):
+    """The document inspector's entire data path, end to end.
+
+    A row's `artifact_ref` is a promise that `GET /api/artifacts/{key}`
+    returns renderable bytes. Asserting the store directly would miss the two
+    ways this breaks in practice: the ref never reaching the output rows, and
+    the route serving the wrong media type to a PDF viewer.
+    """
+    pipe, out = await _wire(
+        client, scenario_ids, invoices_dir, out_dir,
+        [extract_step(), {"op": "select", "fields": [{"field": "artifact_ref"}]}],
+    )
+    run = await trigger_and_wait(client, pipe)
+    assert run["status"] == "completed", run.get("error")
+
+    refs = {r["artifact_ref"] for r in read_output_file(out)}
+    assert len(refs) == 3, f"one ref per document, got {refs}"
+
+    originals = {(invoices_dir / n).read_bytes() for n in INVOICES}
+    for ref in refs:
+        assert ref.startswith("artifact://"), ref
+        r = await client.get(f"/api/artifacts/{ref.removeprefix('artifact://')}")
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"].startswith("application/pdf")
+        assert r.content in originals
+
+
 async def test_structured_columns_are_ordinary_data_downstream(
     client, scenario_ids, invoices_dir, out_dir
 ):

@@ -227,6 +227,67 @@ def test_identical_documents_share_one_cache_entry(tmp_path, monkeypatch):
     assert cached.count(False) == 3 and cached.count(True) == 3
 
 
+# ── extract: the document itself is an artifact ─────────────────────────────
+
+
+def test_extract_stores_the_original_document_under_its_doc_key(corpus):
+    """`artifact_ref` points at the *document*, not the extraction.
+
+    Every row carries `artifact://<sha256 of the PDF bytes>`, which is what
+    the document inspector dereferences to render the page. Storing only the
+    derived extract JSON leaves that ref dangling — the row promises bytes
+    that were never written.
+    """
+    from dte.artifacts import doc_key, get_artifact_store
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(corpus, engine)).execute()
+    store = get_artifact_store()
+
+    original = (corpus / "a.pdf").read_bytes()
+    key = doc_key(original)
+    assert key in {r.removeprefix("artifact://") for r in out["artifact_ref"]}
+
+    assert store.exists(key), "artifact_ref points at bytes that were never stored"
+    assert store.get(key) == original
+    assert store.media_type(key) == "application/pdf"
+
+
+def test_document_bytes_survive_a_cached_re_extract(corpus):
+    """The store write sits before the cache branch, not inside the miss path.
+
+    Otherwise a cache built by an older version — or by a run whose artifacts
+    were partly evicted — can never heal: every subsequent run short-circuits
+    on the derived key and the document is never written.
+    """
+    from dte.artifacts import doc_key, get_artifact_store
+
+    engine = DuckDBEngine()
+    _extract(engine, _documents_table(corpus, engine)).execute()
+
+    store = get_artifact_store()
+    key = doc_key((corpus / "a.pdf").read_bytes())
+    # Simulate the pre-13a cache: extraction cached, document absent.
+    store.delete(key)
+    assert not store.exists(key)
+
+    engine2 = DuckDBEngine()
+    out = _extract(engine2, _documents_table(corpus, engine2)).execute()
+    assert all(m["cached"] for m in out["extract_meta"]), "expected a cache hit"
+    assert store.exists(key), "cached path skipped the document write"
+
+
+def test_unreadable_document_has_no_artifact_ref(corpus):
+    """A row with no bytes must not claim an artifact — a ref that 404s is
+    worse than a null, because the inspector renders an error instead of
+    correctly showing nothing."""
+    engine = DuckDBEngine()
+    table = _documents_table(corpus, engine)
+    (corpus / "a.pdf").unlink()
+    out = _extract(engine, table).execute()
+    assert out[out["filename"] == "a.pdf"].iloc[0]["artifact_ref"] is None
+
+
 # ── extract: failure isolation ──────────────────────────────────────────────
 
 
