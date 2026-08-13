@@ -32,9 +32,30 @@ export function InspectRowButton({ row }: { row: Record<string, unknown> }) {
 
   return (
     <>
-      <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
-        Inspect
-      </Button>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        // Named for screen readers and on hover: a bare glyph in a dense
+        // table is unguessable, and this is the row's only way back to its
+        // source document.
+        aria-label={`Inspect ${info.filename ?? "document"}`}
+        title={`Inspect ${info.filename ?? "document"}`}
+        className="text-subtle hover:text-accent transition-colors align-middle"
+      >
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="7" cy="7" r="4.5" />
+          <path d="M10.5 10.5L14 14" />
+        </svg>
+      </button>
 
       {open &&
         createPortal(

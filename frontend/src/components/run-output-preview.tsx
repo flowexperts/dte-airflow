@@ -95,6 +95,7 @@ export function RunOutputPreview({
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-border bg-surface-2">
+                    <th className="w-8 px-3 py-2" />
                     {columns.map((c) => (
                       <th
                         key={c}
@@ -103,7 +104,6 @@ export function RunOutputPreview({
                         {c}
                       </th>
                     ))}
-                    <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -112,6 +112,12 @@ export function RunOutputPreview({
                       key={i}
                       className="border-b border-border last:border-b-0 hover:bg-hover"
                     >
+                      {/* Renders nothing unless the row is backed by a
+                          document, so non-document pipelines see an empty
+                          8px gutter rather than a dead column. */}
+                      <td className="w-8 px-3 py-2 align-top">
+                        <InspectRowButton row={row as Record<string, unknown>} />
+                      </td>
                       {columns.map((c) => (
                         <td
                           key={c}
@@ -120,11 +126,6 @@ export function RunOutputPreview({
                           <JsonCell value={row[c]} />
                         </td>
                       ))}
-                      {/* Renders nothing unless the row is backed by a
-                          document, so non-document pipelines are unaffected. */}
-                      <td className="px-3 py-2 align-top whitespace-nowrap">
-                        <InspectRowButton row={row as Record<string, unknown>} />
-                      </td>
                     </tr>
                   ))}
                 </tbody>
