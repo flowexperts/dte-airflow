@@ -34,10 +34,26 @@ _PARQUET_EXTS = (".parquet", ".pq")
 _EXCEL_EXTS = (".xlsx",)
 
 
+_ALL_KNOWN_EXTS = (
+    _JSON_EXTS + _JSONL_EXTS + _CSV_EXTS + _PARQUET_EXTS + _EXCEL_EXTS
+)
+
+
+class UnsupportedFileFormat(ValueError):
+    """The glob's extension maps to no DuckDB reader, and no `format` was set.
+
+    Raised instead of guessing. The previous behaviour defaulted to `json`,
+    which routed `*.pdf` into `read_json_auto` and surfaced as a JSON parse
+    error naming neither the file nor the real problem.
+    """
+
+
 def _detect_format(path: str, explicit: str | None) -> str:
     """`config['format']` wins; otherwise decide by file extension.
 
     Returns one of: `json`, `jsonl`, `csv`, `parquet`, `excel`.
+    Raises `UnsupportedFileFormat` when the extension is unrecognised and no
+    explicit format was given — never guesses.
     """
     if explicit:
         fmt = explicit.lower()
@@ -55,7 +71,11 @@ def _detect_format(path: str, explicit: str | None) -> str:
         return "excel"
     if lower.endswith(_JSON_EXTS):
         return "json"
-    return "json"
+    raise UnsupportedFileFormat(
+        f"cannot detect a file format for {path!r} — extension is not one of "
+        f"{', '.join(_ALL_KNOWN_EXTS)}. Set the source's `format` field "
+        f"explicitly if the contents differ from the extension."
+    )
 
 
 def _ensure_format_ext(raw_con, fmt: str) -> None:
