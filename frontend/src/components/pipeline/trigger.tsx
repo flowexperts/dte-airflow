@@ -63,12 +63,19 @@ export function TriggerRunButton({
         onSubmit={async (values) => {
           try {
             const { run_id } = await triggerPipeline(pipeline.id, values);
+            // Close on success. Navigating used to hide the omission by
+            // unmounting the modal, but that only happens on the `router.push`
+            // branch — with an `onStarted` handler nothing navigates and the
+            // modal sat open over a run that had already started.
+            setOpen(false);
             if (onStarted) {
               onStarted(run_id);
             } else {
               router.push(`/runs/${encodeURIComponent(run_id)}`);
             }
           } catch (e) {
+            // Deliberately left open on failure: the toast says what went
+            // wrong and the user keeps the values they typed to retry.
             toast.error(humanizeError(e, { action: "start", entity: "pipeline" }));
           }
         }}
