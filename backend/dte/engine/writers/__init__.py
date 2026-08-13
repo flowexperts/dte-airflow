@@ -24,6 +24,7 @@ def write(
     target,
     con: ibis.BaseBackend | None = None,
     credentials: dict | None = None,
+    run_id: str | None = None,
 ) -> WriteResult:
     """`credentials` comes from the destination's linked Connection —
     always a dict (empty `{}` for local file targets).
@@ -32,6 +33,13 @@ def write(
     object store, and the writer picks its secret from the URI scheme.
     """
     creds = credentials or {}
+
+    # The destination is the user's; provenance is ours. Split before any
+    # writer sees the table so no format has to remember to exclude them.
+    if run_id is not None:
+        from dte.engine.writers.provenance import split_off_provenance
+        table, _ = split_off_provenance(table, run_id, con=con)
+
     if isinstance(target, JsonTarget):
         from dte.engine.writers import json_file
         return json_file.write(table, target, con, creds)

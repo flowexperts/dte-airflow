@@ -1046,7 +1046,9 @@ async def _run_body(
 
         with tr.start_as_current_span("write") as span:
             span.set_attribute("destination_type", destination.config.type)
-            result = engine.execute(compiled, destination.config, credentials=dest_creds)
+            result = engine.execute(
+                compiled, destination.config, credentials=dest_creds, run_id=run_id
+            )
             span.set_attribute("rows_written", result["rows_written"])
 
         with tr.start_as_current_span("quality") as q_span:

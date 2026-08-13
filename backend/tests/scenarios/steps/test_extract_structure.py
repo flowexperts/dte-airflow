@@ -11,6 +11,8 @@ and the API ever drift, this file fails before a user finds out.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from tests.fixtures.pdf_builder import build_pdf
@@ -164,12 +166,15 @@ async def test_artifact_ref_resolves_over_http_to_the_original_pdf(
     """
     pipe, out = await _wire(
         client, scenario_ids, invoices_dir, out_dir,
-        [extract_step(), {"op": "select", "fields": [{"field": "artifact_ref"}]}],
+        [extract_step(), {"op": "select", "fields": [{"field": "filename"}]}],
     )
     run = await trigger_and_wait(client, pipe)
     assert run["status"] == "completed", run.get("error")
 
-    refs = {r["artifact_ref"] for r in read_output_file(out)}
+    # Read the refs from the API, not the file: provenance is split off
+    # before writing, so the deliverable no longer carries them.
+    served = (await client.get(f"/api/runs/{run['id']}/output?limit=10")).json()
+    refs = {r["artifact_ref"] for r in served["rows"]}
     assert len(refs) == 3, f"one ref per document, got {refs}"
 
     originals = {(invoices_dir / n).read_bytes() for n in INVOICES}
@@ -201,20 +206,54 @@ async def test_structured_columns_are_ordinary_data_downstream(
     rows = read_output_file(out)
     assert {r["invoice_no"] for r in rows} == {"INV-1001", "INV-1003"}
 
-    # The projection drops ordinary columns...
-    assert "content" not in rows[0]
-    assert "filename" not in rows[0]
-    # ...but not the ones that say where the row came from. A user tidying
-    # their output must not silently lose the ability to verify it — see
-    # SYSTEM_COLUMNS in the compiler.
-    assert set(rows[0]) == {
-        "invoice_no",
-        "total",
-        "artifact_ref",
-        "extract_meta",
-        "structure_meta",
-        "block_index",
-    }
+    # The deliverable is exactly what the user asked for. System columns
+    # survive the `select` inside the compiler — they have to, or the run
+    # could not be inspected — but they are split off before the writer, so
+    # the customer's file never carries our content hashes.
+    assert set(rows[0]) == {"invoice_no", "total"}
+
+
+async def test_the_run_is_inspectable_although_its_file_is_clean(
+    client, scenario_ids, invoices_dir, out_dir
+):
+    """The two halves of the same rule, asserted together.
+
+    Splitting provenance out of the deliverable is only correct if the run
+    surface can still show it. Testing either half alone would let the other
+    regress silently: a clean file with no Inspect, or a working Inspect that
+    ships hashes to the customer.
+    """
+    pipe, out = await _wire(
+        client, scenario_ids, invoices_dir, out_dir,
+        [extract_step(), structure_step()],
+    )
+    run = await trigger_and_wait(client, pipe)
+    assert run["status"] == "completed", run.get("error")
+
+    # On disk: no plumbing.
+    on_disk = read_output_file(out)
+    assert not ({"artifact_ref", "extract_meta", "structure_meta"} & set(on_disk[0]))
+
+    # Through the API the row is whole again, and carries what the inspector
+    # needs: the document, the parse holding the word boxes, the provenance.
+    r = await client.get(f"/api/runs/{run['id']}/output?limit=3")
+    assert r.status_code == 200, r.text
+    served = r.json()["rows"]
+    assert len(served) == len(on_disk)
+
+    # JSON columns arrive parsed or as strings depending on the reader, which
+    # is why the frontend's `asObject()` accepts both. Mirror it here.
+    def obj(v):
+        return v if isinstance(v, dict) else json.loads(v)
+
+    first = served[0]
+    assert first["artifact_ref"].startswith("artifact://")
+    assert obj(first["extract_meta"])["key"]
+    assert obj(first["structure_meta"])["fields"]
+
+    # Rejoined onto the right row, not merely present somewhere.
+    for served_row, disk_row in zip(served, on_disk):
+        assert served_row["invoice_no"] == disk_row["invoice_no"]
 
 
 async def test_preview_shows_extracted_fields(

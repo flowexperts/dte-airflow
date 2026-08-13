@@ -123,5 +123,14 @@ class TrinoEngine(BaseEngine):
             "DuckDB engine."
         )
 
-    def execute(self, table: ibis.Table, target, credentials: dict | None = None) -> WriteResult:
-        return _write(table, target, self._con, credentials=credentials)
+    def execute(
+        self,
+        table: ibis.Table,
+        target,
+        credentials: dict | None = None,
+        run_id: str | None = None,
+    ) -> WriteResult:
+        # Enrichment is unsupported here, so there are no system columns to
+        # split; `run_id` is accepted only to keep the engine interface one
+        # shape.
+        return _write(table, target, self._con, credentials=credentials, run_id=run_id)
