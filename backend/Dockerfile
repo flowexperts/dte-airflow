@@ -17,6 +17,15 @@ COPY alembic.ini ./
 # — a failure that only shows up on a real document run.
 RUN pip install --no-cache-dir -e ".[unstructured,models]" && pip install --no-cache-dir "psycopg2-binary>=2.9"
 
+# Dev-only tooling, off by default so the production image is unchanged.
+# Compose sets INSTALL_DEV=1 to get `watchmedo`, which restarts the worker on
+# a source edit. The worker is not uvicorn: it has no --reload, so without
+# this it keeps serving the code it imported at boot while the mounted files
+# say otherwise — a run silently executes the old compiler and nothing
+# reports a mismatch.
+ARG INSTALL_DEV=0
+RUN if [ "$INSTALL_DEV" = "1" ]; then pip install --no-cache-dir "watchdog>=4,<7"; fi
+
 # Runtime stage — run as a non-root user for defence-in-depth.
 # Distroless is deferred to plans/036-distroless-runtime.md; requires
 # entrypoint rewrite from shell → Python and manual libpq copy.

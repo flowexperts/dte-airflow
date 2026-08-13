@@ -111,6 +111,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        # Brings in watchmedo for the reloading command below. Prod builds
+        # leave this at 0 and get the same image as before.
+        INSTALL_DEV: "1"
     environment:
       DATABASE_URL: postgresql+asyncpg://dte:dte@postgres:5432/dte
       DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:-}
@@ -126,7 +130,24 @@ services:
       # Same volume as `backend` — a cache the two do not share is not a
       # cache, it is two caches, and Trigger re-pays for what Preview bought.
       DTE_ARTIFACT_DIR: /var/lib/dte/artifacts
-    command: python -m dte.worker
+    # The worker is not uvicorn — it has no --reload. Without watchmedo it
+    # runs whatever it imported at boot while ./backend/dte says otherwise,
+    # so a compiler change appears to have no effect and nothing says why.
+    command: >
+      watchmedo auto-restart
+      --directory=/app/dte --pattern=*.py --recursive --signal SIGTERM
+      -- python -m dte.worker
+    # The image's own HEALTHCHECK probes :8001/healthz, which belongs to the
+    # API. This process serves no HTTP, so it inherited a probe it could never
+    # pass and sat permanently `unhealthy` — a red column everyone learns to
+    # ignore. Replaced with the thing that actually matters here: can it reach
+    # the queue.
+    healthcheck:
+      test: ["CMD", "python", "-m", "dte.worker.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       - ./backend/dte:/app/dte
       # Same bind mount as `backend` — this is what makes DTE_SHARED_OUTPUT_FS
