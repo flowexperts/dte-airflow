@@ -57,6 +57,20 @@ describe("resolveHighlight", () => {
     expect(resolveHighlight(block(), { quote: "\n Total: \t" })).toHaveLength(1);
   });
 
+  it("boxes a value the model quoted without its currency symbol", () => {
+    // The page reads "$1,240.50"; a model may quote "1240.50". Both name the
+    // same number in the same place, and refusing to highlight because of a
+    // dollar sign would make the feature look broken on the commonest field
+    // in the commonest document.
+    expect(resolveHighlight(block(), { quote: "1240.50" })).toHaveLength(1);
+    expect(resolveHighlight(block(), { quote: "1,240.50" })).toHaveLength(1);
+  });
+
+  it("still requires whole words, so punctuation-insensitivity is not a hole", () => {
+    // Normalising punctuation away must not let a match start mid-word.
+    expect(resolveHighlight(block(), { quote: "ght Ltd" })).toEqual([]);
+  });
+
   it("returns nothing when the quote is not on the page", () => {
     // A wrong highlight is worse than none: the UI shows the quote as text
     // rather than boxing an approximation.

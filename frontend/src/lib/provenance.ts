@@ -44,9 +44,20 @@ export interface Rect {
 }
 
 /** Strip everything that varies between a model's quote and the page's own
- *  tokenisation. Whitespace is the main offender: pdfplumber splits on it, so
- *  a quote's internal spacing carries no information. */
-const squash = (s: string) => s.toLowerCase().replace(/\s+/g, "");
+ *  tokenisation, keeping only letters and digits.
+ *
+ *  Whitespace is the obvious case — pdfplumber splits on it, so a quote's
+ *  internal spacing carries no information. Punctuation matters just as much
+ *  in practice: the page reads `$1,240.50` and a model will happily quote
+ *  `1240.50`. Both name the same number in the same place, and refusing to
+ *  highlight over a currency symbol would make the feature look broken on the
+ *  commonest field of the commonest document.
+ *
+ *  This only affects *locating* a value, never verifying it — the value shown
+ *  beside the box is the extracted one, untouched. And because matches are
+ *  still anchored to word boundaries, dropping punctuation cannot let a match
+ *  start midway through a token. */
+const squash = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 
 export function resolveHighlight(block: PageBlock, prov: Provenance): Rect[] {
   const { width, height } = block;

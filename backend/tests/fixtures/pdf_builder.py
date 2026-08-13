@@ -17,7 +17,7 @@ def _escape(text: str) -> str:
 
 
 def build_pdf(pages: list[str], font_size: int = 12) -> bytes:
-    """Return a valid single-column PDF, one text line per page.
+    """Return a valid single-column PDF; `\\n` in a page starts a new line.
 
     Object layout: 1 = catalog, 2 = page tree, 3 = font, then a
     (page, content) pair per page.
@@ -46,8 +46,15 @@ def build_pdf(pages: list[str], font_size: int = 12) -> bytes:
                 f"/Contents {content_id} 0 R >>"
             ).encode("latin-1")
         )
+        # One text-showing operator per line, advanced by `T*`. A newline
+        # inside a single `Tj` is not a line break in PDF — it is just a byte
+        # in the string, and pdfplumber surfaces it as `(cid:10)` glued into
+        # the surrounding word, which destroys word segmentation and with it
+        # any hope of mapping a quote back to a box.
+        lines = text.split("\n") or [""]
+        shown = " ".join(f"({_escape(line)}) Tj T*" for line in lines)
         stream = (
-            f"BT /F1 {font_size} Tf 72 720 Td ({_escape(text)}) Tj ET"
+            f"BT /F1 {font_size} Tf {font_size * 1.4:.1f} TL 72 720 Td {shown} ET"
         ).encode("latin-1")
         objects.append(
             b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n"

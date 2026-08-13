@@ -308,6 +308,38 @@ def test_cached_blocks_keep_the_word_boxes(corpus):
     assert {"x0", "x1", "top", "bottom", "text"} <= set(blocks[0]["words"][0])
 
 
+def test_multi_line_pages_produce_separate_words(tmp_path, monkeypatch):
+    """A newline in the source text must become a real line break.
+
+    Emitting the whole page in one PDF text-showing operator makes pdfplumber
+    decode the newline as a literal `(cid:10)` *inside* a word, so
+    `extract_words()` returns run-together tokens like
+    `Freight(cid:10)Invoice`. Provenance highlighting then correctly refuses
+    to box anything — the quote never aligns to a word boundary — and the
+    inspector looks broken on every field.
+    """
+    from dte.artifacts import get_artifact_store
+
+    monkeypatch.setenv("DTE_ARTIFACT_DIR", str(tmp_path / "art"))
+    docs = tmp_path / "d"
+    docs.mkdir()
+    (docs / "a.pdf").write_bytes(build_pdf(["ACME Freight\nInvoice INV-1001\n"]))
+
+    engine = DuckDBEngine()
+    out = _extract(engine, _documents_table(docs, engine)).execute()
+
+    words = json.loads(
+        get_artifact_store().get(out["extract_meta"].iloc[0]["key"]).decode("utf-8")
+    )["blocks"][0]["words"]
+    texts = [w["text"] for w in words]
+
+    assert not any("cid:" in t for t in texts), texts
+    assert "Invoice" in texts and "INV-1001" in texts, texts
+    # Lines must actually differ vertically, or every word claims one row and
+    # a multi-line highlight collapses into a single wrong box.
+    assert len({round(w["top"]) for w in words}) == 2, words
+
+
 def test_blocks_carry_page_dimensions(corpus):
     """Word boxes are in PDF points; a highlight has to be drawn in pixels.
 
