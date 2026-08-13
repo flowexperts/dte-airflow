@@ -627,3 +627,51 @@ def test_rest_api_resource_name_overridden_to_source_table(monkeypatch):
 def test_dispatch_registers_rest_api():
     from dte.sources.loader import LOADERS
     assert "rest_api" in LOADERS
+
+
+# ── Whitespace in path-ish config ────────────────────────────────────────
+#
+# A trailing space survives copy-paste and is invisible in the input box. It
+# used to turn a correct glob into "No files matched '**/*.pdf '", an error
+# that reads as if the pattern were wrong. Trimmed at save, and again at glob
+# time so sources stored before the fix keep working.
+
+
+def test_glob_local_tolerates_surrounding_whitespace(tmp_path):
+    from dte.sources.loader import _glob_local
+
+    (tmp_path / "a.pdf").write_bytes(b"%PDF-1.4")
+    (tmp_path / "b.pdf").write_bytes(b"%PDF-1.4")
+
+    clean = _glob_local(str(tmp_path), "**/*.pdf")
+    assert len(clean) == 2
+
+    assert _glob_local(str(tmp_path), "**/*.pdf ") == clean
+    assert _glob_local(str(tmp_path), " **/*.pdf") == clean
+    assert _glob_local(str(tmp_path) + " ", "**/*.pdf") == clean
+
+
+def test_source_save_trims_bucket_url_and_file_glob():
+    src = SourceCreate(
+        id="docs",
+        name="docs",
+        connection_id="local_fs",
+        source_type="documents",
+        table="docs",
+        config={"bucket_url": "  /tmp/docs  ", "file_glob": "**/*.pdf "},
+    )
+    assert src.config["bucket_url"] == "/tmp/docs"
+    assert src.config["file_glob"] == "**/*.pdf"
+
+
+def test_source_save_leaves_clean_config_untouched():
+    src = SourceCreate(
+        id="docs",
+        name="docs",
+        connection_id="local_fs",
+        source_type="documents",
+        table="docs",
+        config={"bucket_url": "/tmp/docs", "file_glob": "**/*.pdf"},
+    )
+    assert src.config["bucket_url"] == "/tmp/docs"
+    assert src.config["file_glob"] == "**/*.pdf"

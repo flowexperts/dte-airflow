@@ -113,6 +113,12 @@ def _glob_local(bucket_url: str, file_glob: str) -> list[str]:
     import glob as _glob
     from pathlib import Path
 
+    # Strip here as well as at save: sources written before the model-level
+    # trim still carry the stray whitespace, and re-saving every one of them
+    # is not a reasonable thing to ask.
+    bucket_url = bucket_url.strip()
+    file_glob = file_glob.strip()
+
     if bucket_url.startswith("file://"):
         root = bucket_url[len("file://"):]
     else:

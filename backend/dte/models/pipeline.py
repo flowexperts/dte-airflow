@@ -498,6 +498,15 @@ class SourceBase(SQLModel):
         # `by_alias=True` so `schema_` re-serialises as `schema` on the wire.
         self.config = typed.model_dump(exclude_none=True, by_alias=True)
 
+        # Trim the path-ish fields. A trailing space survives copy-paste, is
+        # invisible in the input, and turns a working glob into "No files
+        # matched '**/*.pdf '" — an error that reads as if the pattern itself
+        # were wrong. Nothing legitimate ends one of these in whitespace.
+        for key in ("bucket_url", "file_glob"):
+            value = self.config.get(key)
+            if isinstance(value, str) and value != value.strip():
+                self.config[key] = value.strip()
+
         # Guardrail: if the user pinned a format AND the glob has an
         # extension that belongs to a different reader family, refuse.
         if self.format and self.source_type in _FILESYSTEM_KINDS:
