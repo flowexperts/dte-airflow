@@ -323,6 +323,22 @@ export function CompareWizard({
             {estimate.cost_basis && (
               <span className="text-[11.5px] text-subtle">{estimate.cost_basis}</span>
             )}
+            {/* Why the count is lower than providers × models. Silently
+                running fewer cells than someone built would leave them
+                looking for a column that never appears. */}
+            {estimate.dropped && estimate.dropped.length > 0 && (
+              <div className="flex flex-col gap-0.5 pt-1 border-t border-border">
+                <span className="text-[11.5px] text-subtle">
+                  {estimate.dropped.length} combination
+                  {estimate.dropped.length === 1 ? "" : "s"} skipped:
+                </span>
+                {estimate.dropped.slice(0, 3).map((d, i) => (
+                  <span key={i} className="text-[11.5px] text-subtle">
+                    {d.reason}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

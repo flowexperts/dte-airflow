@@ -129,6 +129,96 @@ def apply_cell(pipeline: Any, cell: Mapping[str, Any]) -> Any:
     return variant
 
 
+# Axes a provider does not read. Sweeping one of these against that
+# provider produces cells that differ on paper and are identical in fact.
+_IGNORED_AXES: dict[str, frozenset[str]] = {
+    "regex": frozenset({
+        "params.model", "params.max_tokens", "params.api_key", "model.instructions",
+    }),
+}
+
+# Which provider owns a model name. Prefixes, not an enumeration: a model
+# released after this was written must not be refused — the provider will
+# reject it far more accurately than a table here can.
+_MODEL_OWNER: dict[str, str] = {"claude-": "claude", "gpt-": "openai"}
+
+
+def _owner_of(model: str) -> str | None:
+    for prefix, provider in _MODEL_OWNER.items():
+        if model.startswith(prefix):
+            return provider
+    return None
+
+
+def prune_cells(pipeline: Any, cells: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Reduce an expanded matrix to the configs that are actually distinct.
+
+    `_expand_matrix` is a blind cartesian product, which is right for
+    independent axes and wrong the moment one axis makes another
+    irrelevant. `provider: [claude, regex] × params.model: [haiku, sonnet]`
+    expands to four cells, two of which set a model on `regex` — a provider
+    that never reads one. Those two are one config, run and billed twice,
+    rendered as two columns labelled with models they did not use.
+
+    That is the same failure the unknown-axis guard prevents — N cells
+    scoring identically, reading as "this setting makes no difference" —
+    reached from a direction the guard cannot see, since the axis genuinely
+    exists on the step.
+
+    Two rules:
+
+    **Strip overrides the resolved provider ignores, then collapse
+    duplicates.** Ticking regex alongside two models means "compare regex
+    against them", not "run regex twice".
+
+    **Drop a cell whose model belongs to another provider.** `claude` with
+    `gpt-5` cannot run. Rewriting it to claude's default would report a
+    number under a config nobody chose.
+
+    Returns `(kept, dropped)`, where each dropped entry carries the cell and
+    a reason — nothing disappears silently.
+    """
+    step = _structure_step(getattr(pipeline, "steps", None) or []) or {}
+    base_provider = step.get("provider") or "claude"
+
+    kept: list[dict] = []
+    dropped: list[dict] = []
+    seen: set[tuple] = set()
+
+    for cell in cells:
+        provider = cell.get("provider") or base_provider
+        model = cell.get("params.model")
+        if model:
+            owner = _owner_of(str(model))
+            if owner is not None and provider in _MODEL_OWNER.values() and owner != provider:
+                dropped.append({
+                    "cell": dict(cell),
+                    "reason": (
+                        f"{model!r} is a {owner} model and this cell runs on "
+                        f"{provider!r} — the combination cannot run"
+                    ),
+                })
+                continue
+
+        ignored = _IGNORED_AXES.get(provider, frozenset())
+        pruned = {k: v for k, v in cell.items() if k not in ignored}
+        key = tuple(sorted(pruned.items(), key=lambda kv: str(kv[0])))
+        if key in seen:
+            removed = sorted(set(cell) & ignored)
+            dropped.append({
+                "cell": dict(cell),
+                "reason": (
+                    f"{provider!r} does not read {', '.join(removed)}, so this "
+                    "cell is identical to one already in the sweep"
+                ),
+            })
+            continue
+        seen.add(key)
+        kept.append(pruned)
+
+    return kept, dropped
+
+
 def root_pipeline_id(pipeline_id: str) -> str:
     """Strip sweep-variant suffixes back to the config someone authored.
 

@@ -1117,6 +1117,11 @@ export interface SweepEstimate {
   est_cost_usd?: number | null;
   cost_basis?: string;
   matrix: Record<string, unknown>[];
+  /**
+   * Combinations removed before running, each with a reason — a cell count
+   * smaller than the product you built must never be silent.
+   */
+  dropped?: { cell: Record<string, unknown>; reason: string }[];
   enqueued: boolean;
   sweep_id?: string;
   /** Only present once confirmed — one real pipeline and run per cell. */

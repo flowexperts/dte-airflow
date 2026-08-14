@@ -53,8 +53,10 @@ from dte.evals.runner import collapse_rows_by_doc
 from dte.evals.scoring import intervals_overlap
 from dte.evals.digest import config_digest
 from dte.evals.sweep import (
+    _IGNORED_AXES,
     apply_cell,
     detached_copy,
+    prune_cells,
     root_pipeline_id,
     variant_id,
     variant_name,
@@ -847,6 +849,11 @@ async def launch_sweep(
     await validate_eval_corpus_match(pipeline, eval_set_id, store)
 
     cells = _expand_matrix(body.matrix)
+    # A blind cartesian product is right for independent axes and wrong the
+    # moment one axis makes another irrelevant — `regex × {haiku, sonnet}`
+    # is one config run twice, billed as two columns labelled with models it
+    # never read. Pruned before the cap so the cap counts real work.
+    cells, dropped_cells = prune_cells(pipeline, cells)
     max_cells = get_settings().eval_max_sweep_cells
     if len(cells) > max_cells:
         raise HTTPException(
@@ -879,6 +886,9 @@ async def launch_sweep(
         "est_cost_usd": None if per_doc is None else per_doc * len(cells) * documents,
         "cost_basis": basis,
         "matrix": cells,
+        # Never silent: a cell count smaller than the product the user built
+        # must say which combinations went and why.
+        "dropped": dropped_cells,
     }
 
     if not body.confirm:
@@ -1011,12 +1021,18 @@ def _cell_from_pipeline(pipeline) -> dict:
         return {}
     for step in getattr(pipeline, "steps", None) or []:
         if isinstance(step, dict) and step.get("op") == "structure":
-            out = {"provider": step.get("provider")}
+            provider = step.get("provider")
+            out = {"provider": provider}
+            # Only report settings this provider actually reads. A regex
+            # column headed "regex · claude-haiku-4-5" claims a model was
+            # used, and invites the reader to explain a score difference by
+            # a setting that had no effect.
+            ignored = _IGNORED_AXES.get(provider or "", frozenset())
             model = (step.get("params") or {}).get("model")
-            if model:
+            if model and "params.model" not in ignored:
                 out["model"] = model
             instructions = (step.get("model") or {}).get("instructions")
-            if instructions:
+            if instructions and "model.instructions" not in ignored:
                 out["instructions"] = instructions
             return out
     return {}
