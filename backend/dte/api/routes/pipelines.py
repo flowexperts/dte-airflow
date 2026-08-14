@@ -529,6 +529,73 @@ async def pipeline_as_eval(
 
 
 @router.get(
+    "/pipelines/{pipeline_id}/comparisons",
+    dependencies=[Depends(requires("eval:read"))],
+)
+async def list_pipeline_comparisons(
+    pipeline_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    r_store: RunStore = Depends(get_run_store),
+):
+    """Comparisons already run for this pipeline, newest first.
+
+    The compare page shipped reachable only from the redirect fired once at
+    launch — navigate away and the comparison was gone unless you had kept
+    the URL. That is the same "reachable from nowhere" failure this plan was
+    written to fix elsewhere.
+
+    Two details, both consequences of the variant namespace:
+
+    A sweep's runs are filed under the *cells* it created, never under the
+    pipeline that was swept, so the obvious lookup by `pipeline_id` returns
+    nothing at all.
+
+    Asking from a cell answers for the root. Someone who followed a link to
+    a variant must see the same history, not an empty page implying nothing
+    was ever compared.
+    """
+    from dte.evals.sweep import root_pipeline_id
+
+    if await p_store.get(pipeline_id) is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    root = root_pipeline_id(pipeline_id)
+
+    runs = await r_store.list_sweep_runs_for_root(root)
+    grouped: dict[str, dict] = {}
+    for run in runs:
+        sweep_id = run.get("sweep_id")
+        if not sweep_id:
+            continue
+        entry = grouped.setdefault(sweep_id, {
+            "sweep_id": sweep_id,
+            "eval_set_id": run.get("eval_set_id"),
+            "started_at": run.get("started_at"),
+            "cells": 0,
+            "pending": 0,
+            # None, never 0.0 — an unlabelled comparison is the normal case
+            # in this flow, and zero would read as "every config failed".
+            "best_macro_f1": None,
+        })
+        entry["cells"] += 1
+        if run.get("status") in ("pending", "running"):
+            entry["pending"] += 1
+        f1 = (run.get("scores") or {}).get("macro_f1")
+        if f1 is not None:
+            best = entry["best_macro_f1"]
+            entry["best_macro_f1"] = f1 if best is None else max(best, f1)
+        # Runs arrive newest-first; the comparison is as old as its first cell.
+        started = run.get("started_at")
+        if started and (entry["started_at"] is None or started > entry["started_at"]):
+            entry["started_at"] = started
+
+    return {
+        "pipeline_id": root,
+        "comparisons": list(grouped.values())[:limit],
+    }
+
+
+@router.get(
     "/pipelines/{pipeline_id}/revisions",
     dependencies=[Depends(requires("pipeline:read"))],
 )

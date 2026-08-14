@@ -1212,6 +1212,27 @@ export interface SweepComparison {
   };
 }
 
+export interface PipelineComparison {
+  sweep_id: string;
+  eval_set_id: string | null;
+  started_at: string | null;
+  cells: number;
+  pending: number;
+  /** Null until labels exist — never 0, which would read as total failure. */
+  best_macro_f1: number | null;
+}
+
+/**
+ * Comparisons already run for a pipeline, newest first.
+ *
+ * Asking from a sweep variant answers for its root, and `pipeline_id` in
+ * the response says which root that was.
+ */
+export const listPipelineComparisons = (pipelineId: string) =>
+  apiFetch<{ pipeline_id: string; comparisons: PipelineComparison[] }>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/comparisons`,
+  );
+
 /** Side-by-side outputs for one sweep. Works with no labels at all. */
 export const getSweepComparison = (sweepId: string) =>
   apiFetch<SweepComparison>(`/api/sweeps/${encodeURIComponent(sweepId)}/comparison`);

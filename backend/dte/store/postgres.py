@@ -243,6 +243,33 @@ class PostgresRunStore:
             )
             return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
 
+    async def list_sweep_runs_for_root(
+        self, root_pipeline_id: str, limit: int = 500
+    ) -> list[dict]:
+        """Every sweep run belonging to a pipeline or any of its cells.
+
+        A sweep's runs are filed under the *variants* it created
+        (`root__digest`), never under the pipeline that was swept — so the
+        obvious `WHERE pipeline_id = :root` finds nothing and the
+        comparison history reads as empty on the one page you would look.
+
+        `LIKE :prefix` is safe against a root id containing `%` or `_`
+        because ids are validated on save, and the `sweep_id IS NOT NULL`
+        clause keeps plain triggers out.
+        """
+        async with _open_tenant_session(self._factory) as s:
+            result = await s.execute(
+                text(
+                    f"SELECT {_RUN_COLUMNS} FROM runs "
+                    "WHERE sweep_id IS NOT NULL "
+                    "AND (pipeline_id = :root OR pipeline_id LIKE :prefix) "
+                    "ORDER BY started_at DESC LIMIT :limit"
+                ),
+                {"root": root_pipeline_id, "prefix": f"{root_pipeline_id}\\_\\_%",
+                 "limit": limit},
+            )
+            return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
+
     async def count_for_pipeline(self, pipeline_id: str) -> int:
         """Total runs, for the pager. Separate query rather than a window
         function on the page: the page is capped, the count is not, and a

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { Panel, PanelHead, Pill, InlineError } from "@/components/ui";
 import {
@@ -10,6 +11,7 @@ import {
   type LeaderboardEntry,
 } from "@/lib/api";
 import { PromoteButton } from "./promote-button";
+import { rootPipelineId } from "@/lib/pipeline-variant";
 import {
   FieldChip,
   SampleSize,
@@ -162,6 +164,19 @@ function RunRow({
           {entry.config_digest?.slice(0, 12) ?? "—"}
         </span>
         <span className="text-[11.5px] text-subtle">{entry.pipeline_id}</span>
+        {/* A leaderboard row from a sweep is one cell of a comparison, and
+            the comparison shows what the ranking cannot: where the configs
+            actually disagreed, on which documents. The link existed in the
+            data all along and was never rendered. */}
+        {entry.sweep_id && (
+          <Link
+            href={`/pipelines/${encodeURIComponent(rootPipelineId(entry.pipeline_id))}/compare?sweep=${encodeURIComponent(entry.sweep_id)}`}
+            className="text-[11.5px] text-muted hover:text-text underline underline-offset-2"
+            title="Open the side-by-side comparison this run belongs to"
+          >
+            in comparison
+          </Link>
+        )}
         <ThroughputChips t={entry.throughput} />
         {entry.fields.map((f) => (
           <button

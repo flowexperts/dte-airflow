@@ -4,6 +4,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { Panel, PanelHead, Pill } from "@/components/ui";
 import { PipelinePreview } from "@/components/pipeline-preview";
+import { ComparisonsPanel } from "@/components/evals/comparisons-panel";
 import { QualityPanel } from "@/components/run/quality-panel";
 import { StatRail, StatRow } from "@/components/run/stat-rail";
 import {
@@ -168,6 +169,7 @@ export function Rail({
           onDismiss={onDismissRun}
         />
       )}
+      <ComparisonsPanel pipelineId={pipeline.id} />
       {showPreview && <PipelinePreview pipelineId={pipeline} />}
     </div>
   );

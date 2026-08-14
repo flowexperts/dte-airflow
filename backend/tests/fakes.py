@@ -162,6 +162,19 @@ class FakeRunStore:
         rows = [r for r in self._data.values() if r.get("sweep_id") == sweep_id]
         return rows[:limit]
 
+    async def list_sweep_runs_for_root(
+        self, root_pipeline_id: str, limit: int = 500
+    ) -> list[dict]:
+        rows = [
+            r for r in self._data.values()
+            if r.get("sweep_id")
+            and (r["pipeline_id"] == root_pipeline_id
+                 or r["pipeline_id"].startswith(f"{root_pipeline_id}__"))
+        ]
+        # Newest first, matching the Postgres `ORDER BY started_at DESC`.
+        rows.reverse()
+        return rows[:limit]
+
     async def count_for_pipeline(self, pipeline_id: str) -> int:
         return sum(1 for r in self._data.values() if r["pipeline_id"] == pipeline_id)
 
