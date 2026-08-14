@@ -226,6 +226,23 @@ class PostgresRunStore:
             )
             return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
 
+    async def list_for_sweep(self, sweep_id: str, limit: int = 50) -> list[dict]:
+        """Every cell of one sweep — the side-by-side comparison's read path.
+
+        Ordered oldest-first, unlike the leaderboard: the columns of a
+        comparison grid should sit in the order the matrix declared them, so
+        the same sweep always renders the same way.
+        """
+        async with _open_tenant_session(self._factory) as s:
+            result = await s.execute(
+                text(
+                    f"SELECT {_RUN_COLUMNS} FROM runs WHERE sweep_id = :sid "
+                    "ORDER BY started_at ASC LIMIT :limit"
+                ),
+                {"sid": sweep_id, "limit": limit},
+            )
+            return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
+
     async def count_for_pipeline(self, pipeline_id: str) -> int:
         """Total runs, for the pager. Separate query rather than a window
         function on the page: the page is capped, the count is not, and a

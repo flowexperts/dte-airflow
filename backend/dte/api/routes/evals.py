@@ -40,9 +40,14 @@ from dte.api.deps import (
     get_schedule_store,
     get_source_store,
 )
-from dte.api.routes.pipelines import materialise_pipeline_rows, start_eval_run
+from dte.api.routes.pipelines import (
+    materialise_pipeline_rows,
+    start_eval_run,
+    validate_eval_corpus_match,
+)
 from dte.config import get_settings
 from dte.evals.bootstrap import CONSENSUS_LABEL_SOURCE, consensus
+from dte.evals.comparison import build_comparison
 from dte.evals.derive import eval_set_fingerprint, field_specs_from_structure
 from dte.evals.runner import collapse_rows_by_doc
 from dte.evals.scoring import intervals_overlap
@@ -830,9 +835,13 @@ async def launch_sweep(
             status_code=422,
             detail="sweeps run eval pipelines; this pipeline is not one",
         )
+    # Checked before the estimate, not at confirm: refusing later would let
+    # someone build a matrix, read a cost, and decide to spend — only to be
+    # told the corpus never matched. Every cell would have scored zero.
+    await validate_eval_corpus_match(pipeline, eval_set_id, store)
 
     cells = _expand_matrix(body.matrix)
-    max_cells = getattr(get_settings(), "eval_max_sweep_cells", DEFAULT_MAX_SWEEP_CELLS)
+    max_cells = get_settings().eval_max_sweep_cells
     if len(cells) > max_cells:
         raise HTTPException(
             status_code=422,
@@ -889,6 +898,109 @@ async def launch_sweep(
     estimate["sweep_id"] = sweep_id
     estimate["runs"] = runs
     return estimate
+
+
+@router.get("/sweeps/{sweep_id}/comparison", dependencies=[Depends(requires("eval:read"))])
+async def sweep_comparison(
+    sweep_id: str,
+    limit: int = Query(200, ge=1, le=1000),
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    r_store: RunStore = Depends(get_run_store),
+    s_store=Depends(get_source_store),
+    c_store=Depends(get_connection_store),
+    lt_store=Depends(get_lookup_table_store),
+):
+    """Side-by-side outputs for one sweep, with or without labels.
+
+    This is the surface plan 053 exists to add. The leaderboard needs
+    ground truth before it will show anything, which is why the harness sat
+    empty — so this endpoint answers the parts of the question that need no
+    labels at all: where the configs disagree, what each cost, how slow
+    each was, how often each abstained. Scores appear alongside once labels
+    exist; their absence is the normal case, not an error.
+
+    Rows are re-materialised rather than read back from the run, because an
+    eval run writes no output. That is affordable precisely because plan
+    050 caches extraction by document content and structure by text hash:
+    re-reading a finished cell parses no PDF and calls no model, so opening
+    this page costs nothing beyond a compile.
+    """
+    runs = await r_store.list_for_sweep(sweep_id, limit=limit)
+    if not runs:
+        raise HTTPException(status_code=404, detail=f"No runs found for sweep '{sweep_id}'")
+
+    eval_set_id = next((r.get("eval_set_id") for r in runs if r.get("eval_set_id")), None)
+    eval_set = await store.get(eval_set_id) if eval_set_id else None
+    if eval_set is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"sweep '{sweep_id}' is not bound to an eval set, so there is nothing to compare against",
+        )
+    specs = eval_set.to_field_specs()
+
+    cells = []
+    for run in runs:
+        pipeline = await p_store.get(run["pipeline_id"])
+        rows: list[dict] = []
+        if pipeline is not None and run.get("status") == "completed":
+            try:
+                rows = await materialise_pipeline_rows(
+                    pipeline, s_store, c_store, lt_store, limit=limit
+                )
+            except Exception as exc:  # pragma: no cover - surfaced, not raised
+                # One cell failing to re-materialise must not blank the whole
+                # comparison — the other columns are still the answer the user
+                # came for. The cell reports why instead.
+                run = {**run, "status": "unavailable", "error": str(exc)}
+        cells.append({
+            "cell_id": run["pipeline_id"],
+            "pipeline_id": run["pipeline_id"],
+            "run_id": run["id"],
+            "status": run.get("status"),
+            "error": run.get("error"),
+            "cell": _cell_from_pipeline(pipeline),
+            "rows": rows,
+            "scores": run.get("scores") or {},
+            "throughput": (run.get("scores") or {}).get("throughput") or {},
+        })
+
+    examples = await ex_store.list_for_set(eval_set.id, limit=10_000)
+    labelled = {e.doc_key for e in examples}
+
+    out = build_comparison(cells, specs, labelled_doc_keys=labelled)
+    out["sweep_id"] = sweep_id
+    out["eval_set_id"] = eval_set.id
+    out["labels_version"] = eval_set.labels_version
+    # Carried so the grid can show which cells are still running without a
+    # second request; a sweep is polled while it fills in.
+    out["pending"] = sum(
+        1 for r in runs if r.get("status") in ("pending", "running")
+    )
+    return out
+
+
+def _cell_from_pipeline(pipeline) -> dict:
+    """The config that names a column, read back off the variant pipeline.
+
+    The sweep's `cell` dict is not persisted anywhere — only the variant it
+    produced is. Reconstructing the interesting keys from the structure step
+    keeps the column headers honest even for a sweep launched months ago.
+    """
+    if pipeline is None:
+        return {}
+    for step in getattr(pipeline, "steps", None) or []:
+        if isinstance(step, dict) and step.get("op") == "structure":
+            out = {"provider": step.get("provider")}
+            model = (step.get("params") or {}).get("model")
+            if model:
+                out["model"] = model
+            instructions = (step.get("model") or {}).get("instructions")
+            if instructions:
+                out["instructions"] = instructions
+            return out
+    return {}
 
 
 class PromoteRequest(BaseModel):

@@ -156,6 +156,12 @@ class FakeRunStore:
         rows.reverse()
         return rows[offset : offset + limit]
 
+    async def list_for_sweep(self, sweep_id: str, limit: int = 50) -> list[dict]:
+        # Oldest first, matching the Postgres `ORDER BY started_at ASC` — the
+        # comparison grid's columns follow the order the matrix declared.
+        rows = [r for r in self._data.values() if r.get("sweep_id") == sweep_id]
+        return rows[:limit]
+
     async def count_for_pipeline(self, pipeline_id: str) -> int:
         return sum(1 for r in self._data.values() if r["pipeline_id"] == pipeline_id)
 
