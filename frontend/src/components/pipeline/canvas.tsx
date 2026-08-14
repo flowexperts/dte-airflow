@@ -35,6 +35,7 @@ import { usePermissions } from "@/lib/use-permissions";
 import { cn } from "@/lib/cn";
 import { AutoInferSchemas, AutoStepSchemas } from "./schema-sync";
 import { TriggerRunButton } from "./trigger";
+import { CompareButton } from "./compare-button";
 import {
   RunTone,
   destinationPathLabel,
@@ -384,6 +385,7 @@ export function PipelineCanvas({
                   {saving ? "Saving…" : "Save"}
                 </Button>
               )}
+              <CompareButton pipeline={pipeline} />
               <TriggerRunButton
                 pipeline={pipeline}
                 variant="primary"

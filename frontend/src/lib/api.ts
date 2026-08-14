@@ -1135,6 +1135,81 @@ export const launchSweep = (id: string, pipelineId: string, matrix: Record<strin
     body: JSON.stringify({ pipeline_id: pipelineId, matrix, confirm: true }),
   });
 
+/**
+ * The eval twin of a pipeline — same steps, no destination.
+ *
+ * Idempotent: a second call returns the existing twin. Compare is a button
+ * people press twice, and two twins would split one comparison across two
+ * leaderboards.
+ */
+export const pipelineAsEval = (pipelineId: string) =>
+  apiFetch<{ pipeline_id: string; created: boolean }>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/as-eval`,
+    { method: "POST" },
+  );
+
+/**
+ * The eval set a pipeline implies, derived from its structure step.
+ *
+ * Also idempotent, keyed on a fingerprint of field names and comparator
+ * types — so two pipelines extracting the same fields from the same corpus
+ * land on one set and can actually be ranked against each other.
+ */
+export const evalSetForPipeline = (pipelineId: string) =>
+  apiFetch<{ eval_set_id: string; created: boolean; labels_version: number }>(
+    `/api/eval-sets:for-pipeline`,
+    { method: "POST", body: JSON.stringify({ pipeline_id: pipelineId }) },
+  );
+
+export interface ComparisonCell {
+  cell_id: string;
+  pipeline_id: string;
+  run_id: string;
+  status: string;
+  error?: string | null;
+  cell: Record<string, unknown>;
+  documents: number;
+  null_rate: number | null;
+  cost_usd: number | null;
+  latency_p95_ms: number | null;
+  cache_hit_rate: number | null;
+  /** Absent until labels exist — absent is the normal case, not an error. */
+  macro_f1?: number | null;
+  macro_f1_interval?: [number, number] | null;
+  n?: number | null;
+  rank?: number;
+  tied_with_leader?: boolean;
+}
+
+export interface ComparisonField {
+  name: string;
+  /** Null with a single cell: agreement is undefined, not 100%. */
+  agreement_rate: number | null;
+  disagreement_count: number | null;
+}
+
+export interface ComparisonDocument {
+  doc_key: string;
+  doc_ref: string | null;
+  values: Record<string, Record<string, unknown>>;
+  agrees: boolean | null;
+}
+
+export interface SweepComparison {
+  sweep_id: string;
+  eval_set_id: string;
+  labels_version: number;
+  pending: number;
+  cells: ComparisonCell[];
+  fields: ComparisonField[];
+  documents: ComparisonDocument[];
+  labels: { total: number; agreed_unlabeled: number };
+}
+
+/** Side-by-side outputs for one sweep. Works with no labels at all. */
+export const getSweepComparison = (sweepId: string) =>
+  apiFetch<SweepComparison>(`/api/sweeps/${encodeURIComponent(sweepId)}/comparison`);
+
 /** Trigger an eval pipeline against a corpus. */
 export const triggerEval = (pipelineId: string, evalSetId: string) =>
   apiFetch<{ run_id: string }>(

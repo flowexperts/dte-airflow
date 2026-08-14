@@ -79,9 +79,14 @@ export function RunEvalButton({ evalSetId }: { evalSetId: string }) {
             </>
           ) : (
             <>
-              No eval pipelines yet. Create a pipeline with{" "}
-              <code className="font-mono">pipeline_type: eval</code> — documents
-              → extract → structure, no destination.
+              {/* The old copy here told the user to create a pipeline with
+                  `pipeline_type: eval` — a field name from the API, on a
+                  control labelled "Pipeline type", reachable only from the
+                  create route. Point at the button that does it instead. */}
+              No eval pipelines yet. Open the extraction pipeline you want to
+              measure and choose{" "}
+              <strong className="text-text">Compare…</strong> — it builds the
+              eval pipeline for you from the steps that are already there.
             </>
           )}
         </div>
