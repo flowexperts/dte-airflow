@@ -897,6 +897,10 @@ export interface EvalSet {
   holdout_count?: number;
   label_sources?: Record<string, number>;
   judge_labeled_warning?: string | null;
+  /** Best macro-F1 among runs scored against the *current* labels. Null
+   *  means never run — not zero, which is a measured failure. */
+  best_macro_f1?: number | null;
+  last_run_at?: string | null;
 }
 
 export interface EvalExample {
@@ -1071,6 +1075,16 @@ export const proposeEvalLabels = (id: string, pipelineId: string, confirm = fals
     method: "POST",
     body: JSON.stringify({ pipeline_id: pipelineId, confirm }),
   });
+
+/** Copy a scored eval config into a shippable transform pipeline. */
+export const promoteEvalPipeline = (
+  id: string,
+  body: { pipeline_id: string; new_pipeline_id: string; name: string; output_id: string },
+) =>
+  apiFetch<{ pipeline_id: string; config_digest: string }>(
+    `/api/eval-sets/${encodeURIComponent(id)}/promote`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
 
 export const getLeaderboard = (id: string) =>
   apiFetch<Leaderboard>(`/api/eval-sets/${encodeURIComponent(id)}/leaderboard`);

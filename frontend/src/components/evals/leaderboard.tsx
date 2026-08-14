@@ -9,6 +9,7 @@ import {
   type Leaderboard,
   type LeaderboardEntry,
 } from "@/lib/api";
+import { PromoteButton } from "./promote-button";
 import { FieldChip, SampleSize, ScoreBar, StaleBadge, TiedBadge, pct } from "./score";
 
 /**
@@ -63,6 +64,7 @@ export function LeaderboardPanel({ evalSetId }: { evalSetId: string }) {
           ranked.map((entry) => (
             <RunRow
               key={entry.run_id}
+              evalSetId={evalSetId}
               entry={entry}
               onFieldClick={(field) => setOpenField({ runId: entry.run_id, field })}
             />
@@ -102,9 +104,11 @@ export function LeaderboardPanel({ evalSetId }: { evalSetId: string }) {
 function RunRow({
   entry,
   onFieldClick,
+  evalSetId,
 }: {
   entry: LeaderboardEntry;
   onFieldClick: (field: string) => void;
+  evalSetId?: string | undefined;
 }) {
   return (
     <div className="border-b border-border last:border-b-0 px-4 py-3 flex flex-col gap-2">
@@ -161,6 +165,14 @@ function RunRow({
             <FieldChip metrics={f} />
           </button>
         ))}
+        {/* Only offered on runs still scored against the current labels —
+            promoting a config whose score is stale ships a number that no
+            longer means what it says. */}
+        {evalSetId && !entry.stale && (
+          <span className="ml-auto">
+            <PromoteButton evalSetId={evalSetId} pipelineId={entry.pipeline_id} />
+          </span>
+        )}
       </div>
     </div>
   );

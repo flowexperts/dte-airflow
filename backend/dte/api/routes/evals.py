@@ -45,7 +45,8 @@ from dte.config import get_settings
 from dte.evals.bootstrap import CONSENSUS_LABEL_SOURCE, consensus
 from dte.evals.runner import collapse_rows_by_doc
 from dte.evals.scoring import intervals_overlap
-from dte.evals.sweep import apply_cell, variant_id
+from dte.evals.digest import config_digest
+from dte.evals.sweep import apply_cell, detached_copy, variant_id
 from dte.models.eval import EvalExampleBase, EvalSetBase
 from dte.security.permissions import requires
 from dte.store.base import EvalExampleStore, EvalSetStore, PipelineStore, RunStore
@@ -77,6 +78,7 @@ async def list_eval_sets(
     offset: int = 0,
     store: EvalSetStore = Depends(get_eval_set_store),
     ex_store: EvalExampleStore = Depends(get_eval_example_store),
+    r_store: RunStore = Depends(get_run_store),
 ):
     rows = await store.list(limit=limit, offset=offset)
     out = []
@@ -84,8 +86,38 @@ async def list_eval_sets(
         d = r.model_dump()
         d["example_count"] = await ex_store.count_for_set(r.id)
         d["label_sources"] = await ex_store.count_by_label_source(r.id)
+        best, last = await _best_and_last(r_store, r.id, r.labels_version)
+        # Null, not zero: a set nobody has run and a set scoring zero are
+        # opposite situations, and rendering them alike is how a broken
+        # extractor hides on an index page.
+        d["best_macro_f1"] = best
+        d["last_run_at"] = last
         out.append(d)
     return out
+
+
+async def _best_and_last(r_store, eval_set_id: str, labels_version: int):
+    """Best current score and most recent activity for one set.
+
+    "Current" excludes runs pinned to a superseded `labels_version`, the
+    same rule the leaderboard uses to grey them out. A 0.99 earned against
+    labels that have since been corrected is not this set's best, and
+    showing it would put a number on the list that the detail page
+    contradicts.
+    """
+    runs = await r_store.list_for_eval_set(eval_set_id, limit=200)
+    best = None
+    last = None
+    for run in runs:
+        started = run.get("started_at")
+        if started and (last is None or str(started) > str(last)):
+            last = started
+        if run.get("labels_version") != labels_version:
+            continue
+        score = (run.get("scores") or {}).get("macro_f1")
+        if score is not None and (best is None or score > best):
+            best = score
+    return best, last
 
 
 @router.get("/eval-sets/{eval_set_id}", dependencies=[Depends(requires("eval:read"))])
@@ -725,6 +757,70 @@ async def launch_sweep(
     estimate["sweep_id"] = sweep_id
     estimate["runs"] = runs
     return estimate
+
+
+class PromoteRequest(BaseModel):
+    """Turn the winning eval config into a shippable transform pipeline."""
+
+    pipeline_id: str
+    new_pipeline_id: str
+    name: str
+    output_id: str
+
+
+@router.post(
+    "/eval-sets/{eval_set_id}/promote",
+    status_code=201,
+    dependencies=[Depends(requires("eval:write"))],
+)
+async def promote_pipeline(
+    eval_set_id: str,
+    body: PromoteRequest,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+):
+    """Copy a scored config into a transform pipeline that writes somewhere.
+
+    This closes the loop the whole harness exists for. Without it, the
+    answer to "which config should I ship" is a number someone re-types
+    into the builder by hand — which is exactly where the config that was
+    measured and the config that ships start to diverge.
+
+    The steps are copied verbatim for that reason: the promoted pipeline
+    must hash to the same `config_digest` that earned the score, or the
+    score is about something else.
+    """
+    if not await store.get(eval_set_id):
+        raise HTTPException(status_code=404, detail="Eval set not found")
+    source = await p_store.get(body.pipeline_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    if getattr(source, "pipeline_type", "transform") != "eval":
+        raise HTTPException(
+            status_code=422,
+            detail="only an eval pipeline can be promoted; this one is not",
+        )
+    if not body.output_id:
+        raise HTTPException(
+            status_code=422,
+            detail="a promoted pipeline writes real output, so it needs a destination",
+        )
+    if await p_store.get(body.new_pipeline_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"pipeline '{body.new_pipeline_id}' already exists",
+        )
+
+    promoted = detached_copy(source)
+    promoted.id = body.new_pipeline_id
+    promoted.name = body.name
+    promoted.pipeline_type = "transform"
+    promoted.output_id = body.output_id
+    await p_store.save(promoted)
+    return {
+        "pipeline_id": body.new_pipeline_id,
+        "config_digest": config_digest(promoted),
+    }
 
 
 def _cell_label(cell: dict) -> str:

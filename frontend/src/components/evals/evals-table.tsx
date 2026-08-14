@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CopyId, DataTable, type Column } from "@/components/ui";
 import { deleteEvalSet, type EvalSet } from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
+import { ScoreBar } from "./score";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
 
@@ -86,6 +87,29 @@ export function EvalSetsTable({ rows }: { rows: EvalSet[] }) {
           </span>
         );
       },
+    },
+    {
+      key: "best_macro_f1",
+      header: "Best F1",
+      render: (r) => (
+        // Against current labels only. A score earned before the labels were
+        // corrected is not this set's best, and putting it here would
+        // contradict the leaderboard, which greys that run out.
+        <ScoreBar value={r.best_macro_f1 ?? null} width={80} />
+      ),
+    },
+    {
+      key: "last_run_at",
+      header: "Last run",
+      render: (r) => (
+        <span className="font-mono text-[11.5px] text-subtle tabular-nums">
+          {/* ISO slice, not toLocaleDateString: `/evals` is a server
+              component, so the first paint is rendered with the *server's*
+              locale and then re-rendered with the browser's — 14/8/2026 vs
+              8/14/2026 is a hydration mismatch that discards the tree. */}
+          {r.last_run_at ? r.last_run_at.slice(0, 10) : "never"}
+        </span>
+      ),
     },
     {
       key: "labels_version",

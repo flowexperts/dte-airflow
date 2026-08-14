@@ -40,7 +40,7 @@ def _structure_step(steps: list) -> dict | None:
     return None
 
 
-def _detached_copy(pipeline: Any) -> Any:
+def detached_copy(pipeline: Any) -> Any:
     """A plain, session-free copy of a pipeline.
 
     `copy.deepcopy` is wrong here. A pipeline loaded from Postgres is a
@@ -61,7 +61,7 @@ def _detached_copy(pipeline: Any) -> Any:
 
 def apply_cell(pipeline: Any, cell: Mapping[str, Any]) -> Any:
     """Return a copy of `pipeline` with one sweep cell's overrides applied."""
-    variant = _detached_copy(pipeline)
+    variant = detached_copy(pipeline)
     step = _structure_step(getattr(variant, "steps", None) or [])
     if step is None:
         raise ValueError(
