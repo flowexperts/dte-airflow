@@ -437,6 +437,73 @@ the list page together. Eval pipelines shipped creatable and reachable from
 nowhere because the nav and the page each knew about a different subset of
 types, and an unrecognised `?type=` silently means "no filter".
 
+### Compare: the entry point to the harness (plan 053)
+
+**Start from the pipeline, not the eval set.** Reaching a provider
+comparison through plan 051's surfaces took 28 steps minimum and could not
+be completed in the UI at all. The object model was fine; the entry point
+was wrong. `/eval-sets/new` asked users to declare a source and retype a
+field list their pipeline already carried — so `CompareButton` on
+`/pipelines/{id}` derives all of it:
+
+```
+POST /pipelines/{id}/as-eval          → the eval twin (idempotent)
+POST /eval-sets:for-pipeline          → the eval set   (idempotent)
+POST /eval-sets/{id}/sweep            → estimate, then confirm
+GET  /sweeps/{id}/comparison          → the side-by-side view
+```
+
+- **`dte/evals/derive.py` maps `model.fields` → `field_specs`.** One-way
+  only. The two shapes are close but unequal (`comparator` on one side,
+  `pattern`/`required`/`examples` on the other) and a two-way sync between
+  them is how the drift the derivation removes would return.
+- **The eval-set id carries a fingerprint** of field names, comparator
+  types and comparator options — *not* order and *not* descriptions.
+  Reordering fields and rewording a prompt hint are the edits people make
+  constantly while iterating; minting a fresh set for either would discard
+  every label collected so far. Two pipelines extracting the same fields
+  from the same corpus therefore share one set, which is what lets claude
+  and openai appear on one leaderboard.
+- **The twin normalises sweepable keys** (`params.model`,
+  `model.instructions`). `apply_cell` refuses to *create* a leaf that does
+  not exist, and that guard is what stops a typo'd axis becoming N
+  identical cells reading as "this setting makes no difference" — so the
+  twin is filled in rather than the guard loosened.
+
+**The comparison renders with no labels, and that is the point.** The
+leaderboard's "No comparable runs yet" is a demand for work nobody has
+done, and it is why the harness sat empty. `build_comparison`
+(`dte/evals/comparison.py`) answers what needs no ground truth: per-field
+agreement, cost, p95 latency, null rate, per-document values. Scores are
+added when labels exist; **absent is the normal case, never an error, and
+never rendered as zero**.
+
+- Agreement rules are **imported from `bootstrap.py`**, not reimplemented —
+  comparators not equality, null is not agreement, union not intersection.
+  A comparison measuring agreement differently from the thing that writes
+  labels would offer "accept 41 agreed" for a number the accept step
+  refuses.
+- `labels.auto_accept` reproduces bootstrap's shared-provider rule *in the
+  payload*, because the UI must know before it offers the button. Sweeping
+  models or prompts holds the provider fixed, so the 409 is the common
+  case, and a primary button that fails on click is worse than a disabled
+  one that explains.
+- Rows are **re-materialised, not persisted** — an eval run writes no
+  output. Affordable only because plan 050 caches by content hash; opening
+  the page parses no PDF and calls no model.
+
+**`regex` is gated on patterns** (`lib/compare-matrix.ts`). Without a
+`pattern` per field the provider returns nothing on every row and the cell
+scores ~0 — which reads as "regex is bad at this" rather than "regex was
+never configured". The chip is disabled and names the fields that lack one.
+
+Also fixed here, all three previously invisible: OpenAI models were
+unpriced (and one unpriced row nulls a whole run's cost by design);
+`eval_max_sweep_cells` was read off a `Settings` that never declared it, so
+`DTE_EVAL_MAX_SWEEP_CELLS` was inert; and the sweep skipped the
+corpus-match check `trigger` enforces — now `validate_eval_corpus_match`,
+called by both, before the estimate rather than at confirm.
+
 ### Field references and nested columns
 
 Dot syntax is the wire form: `order.amount`, `user.address.city`. `_resolve_field()` splits on `.` and traverses struct members; if the head isn't a top-level column it falls back to the joined `__` name (so `mongodb` / `rest_api` sources — which still flatten via dlt — keep working). `_apply_output_fields` / `_apply_lookup` route through `_resolve_field` so Select and Lookup steps handle struct paths. Struct-path outputs are named after the leaf segment when no alias is given.
@@ -556,6 +623,10 @@ POST   /api/eval-sets/{id}/sweep          estimate, then confirm to enqueue one 
 POST   /api/eval-sets/{id}/promote        copy a winning config into a transform pipeline
 GET    /api/eval-sets/{id}/leaderboard    ranked runs; ties within the Wilson interval
 GET    /api/eval-sets/{id}/fields/{f}/failures  expected-vs-got for one field
+
+POST   /api/pipelines/{id}/as-eval        eval twin of a pipeline (idempotent)
+POST   /api/eval-sets:for-pipeline        eval set derived from a pipeline (idempotent)
+GET    /api/sweeps/{sweep_id}/comparison  configs side by side; works with no labels
 ```
 
 `Run` responses include `id`, `pipeline_id`, `status` (`pending`/`running`/`completed`/`failed`), `error`, `rows_written`, `started_at`, `finished_at`. Per-step run events are **not** recorded yet — the frontend `Timeline` renders an empty state placeholder.

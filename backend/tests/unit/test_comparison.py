@@ -146,6 +146,28 @@ class TestAgreement:
         )
         assert out["labels"]["agreed_unlabeled"] == 1
 
+    def test_variants_sharing_a_provider_cannot_auto_accept(self):
+        # bootstrap 409s on this, and rightly: agreement between prompts
+        # against one model reflects that model's blind spots, not truth.
+        # The comparison has to know it up front, or the button offers an
+        # acceptance the next call refuses.
+        out = build_comparison(
+            [_cell("a", {"x" * 64: {"total": "1", "vendor": "A"}}, cell={"provider": "claude"}),
+             _cell("b", {"x" * 64: {"total": "1", "vendor": "A"}}, cell={"provider": "claude"})],
+            SPECS,
+        )
+        assert out["labels"]["auto_accept"] is False
+        assert "provider" in (out["labels"]["warning"] or "")
+
+    def test_distinct_providers_can_auto_accept(self):
+        out = build_comparison(
+            [_cell("a", {"x" * 64: {"total": "1", "vendor": "A"}}, cell={"provider": "claude"}),
+             _cell("b", {"x" * 64: {"total": "1", "vendor": "A"}}, cell={"provider": "openai"})],
+            SPECS,
+        )
+        assert out["labels"]["auto_accept"] is True
+        assert out["labels"]["warning"] is None
+
     def test_already_labelled_documents_are_not_offered_again(self):
         out = build_comparison(
             [_cell("claude", {"a" * 64: {"total": "1", "vendor": "A"}}),

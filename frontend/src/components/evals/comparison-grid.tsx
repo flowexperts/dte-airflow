@@ -169,9 +169,9 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
             </p>
             {can("eval:write") && data.labels.agreed_unlabeled > 0 && (
               <Button
-                variant="primary"
+                variant={data.labels.auto_accept ? "primary" : "default"}
                 size="sm"
-                disabled={accepting}
+                disabled={accepting || !data.labels.auto_accept}
                 onClick={() => void acceptAgreed()}
               >
                 {accepting
@@ -180,6 +180,25 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
               </Button>
             )}
           </div>
+          {/* The write is refused when every config shares a provider, and
+              that is the common case — sweeping models or prompts holds the
+              provider fixed. Saying so beside a disabled button beats a
+              primary button that 409s on click. */}
+          {data.labels.warning && data.labels.agreed_unlabeled > 0 && (
+            <div className="px-4 pb-3 -mt-1">
+              <p className="text-[11.5px] text-subtle max-w-[72ch]">
+                {data.labels.warning} Add a second provider to the comparison,
+                or label these from the{" "}
+                <Link
+                  href={`/eval-sets/${encodeURIComponent(data.eval_set_id)}?tab=review`}
+                  className="text-text underline underline-offset-2"
+                >
+                  review queue
+                </Link>
+                .
+              </p>
+            </div>
+          )}
         </Panel>
       )}
 

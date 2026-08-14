@@ -1203,7 +1203,13 @@ export interface SweepComparison {
   cells: ComparisonCell[];
   fields: ComparisonField[];
   documents: ComparisonDocument[];
-  labels: { total: number; agreed_unlabeled: number };
+  labels: {
+    total: number;
+    agreed_unlabeled: number;
+    /** False when every config shares a provider — bootstrap refuses the write. */
+    auto_accept: boolean;
+    warning: string | null;
+  };
 }
 
 /** Side-by-side outputs for one sweep. Works with no labels at all. */

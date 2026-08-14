@@ -228,6 +228,23 @@ def build_comparison(
     agreed_unlabeled = sum(
         1 for d in documents if d["agrees"] is True and d["doc_key"] not in labelled
     )
+
+    # Whether accepting the agreement is a defensible label write, decided
+    # by the same rule `bootstrap` enforces. Reproduced rather than inferred
+    # later because the UI has to know *before* it offers the button: a
+    # button that promises acceptance and then 409s is worse than one that
+    # says "review these" up front — and configs sharing a provider is the
+    # common case, since sweeping models or prompts holds the provider fixed.
+    providers = {
+        c["cell"].get("provider") for c in out_cells if (c.get("cell") or {}).get("provider")
+    }
+    auto_accept = len(providers) >= 2
+    warning = None if auto_accept else (
+        "These configs share a provider. Agreement between prompts against "
+        "the same model reflects that model's blind spots, not ground truth "
+        "— review before accepting."
+    )
+
     return {
         "cells": out_cells,
         "fields": fields,
@@ -235,5 +252,7 @@ def build_comparison(
         "labels": {
             "total": len(labelled & set(doc_keys)),
             "agreed_unlabeled": agreed_unlabeled,
+            "auto_accept": auto_accept,
+            "warning": warning,
         },
     }
