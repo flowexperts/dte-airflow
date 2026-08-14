@@ -19,6 +19,7 @@ export function relativeTime(iso?: string | null): string {
 }
 
 export const isQualityPipeline = (p: Pipeline) => p.pipeline_type === "quality";
+export const isEvalPipeline = (p: Pipeline) => p.pipeline_type === "eval";
 
 /** Labels that read the same on detail, list, and run pages. */
 export function pipelineShape(p: Pipeline): string {
@@ -29,6 +30,14 @@ export function pipelineShape(p: Pipeline): string {
       (s) => s.op === "check" || s.op === "profile",
     ).length;
     return `${sources} src · ${checks || steps} check${(checks || steps) === 1 ? "" : "s"}`;
+  }
+  if (isEvalPipeline(p)) {
+    // Not "no output". An eval pipeline having no destination is the design,
+    // but rendered in the transform shape it reads as an unfinished pipeline
+    // someone forgot to point somewhere.
+    const fields = (p.steps ?? []).find((s) => s.op === "structure");
+    const n = (fields?.model as { fields?: unknown[] } | undefined)?.fields?.length ?? 0;
+    return `${sources} src · ${n} field${n === 1 ? "" : "s"} scored`;
   }
   return `${sources} → ${steps} → ${p.output_id ? "output" : "no output"}`;
 }

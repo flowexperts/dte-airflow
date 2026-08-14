@@ -25,11 +25,13 @@ import { summarizeBulkDelete } from "@/lib/bulk-delete";
 import {
   RunSparkline,
   RunTone,
+  isEvalPipeline,
   isQualityPipeline,
   pipelineShape,
   relativeTime,
   runOutcome,
 } from "./pipeline/helpers";
+import { pipelineTypeLabel } from "@/lib/pipeline-type";
 import { TriggerRunButton } from "./pipeline/trigger";
 
 /**
@@ -183,10 +185,10 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
       header: "Type",
       width: "110px",
       render: (r) =>
-        isQualityPipeline(r) ? (
-          <Tag variant="output">quality</Tag>
+        isQualityPipeline(r) || isEvalPipeline(r) ? (
+          <Tag variant="output">{pipelineTypeLabel(r.pipeline_type)}</Tag>
         ) : (
-          <Tag>transform</Tag>
+          <Tag>{pipelineTypeLabel(r.pipeline_type)}</Tag>
         ),
     },
     {

@@ -12,6 +12,7 @@ import {
   NavFooter,
 } from "@/components/ui";
 import { type CurrentUser, clearToken } from "@/lib/api";
+import { PIPELINE_TYPE_TABS } from "@/lib/pipeline-type";
 
 export function AppSidebar() {
   const pathname = usePathname() ?? "";
@@ -60,18 +61,26 @@ export function AppSidebar() {
         {can("pipeline:read") && (
           <>
             <NavGroup>Pipelines</NavGroup>
-            <NavItem
-              href="/pipelines?type=transform"
-              label="Transform"
-              indent
-              active={on("/pipelines") && !on("/pipelines/new") && typeParam !== "quality"}
-            />
-            <NavItem
-              href="/pipelines?type=quality"
-              label="Quality Check"
-              indent
-              active={on("/pipelines") && !on("/pipelines/new") && typeParam === "quality"}
-            />
+            {/* Driven by PIPELINE_TYPE_TABS so a new pipeline_type cannot
+                ship without a way back to it. Eval pipelines were creatable
+                in the builder and reachable from nowhere: both links carry a
+                ?type=, so no nav path produced the unfiltered list. */}
+            {PIPELINE_TYPE_TABS.map(({ type, label }) => (
+              <NavItem
+                key={type}
+                href={`/pipelines?type=${type}`}
+                label={label}
+                indent
+                active={
+                  on("/pipelines") &&
+                  !on("/pipelines/new") &&
+                  (typeParam === type ||
+                    // Bare /pipelines shows everything; highlight Transform
+                    // rather than nothing, as before.
+                    (typeParam === null && type === "transform"))
+                }
+              />
+            ))}
             {/* No "+ New pipeline" here. Creation belongs on the list page,
                 where the primary button sits beside the thing being added.
                 In the nav it read as a third kind of pipeline next to
