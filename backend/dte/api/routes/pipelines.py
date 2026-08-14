@@ -793,6 +793,36 @@ async def preview_pipeline(
     }
 
 
+async def materialise_pipeline_rows(
+    pipeline: Pipeline,
+    s_store: SourceStore,
+    c_store: ConnectionStore,
+    lt_store: LookupTableStore,
+    limit: int = 500,
+) -> list[dict]:
+    """Compile a destination-less pipeline and return its rows.
+
+    Extracted from the preview path so the consensus bootstrap can run
+    several variants over one corpus without duplicating source
+    resolution. Deliberately shares preview's shape rather than the run
+    path's: bootstrap writes no run rows and records no events — it is a
+    read of what a config *would* produce.
+
+    Cheap to call repeatedly despite appearances: plan 050 caches extract
+    results by document content, so N variants over one corpus parse each
+    PDF once and only the structure calls vary.
+    """
+    decrypt_context_var.set("pipeline_preview")
+    sources = await _resolve_sources(pipeline, s_store, c_store)
+    lookups = await _resolve_lookups(pipeline, lt_store)
+    engine = DuckDBEngine()
+    registry = BackendRegistry(duckdb_con=engine.con)
+    tables = {s.id: load_source(s, registry, conn, creds) for s, conn, creds in sources}
+    compiled = compile_pipeline(pipeline, tables, lookup_tables=lookups, engine=engine)
+    df = compiled.limit(limit).execute()
+    return json.loads(df.to_json(orient="records", date_format="iso"))
+
+
 @router.post("/pipelines/{pipeline_id}/trigger", dependencies=[Depends(requires("pipeline:trigger"))])
 async def trigger_pipeline(
     pipeline_id: str,

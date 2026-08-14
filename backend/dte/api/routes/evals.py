@@ -29,13 +29,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from dte.api.deps import (
+    get_connection_store,
     get_eval_example_store,
     get_eval_set_store,
+    get_lookup_table_store,
     get_pipeline_store,
     get_run_store,
     get_schedule_store,
+    get_source_store,
 )
+from dte.api.routes.pipelines import materialise_pipeline_rows
 from dte.config import get_settings
+from dte.evals.bootstrap import CONSENSUS_LABEL_SOURCE, consensus
+from dte.evals.runner import collapse_rows_by_doc
 from dte.evals.scoring import intervals_overlap
 from dte.models.eval import EvalExampleBase, EvalSetBase
 from dte.security.permissions import requires
@@ -329,6 +335,174 @@ def _parse_import(body: ImportRequest) -> list[dict]:
     if fmt == "csv":
         return list(csv.DictReader(io.StringIO(body.content)))
     raise HTTPException(status_code=422, detail=f"unsupported import format: {fmt!r}")
+
+
+# ── consensus bootstrap ──────────────────────────────────────────────────
+
+
+class BootstrapRequest(BaseModel):
+    """Run several variants over the corpus and keep what they all agree on.
+
+    `confirm` defaults False for the same reason `POST /sweep` does, but the
+    stake is different and higher: a sweep spends money, while this writes
+    *ground truth*. Every future comparison is measured against the corpus,
+    so a mis-click here produces an eval set that looks populated and
+    quietly encodes whatever the models happened to agree on.
+    """
+
+    variant_pipeline_ids: list[str] = Field(default_factory=list)
+    limit: int = 500
+    confirm: bool = False
+
+
+def _structure_provider(pipeline) -> str | None:
+    for step in getattr(pipeline, "steps", []) or []:
+        if isinstance(step, dict) and step.get("op") == "structure":
+            return step.get("provider")
+    return None
+
+
+@router.post(
+    "/eval-sets/{eval_set_id}/bootstrap",
+    dependencies=[Depends(requires("eval:write"))],
+)
+async def bootstrap_eval_set(
+    eval_set_id: str,
+    body: BootstrapRequest,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    s_store=Depends(get_source_store),
+    c_store=Depends(get_connection_store),
+    lt_store=Depends(get_lookup_table_store),
+):
+    eval_set = await store.get(eval_set_id)
+    if not eval_set:
+        raise HTTPException(status_code=404, detail="Eval set not found")
+
+    pipelines = []
+    for pid in body.variant_pipeline_ids:
+        p = await p_store.get(pid)
+        if p is None:
+            raise HTTPException(status_code=422, detail=f"variant pipeline not found: {pid}")
+        pipelines.append(p)
+
+    variant_rows, providers = {}, {}
+    for p in pipelines:
+        variant_rows[p.id] = await materialise_pipeline_rows(
+            p, s_store, c_store, lt_store, limit=body.limit
+        )
+        providers[p.id] = _structure_provider(p)
+
+    try:
+        result = consensus(variant_rows, eval_set.to_field_specs(), providers=providers)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    written = 0
+    if body.confirm:
+        if not result["auto_accept"]:
+            # 409 rather than a silent downgrade to review-only: the caller
+            # asked to write, and pretending to comply while writing nothing
+            # is worse than refusing.
+            raise HTTPException(status_code=409, detail=result["warning"])
+        for proposal in result["agreed"]:
+            await ex_store.save(EvalExampleBase(
+                id="",
+                eval_set_id=eval_set_id,
+                doc_key=proposal["doc_key"],
+                labels=proposal["labels"],
+                label_source=CONSENSUS_LABEL_SOURCE,
+                split="train",
+            ))
+            written += 1
+
+    version = (
+        await store.bump_labels_version(eval_set_id) if written else eval_set.labels_version
+    )
+    return {**result, "written": written, "labels_version": version}
+
+
+class ProposeRequest(BaseModel):
+    """One model proposes labels for the whole corpus; a human confirms.
+
+    The fastest cold start there is, and the one that most needs to stay
+    visible: part of the corpus becomes this model's opinion, so scores
+    computed against it are partly the model grading itself. Permanently
+    tagged `judge` — the leaderboard's >50% warning depends on the tag
+    surviving, and folding these into `human` would erase the only signal
+    that the circularity exists.
+    """
+
+    pipeline_id: str
+    limit: int = 500
+    confirm: bool = False
+
+
+@router.post(
+    "/eval-sets/{eval_set_id}/propose",
+    dependencies=[Depends(requires("eval:write"))],
+)
+async def propose_labels(
+    eval_set_id: str,
+    body: ProposeRequest,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    s_store=Depends(get_source_store),
+    c_store=Depends(get_connection_store),
+    lt_store=Depends(get_lookup_table_store),
+):
+    eval_set = await store.get(eval_set_id)
+    if not eval_set:
+        raise HTTPException(status_code=404, detail="Eval set not found")
+    pipeline = await p_store.get(body.pipeline_id)
+    if pipeline is None:
+        raise HTTPException(
+            status_code=422, detail=f"pipeline not found: {body.pipeline_id}"
+        )
+
+    rows = await materialise_pipeline_rows(
+        pipeline, s_store, c_store, lt_store, limit=body.limit
+    )
+    names = [s.name for s in eval_set.to_field_specs()]
+    collapsed = collapse_rows_by_doc(rows, names)
+
+    proposals = []
+    for doc_key, values in sorted(collapsed.items()):
+        labels = {k: v for k, v in values.items() if v is not None}
+        # A document the judge abstained on carries no proposal. Writing an
+        # all-null row would assert that the right answer is "nothing", and
+        # every extractor that also abstains would score a hit on it.
+        if labels:
+            proposals.append({"doc_key": doc_key, "labels": labels})
+
+    written = 0
+    if body.confirm:
+        for proposal in proposals:
+            await ex_store.save(EvalExampleBase(
+                id="",
+                eval_set_id=eval_set_id,
+                doc_key=proposal["doc_key"],
+                labels=proposal["labels"],
+                label_source="judge",
+                split="train",
+            ))
+            written += 1
+
+    version = (
+        await store.bump_labels_version(eval_set_id) if written else eval_set.labels_version
+    )
+    return {
+        "proposals": proposals,
+        "written": written,
+        "labels_version": version,
+        "warning": (
+            "These are model-proposed labels. Scores computed against them are "
+            "partly this model grading itself — confirm them before trusting "
+            "the leaderboard."
+        ),
+    }
 
 
 # ── leaderboard ──────────────────────────────────────────────────────────
