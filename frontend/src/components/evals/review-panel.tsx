@@ -204,6 +204,44 @@ function ReviewQueue({
     [current],
   );
 
+  /**
+   * The options a reviewer may choose, which are deliberately *not* the raw
+   * candidate values.
+   *
+   * A variant returning nothing is not proposing "the document does not
+   * state this" — it failed to answer. Offering that null beside the real
+   * answers invites recording an extractor's miss as ground truth, which
+   * asserts the correct answer is nothing and makes every abstaining
+   * extractor score a hit on the row. `consensus()` already refuses
+   * unanimous null for exactly this reason; the review path has to agree.
+   *
+   * Absence is still a legitimate label — a document genuinely may not
+   * contain the field — so it is offered, once, worded as the assertion it
+   * is rather than disguised as a variant's output.
+   */
+  const optionsFor = useCallback(
+    (field: string) => {
+      const votes = current?.candidates[field] ?? {};
+      const opts: { label: string; value: unknown; from: string }[] = [];
+      for (const [variant, value] of Object.entries(votes)) {
+        if (value === null || value === undefined || value === "") continue;
+        const existing = opts.find((o) => String(o.value) === String(value));
+        if (existing) {
+          existing.from = `${existing.from}, ${variant}`;
+          continue;
+        }
+        opts.push({ label: String(value), value, from: variant });
+      }
+      opts.push({
+        label: "Document doesn't state this",
+        value: null,
+        from: "asserts the field is genuinely absent",
+      });
+      return opts;
+    },
+    [current],
+  );
+
   const pick = useCallback(
     (field: string, value: unknown) => {
       if (!docKey) return;
@@ -257,14 +295,14 @@ function ReviewQueue({
         // they abandon.
         const field = contested[0];
         if (!field) return;
-        const values = Object.values(current.candidates[field] ?? {});
-        const choice = values[Number(e.key) - 1];
-        if (choice !== undefined) pick(field, choice);
+        const opts = optionsFor(field);
+        const choice = opts[Number(e.key) - 1];
+        if (choice) pick(field, choice.value);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [accept, items.length, current, contested, pick]);
+  }, [accept, items.length, current, contested, pick, optionsFor]);
 
   if (!current) return null;
 
@@ -312,24 +350,33 @@ function ReviewQueue({
           <div key={field} className="flex flex-col gap-1.5">
             <span className="text-[11px] text-subtle uppercase tracking-wide">{field}</span>
             <div className="flex flex-wrap gap-2">
-              {Object.entries(current.candidates[field] ?? {}).map(([variant, value], i) => {
-                const on = picked[field] === value;
+              {optionsFor(field).map((opt, i) => {
+                const on =
+                  picked[field] !== undefined && picked[field] === opt.value;
+                const absent = opt.value === null;
                 return (
                   <button
-                    key={variant}
+                    key={`${field}-${i}`}
                     type="button"
-                    onClick={() => pick(field, value)}
+                    onClick={() => pick(field, opt.value)}
                     className="text-left px-2.5 py-1.5 rounded-[var(--radius)] border transition-colors"
                     style={{
-                      borderColor: on ? "var(--accent)" : "var(--border)",
+                      borderColor: on
+                        ? "var(--accent)"
+                        : absent
+                          ? "var(--gold)"
+                          : "var(--border)",
                       background: on ? "var(--accent-tint)" : "transparent",
                     }}
                   >
                     <span className="font-mono text-[11px] text-subtle">{i + 1} </span>
-                    <span className="font-mono text-[12.5px]">
-                      {value == null || value === "" ? "— (no answer)" : String(value)}
+                    <span
+                      className="font-mono text-[12.5px]"
+                      style={absent ? { color: "var(--gold)" } : undefined}
+                    >
+                      {opt.label}
                     </span>
-                    <span className="block text-[10.5px] text-subtle">{variant}</span>
+                    <span className="block text-[10.5px] text-subtle">{opt.from}</span>
                   </button>
                 );
               })}

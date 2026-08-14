@@ -16,6 +16,7 @@ import { ExamplesPanel } from "@/components/evals/examples-panel";
 import { LeaderboardPanel } from "@/components/evals/leaderboard";
 import { ReviewPanel } from "@/components/evals/review-panel";
 import { RunEvalButton } from "@/components/evals/run-eval-button";
+import { SweepLauncher } from "@/components/evals/sweep-launcher";
 
 type Tab = "leaderboard" | "examples" | "review";
 
@@ -104,7 +105,12 @@ export default function EvalSetPage({ params }: { params: Promise<{ id: string }
       </div>
 
       <div className="px-14 py-8">
-        {tab === "leaderboard" && <LeaderboardPanel evalSetId={id} />}
+        {tab === "leaderboard" && (
+          <div className="flex flex-col gap-6">
+            <SweepLauncher evalSetId={id} />
+            <LeaderboardPanel evalSetId={id} />
+          </div>
+        )}
         {tab === "examples" && set && <ExamplesPanel evalSet={set} />}
         {tab === "review" && set && <ReviewPanel evalSet={set} />}
       </div>

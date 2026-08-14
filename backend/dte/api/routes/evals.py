@@ -34,15 +34,18 @@ from dte.api.deps import (
     get_eval_set_store,
     get_lookup_table_store,
     get_pipeline_store,
+    get_destination_store,
+    get_run_event_store,
     get_run_store,
     get_schedule_store,
     get_source_store,
 )
-from dte.api.routes.pipelines import materialise_pipeline_rows
+from dte.api.routes.pipelines import materialise_pipeline_rows, start_eval_run
 from dte.config import get_settings
 from dte.evals.bootstrap import CONSENSUS_LABEL_SOURCE, consensus
 from dte.evals.runner import collapse_rows_by_doc
 from dte.evals.scoring import intervals_overlap
+from dte.evals.sweep import apply_cell, variant_id
 from dte.models.eval import EvalExampleBase, EvalSetBase
 from dte.security.permissions import requires
 from dte.store.base import EvalExampleStore, EvalSetStore, PipelineStore, RunStore
@@ -648,6 +651,12 @@ async def launch_sweep(
     store: EvalSetStore = Depends(get_eval_set_store),
     ex_store: EvalExampleStore = Depends(get_eval_example_store),
     p_store: PipelineStore = Depends(get_pipeline_store),
+    r_store: RunStore = Depends(get_run_store),
+    re_store=Depends(get_run_event_store),
+    s_store=Depends(get_source_store),
+    d_store=Depends(get_destination_store),
+    c_store=Depends(get_connection_store),
+    lt_store=Depends(get_lookup_table_store),
 ):
     eval_set = await store.get(eval_set_id)
     if not eval_set:
@@ -689,12 +698,37 @@ async def launch_sweep(
         return estimate
 
     sweep_id = str(_uuid.uuid4())
+    runs = []
+    for cell in cells:
+        # Each cell becomes a real pipeline. The leaderboard groups by
+        # config_digest, and a digest only exists for a pipeline that was
+        # actually run — a sweep that reported cells without creating them
+        # would leave an empty leaderboard that reads as "every config
+        # failed" rather than "nothing ran".
+        try:
+            variant = apply_cell(pipeline, cell)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        vid = variant_id(pipeline, cell)
+        variant.id = vid
+        variant.name = f"{pipeline.name} · {_cell_label(cell)}"
+        await p_store.save(variant)
+        run_id = await start_eval_run(
+            vid, eval_set_id=eval_set_id, sweep_id=sweep_id,
+            p_store=p_store, r_store=r_store, re_store=re_store,
+            s_store=s_store, d_store=d_store, c_store=c_store,
+            lt_store=lt_store, es_store=store, ee_store=ex_store,
+        )
+        runs.append({"cell": cell, "pipeline_id": vid, "run_id": run_id})
+
     estimate["enqueued"] = True
     estimate["sweep_id"] = sweep_id
-    estimate["runs"] = [
-        {"cell": cell, "pipeline_id": body.pipeline_id} for cell in cells
-    ]
+    estimate["runs"] = runs
     return estimate
+
+
+def _cell_label(cell: dict) -> str:
+    return ", ".join(f"{k.split('.')[-1]}={v}" for k, v in cell.items())
 
 
 def _expand_matrix(matrix: dict[str, list]) -> list[dict]:

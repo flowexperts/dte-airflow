@@ -793,6 +793,59 @@ async def preview_pipeline(
     }
 
 
+async def start_eval_run(
+    pipeline_id: str,
+    *,
+    eval_set_id: str,
+    sweep_id: str | None = None,
+    p_store: PipelineStore,
+    r_store: RunStore,
+    re_store: RunEventStore,
+    s_store: SourceStore,
+    d_store: DestinationStore,
+    c_store: ConnectionStore,
+    lt_store: LookupTableStore,
+    es_store=None,
+    ee_store=None,
+) -> str:
+    """Start one eval run and return its run id.
+
+    Factored out of `trigger_pipeline` so the sweep launcher starts runs the
+    same way a manual trigger does — including the job-queue/in-process
+    split. A second, parallel way to start a run is how the two drift until
+    one of them stops recording something the other does.
+    """
+    settings = get_settings()
+    if settings.job_queue_enabled:
+        from dte.tenancy import get_current_tenant
+        from dte.worker.tasks import enqueue_run
+        run_id, _job = await enqueue_run(
+            pipeline_id, None, tenant_id=get_current_tenant(),
+        )
+        await r_store.update(run_id, **_eval_run_fields(eval_set_id, sweep_id))
+        return run_id
+
+    run_id = await r_store.create(pipeline_id)
+    await r_store.update(run_id, **_eval_run_fields(eval_set_id, sweep_id))
+    _ctx = contextvars.copy_context()
+
+    async def _task_with_context():
+        from dte.tenancy import get_current_tenant, tenant_context_var
+        from dte.worker.tasks import _execute_pipeline
+        tok = tenant_context_var.set(_ctx.run(get_current_tenant))
+        try:
+            await _execute_pipeline(
+                pipeline_id, run_id, p_store, r_store, re_store,
+                s_store, d_store, c_store, lt_store,
+                es_store=es_store, ee_store=ee_store,
+            )
+        finally:
+            tenant_context_var.reset(tok)
+
+    _register_local_task(run_id, asyncio.create_task(_task_with_context()))
+    return run_id
+
+
 async def materialise_pipeline_rows(
     pipeline: Pipeline,
     s_store: SourceStore,

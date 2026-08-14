@@ -1088,6 +1088,8 @@ export interface SweepEstimate {
   matrix: Record<string, unknown>[];
   enqueued: boolean;
   sweep_id?: string;
+  /** Only present once confirmed — one real pipeline and run per cell. */
+  runs?: { cell: Record<string, unknown>; pipeline_id: string; run_id: string }[];
 }
 
 export const previewSweep = (id: string, pipelineId: string, matrix: Record<string, unknown[]>) =>
