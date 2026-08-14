@@ -344,16 +344,22 @@ export function CompareWizard({
 
         <div className="flex items-center gap-2">
           <Button
-            variant="default"
+            /* Primary while it is the step to take. A cartesian product over
+               a few hundred documents is real money, so the price comes
+               before the spend — but that only works if the first button is
+               visibly the first button. */
+            variant={estimate ? "default" : "primary"}
             size="sm"
             disabled={busy || cells < 1}
             onClick={() => void estimateRun()}
           >
             {busy ? "Working…" : cells > 0 ? `Estimate ${cells}` : "Estimate"}
           </Button>
-          {/* Unreachable until a price has been seen. */}
+          {/* Unreachable until a price has been seen — and muted until then,
+              because primary styling on an inert control says "press this"
+              and is wrong. */}
           <Button
-            variant="primary"
+            variant={estimate ? "primary" : "default"}
             size="sm"
             disabled={busy || !estimate}
             onClick={() => void launch()}
@@ -364,6 +370,17 @@ export function CompareWizard({
             Cancel
           </Button>
         </div>
+
+        {/* DESIGN.md: no disabled button whose enabling condition is not
+            stated on screen. Without this, Run looks broken rather than
+            gated, and the two-step guard reads as a bug. */}
+        {!estimate && (
+          <p className="text-[11.5px] text-subtle">
+            {cells < 1
+              ? "Tick at least one provider to compare."
+              : "Estimate first — it shows the cost and runs nothing. Run unlocks once you've seen it."}
+          </p>
+        )}
       </div>
     </Panel>
   );
