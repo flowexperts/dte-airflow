@@ -503,6 +503,10 @@ class FakeScheduleStore:
         items = [s for s in self._data.values() if s.pipeline_id == pipeline_id]
         return sorted(items, key=lambda s: s.created_at or _utcnow(), reverse=True)
 
+    async def list_for_eval_set(self, eval_set_id: str) -> list[Schedule]:
+        items = [s for s in self._data.values() if s.eval_set_id == eval_set_id]
+        return sorted(items, key=lambda s: s.created_at or _utcnow(), reverse=True)
+
     async def list_due(self, now: datetime) -> list[Schedule]:
         return [
             s for s in self._data.values()

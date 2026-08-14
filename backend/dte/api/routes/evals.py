@@ -33,6 +33,7 @@ from dte.api.deps import (
     get_eval_set_store,
     get_pipeline_store,
     get_run_store,
+    get_schedule_store,
 )
 from dte.config import get_settings
 from dte.evals.scoring import intervals_overlap
@@ -132,7 +133,24 @@ async def update_eval_set(
 async def delete_eval_set(
     eval_set_id: str,
     store: EvalSetStore = Depends(get_eval_set_store),
+    sch_store=Depends(get_schedule_store),
 ):
+    # Same contract as sources and destinations: refuse and name the
+    # referrers. Cascading would silently delete a schedule the user built
+    # separately, and orphaning would leave one that fires nightly and
+    # fails every time — a broken thing that reports itself as a run
+    # failure rather than as the deletion that actually caused it.
+    referencing = await sch_store.list_for_eval_set(eval_set_id)
+    if referencing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "eval_set_in_use",
+                "message": "This eval set is scheduled. Delete or repoint "
+                           "the schedules first.",
+                "referenced_by": {"schedules": [s.id for s in referencing]},
+            },
+        )
     if not await store.delete(eval_set_id):
         raise HTTPException(status_code=404, detail="Eval set not found")
     return None

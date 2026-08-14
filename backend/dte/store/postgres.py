@@ -612,6 +612,15 @@ class PostgresScheduleStore:
         async with _open_tenant_session(self._factory) as s:
             return list((await s.execute(stmt)).scalars().all())
 
+    async def list_for_eval_set(self, eval_set_id: str) -> list[Schedule]:
+        stmt = (
+            select(Schedule)
+            .where(Schedule.eval_set_id == eval_set_id)
+            .order_by(Schedule.created_at.desc())
+        )
+        async with _open_tenant_session(self._factory) as s:
+            return list((await s.execute(stmt)).scalars().all())
+
     async def list_due(self, now: datetime) -> list[Schedule]:
         async with self._factory() as s:
             await s.execute(text("SET LOCAL row_security = off"))

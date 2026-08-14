@@ -777,6 +777,9 @@ export interface Schedule {
   next_run_at: string | null;
   last_run_id: string | null;
   last_fired_at: string | null;
+  /** Required on an eval pipeline's schedule, forbidden on any other —
+   *  the corpus the nightly run scores against. */
+  eval_set_id: string | null;
 }
 
 /** Matches `ScheduleWriteRequest` on the backend — shared POST/PUT body. */
@@ -787,6 +790,7 @@ export interface ScheduleWriteRequest {
   params: Record<string, string>;
   enabled: boolean;
   overlap: OverlapPolicy;
+  eval_set_id?: string | null;
 }
 
 export const listSchedulesForPipeline = (pipelineId: string) =>

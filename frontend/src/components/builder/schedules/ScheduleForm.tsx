@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import useSWR from "swr";
 import { CronExplainer } from "./CronExplainer";
 import { createPortal } from "react-dom";
 import { Button, Dropdown, Field, Input, Segmented } from "@/components/ui";
 import {
   ApiError,
   createSchedule,
+  listEvalSets,
   updateSchedule,
+  type EvalSet,
   type OverlapPolicy,
   type PipelineParam,
   type Schedule,
@@ -59,12 +62,17 @@ function errorMessage(e: unknown): string {
 export function ScheduleForm({
   pipelineId,
   pipelineParams,
+  pipelineType,
   schedule,
   open,
   onClose,
   onSaved,
 }: {
   pipelineId: string;
+  /** `"eval"` swaps in the corpus picker and makes it mandatory — the
+   *  backend applies the same rule, so omitting it here would just move
+   *  the 422 from a disabled button to a failed save. */
+  pipelineType?: string | undefined;
   /** Declared trigger-time inputs on the pipeline — required, no-default
    *  ones must be collected here or the backend 422s at create time
    *  (`_validate_params` in `dte/api/routes/schedules.py`). */
@@ -88,10 +96,19 @@ export function ScheduleForm({
     return seed;
   });
   const [overlap, setOverlap] = useState<OverlapPolicy>(schedule?.overlap ?? "skip");
+  const [evalSetId, setEvalSetId] = useState<string>(schedule?.eval_set_id ?? "");
   const [enabled, setEnabled] = useState<boolean>(schedule?.enabled ?? true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+
+  // Keyed `null` for non-eval pipelines so the list is never fetched for
+  // the ~all schedules that can't use it. Declared above the `!open`
+  // early return — hooks can't sit behind a conditional.
+  const { data: evalSets } = useSWR<EvalSet[]>(
+    pipelineType === "eval" ? ["eval-sets", "schedule-form"] : null,
+    () => listEvalSets(),
+  );
 
   useEffect(() => setMounted(true), []);
 
@@ -105,6 +122,7 @@ export function ScheduleForm({
     for (const p of declaredParams) seed[p.name] = schedule?.params?.[p.name] ?? "";
     setParamValues(seed);
     setOverlap(schedule?.overlap ?? "skip");
+    setEvalSetId(schedule?.eval_set_id ?? "");
     setEnabled(schedule?.enabled ?? true);
     setErr(null);
     setBusy(false);
@@ -118,7 +136,9 @@ export function ScheduleForm({
   const missingRequired = declaredParams.filter(
     (p) => p.required !== false && (p.default == null || p.default === "") && (paramValues[p.name] ?? "") === "",
   );
-  const submittable = cronExpr.trim() !== "" && missingRequired.length === 0;
+  const isEval = pipelineType === "eval";
+  const submittable =
+    cronExpr.trim() !== "" && missingRequired.length === 0 && (!isEval || evalSetId !== "");
 
   const submit = async () => {
     setBusy(true);
@@ -135,6 +155,9 @@ export function ScheduleForm({
       params,
       enabled,
       overlap,
+      // Only ever sent for eval pipelines: the backend rejects it on any
+      // other type rather than quietly ignoring it.
+      ...(isEval ? { eval_set_id: evalSetId } : {}),
     };
     try {
       const saved = schedule
@@ -309,6 +332,31 @@ export function ScheduleForm({
                   );
                 })}
               </div>
+            </Field>
+          )}
+
+          {isEval && (
+            <Field
+              label="Score against"
+              hint="The labeled corpus this nightly run is scored on. A drop in
+                    macro-F1 at an unchanged config is how provider drift
+                    surfaces — without a corpus there is nothing to compare."
+            >
+              <Dropdown
+                value={evalSetId}
+                onChange={setEvalSetId}
+                placeholder={
+                  evalSets === undefined
+                    ? "Loading eval sets…"
+                    : evalSets.length === 0
+                      ? "No eval sets — create one first"
+                      : "— select a corpus —"
+                }
+                options={(evalSets ?? []).map((s) => ({
+                  value: s.id,
+                  label: `${s.name} · ${s.example_count ?? 0} labeled`,
+                }))}
+              />
             </Field>
           )}
 
