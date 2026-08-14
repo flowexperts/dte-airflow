@@ -52,7 +52,13 @@ from dte.evals.derive import eval_set_fingerprint, field_specs_from_structure
 from dte.evals.runner import collapse_rows_by_doc
 from dte.evals.scoring import intervals_overlap
 from dte.evals.digest import config_digest
-from dte.evals.sweep import apply_cell, detached_copy, variant_id
+from dte.evals.sweep import (
+    apply_cell,
+    detached_copy,
+    root_pipeline_id,
+    variant_id,
+    variant_name,
+)
 from dte.models.eval import EvalExampleBase, EvalSetBase
 from dte.security.permissions import requires
 from dte.store.base import EvalExampleStore, EvalSetStore, PipelineStore, RunStore
@@ -895,7 +901,9 @@ async def launch_sweep(
             raise HTTPException(status_code=422, detail=str(e)) from e
         vid = variant_id(pipeline, cell)
         variant.id = vid
-        variant.name = f"{pipeline.name} · {_cell_label(cell)}"
+        variant.name = await _unique_variant_name(
+            p_store, variant_name(pipeline, cell), vid
+        )
         await p_store.save(variant)
         run_id = await start_eval_run(
             vid, eval_set_id=eval_set_id, sweep_id=sweep_id,
@@ -1104,8 +1112,27 @@ async def _cost_per_document(r_store, eval_set_id: str):
     return None, "no priced run yet — launch once to measure the per-document cost"
 
 
-def _cell_label(cell: dict) -> str:
-    return ", ".join(f"{k.split('.')[-1]}={v}" for k, v in cell.items())
+async def _unique_variant_name(p_store, name: str, variant_id_: str) -> str:
+    """A display name for one cell that will not violate UNIQUE(tenant, name).
+
+    Cell names are derived from the root config plus this cell's overrides,
+    which is what stops them accumulating into "demo · instructions=v3 ·
+    provider=regex · provider=claude". The cost is that two different
+    configs can want the same name — the root swept one way, and a variant
+    of it swept the same way — and rows left behind by the nesting bug make
+    that likely on existing installs.
+
+    Identity is the id, so the name is free to be disambiguated. The short
+    digest is already in the id, so borrowing it keeps the two consistent
+    and the result deterministic: re-running the sweep produces the same
+    name rather than climbing a counter.
+    """
+    # A scan, because there is no lookup-by-name on the store. Acceptable
+    # here: it runs once per cell of a sweep that is capped at 50.
+    for existing in await p_store.list(limit=1000):
+        if existing.name == name and existing.id != variant_id_:
+            return f"{name} ({variant_id_.rsplit('__', 1)[-1][:7]})"
+    return name
 
 
 def _expand_matrix(matrix: dict[str, list]) -> list[dict]:

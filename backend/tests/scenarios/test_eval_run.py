@@ -439,9 +439,16 @@ async def test_sweep_preflight_enqueues_nothing(client, scenario_ids, invoices_d
     es_id = await _make_eval_set(client, scenario_ids, src)
     await _label(client, es_id, doc_keys)
 
+    # `granularity` used to be the second axis here, and it is not a
+    # structure-step key at all — it belongs to `extract`, which a sweep
+    # deliberately cannot reach. The matrix could never have been confirmed;
+    # it passed only because the estimate did not validate its cells. That
+    # is now checked before a price is quoted, so the test uses two axes
+    # that exist.
     r = await client.post(f"/api/eval-sets/{es_id}/sweep", json={
         "pipeline_id": pipe,
-        "matrix": {"provider": ["regex", "claude"], "granularity": ["page", "document"]},
+        "matrix": {"provider": ["regex", "claude"],
+                   "model.instructions": ["", "be terse"]},
     })
     assert r.status_code == 200, r.text
     body = r.json()

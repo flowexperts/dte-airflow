@@ -37,11 +37,16 @@ above still cannot happen.
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any, Mapping
 
 from dte.evals.digest import config_digest
 
 _STRUCTURE_OP = "structure"
+
+# Exactly the shape `variant_id` appends: 12 lowercase hex characters.
+# Narrow on purpose — see `root_pipeline_id`.
+_VARIANT_SUFFIX = re.compile(r"[0-9a-f]{12}")
 
 # Dotted paths a sweep may *create* on the structure step, as opposed to
 # merely overwrite. Everything here is a real key of `StructureStep`, so
@@ -124,13 +129,65 @@ def apply_cell(pipeline: Any, cell: Mapping[str, Any]) -> Any:
     return variant
 
 
+def root_pipeline_id(pipeline_id: str) -> str:
+    """Strip sweep-variant suffixes back to the config someone authored.
+
+    Sweep cells become real pipelines named `<base>__<digest12>`, and they
+    appear in the pipeline list carrying their own Compare button. Without
+    this, comparing a variant nested it under itself:
+
+        demo_eval_strict__27fb9c1d2679__27fb9c1d2679__37f7b8bbec71
+
+    Matching is deliberately narrow — exactly twelve lowercase hex
+    characters. A user's own id that merely ends in `__2024` or `__abc`
+    keeps it, because stripping one would file their sweeps under a
+    pipeline that does not exist.
+
+    `__eval` is not a variant suffix and survives: the twin is the thing
+    people compare *from*, and collapsing it would point variants at the
+    transform pipeline, which the corpus-match rule then refuses.
+    """
+    parts = pipeline_id.split("__")
+    while len(parts) > 1 and _VARIANT_SUFFIX.fullmatch(parts[-1]):
+        parts.pop()
+    return "__".join(parts)
+
+
 def variant_id(pipeline: Any, cell: Mapping[str, Any]) -> str:
-    """A deterministic id for one cell, namespaced under the base pipeline.
+    """A deterministic id for one cell, namespaced under the root pipeline.
 
     Derived from the digest rather than a counter so re-running the same
     sweep lands on the same row instead of accumulating a new pipeline per
     launch — and so a re-run hits the extract/structure cache rather than
     paying again for an identical config under a new name.
+
+    The *namespace* is rooted; the *digest* is not. A variant of a variant
+    inherits its parent's overrides, so its config genuinely differs from
+    the same cell applied to the root and must not collide with it — one of
+    the two would silently overwrite the other and a cell would vanish from
+    the comparison with no error.
     """
     digest = config_digest(apply_cell(pipeline, cell))
-    return f"{getattr(pipeline, 'id', 'sweep')}__{digest[:12]}"
+    root = root_pipeline_id(str(getattr(pipeline, "id", "sweep")))
+    return f"{root}__{digest[:12]}"
+
+
+def variant_name(pipeline: Any, cell: Mapping[str, Any]) -> str:
+    """Human label for one cell: the root config, then this cell's overrides.
+
+    Names accumulated the same way ids did — "demo eval strict ·
+    instructions=v3 · provider=regex · provider=claude, model=haiku" — which
+    reads as a config varying four things when it varies one.
+    """
+    name = str(getattr(pipeline, "name", "") or getattr(pipeline, "id", "sweep"))
+    pid = str(getattr(pipeline, "id", ""))
+    if pid != root_pipeline_id(pid):
+        # This pipeline is itself a cell; drop the suffix a previous sweep
+        # appended so the new name describes the root plus this cell only.
+        name = name.rsplit(" · ", 1)[0]
+    return f"{name} · {cell_label(cell)}"
+
+
+def cell_label(cell: Mapping[str, Any]) -> str:
+    """`provider=claude, model=haiku` — the last segment of each axis path."""
+    return ", ".join(f"{str(k).split('.')[-1]}={v}" for k, v in cell.items())

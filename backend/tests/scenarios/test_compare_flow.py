@@ -319,6 +319,93 @@ class TestLabelsThenScores:
         assert after["labels"]["agreed_unlabeled"] == 0
 
 
+class TestVariantNaming:
+    async def test_sweeping_twice_does_not_nest_or_collide(
+        self, client, transform_pipeline
+    ):
+        """Two sweeps producing the same cell label must not 500.
+
+        Pipeline names are UNIQUE(tenant_id, name). Rooting the variant name
+        so it stops accumulating ("demo · instructions=v3 · provider=regex ·
+        provider=claude") means two genuinely different configs — the root
+        swept one way, and a variant of it swept the same way — now want the
+        same name. That is a `ux_pipelines_tenant_name` violation and a 500,
+        which is never an acceptable answer to a valid request.
+        """
+        twin = (await client.post(
+            f"/api/pipelines/{transform_pipeline['pipeline']}/as-eval")).json()
+        es = (await client.post(
+            "/api/eval-sets:for-pipeline",
+            json={"pipeline_id": twin["pipeline_id"]})).json()
+
+        first = await client.post(f"/api/eval-sets/{es['eval_set_id']}/sweep", json={
+            "pipeline_id": twin["pipeline_id"],
+            "matrix": {"model.instructions": ["v1", "v2"]},
+            "confirm": True,
+        })
+        assert first.status_code == 200, first.text
+        variant = first.json()["runs"][0]["pipeline_id"]
+
+        # Sweep a *variant* on an axis whose label matches one already used.
+        second = await client.post(f"/api/eval-sets/{es['eval_set_id']}/sweep", json={
+            "pipeline_id": variant,
+            "matrix": {"model.instructions": ["v1", "v3"]},
+            "confirm": True,
+        })
+        assert second.status_code == 200, second.text
+
+        # And the ids stay flat rather than nesting under the variant.
+        for run in second.json()["runs"]:
+            assert run["pipeline_id"].count("__") == twin["pipeline_id"].count("__") + 1
+
+    async def test_names_stay_unique_and_readable(self, client, transform_pipeline):
+        twin = (await client.post(
+            f"/api/pipelines/{transform_pipeline['pipeline']}/as-eval")).json()
+        es = (await client.post(
+            "/api/eval-sets:for-pipeline",
+            json={"pipeline_id": twin["pipeline_id"]})).json()
+        await client.post(f"/api/eval-sets/{es['eval_set_id']}/sweep", json={
+            "pipeline_id": twin["pipeline_id"],
+            "matrix": {"model.instructions": ["v1", "v2"]}, "confirm": True})
+        variant = (await client.get("/api/pipelines")).json()
+        swept = [p for p in variant if p["id"].startswith(twin["pipeline_id"] + "__")]
+        names = [p["name"] for p in swept]
+        assert len(set(names)) == len(names), f"duplicate variant names: {names}"
+        # Exactly one override segment appended to the base name. The base
+        # may contain " · " of its own (the eval twin is "X · eval"), so
+        # this compares against the base rather than counting separators.
+        base = (await client.get(f"/api/pipelines/{twin['pipeline_id']}")).json()["name"]
+        for n in names:
+            assert n.startswith(f"{base} · "), n
+            assert n[len(base) + 3:].count(" · ") == 0, n
+
+    async def test_a_name_already_taken_does_not_500(
+        self, client, scenario_ids, transform_pipeline
+    ):
+        # Rooting the name means a cell can want a name some other pipeline
+        # already holds — including rows left by the nesting bug this
+        # replaces. UNIQUE(tenant_id, name) then raises, and a 500 is never
+        # an acceptable answer to a valid sweep.
+        twin = (await client.post(
+            f"/api/pipelines/{transform_pipeline['pipeline']}/as-eval")).json()
+        es = (await client.post(
+            "/api/eval-sets:for-pipeline",
+            json={"pipeline_id": twin["pipeline_id"]})).json()
+
+        base = (await client.get(f"/api/pipelines/{twin['pipeline_id']}")).json()["name"]
+        squatter = scenario_ids("pipeline", "squatter")
+        await create_pipeline(
+            client, id=squatter, name=f"{base} · instructions=v1",
+            sources=[transform_pipeline["source"]], steps=_steps(),
+            pipeline_type="eval",
+        )
+
+        r = await client.post(f"/api/eval-sets/{es['eval_set_id']}/sweep", json={
+            "pipeline_id": twin["pipeline_id"],
+            "matrix": {"model.instructions": ["v1", "v2"]}, "confirm": True})
+        assert r.status_code == 200, r.text
+
+
 class TestRefusals:
     async def test_a_pipeline_with_no_structure_step_cannot_be_compared(
         self, client, scenario_ids, transform_pipeline

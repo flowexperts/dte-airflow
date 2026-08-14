@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui";
 import { CompareWizard } from "@/components/evals/compare-wizard";
 import { usePermissions } from "@/lib/use-permissions";
+import { isSweepVariant, rootPipelineId } from "@/lib/pipeline-variant";
 import type { Pipeline } from "@/lib/api";
 
 /**
@@ -29,6 +31,29 @@ export function CompareButton({ pipeline }: { pipeline: Pipeline }) {
     (s) => (s as { op?: string }).op === "structure",
   );
   if (!hasStructure || !can("eval:write")) return null;
+
+  /*
+   * A sweep cell is an artifact of a comparison, not a config anyone wrote.
+   * Comparing one used to nest it under itself —
+   * `demo_eval_strict__27fb9c1d2679__27fb9c1d2679__37f7b8bbec71` — and each
+   * round silently varied a setting the previous round had already pinned,
+   * so people compared against a config they never chose.
+   *
+   * Link to the root rather than sweeping from here. Hiding the control
+   * entirely would leave someone on a variant with no way back to the
+   * comparison they actually want.
+   */
+  if (isSweepVariant(pipeline.id)) {
+    return (
+      <Link
+        href={`/pipelines/${encodeURIComponent(rootPipelineId(pipeline.id))}`}
+        className="text-[12.5px] text-muted hover:text-text underline underline-offset-2"
+        title="This is one cell of a comparison. Compare from the config it came from."
+      >
+        Compare from the original
+      </Link>
+    );
+  }
 
   return (
     <div className="relative">
