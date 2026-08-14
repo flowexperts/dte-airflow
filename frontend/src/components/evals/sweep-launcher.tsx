@@ -163,11 +163,24 @@ export function SweepLauncher({ evalSetId }: { evalSetId: string }) {
                 <span className="text-subtle">calls ≤ </span>
                 {estimate.uncached_calls}
               </span>
+              <span>
+                <span className="text-subtle">cost ≤ </span>
+                {estimate.est_cost_usd == null
+                  ? "unknown"
+                  : `$${estimate.est_cost_usd.toFixed(2)}`}
+              </span>
             </div>
             <span className="text-[11.5px] text-subtle">
               Calls are a ceiling assuming nothing is cached. Anything you have
               already run is free.
             </span>
+            {/* Extrapolated from a real measured run, or absent. Quoting a
+                confident price nobody measured is worse than admitting we
+                cannot price it yet — the invented number gets budgeted
+                against. */}
+            {estimate.cost_basis && (
+              <span className="text-[11.5px] text-subtle">{estimate.cost_basis}</span>
+            )}
           </div>
         )}
 

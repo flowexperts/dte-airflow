@@ -1260,6 +1260,7 @@ async def _run_eval_body(
     The eval set is bound at trigger time and recorded on the run row, so a
     run always carries what it was scored against.
     """
+    from dte.evals.cost import throughput_stats
     from dte.evals.digest import config_digest
     from dte.evals.runner import join_and_score
 
@@ -1314,6 +1315,11 @@ async def _run_eval_body(
 
     with tr.start_as_current_span("score") as span:
         scores = join_and_score(rows, examples, specs, collect_failures=True)
+        # Cost, cache-hit rate and latency come from the same rows that were
+        # scored, so the spend reported always describes the work the score
+        # is based on. Plan 051's economic claim — caching makes sweeps
+        # affordable — is only checkable once these are on screen.
+        scores["throughput"] = throughput_stats(rows)
         digest = config_digest(pipeline)
         span.set_attribute("macro_f1", scores.get("macro_f1") or -1.0)
         span.set_attribute("n", scores.get("n", 0))

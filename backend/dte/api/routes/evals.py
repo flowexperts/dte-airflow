@@ -581,6 +581,10 @@ async def leaderboard(
             "fields": scores.get("fields", []),
             "holdout": scores.get("holdout"),
             "regression": scores.get("regression"),
+            # What this score cost and how fast it was. Reported beside the
+            # score because "which config should I ship" is never answered
+            # by accuracy alone — a point of F1 is rarely worth 10x the bill.
+            "throughput": scores.get("throughput"),
         })
 
     ranked = _rank_with_ties([e for e in entries if not e["stale"]])
@@ -714,12 +718,15 @@ async def launch_sweep(
         )
 
     documents = await ex_store.count_for_set(eval_set_id)
+    per_doc, basis = await _cost_per_document(r_store, eval_set_id)
     estimate = {
         "cells": len(cells),
         "documents": documents,
         # Worst case: nothing cached. The extract cache means a re-run of a
         # cell costs nothing, so this is a ceiling, not a forecast.
         "uncached_calls": len(cells) * documents,
+        "est_cost_usd": None if per_doc is None else per_doc * len(cells) * documents,
+        "cost_basis": basis,
         "matrix": cells,
     }
 
@@ -821,6 +828,32 @@ async def promote_pipeline(
         "pipeline_id": body.new_pipeline_id,
         "config_digest": config_digest(promoted),
     }
+
+
+async def _cost_per_document(r_store, eval_set_id: str):
+    """Dollars per document, measured from this set's most recent priced run.
+
+    Nothing can know the token count of a call that has not happened, so the
+    only honest estimate extrapolates from what a comparable run actually
+    spent. Returns `(None, reason)` whenever that basis is missing — a
+    launcher that quotes a confident price it invented is worse than one
+    that admits it does not know yet, because the invented figure is what
+    gets budgeted against.
+    """
+    runs = await r_store.list_for_eval_set(eval_set_id, limit=50)
+    for run in runs:
+        tp = ((run.get("scores") or {}).get("throughput")) or {}
+        cost = tp.get("cost_usd")
+        calls = tp.get("n_calls") or 0
+        if cost is None:
+            continue
+        if not calls:
+            # A fully-cached run cost nothing because the work was already
+            # paid for. Using $0 as the rate would quote a free sweep that
+            # then bills for every config that has never run.
+            continue
+        return cost / calls, f"measured from run {run['id'][:8]} (${cost:.4f} over {calls} calls)"
+    return None, "no priced run yet — launch once to measure the per-document cost"
 
 
 def _cell_label(cell: dict) -> str:

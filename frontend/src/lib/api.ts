@@ -963,6 +963,7 @@ export interface LeaderboardEntry {
   regression?: EvalScores["regression"];
   rank?: number;
   tied_with_leader?: boolean;
+  throughput?: Throughput | null;
 }
 
 export interface Leaderboard {
@@ -1095,10 +1096,26 @@ export const getFieldFailures = (id: string, field: string, runId?: string) =>
       (runId ? `?run_id=${encodeURIComponent(runId)}` : ""),
   );
 
+/** Cost, cache-hit rate and latency for one run, measured from the rows
+ *  that were actually scored. Nulls are load-bearing: an unpriced model or
+ *  a run with no model calls reports null rather than a misleading zero. */
+export interface Throughput {
+  n_calls: number;
+  cache_hit_rate: number | null;
+  latency_p50_ms: number | null;
+  latency_p95_ms: number | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+}
+
 export interface SweepEstimate {
   cells: number;
   documents: number;
   uncached_calls: number;
+  /** Null when no prior run has established a per-document price. */
+  est_cost_usd?: number | null;
+  cost_basis?: string;
   matrix: Record<string, unknown>[];
   enqueued: boolean;
   sweep_id?: string;

@@ -10,7 +10,7 @@
  * refuses to rank those; these components make sure the rendering agrees.
  */
 
-import type { FieldMetrics } from "@/lib/api";
+import type { FieldMetrics, Throughput } from "@/lib/api";
 
 const GREEN = "var(--green)";
 const GOLD = "var(--gold)";
@@ -113,6 +113,32 @@ export function TiedBadge() {
       title="Its confidence interval overlaps the leader's — the difference is not distinguishable from sampling noise."
     >
       tied
+    </span>
+  );
+}
+
+
+/** Cost, cache-hit rate and p95 latency for one run.
+ *
+ * Rendered beside the score because "which config should I ship" is never
+ * answered by F1 alone — a point of accuracy is rarely worth ten times the
+ * bill. Every value here can legitimately be unknown (an unpriced model, a
+ * run that made no model calls), and unknown renders as an em dash: a
+ * fabricated $0.00 would be read as "free", which is a claim, not a gap.
+ */
+export function ThroughputChips({ t }: { t: Throughput | null | undefined }) {
+  if (!t) return null;
+  return (
+    <span className="flex items-baseline gap-3 font-mono text-[11px] text-subtle tabular-nums">
+      <span title="Measured from this run's token usage. Blank when the model has no published price in the table.">
+        {t.cost_usd == null ? "—" : `$${t.cost_usd.toFixed(4)}`}
+      </span>
+      <span title="Share of documents served from the content-addressed cache — the runs you did not pay for.">
+        {t.cache_hit_rate == null ? "—" : `${Math.round(t.cache_hit_rate * 100)}% cached`}
+      </span>
+      <span title="95th percentile of real model-call durations. Cache hits are excluded: a cache hit is the absence of a call, not a fast one.">
+        {t.latency_p95_ms == null ? "—" : `p95 ${t.latency_p95_ms}ms`}
+      </span>
     </span>
   );
 }

@@ -10,7 +10,15 @@ import {
   type LeaderboardEntry,
 } from "@/lib/api";
 import { PromoteButton } from "./promote-button";
-import { FieldChip, SampleSize, ScoreBar, StaleBadge, TiedBadge, pct } from "./score";
+import {
+  FieldChip,
+  SampleSize,
+  ScoreBar,
+  StaleBadge,
+  ThroughputChips,
+  TiedBadge,
+  pct,
+} from "./score";
 
 /**
  * The leaderboard.
@@ -154,6 +162,7 @@ function RunRow({
           {entry.config_digest?.slice(0, 12) ?? "—"}
         </span>
         <span className="text-[11.5px] text-subtle">{entry.pipeline_id}</span>
+        <ThroughputChips t={entry.throughput} />
         {entry.fields.map((f) => (
           <button
             key={f.name}
