@@ -467,3 +467,166 @@ async def test_sweep_over_the_cell_cap_is_rejected(client, scenario_ids, invoice
     })
     assert r.status_code == 422
     assert "cap" in str(r.json())
+
+
+# ── labeling paths, end to end ───────────────────────────────────────────
+
+
+async def test_bootstrap_agrees_on_what_both_variants_extract(
+    client, scenario_ids, invoices_dir, doc_keys
+):
+    """Two configs over the real corpus, with a real disagreement.
+
+    The lax pattern misses the thousands separator, so it returns nothing
+    for inv-1001. That document must land in review rather than being
+    labeled — a null from a variant that failed is not evidence that the
+    document has no total.
+    """
+    src, strict = await _wire(client, scenario_ids, invoices_dir)
+    lax = scenario_ids("pipeline", "eval_lax")
+    await create_pipeline(
+        client, id=lax, sources=[src],
+        steps=_steps(pattern_total=r"Total: \$(\d+\.\d\d)"),
+        pipeline_type="eval",
+    )
+    es_id = await _make_eval_set(client, scenario_ids, src)
+
+    r = await client.post(f"/api/eval-sets/{es_id}/bootstrap", json={
+        "variant_pipeline_ids": [strict, lax],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    agreed = {p["doc_key"] for p in body["agreed"]}
+    disagreed = {d["doc_key"] for d in body["disagreed"]}
+    assert doc_keys["inv-1002.pdf"] in agreed
+    assert doc_keys["inv-1001.pdf"] in disagreed
+    assert doc_keys["inv-1003.pdf"] in disagreed
+
+    # Preview writes nothing.
+    assert body["written"] == 0
+    listed = await client.get(f"/api/eval-sets/{es_id}/examples")
+    assert listed.json()["total"] == 0
+
+
+async def test_bootstrap_with_one_provider_refuses_to_auto_write(
+    client, scenario_ids, invoices_dir
+):
+    """Both variants are `regex`. Agreement between them reflects that
+    provider's behaviour, not ground truth, so confirming is refused."""
+    src, strict = await _wire(client, scenario_ids, invoices_dir)
+    lax = scenario_ids("pipeline", "eval_lax2")
+    await create_pipeline(
+        client, id=lax, sources=[src],
+        steps=_steps(pattern_total=r"Total: \$(\d+\.\d\d)"),
+        pipeline_type="eval",
+    )
+    es_id = await _make_eval_set(client, scenario_ids, src)
+
+    r = await client.post(f"/api/eval-sets/{es_id}/bootstrap", json={
+        "variant_pipeline_ids": [strict, lax], "confirm": True,
+    })
+    assert r.status_code == 409, r.text
+    assert (await client.get(f"/api/eval-sets/{es_id}/examples")).json()["total"] == 0
+
+
+async def test_propose_labels_the_corpus_and_tags_them_judge(
+    client, scenario_ids, invoices_dir, doc_keys
+):
+    src, pipe = await _wire(client, scenario_ids, invoices_dir)
+    es_id = await _make_eval_set(client, scenario_ids, src)
+
+    r = await client.post(f"/api/eval-sets/{es_id}/propose", json={
+        "pipeline_id": pipe, "confirm": True,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["written"] == 3
+
+    examples = (await client.get(f"/api/eval-sets/{es_id}/examples")).json()["examples"]
+    # Permanently tagged: the >50%-judge warning on the leaderboard is only
+    # possible because the provenance survives the write.
+    assert {e["label_source"] for e in examples} == {"judge"}
+
+    detail = (await client.get(f"/api/eval-sets/{es_id}")).json()
+    assert detail["judge_labeled_warning"] is not None
+
+
+async def test_promote_ships_the_same_config_that_was_scored(
+    client, scenario_ids, invoices_dir, doc_keys, out_dir
+):
+    """The loop the harness exists to close: the promoted pipeline must
+    hash to the digest that earned the score, or the number was about
+    something else."""
+    src, pipe = await _wire(client, scenario_ids, invoices_dir)
+    es_id = await _make_eval_set(client, scenario_ids, src)
+    await _label(client, es_id, doc_keys)
+    run = await trigger_and_wait(client, pipe, eval_set_id=es_id)
+
+    dest = scenario_ids("destination", "promoted")
+    r = await client.post("/api/destinations", json={
+        "id": dest, "connection_id": "local_fs",
+        "config": {"type": "json", "path": str(out_dir / "promoted.json")},
+    })
+    assert r.status_code in (200, 201), r.text
+
+    new_id = scenario_ids("pipeline", "promoted")
+    r = await client.post(f"/api/eval-sets/{es_id}/promote", json={
+        "pipeline_id": pipe, "new_pipeline_id": new_id,
+        "name": "promoted", "output_id": dest,
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["config_digest"] == run["config_digest"]
+
+    promoted = (await client.get(f"/api/pipelines/{new_id}")).json()
+    assert promoted["pipeline_type"] == "transform"
+    assert promoted["output_id"] == dest
+
+
+async def test_a_confirmed_sweep_produces_one_scored_run_per_cell(
+    client, scenario_ids, invoices_dir, doc_keys
+):
+    """The path a unit test with fake stores cannot reach: real pipelines
+    saved, real runs started, real scores on the leaderboard."""
+    src, pipe = await _wire(client, scenario_ids, invoices_dir)
+    es_id = await _make_eval_set(client, scenario_ids, src)
+    await _label(client, es_id, doc_keys)
+
+    r = await client.post(f"/api/eval-sets/{es_id}/sweep", json={
+        "pipeline_id": pipe,
+        "matrix": {"model.instructions": ["v1", "v2"]},
+        "confirm": True,
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["enqueued"] is True
+    assert len(body["runs"]) == 2
+    # Distinct pipelines, or the two cells overwrite each other and the
+    # leaderboard silently renders one row for a two-cell sweep.
+    assert len({run["pipeline_id"] for run in body["runs"]}) == 2
+
+    board = (await client.get(f"/api/eval-sets/{es_id}/leaderboard")).json()
+    swept = [e for e in board["entries"] if e["sweep_id"] == body["sweep_id"]]
+    assert len(swept) == 2
+    assert all(e["macro_f1"] == 1.0 for e in swept)
+
+
+async def test_a_run_records_what_it_cost_and_how_much_was_cached(
+    client, scenario_ids, invoices_dir, doc_keys
+):
+    """`regex` is free and deterministic, so this asserts the accounting
+    exists and is coherent rather than any particular price. The second run
+    must be fully cached — that is the economic claim the plan rests on."""
+    src, pipe = await _wire(client, scenario_ids, invoices_dir)
+    es_id = await _make_eval_set(client, scenario_ids, src)
+    await _label(client, es_id, doc_keys)
+
+    first = await trigger_and_wait(client, pipe, eval_set_id=es_id)
+    tp = first["scores"]["throughput"]
+    assert tp["cost_usd"] == 0.0  # deterministic provider, priced at zero
+    assert tp["n_calls"] >= 1
+
+    second = await trigger_and_wait(client, pipe, eval_set_id=es_id)
+    assert second["scores"]["throughput"]["cache_hit_rate"] == 1.0
+    assert second["scores"]["throughput"]["n_calls"] == 0
+    # And the score is unchanged — caching must not move the number.
+    assert second["scores"]["macro_f1"] == first["scores"]["macro_f1"]

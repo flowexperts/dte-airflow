@@ -187,12 +187,30 @@ def _compare_list(expected: Any, actual: Any, opts: dict) -> MatchResult:
     return MatchResult(False, jaccard, f"jaccard {jaccard:.3f} < {threshold}")
 
 
+def _compare_llm_judge(expected: Any, actual: Any, opts: dict) -> MatchResult:
+    """Semantic agreement on free text, decided by a model.
+
+    Never a default. A judge sharing a model family with the extractor will
+    flatter it, so a field is scored this way only when its spec asks for
+    it, and the UI marks those fields distinctly.
+    """
+    from dte.evals.judge import judge_equivalent
+
+    matched, reason = judge_equivalent(expected, actual, opts)
+    return MatchResult(matched, 1.0 if matched else 0.0, f"llm_judge: {reason}")
+
+
 # ── registry ────────────────────────────────────────────────────────────────
 #
 # Flat name→callable, shaped like `sources/loader.py`'s LOADERS. Adding a
-# comparator is one function plus one entry. `llm_judge` is deliberately
-# absent — it needs a provider and a cache, and it belongs with the labeling
-# work, not here.
+# comparator is one function plus one entry.
+#
+# `llm_judge` is the one entry that leaves this module: it delegates to
+# `dte.evals.judge`, which owns the injected callable and the verdict cache.
+# It stays out of the pure functions above because it is the only comparator
+# that costs money and is not deterministic on its own — the cache is what
+# restores determinism, and determinism is what every leaderboard comparison
+# rests on.
 
 _COMPARATORS = {
     "numeric": _compare_numeric,
@@ -206,6 +224,7 @@ _COMPARATORS = {
     "boolean": _compare_enum,
     "list": _compare_list,
     "set": _compare_list,
+    "llm_judge": _compare_llm_judge,
 }
 
 # The field types a spec may declare. Exported so an eval set can reject an
