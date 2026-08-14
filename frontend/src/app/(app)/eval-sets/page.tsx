@@ -20,7 +20,7 @@ export default async function EvalsPage() {
       <Topbar
         crumbs={[{ label: "Workspace", href: "/" }, { label: "Evals" }]}
         actions={
-          <NewResourceButton perm="eval:write" href="/evals/new" label="New eval set" />
+          <NewResourceButton perm="eval:write" href="/eval-sets/new" label="New eval set" />
         }
       />
       <PageHeader

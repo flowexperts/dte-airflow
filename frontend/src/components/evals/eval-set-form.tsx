@@ -79,7 +79,7 @@ export function EvalSetForm() {
     setErr(null);
     try {
       const created = await createEvalSet(toEvalSetPayload(draft));
-      router.push(`/evals/${encodeURIComponent(created.id)}`);
+      router.push(`/eval-sets/${encodeURIComponent(created.id)}`);
     } catch (e) {
       setErr(humanizeError(e, { action: "create", entity: "eval set" }));
       setSaving(false);
@@ -91,7 +91,7 @@ export function EvalSetForm() {
       <Topbar
         crumbs={[
           { label: "Workspace", href: "/" },
-          { label: "Evals", href: "/evals" },
+          { label: "Eval sets", href: "/eval-sets" },
           { label: "New" },
         ]}
         actions={

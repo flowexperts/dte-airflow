@@ -103,7 +103,7 @@ export function EvalSetsTable({ rows }: { rows: EvalSet[] }) {
       header: "Last run",
       render: (r) => (
         <span className="font-mono text-[11.5px] text-subtle tabular-nums">
-          {/* ISO slice, not toLocaleDateString: `/evals` is a server
+          {/* ISO slice, not toLocaleDateString: `/eval-sets` is a server
               component, so the first paint is rendered with the *server's*
               locale and then re-rendered with the browser's — 14/8/2026 vs
               8/14/2026 is a hydration mismatch that discards the tree. */}
@@ -147,7 +147,7 @@ export function EvalSetsTable({ rows }: { rows: EvalSet[] }) {
     <DataTable
       rows={rows}
       columns={columns}
-      onRowClick={(r) => router.push(`/evals/${encodeURIComponent(r.id)}`)}
+      onRowClick={(r) => router.push(`/eval-sets/${encodeURIComponent(r.id)}`)}
       emptyText="No eval sets yet. An eval set is a labeled corpus — it turns 'this prompt looks right' into a number you can compare."
     />
   );

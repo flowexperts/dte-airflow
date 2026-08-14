@@ -63,7 +63,7 @@ describe("validateEvalSetForm", () => {
   });
 
   it("rejects an id with characters that would need escaping in a URL", () => {
-    // The id lands in /evals/{id} and in every API path built from it.
+    // The id lands in /eval-sets/{id} and in every API path built from it.
     expect(validateEvalSetForm({ ...valid, id: "my set!" })).toHaveProperty("id");
   });
 });

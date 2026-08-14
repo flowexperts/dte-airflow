@@ -415,11 +415,27 @@ trigger route's rules exactly — a schedule is a trigger on a timer, and a
 disagreement between the two surfaces at 2am. No FK: deleting an eval set a
 schedule references returns 409 naming the schedules.
 
-**Frontend** — `/evals` (list, with best-F1 and last-run) and `/evals/[id]`
-(Leaderboard / Examples / Review). `pipeline_type` includes `"eval"` in
-`api.ts`, the builder, and `StepsPanel` (which hides `aggregate`/`pivot` —
-they would collapse the rows the labels join against). `/evals` is a **server
-component**: never `toLocaleDateString()` there, it hydration-mismatches.
+**Frontend** — `/eval-sets` (list, with best-F1 and last-run), `/eval-sets/new`
+(create) and `/eval-sets/[id]` (Leaderboard / Examples / Review).
+`pipeline_type` includes `"eval"` in `api.ts`, the builder, and `StepsPanel`
+(which hides `aggregate`/`pivot` — they would collapse the rows the labels
+join against). `/eval-sets` is a **server component**: never
+`toLocaleDateString()` there, it hydration-mismatches.
+
+**Three objects, and "eval" used to name two of them.** An **eval set** is the
+labeled corpus (`/eval-sets`); an **eval pipeline** is an extraction config
+under test (`/pipelines?type=eval`); an **eval run** is one scoring of one
+pipeline against one set at one `labels_version`. The route was `/evals` while
+the nav also carried "Eval" for pipelines — two different objects a letter
+apart. The frontend route now matches the model, the table and the API, all of
+which were already `eval_set(s)`; `next.config.ts` keeps a permanent redirect
+from `/evals/*`.
+
+Anything user-visible that filters by `pipeline_type` must come from
+`PIPELINE_TYPE_TABS` (`lib/pipeline-type.ts`), which drives the sidebar and
+the list page together. Eval pipelines shipped creatable and reachable from
+nowhere because the nav and the page each knew about a different subset of
+types, and an unrecognised `?type=` silently means "no filter".
 
 ### Field references and nested columns
 

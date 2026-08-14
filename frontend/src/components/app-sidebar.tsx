@@ -56,7 +56,7 @@ export function AppSidebar() {
           <NavItem href="/lookup-tables" label="Lookup tables" active={on("/lookup-tables")} />
         )}
         {can("eval:read") && (
-          <NavItem href="/evals" label="Evals" active={on("/evals")} />
+          <NavItem href="/eval-sets" label="Eval sets" active={on("/eval-sets")} />
         )}
         {can("pipeline:read") && (
           <>

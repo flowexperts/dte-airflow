@@ -58,7 +58,7 @@ export default function EvalSetPage({ params }: { params: Promise<{ id: string }
       <Topbar
         crumbs={[
           { label: "Workspace", href: "/" },
-          { label: "Evals", href: "/evals" },
+          { label: "Eval sets", href: "/eval-sets" },
           { label: set?.name ?? id },
         ]}
       />

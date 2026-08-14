@@ -63,7 +63,7 @@ export interface EvalSetPayload {
   }>;
 }
 
-/** Ids reach the UI as `/evals/{id}` and every API path built from it. */
+/** Ids reach the UI as `/eval-sets/{id}` and every API path built from it. */
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
 export function validateEvalSetForm(draft: EvalSetDraft): Record<string, string> {
