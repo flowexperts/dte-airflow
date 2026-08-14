@@ -1175,6 +1175,9 @@ export interface ComparisonCell {
   cell: Record<string, unknown>;
   documents: number;
   null_rate: number | null;
+  /** Rows whose provider call failed. A null is a finding; an error is not. */
+  error_count: number;
+  error_sample: string | null;
   cost_usd: number | null;
   latency_p95_ms: number | null;
   cache_hit_rate: number | null;

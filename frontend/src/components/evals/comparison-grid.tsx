@@ -60,6 +60,11 @@ function CellCard({ cell, scored }: { cell: ComparisonCell; scored: boolean }) {
         {scored && cell.tied_with_leader && <Pill status="pending">tied</Pill>}
         {running && <Pill status="running">running</Pill>}
         {cell.status === "failed" && <Pill status="failed">failed</Pill>}
+        {/* A run can complete green with every call having failed —
+            `on_error: null` fills nulls rather than failing the run. Without
+            this the column is a wall of em dashes indistinguishable from a
+            model that looked and found nothing. */}
+        {cell.error_count > 0 && <Pill status="warn">{cell.error_count} errored</Pill>}
       </div>
       <div className="px-3.5 py-3 flex flex-col gap-2">
         {scored && (
@@ -84,6 +89,11 @@ function CellCard({ cell, scored }: { cell: ComparisonCell; scored: boolean }) {
         </dl>
         {cell.error && (
           <p className="text-[11.5px] text-red break-words">{cell.error}</p>
+        )}
+        {/* The provider's own words. "Could not resolve authentication
+            method" is a fixable thing; a blank column is not. */}
+        {cell.error_sample && (
+          <p className="text-[11.5px] text-red break-words">{cell.error_sample}</p>
         )}
       </div>
     </Panel>

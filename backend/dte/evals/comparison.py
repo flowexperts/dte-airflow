@@ -33,6 +33,7 @@ disagreement worth seeing, not a row to quietly drop.
 """
 from __future__ import annotations
 
+import json
 from typing import Any, Iterable, Mapping, Sequence
 
 from dte.evals.bootstrap import _values_agree
@@ -65,6 +66,26 @@ def _doc_ref_index(cells: Sequence[Mapping[str, Any]]) -> dict[str, str | None]:
                     break
             refs.setdefault(key, None)
     return refs
+
+
+def _structure_errors(rows: Iterable[Mapping[str, Any]]) -> list[str]:
+    """Every `structure_meta.error` on a cell's rows.
+
+    The column arrives as a JSON string from DuckDB and as a dict from the
+    preview path. Accepting only one would make failures invisible on
+    exactly one of them — the worse half of a silent failure.
+    """
+    out: list[str] = []
+    for row in rows:
+        meta = row.get("structure_meta")
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except (ValueError, TypeError):
+                continue
+        if isinstance(meta, Mapping) and meta.get("error"):
+            out.append(str(meta["error"]))
+    return out
 
 
 def _rank_cells(cells: list[dict]) -> None:
@@ -197,6 +218,7 @@ def build_comparison(
     out_cells: list[dict] = []
     for cell in cells:
         predicted = collapsed[cell["cell_id"]]
+        errors = _structure_errors(cell.get("rows") or [])
         answered = sum(
             1 for values in predicted.values() for name in names
             if values.get(name) is not None
@@ -214,6 +236,12 @@ def build_comparison(
             # None when the cell produced nothing — a rate over zero slots
             # is not 0.0, it is unmeasured.
             "null_rate": None if not slots else round((slots - answered) / slots, 4),
+            # A null is a finding — the model looked and declined. An error
+            # is the absence of one. Folding them together renders a column
+            # that failed on every row identically to an honest abstainer,
+            # which is how a missing API key reads as "claude is bad at this".
+            "error_count": len(errors),
+            "error_sample": errors[0] if errors else None,
             "cost_usd": throughput.get("cost_usd"),
             "latency_p95_ms": throughput.get("latency_p95_ms"),
             "cache_hit_rate": throughput.get("cache_hit_rate"),

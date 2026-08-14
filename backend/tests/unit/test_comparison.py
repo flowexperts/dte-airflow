@@ -261,6 +261,40 @@ class TestCellMetrics:
         )
         assert all(c["cost_usd"] is None for c in out["cells"])
 
+    def test_rows_that_errored_are_counted_separately_from_blanks(self):
+        # The report: two claude columns entirely blank. They had not
+        # abstained — every call failed on a missing API key — but the grid
+        # rendered em dashes, identical to a model that looked and found
+        # nothing. A null is a finding; an error is the absence of one.
+        errored = _cell("claude", {"a" * 64: {"total": None, "vendor": None}})
+        errored["rows"][0]["structure_meta"] = (
+            '{"provider": "claude", "error": "claude: Could not resolve '
+            'authentication method", "fields": {}}'
+        )
+        out = build_comparison([errored, _cell("regex", {"a" * 64: {"total": "1"}})], SPECS)
+        by_id = {c["cell_id"]: c for c in out["cells"]}
+        assert by_id["claude"]["error_count"] == 1
+        assert by_id["claude"]["error_sample"].startswith("claude: Could not resolve")
+
+    def test_a_clean_cell_reports_no_errors(self):
+        out = build_comparison(
+            [_cell("regex", {"a" * 64: {"total": "1"}}),
+             _cell("claude", {"a" * 64: {"total": "1"}})],
+            SPECS,
+        )
+        assert all(c["error_count"] == 0 for c in out["cells"])
+        assert all(c["error_sample"] is None for c in out["cells"])
+
+    def test_structure_meta_may_be_a_dict_not_only_a_json_string(self):
+        # DuckDB hands it back as a VARCHAR, but preview paths and tests
+        # pass the parsed dict. Accepting one and silently ignoring the
+        # other would make errors invisible on exactly one code path.
+        errored = _cell("claude", {"a" * 64: {"total": None}})
+        errored["rows"][0]["structure_meta"] = {"error": "boom"}
+        out = build_comparison([errored, _cell("regex", {"a" * 64: {"total": "1"}})], SPECS)
+        by_id = {c["cell_id"]: c for c in out["cells"]}
+        assert by_id["claude"]["error_count"] == 1
+
     def test_cell_config_is_carried_for_labelling_the_column(self):
         out = build_comparison(
             [_cell("a", {"x" * 64: {"total": "1"}}, cell={"provider": "claude"}),
