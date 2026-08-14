@@ -123,7 +123,7 @@ export interface Pipeline {
   /** Quality contracts evaluated after each run (plan 044). */
   quality_contracts?: QualityContract[];
   /** Pipeline type: "transform" (default) writes output data; "quality" asserts conditions. */
-  pipeline_type?: "transform" | "quality";
+  pipeline_type?: "transform" | "quality" | "eval";
 }
 
 /** Structured 4xx payloads returned by pipeline save / trigger when the
@@ -1028,6 +1028,49 @@ export const importEvalExamples = (
     `/api/eval-sets/${encodeURIComponent(id)}/examples:import`,
     { method: "POST", body: JSON.stringify(body) },
   );
+
+/** One document several variants disagreed on — the review queue's unit of
+ *  work. `candidates` is per contested field, keyed by variant. */
+export interface ConsensusDisagreement {
+  doc_key: string;
+  agreed_fields: Record<string, unknown>;
+  candidates: Record<string, Record<string, unknown>>;
+}
+
+export interface BootstrapResult {
+  agreed: { doc_key: string; labels: Record<string, unknown> }[];
+  disagreed: ConsensusDisagreement[];
+  auto_accept: boolean;
+  warning: string | null;
+  n_documents: number;
+  written: number;
+  labels_version: number;
+}
+
+/** `confirm: false` returns proposals and writes nothing. Bootstrap writes
+ *  ground truth, so the preview is always the default. */
+export const bootstrapEvalSet = (
+  id: string,
+  variantPipelineIds: string[],
+  confirm = false,
+) =>
+  apiFetch<BootstrapResult>(`/api/eval-sets/${encodeURIComponent(id)}/bootstrap`, {
+    method: "POST",
+    body: JSON.stringify({ variant_pipeline_ids: variantPipelineIds, confirm }),
+  });
+
+export interface ProposeResult {
+  proposals: { doc_key: string; labels: Record<string, unknown> }[];
+  written: number;
+  labels_version: number;
+  warning: string;
+}
+
+export const proposeEvalLabels = (id: string, pipelineId: string, confirm = false) =>
+  apiFetch<ProposeResult>(`/api/eval-sets/${encodeURIComponent(id)}/propose`, {
+    method: "POST",
+    body: JSON.stringify({ pipeline_id: pipelineId, confirm }),
+  });
 
 export const getLeaderboard = (id: string) =>
   apiFetch<Leaderboard>(`/api/eval-sets/${encodeURIComponent(id)}/leaderboard`);

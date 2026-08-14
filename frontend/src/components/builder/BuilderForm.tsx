@@ -69,7 +69,13 @@ function AutoStepSchemas({ pipeline }: { pipeline: Pipeline }) {
     if (
       !pipeline.sources ||
       pipeline.sources.length === 0 ||
-      !pipeline.output_id ||
+      // Quality and eval pipelines have no destination by design. Requiring
+      // one here would leave them with no per-step schema inference, so
+      // every field reference in an eval pipeline would have to be typed
+      // from memory.
+      (!pipeline.output_id &&
+        pipeline.pipeline_type !== "quality" &&
+        pipeline.pipeline_type !== "eval") ||
       (pipeline.steps ?? []).length === 0
     ) {
       setPerStepSchemas({});
@@ -153,7 +159,12 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
     });
   };
 
+  // Neither quality nor eval pipelines write anywhere: a quality run
+  // produces a report, an eval run produces a score. Both must skip the
+  // destination requirement or they cannot be saved at all.
   const isQuality = pipeline.pipeline_type === "quality";
+  const isEval = pipeline.pipeline_type === "eval";
+  const writesNowhere = isQuality || isEval;
 
   const save = async () => {
     const errors = validatePipelineForm({
@@ -162,7 +173,7 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
       sources: pipeline.sources ?? [],
       // Quality pipelines don't require a destination — pass a sentinel so
       // the min(1) check passes. The backend ignores output_id for quality.
-      output_id: isQuality ? "__quality__" : (pipeline.output_id ?? ""),
+      output_id: writesNowhere ? "__no_destination__" : (pipeline.output_id ?? ""),
       steps: (pipeline.steps ?? []) as unknown[],
     });
 
@@ -208,12 +219,13 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
       </div>
       <Field
         label="Pipeline type"
-        hint="Transform writes output data; Quality asserts conditions on it."
+        hint="Transform writes output data; Quality asserts conditions on it; Eval scores extraction against a labeled corpus."
       >
-        <Segmented<"transform" | "quality">
+        <Segmented<"transform" | "quality" | "eval">
           options={[
             { value: "transform", label: "Transform" },
             { value: "quality", label: "Quality" },
+            { value: "eval", label: "Eval" },
           ]}
           value={pipeline.pipeline_type ?? "transform"}
           onChange={(v) =>
@@ -284,9 +296,11 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
                 }}
                 error={fieldErrors.sources}
               />
-              {isQuality ? (
+              {writesNowhere ? (
                 <p className="text-muted text-sm">
-                  Quality pipelines produce a quality report, not a data output.
+                  {isEval
+                    ? "Eval pipelines produce a score against a labeled corpus, not a data output."
+                    : "Quality pipelines produce a quality report, not a data output."}
                 </p>
               ) : (
                 <DestinationPicker

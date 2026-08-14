@@ -14,13 +14,15 @@ import {
 import { getEvalSet, type EvalSet } from "@/lib/api";
 import { ExamplesPanel } from "@/components/evals/examples-panel";
 import { LeaderboardPanel } from "@/components/evals/leaderboard";
+import { ReviewPanel } from "@/components/evals/review-panel";
 import { RunEvalButton } from "@/components/evals/run-eval-button";
 
-type Tab = "leaderboard" | "examples";
+type Tab = "leaderboard" | "examples" | "review";
 
 const TABS: TabOption<Tab>[] = [
   { value: "leaderboard", label: "Leaderboard" },
   { value: "examples", label: "Examples" },
+  { value: "review", label: "Review" },
 ];
 
 export default function EvalSetPage({ params }: { params: Promise<{ id: string }> }) {
@@ -104,6 +106,7 @@ export default function EvalSetPage({ params }: { params: Promise<{ id: string }
       <div className="px-14 py-8">
         {tab === "leaderboard" && <LeaderboardPanel evalSetId={id} />}
         {tab === "examples" && set && <ExamplesPanel evalSet={set} />}
+        {tab === "review" && set && <ReviewPanel evalSet={set} />}
       </div>
     </>
   );
