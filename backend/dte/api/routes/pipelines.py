@@ -916,6 +916,28 @@ async def trigger_pipeline(
             status_code=422,
             detail=f"eval_set_id is only valid for eval pipelines (this one is {_ptype!r})",
         )
+    if eval_set_id:
+        # The pipeline must read the corpus the labels describe. Labels join
+        # by doc_key (sha256 of the document), so a pipeline pointed at a
+        # different documents source produces hashes that match nothing: the
+        # run completes green having scored zero documents, which reads as a
+        # broken extractor rather than a mismatched corpus.
+        #
+        # Presence, not exclusivity — a pipeline may carry other sources
+        # alongside the corpus and still be scoring the right documents.
+        _set = await es_store.get(eval_set_id)
+        if _set is None:
+            raise HTTPException(status_code=422, detail=f"eval set not found: {eval_set_id}")
+        if _set.source_id not in (pipeline.sources or []):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"eval set '{eval_set_id}' labels documents from source "
+                    f"'{_set.source_id}', but pipeline '{pipeline_id}' reads "
+                    f"{list(pipeline.sources or [])}. Scoring these together "
+                    f"would match no labels and report zero."
+                ),
+            )
     await _resolve_lookups(pipeline, lt_store)
     # Engine compatibility: catches cases where a pipeline was saved before
     # the engine matrix existed, or a source's connection type changed

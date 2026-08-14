@@ -4,16 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { Button, Panel, PanelHead } from "@/components/ui";
-import { triggerEval, type Pipeline } from "@/lib/api";
+import { triggerEval, type EvalSet, type Pipeline } from "@/lib/api";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
+import { eligibleEvalPipelines } from "@/lib/eval-eligibility";
 
 /**
  * Score a config against this corpus.
  *
- * Only `pipeline_type: "eval"` pipelines are offered — a transform pipeline
- * writes to a destination and has nothing to score, and the API rejects it
- * anyway. Filtering here means the rejection never has to happen.
+ * Offers only eval pipelines that read *this set's* documents source. A
+ * transform pipeline has nothing to score, and a pipeline reading different
+ * documents would match no labels and report zero — a green run that
+ * measured nothing. The API refuses both; filtering here means the rejection
+ * never has to happen.
  */
 export function RunEvalButton({ evalSetId }: { evalSetId: string }) {
   const router = useRouter();
@@ -21,10 +24,18 @@ export function RunEvalButton({ evalSetId }: { evalSetId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const toast = useToast();
   const { data: pipelines } = useSWR<Pipeline[]>("/api/pipelines");
+  const { data: evalSet } = useSWR<EvalSet>(
+    `/api/eval-sets/${encodeURIComponent(evalSetId)}`,
+  );
 
-  const evalPipelines = (pipelines ?? []).filter(
+  const allEval = (pipelines ?? []).filter(
     (p) => (p as { pipeline_type?: string }).pipeline_type === "eval",
   );
+  const evalPipelines = eligibleEvalPipelines(pipelines ?? [], evalSet?.source_id);
+  // Distinguishing "none exist" from "none read this corpus" matters: the
+  // second is a one-line fix on a pipeline, and saying "no eval pipelines
+  // yet" while five exist sends someone off to build a sixth.
+  const hiddenByCorpus = allEval.length - evalPipelines.length;
 
   const run = async (pipelineId: string) => {
     setBusy(pipelineId);
@@ -56,9 +67,23 @@ export function RunEvalButton({ evalSetId }: { evalSetId: string }) {
       <PanelHead label="Score a config" count={evalPipelines.length} />
       {evalPipelines.length === 0 ? (
         <div className="px-4 py-4 text-[12.5px] text-muted">
-          No eval pipelines yet. Create a pipeline with{" "}
-          <code className="font-mono">pipeline_type: eval</code> — documents →
-          extract → structure, no destination.
+          {hiddenByCorpus > 0 ? (
+            <>
+              {hiddenByCorpus} eval pipeline{hiddenByCorpus === 1 ? "" : "s"} exist
+              {hiddenByCorpus === 1 ? "s" : ""}, but none read this set&apos;s
+              corpus (
+              <code className="font-mono">{evalSet?.source_id}</code>). Labels
+              are keyed by document, so scoring a pipeline that reads different
+              documents would match nothing and report zero. Point the pipeline
+              at this source, or create an eval set for the source it does read.
+            </>
+          ) : (
+            <>
+              No eval pipelines yet. Create a pipeline with{" "}
+              <code className="font-mono">pipeline_type: eval</code> — documents
+              → extract → structure, no destination.
+            </>
+          )}
         </div>
       ) : (
         evalPipelines.map((p) => (

@@ -7,9 +7,11 @@ import {
   launchSweep,
   listPipelines,
   previewSweep,
+  type EvalSet,
   type Pipeline,
   type SweepEstimate,
 } from "@/lib/api";
+import { eligibleEvalPipelines } from "@/lib/eval-eligibility";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
 import { usePermissions } from "@/lib/use-permissions";
@@ -46,7 +48,14 @@ export function SweepLauncher({ evalSetId }: { evalSetId: string }) {
     open ? ["pipelines", "sweep"] : null,
     () => listPipelines(),
   );
-  const evalPipelines = (pipelines ?? []).filter((p) => p.pipeline_type === "eval");
+  const { data: evalSet } = useSWR<EvalSet>(
+    open ? `/api/eval-sets/${encodeURIComponent(evalSetId)}` : null,
+  );
+  // Same rule as the Run eval picker: a base pipeline reading different
+  // documents matches no labels. Here it is worse than one bad run — every
+  // cell of the sweep inherits the mismatch, so the whole matrix scores zero
+  // and bills for it.
+  const evalPipelines = eligibleEvalPipelines(pipelines ?? [], evalSet?.source_id);
 
   const matrix = () => {
     const parsed = values
@@ -115,7 +124,9 @@ export function SweepLauncher({ evalSetId }: { evalSetId: string }) {
             setEstimate(null);
           }}
           placeholder={
-            evalPipelines.length === 0 ? "No eval pipelines yet" : "— base pipeline —"
+            evalPipelines.length === 0
+              ? `No eval pipeline reads ${evalSet?.source_id ?? "this corpus"}`
+              : "— base pipeline —"
           }
           options={evalPipelines.map((p) => ({ value: p.id, label: p.name }))}
         />
