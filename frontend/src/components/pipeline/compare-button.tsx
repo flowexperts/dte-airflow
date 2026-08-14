@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui";
 import { CompareWizard } from "@/components/evals/compare-wizard";
 import { usePermissions } from "@/lib/use-permissions";
@@ -45,13 +44,14 @@ export function CompareButton({ pipeline }: { pipeline: Pipeline }) {
    */
   if (isSweepVariant(pipeline.id)) {
     return (
-      <Link
+      <Button
+        variant="default"
+        size="sm"
         href={`/pipelines/${encodeURIComponent(rootPipelineId(pipeline.id))}`}
-        className="text-[12.5px] text-muted hover:text-text underline underline-offset-2"
         title="This is one cell of a comparison. Compare from the config it came from."
       >
         Compare from the original
-      </Link>
+      </Button>
     );
   }
 

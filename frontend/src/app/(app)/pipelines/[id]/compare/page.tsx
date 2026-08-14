@@ -34,15 +34,18 @@ export default function ComparePage({ params }: { params: Promise<{ id: string }
           { label: "Compare" },
         ]}
       />
-      <div className="px-14 py-8 flex flex-col gap-6">
-        <PageHeader
-          title="Compare configs"
-          lede={
-            "The same documents, extracted several ways. Disagreements sort first — " +
-            "they are the ones worth reading, and the ones worth labelling."
-          }
-        />
+      {/* Outside the padded body: PageHeader carries its own `px-14 py-6`
+          and a full-bleed bottom border. Nesting it inside applied the
+          inset twice and pushed the title off every other page's baseline. */}
+      <PageHeader
+        title="Compare configs"
+        lede={
+          "The same documents, extracted several ways. Disagreements sort first — " +
+          "they are the ones worth reading, and the ones worth labelling."
+        }
+      />
 
+      <div className="px-14 py-8 flex flex-col gap-6">
         {error && <InlineError message="Could not load this pipeline." />}
 
         {!sweepId ? (
