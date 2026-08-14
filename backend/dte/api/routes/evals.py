@@ -25,7 +25,7 @@ import itertools
 import json
 import uuid as _uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from dte.api.deps import (
@@ -43,6 +43,7 @@ from dte.api.deps import (
 from dte.api.routes.pipelines import materialise_pipeline_rows, start_eval_run
 from dte.config import get_settings
 from dte.evals.bootstrap import CONSENSUS_LABEL_SOURCE, consensus
+from dte.evals.derive import eval_set_fingerprint, field_specs_from_structure
 from dte.evals.runner import collapse_rows_by_doc
 from dte.evals.scoring import intervals_overlap
 from dte.evals.digest import config_digest
@@ -104,6 +105,92 @@ async def create_eval_set(
     await _validate_source(eval_set.source_id, s_store)
     await store.save(eval_set)
     return eval_set.model_dump()
+
+
+class ForPipelineRequest(BaseModel):
+    """Derive the eval set a pipeline implies, or find the one it already has."""
+
+    pipeline_id: str
+
+
+@router.post("/eval-sets:for-pipeline", dependencies=[Depends(requires("eval:write"))])
+async def eval_set_for_pipeline(
+    body: ForPipelineRequest,
+    response: Response,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    s_store=Depends(get_source_store),
+):
+    """The eval set implied by a pipeline's structure step and corpus.
+
+    Plan 051 made the user type their field list twice — once in the
+    structure step, once in `field_specs` — under a builder warning that a
+    mismatch "won't error; it scores zero on every document." That warning
+    is the design confessing. The pipeline already declares the fields, so
+    the set is derived from it and the two cannot drift.
+
+    The id is `<source>__<fingerprint>` and the fingerprint covers exactly
+    what changes the meaning of a score: field names, comparator types, and
+    comparator options. Not order, not descriptions — those are edits people
+    make constantly while iterating on a prompt, and minting a fresh set for
+    them would silently discard every label collected so far.
+
+    Consequently two pipelines extracting the same fields from the same
+    corpus land on one set, which is the whole point: claude and openai
+    scored against different sets would never appear on one leaderboard.
+    """
+    pipeline = await p_store.get(body.pipeline_id)
+    if pipeline is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    step = next(
+        (s for s in (getattr(pipeline, "steps", None) or [])
+         if isinstance(s, dict) and s.get("op") == "structure"),
+        None,
+    )
+    if step is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "an eval set scores the fields a structure step declares, and "
+                f"pipeline '{body.pipeline_id}' has no structure step"
+            ),
+        )
+
+    source_id = None
+    for sid in getattr(pipeline, "sources", None) or []:
+        row = await s_store.get(sid)
+        if row is not None and row.source_type == "documents":
+            source_id = sid
+            break
+    if source_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"pipeline '{body.pipeline_id}' reads no 'documents' source. "
+                "Labels are keyed by document hash and no other source kind "
+                "produces one, so there is nothing to score against."
+            ),
+        )
+
+    try:
+        specs = field_specs_from_structure(step)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    set_id = f"{source_id}__{eval_set_fingerprint(source_id, specs)}"
+    existing = await store.get(set_id)
+    if existing is not None:
+        return {"eval_set_id": set_id, "created": False, "labels_version": existing.labels_version}
+
+    await store.save(EvalSetBase(
+        id=set_id,
+        name=f"{pipeline.name} — {len(specs)} field{'' if len(specs) == 1 else 's'}",
+        source_id=source_id,
+        field_specs=specs,
+    ))
+    response.status_code = 201
+    return {"eval_set_id": set_id, "created": True, "labels_version": 1}
 
 
 @router.get("/eval-sets", dependencies=[Depends(requires("eval:read"))])

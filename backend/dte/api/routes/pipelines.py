@@ -415,6 +415,119 @@ async def delete_pipeline(
     return Response(status_code=204)
 
 
+def _normalise_sweepable_keys(step: dict) -> dict:
+    """Fill the structure-step keys a sweep will want to override.
+
+    `apply_cell` refuses to *create* a leaf that does not already exist —
+    a `params.model` sweep against a step that never named a model raises
+    "no 'model' under 'params'". That guard is worth keeping: it is what
+    stops a typo'd axis silently becoming N identical cells that read as
+    "this setting makes no difference". So the twin is filled in instead of
+    the guard being loosened.
+
+    Only ever fills what is absent. An explicitly pinned model is the
+    user's decision and stays put; the sweep overrides it per cell anyway.
+
+    `regex` deliberately gets no `model` param — it makes no model calls,
+    and the key would surface in the wizard as an axis that changes nothing.
+    """
+    from dte.providers.structure import DEFAULT_CLAUDE_MODEL, DEFAULT_OPENAI_MODEL
+
+    step = dict(step)
+    step["params"] = dict(step.get("params") or {})
+    step["model"] = dict(step.get("model") or {})
+    step["model"].setdefault("instructions", "")
+
+    defaults = {"claude": DEFAULT_CLAUDE_MODEL, "openai": DEFAULT_OPENAI_MODEL}
+    default_model = defaults.get(step.get("provider") or "claude")
+    if default_model and not step["params"].get("model"):
+        step["params"]["model"] = default_model
+    return step
+
+
+@router.post(
+    "/pipelines/{pipeline_id}/as-eval",
+    dependencies=[Depends(requires("eval:write"))],
+)
+async def pipeline_as_eval(
+    pipeline_id: str,
+    response: Response,
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    s_store: SourceStore = Depends(get_source_store),
+):
+    """The eval twin of an extraction pipeline — same steps, no destination.
+
+    Until this existed, `pipeline_type` could only be chosen on create: the
+    builder's control is mounted by `/pipelines/new` and the edit route is
+    a redirect. Evaluating a pipeline you already had therefore meant
+    rebuilding it by hand in a second pipeline and retyping every field —
+    at which point the comparison is partly measuring your typing.
+
+    Idempotent, because Compare is a button people press twice. A second
+    press returns the existing twin rather than accumulating
+    `__eval__eval`, each with its own runs diluting one leaderboard.
+    """
+    source = await p_store.get(pipeline_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    # An eval pipeline is already its own twin. Returning it keeps the
+    # caller's flow identical whichever kind of pipeline they pressed
+    # Compare on.
+    if getattr(source, "pipeline_type", "transform") == "eval":
+        return {"pipeline_id": pipeline_id, "created": False}
+
+    steps = list(getattr(source, "steps", None) or [])
+    idx = next(
+        (i for i, s in enumerate(steps) if isinstance(s, dict) and s.get("op") == "structure"),
+        None,
+    )
+    if idx is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "comparing configs means varying a structure step, and this "
+                "pipeline has none — there is nothing to compare"
+            ),
+        )
+
+    # Labels join to extracted rows by document hash, which only a documents
+    # source produces. Refusing here names the real problem; allowing it
+    # produces a twin whose every run scores a flat zero.
+    kinds = {}
+    for sid in getattr(source, "sources", None) or []:
+        row = await s_store.get(sid)
+        if row is not None:
+            kinds[sid] = row.source_type
+    if "documents" not in kinds.values():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"pipeline '{pipeline_id}' reads {sorted(kinds.values()) or 'nothing'}, "
+                "but scoring needs a 'documents' source: labels are keyed by "
+                "document hash and no other source kind produces one"
+            ),
+        )
+
+    twin_id = f"{pipeline_id}__eval"
+    if await p_store.get(twin_id):
+        return {"pipeline_id": twin_id, "created": False}
+
+    from dte.evals.sweep import detached_copy
+
+    twin = detached_copy(source)
+    twin.id = twin_id
+    twin.name = f"{source.name} · eval"
+    twin.pipeline_type = "eval"
+    twin.output_id = None
+    twin_steps = list(twin.steps)
+    twin_steps[idx] = _normalise_sweepable_keys(twin_steps[idx])
+    twin.steps = twin_steps
+    await p_store.save(twin)
+    response.status_code = 201
+    return {"pipeline_id": twin_id, "created": True}
+
+
 @router.get(
     "/pipelines/{pipeline_id}/revisions",
     dependencies=[Depends(requires("pipeline:read"))],
