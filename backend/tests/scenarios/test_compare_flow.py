@@ -165,16 +165,76 @@ class TestEstimateBeforeSpend:
         assert r.json()["cells"] == 1
         assert "runs" not in r.json()
 
-    async def test_a_normalised_twin_can_sweep_params_model(
+    async def test_a_regex_config_can_be_compared_against_a_model(
         self, client, transform_pipeline
     ):
-        # `apply_cell` refuses to create a leaf that doesn't exist, so this
-        # 422'd before the twin filled `params.model` in.
+        # The bug this replaces, reported from the pipeline page:
+        # "unknown sweep axis 'params.model': no 'model' under 'params'".
+        #
+        # A regex step carries `params: {}` because regex makes no model
+        # calls, so the claude cell needs a key the base config never had.
+        # `apply_cell` refused to create it and rejected the most natural
+        # comparison in the product — "is the model worth it over the regex
+        # I already wrote?" — naming a key the user never typed.
         twin = (await client.post(
             f"/api/pipelines/{transform_pipeline['pipeline']}/as-eval")).json()
-        pipeline = (await client.get(f"/api/pipelines/{twin['pipeline_id']}")).json()
-        # regex gets no model param; prove instructions is sweepable instead.
-        assert "instructions" in pipeline["steps"][1]["model"]
+        es = (await client.post(
+            "/api/eval-sets:for-pipeline",
+            json={"pipeline_id": twin["pipeline_id"]})).json()
+        r = await client.post(f"/api/eval-sets/{es['eval_set_id']}/sweep", json={
+            "pipeline_id": twin["pipeline_id"],
+            "matrix": {"provider": ["regex", "claude"],
+                       "params.model": ["claude-opus-5"]},
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["cells"] == 2
+
+    async def test_a_typo_in_the_axis_is_still_refused(
+        self, client, transform_pipeline
+    ):
+        # The guard narrowed, not removed. A misspelt axis must still fail
+        # rather than become N cells that all score the same.
+        twin = (await client.post(
+            f"/api/pipelines/{transform_pipeline['pipeline']}/as-eval")).json()
+        es = (await client.post(
+            "/api/eval-sets:for-pipeline",
+            json={"pipeline_id": twin["pipeline_id"]})).json()
+        for confirm in (False, True):
+            # Refused at the estimate too, not only at confirm. Validating
+            # only on the way to spending lets someone read a clean cost for
+            # a matrix that cannot run — the same trap the corpus-match
+            # check was moved before the estimate to avoid.
+            r = await client.post(f"/api/eval-sets/{es['eval_set_id']}/sweep", json={
+                "pipeline_id": twin["pipeline_id"],
+                "matrix": {"params.modle": ["claude-opus-5"]},
+                "confirm": confirm,
+            })
+            assert r.status_code == 422, f"confirm={confirm}: {r.text}"
+            assert "modle" in r.json()["detail"]
+
+    async def test_compare_works_on_a_pipeline_already_typed_eval(
+        self, client, scenario_ids, invoices_dir, transform_pipeline
+    ):
+        # Pressing Compare on an eval pipeline (the demo ones are) returns
+        # it as its own twin — no `__eval__eval`, and the sweep still works
+        # despite that path never touching the step.
+        already = scenario_ids("pipeline", "already")
+        await create_pipeline(
+            client, id=already, sources=[transform_pipeline["source"]],
+            steps=_steps(), pipeline_type="eval",
+        )
+        r = await client.post(f"/api/pipelines/{already}/as-eval")
+        assert r.status_code == 200
+        assert r.json() == {"pipeline_id": already, "created": False}
+
+        es = (await client.post(
+            "/api/eval-sets:for-pipeline", json={"pipeline_id": already})).json()
+        r = await client.post(f"/api/eval-sets/{es['eval_set_id']}/sweep", json={
+            "pipeline_id": already,
+            "matrix": {"provider": ["regex", "claude"],
+                       "params.model": ["claude-opus-5"]},
+        })
+        assert r.status_code == 200, r.text
 
 
 class TestLabelFreeComparison:

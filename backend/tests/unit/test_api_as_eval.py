@@ -156,8 +156,14 @@ class TestSweepableKeys:
         assert twin.steps[1]["params"]["model"] == "claude-haiku-4-5"
 
     def test_regex_gets_no_model_param(self, client, fake_stores):
-        # regex makes no model calls. A `model` key on it would appear in
-        # the sweep UI as an axis that changes nothing.
+        # regex makes no model calls, so naming a model in its base config
+        # would be a setting that does nothing.
+        #
+        # This does NOT stop a sweep comparing it against one: `params.model`
+        # is a creatable axis (`sweep.py:_CREATABLE_AXES`), so the claude
+        # cell introduces the key it needs. Reasoning about the base config
+        # alone is what originally made "regex vs claude" 422 with "no
+        # 'model' under 'params'" — the base is not what the sweep runs.
         _run(fake_stores["pipeline"].save(Pipeline(
             id="rx", name="RX", sources=["docs"], steps=_steps(provider="regex"),
             output_id="out", pipeline_type="transform",

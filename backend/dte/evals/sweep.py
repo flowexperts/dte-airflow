@@ -19,9 +19,20 @@ no difference" — a conclusion drawn from a spelling mistake, and one nobody
 would think to double-check because the sweep completed cleanly.
 
 Axis names are dotted paths into the `structure` step (`provider`,
-`params.temperature`, `model.instructions`). That step is where the answer
+`params.max_tokens`, `model.instructions`). That step is where the answer
 is decided, and confining overrides to it means a sweep cannot accidentally
 rewrite the source or the projection.
+
+A **known** axis may be introduced where the base config never had one.
+This is the ordinary case, not an edge: a `regex` step carries `params: {}`
+because regex makes no model calls, so comparing it against claude needs a
+`params.model` that does not exist yet. Refusing that rejected the most
+natural comparison in the product — "is the model worth it over the regex I
+already wrote?" — with a message naming a key the user never typed.
+
+The allowlist is what keeps the guard intact while allowing this. A typo is
+not on it, so `params.modle` still raises and the N-identical-cells failure
+above still cannot happen.
 """
 from __future__ import annotations
 
@@ -31,6 +42,17 @@ from typing import Any, Mapping
 from dte.evals.digest import config_digest
 
 _STRUCTURE_OP = "structure"
+
+# Dotted paths a sweep may *create* on the structure step, as opposed to
+# merely overwrite. Everything here is a real key of `StructureStep`, so
+# introducing one produces a config the model would accept had the user
+# typed it themselves. Anything absent from this set must already exist.
+_CREATABLE_AXES = frozenset({
+    "params.model",
+    "params.max_tokens",
+    "params.api_key",
+    "model.instructions",
+})
 
 
 def _structure_step(steps: list) -> dict | None:
@@ -70,8 +92,10 @@ def apply_cell(pipeline: Any, cell: Mapping[str, Any]) -> Any:
         )
 
     for path, value in cell.items():
-        head, *rest = str(path).split(".")
-        if head not in step:
+        path = str(path)
+        head, *rest = path.split(".")
+        creatable = path in _CREATABLE_AXES
+        if head not in step and not creatable:
             raise ValueError(
                 f"unknown sweep axis {path!r}: the structure step has no "
                 f"{head!r}. Axes are dotted paths into that step, e.g. "
@@ -80,15 +104,21 @@ def apply_cell(pipeline: Any, cell: Mapping[str, Any]) -> Any:
         target = step
         for part in [head, *rest][:-1]:
             nxt = target.get(part)
+            # A creatable axis may need its parent dict too — `params: {}` is
+            # normal on a regex step, but an absent `params` is equally valid.
+            if nxt is None and creatable:
+                nxt = target[part] = {}
             if not isinstance(nxt, dict):
                 raise ValueError(
                     f"unknown sweep axis {path!r}: {part!r} is not a nested object"
                 )
             target = nxt
         leaf = rest[-1] if rest else head
-        if rest and leaf not in target:
+        if rest and leaf not in target and not creatable:
             raise ValueError(
-                f"unknown sweep axis {path!r}: no {leaf!r} under {head!r}"
+                f"unknown sweep axis {path!r}: no {leaf!r} under {head!r}. "
+                "Add it to the step, or check the spelling — a sweep will not "
+                "invent a setting, since every cell would then score the same."
             )
         target[leaf] = value
     return variant

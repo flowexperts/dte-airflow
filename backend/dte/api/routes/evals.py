@@ -851,6 +851,17 @@ async def launch_sweep(
             ),
         )
 
+    # Every cell must be applicable *before* a price is quoted. Validating
+    # only on the way to enqueueing lets someone read a clean estimate for a
+    # matrix that cannot run, then discover the typo at the moment they
+    # commit to spending — the same trap the corpus-match check sits above
+    # the estimate to avoid. `apply_cell` is pure, so this costs nothing.
+    for cell in cells:
+        try:
+            apply_cell(pipeline, cell)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     documents = await ex_store.count_for_set(eval_set_id)
     per_doc, basis = await _cost_per_document(r_store, eval_set_id)
     estimate = {
