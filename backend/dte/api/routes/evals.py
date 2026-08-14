@@ -61,13 +61,47 @@ DEFAULT_MAX_SWEEP_CELLS = 50
 # ── eval sets ────────────────────────────────────────────────────────────
 
 
+async def _validate_source(source_id: str, s_store) -> None:
+    """An eval set's corpus must be a real `documents` source.
+
+    Neither mistake announces itself later. A missing id fails at trigger,
+    naming a pipeline the user wasn't editing. A source of the wrong kind is
+    worse: it runs, produces rows carrying no `artifact_ref`, joins against
+    zero labels, and scores a flat zero — which reads as a broken extractor
+    and can burn a whole sweep before anyone suspects the set itself.
+
+    Both are knowable here, so both are refused here.
+    """
+    source = await s_store.get(source_id)
+    if not source:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"source '{source_id}' does not exist — an eval set scores "
+                f"against a corpus, so it needs a saved documents source"
+            ),
+        )
+    if source.source_type != "documents":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"source '{source_id}' is a {source.source_type!r} source, but an "
+                f"eval set needs a 'documents' source. Labels join to extracted "
+                f"rows by document hash, which only a documents source produces; "
+                f"any other kind would score zero on every field with no error."
+            ),
+        )
+
+
 @router.post("/eval-sets", status_code=201, dependencies=[Depends(requires("eval:write"))])
 async def create_eval_set(
     eval_set: EvalSetBase,
     store: EvalSetStore = Depends(get_eval_set_store),
+    s_store=Depends(get_source_store),
 ):
     if await store.get(eval_set.id):
         raise HTTPException(status_code=409, detail=f"Eval set '{eval_set.id}' already exists")
+    await _validate_source(eval_set.source_id, s_store)
     await store.save(eval_set)
     return eval_set.model_dump()
 
@@ -161,10 +195,14 @@ async def update_eval_set(
     eval_set_id: str,
     eval_set: EvalSetBase,
     store: EvalSetStore = Depends(get_eval_set_store),
+    s_store=Depends(get_source_store),
 ):
     existing = await store.get(eval_set_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Eval set not found")
+    # A set can be repointed after creation, so the rule has to hold here too
+    # or it is a speed bump rather than a guarantee.
+    await _validate_source(eval_set.source_id, s_store)
     eval_set.id = eval_set_id
     await store.save(eval_set)
     return (await store.get(eval_set_id)).model_dump()

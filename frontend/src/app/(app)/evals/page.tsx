@@ -1,6 +1,7 @@
 import { InlineError, PageHeader, Topbar } from "@/components/ui";
 import { listEvalSets, type EvalSet } from "@/lib/api";
 import { EvalSetsTable } from "@/components/evals/evals-table";
+import { NewResourceButton } from "@/components/new-resource-button";
 import { humanizeError, type HumanError } from "@/lib/errors";
 
 export const revalidate = 30; // list/detail shell — SWR handles freshness client-side
@@ -16,7 +17,12 @@ export default async function EvalsPage() {
 
   return (
     <>
-      <Topbar crumbs={[{ label: "Workspace", href: "/" }, { label: "Evals" }]} />
+      <Topbar
+        crumbs={[{ label: "Workspace", href: "/" }, { label: "Evals" }]}
+        actions={
+          <NewResourceButton perm="eval:write" href="/evals/new" label="New eval set" />
+        }
+      />
       <PageHeader
         title="Evals"
         sub={`${sets.length} total`}
