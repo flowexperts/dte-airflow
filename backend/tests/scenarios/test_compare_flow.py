@@ -135,13 +135,16 @@ async def compared(client, scenario_ids, transform_pipeline, invoices_dir):
         "/api/eval-sets:for-pipeline",
         json={"pipeline_id": twin["pipeline_id"]})).json()
 
-    # Two genuinely different configs. The second's pattern misses the
-    # thousands separator, so it reads $1,240.50 as "1" — wrong on one
-    # document and right on the other, which is what a real config
-    # difference looks like.
+    # `on_error`, not instructions. This pipeline runs on `regex`, which
+    # reads no instructions — so an instructions axis produces two cells
+    # that are one config, and pruning collapses them. (That is the bug the
+    # pruning exists for; this fixture had it.) `on_error` is a key regex
+    # honours, and both values succeed here, so the cells are genuinely
+    # distinct configs that agree on every document — which is what the
+    # label-free agreement assertions below need.
     r = await client.post(f"/api/eval-sets/{es['eval_set_id']}/sweep", json={
         "pipeline_id": twin["pipeline_id"],
-        "matrix": {"model.instructions": ["", "ignore the stub"]},
+        "matrix": {"on_error": ["null", "fail"]},
         "confirm": True,
     })
     assert r.status_code == 200, r.text

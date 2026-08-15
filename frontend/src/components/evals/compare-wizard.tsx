@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { Button, Panel, PanelHead, Textarea } from "@/components/ui";
 import {
   evalSetForPipeline,
+  getStructureProviderStatus,
   launchSweep,
   pipelineAsEval,
   previewSweep,
@@ -124,7 +126,29 @@ export function CompareWizard({
 
   const fields = useMemo(() => structureFields(pipeline), [pipeline]);
   const regex = useMemo(() => regexAvailability(fields), [fields]);
-  const cells = cellCount(draft);
+
+  // A provider with no key configured cannot succeed. Offering it anyway
+  // costs an estimate, a launch, and a wait, and then reports the failure
+  // per-document — where it reads as "the model is bad at this" rather than
+  // "the model was never reachable".
+  const { data: status } = useSWR("provider-status", getStructureProviderStatus);
+  const providerStatus = useMemo(() => status?.providers ?? {}, [status]);
+
+  // The draft opens on claude+openai, which is right when both work and a
+  // dead end when neither does. Derived rather than synced through an
+  // effect: an effect that rewrites the draft fights the user's own clicks
+  // and re-runs on every readiness refetch. What the user ticked stays in
+  // `draft`; what can actually run is computed here and is what everything
+  // downstream — the matrix, the cell count, the chips — reads.
+  const effective: CompareDraft = useMemo(
+    () => ({
+      ...draft,
+      providers: draft.providers.filter(
+        (p) => providerStatus[p]?.configured !== false,
+      ),
+    }),
+    [draft, providerStatus],
+  );
 
   // Any edit invalidates the price that was approved. Keeping a stale
   // estimate visible next to a changed matrix is how someone launches 12
@@ -144,7 +168,8 @@ export function CompareWizard({
     } as Partial<CompareDraft>);
   };
 
-  const offeredModels = draft.providers.flatMap((p) => MODELS[p] ?? []);
+  const cells = cellCount(effective);
+  const offeredModels = effective.providers.flatMap((p) => MODELS[p] ?? []);
 
   /**
    * Derive the twin and the set, then ask the API what this costs.
@@ -163,7 +188,7 @@ export function CompareWizard({
     setErr(null);
     try {
       const { pipelineId, evalSetId } = await prepare();
-      setEstimate(await previewSweep(evalSetId, pipelineId, buildMatrix(draft)));
+      setEstimate(await previewSweep(evalSetId, pipelineId, buildMatrix(effective)));
     } catch (e) {
       setErr(humanizeError(e, { action: "estimate", entity: "comparison" }).message);
     } finally {
@@ -175,7 +200,7 @@ export function CompareWizard({
     setBusy(true);
     try {
       const { pipelineId, evalSetId } = await prepare();
-      const res = await launchSweep(evalSetId, pipelineId, buildMatrix(draft));
+      const res = await launchSweep(evalSetId, pipelineId, buildMatrix(effective));
       toast.success({
         title: `Comparing ${res.cells} config${res.cells === 1 ? "" : "s"}`,
         message: "Results fill in as each finishes.",
@@ -206,20 +231,29 @@ export function CompareWizard({
           </span>
           <div className="flex gap-1.5 flex-wrap">
             {PROVIDERS.map((p) => {
-              const blocked = p.id === "regex" && !regex.available;
+              const unconfigured = providerStatus[p.id]?.configured === false;
+              const blocked = (p.id === "regex" && !regex.available) || unconfigured;
               return (
                 <Chip
                   key={p.id}
-                  active={draft.providers.includes(p.id)}
+                  active={effective.providers.includes(p.id)}
                   disabled={blocked}
                   onClick={() => toggle("providers", p.id)}
-                  title={p.hint}
+                  title={providerStatus[p.id]?.reason ?? p.hint}
                 >
                   {p.label}
                 </Chip>
               );
             })}
           </div>
+          {/* Names the variable to set. "Claude is unavailable" would send
+              someone to check their pipeline; this sends them to the right
+              place, and points at the option that needs no key. */}
+          {PROVIDERS.filter((p) => providerStatus[p.id]?.configured === false).map((p) => (
+            <p key={p.id} className="text-[11.5px] text-subtle">
+              {providerStatus[p.id]?.reason}
+            </p>
+          ))}
           {/* Naming the fields matters. "Add patterns" is not actionable;
               this tells them which ones and where to go. Offering regex
               anyway would produce a cell that runs, returns nulls, and

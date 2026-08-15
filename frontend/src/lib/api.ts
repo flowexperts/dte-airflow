@@ -1220,6 +1220,21 @@ export interface SweepComparison {
   };
 }
 
+export interface ProviderStatus {
+  configured: boolean;
+  /** Names the environment variable to set. Never carries the value. */
+  reason: string | null;
+}
+
+/**
+ * Which structure providers are configured well enough to offer.
+ *
+ * Configuration, not validity — a present-but-expired key still fails at
+ * call time, and proving otherwise would cost a billable request per load.
+ */
+export const getStructureProviderStatus = () =>
+  apiFetch<{ providers: Record<string, ProviderStatus> }>("/api/providers/structure");
+
 export interface PipelineComparison {
   sweep_id: string;
   eval_set_id: string | null;

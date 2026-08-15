@@ -875,7 +875,7 @@ async def launch_sweep(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    documents = await ex_store.count_for_set(eval_set_id)
+    documents = await _corpus_size(eval_set, ex_store, r_store)
     per_doc, basis = await _cost_per_document(r_store, eval_set_id)
     estimate = {
         "cells": len(cells),
@@ -1126,6 +1126,36 @@ async def _cost_per_document(r_store, eval_set_id: str):
             continue
         return cost / calls, f"measured from run {run['id'][:8]} (${cost:.4f} over {calls} calls)"
     return None, "no priced run yet — launch once to measure the per-document cost"
+
+
+async def _corpus_size(eval_set, ex_store, r_store) -> int:
+    """How many documents a sweep cell will actually process.
+
+    This used to be the count of *labelled examples*, which is right for a
+    scored run and badly wrong for the flow plan 053 is built around: a
+    label-free comparison has no labels, so the estimate quoted zero
+    documents, zero calls and `$0.00` for a sweep over a corpus of any size.
+    An underquote is the one direction a cost preflight must never err in —
+    the whole guard exists to stop a mis-click spending real money, and a
+    confident zero invites exactly that click.
+
+    Taken from what a previous run of this set actually processed, not by
+    listing the source. Listing means filesystem or network I/O inside an
+    estimate request, and it makes the number depend on what happens to be
+    on disk at that moment. `documents_produced` is measured, free, and is
+    the same quantity the run will produce again.
+
+    Still zero for the very first sweep of an unlabelled set. That case is
+    covered by `cost_basis`, which says no run has priced this corpus yet —
+    an admitted unknown rather than a fabricated zero.
+    """
+    labelled = await ex_store.count_for_set(eval_set.id)
+    runs = await r_store.list_for_eval_set(eval_set.id, limit=20)
+    produced = max(
+        (int((r.get("scores") or {}).get("documents_produced") or 0) for r in runs),
+        default=0,
+    )
+    return max(labelled, produced)
 
 
 async def _unique_variant_name(p_store, name: str, variant_id_: str) -> str:
