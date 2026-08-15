@@ -19,8 +19,12 @@ import { rootPipelineId } from "@/lib/pipeline-variant";
  * on every pipeline that will never have one is noise, and Compare… is
  * already sitting in the header explaining itself.
  */
-export function ComparisonsPanel({ pipelineId }: { pipelineId: string }) {
-  const { data } = useSWR(
+/**
+ * Shared by the panel and the tab badge, so the count beside "Comparisons"
+ * and the list under it are one fetch and can never disagree.
+ */
+export function usePipelineComparisons(pipelineId: string) {
+  return useSWR(
     ["comparisons", pipelineId],
     () => listPipelineComparisons(pipelineId),
     // Any comparison still filling in keeps the list fresh, so a run
@@ -30,6 +34,10 @@ export function ComparisonsPanel({ pipelineId }: { pipelineId: string }) {
         (latest?.comparisons ?? []).some((c) => c.pending > 0) ? 5000 : 0,
     },
   );
+}
+
+export function ComparisonsPanel({ pipelineId }: { pipelineId: string }) {
+  const { data } = usePipelineComparisons(pipelineId);
 
   const rows = data?.comparisons ?? [];
   if (rows.length === 0) return null;
@@ -65,4 +73,36 @@ export function ComparisonsPanel({ pipelineId }: { pipelineId: string }) {
       </div>
     </Panel>
   );
+}
+
+/**
+ * The Comparisons tab.
+ *
+ * The panel above renders nothing when the list is empty — right for a rail
+ * slot, wrong for a tab: a tab you can click to reach a blank page reads as
+ * broken. So the tab carries an empty state naming the control that fills
+ * it, and the tab itself is only offered on pipelines that can be compared.
+ */
+export function ComparisonsPane({ pipelineId }: { pipelineId: string }) {
+  const { data, isLoading } = usePipelineComparisons(pipelineId);
+  const rows = data?.comparisons ?? [];
+
+  if (isLoading && rows.length === 0) {
+    return <p className="text-[12.5px] text-muted">Loading comparisons…</p>;
+  }
+
+  if (rows.length === 0) {
+    return (
+      <Panel>
+        <div className="px-4 py-4 text-[12.5px] text-muted max-w-[62ch]">
+          No comparisons yet. Choose{" "}
+          <strong className="text-text">Compare…</strong> in the header to run
+          the same documents through several configs and see where they
+          disagree — no labels needed.
+        </div>
+      </Panel>
+    );
+  }
+
+  return <ComparisonsPanel pipelineId={pipelineId} />;
 }

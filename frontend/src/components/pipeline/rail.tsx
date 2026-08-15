@@ -4,7 +4,6 @@ import Link from "next/link";
 import useSWR from "swr";
 import { Panel, PanelHead, Pill } from "@/components/ui";
 import { PipelinePreview } from "@/components/pipeline-preview";
-import { ComparisonsPanel } from "@/components/evals/comparisons-panel";
 import { QualityPanel } from "@/components/run/quality-panel";
 import { StatRail, StatRow } from "@/components/run/stat-rail";
 import {
@@ -17,7 +16,6 @@ import {
   getRun,
   getRunQuality,
   isTerminal,
-  listPipelineRuns,
   type Pipeline,
   type QualityCheckResult,
   type Run,
@@ -145,7 +143,7 @@ function LiveRun({
  * — the preview re-runs as you type, and the run is the thing you just
  * started. Past runs and revision history live below the canvas in
  * PipelineActivity instead: different time axis, different mode of attention,
- * and they read badly in a 340px column.
+ * and they read badly in a rail this narrow (420px at xl, 480px at 2xl).
  */
 export function Rail({
   pipeline,
@@ -169,7 +167,9 @@ export function Rail({
           onDismiss={onDismissRun}
         />
       )}
-      <ComparisonsPanel pipelineId={pipeline.id} />
+      {/* Comparisons moved to a tab beside Spec / Runs / History — past
+          comparisons are history of this pipeline, the same kind of thing
+          the other tabs hold, and the rail is for what is happening now. */}
       {showPreview && <PipelinePreview pipelineId={pipeline} />}
     </div>
   );
