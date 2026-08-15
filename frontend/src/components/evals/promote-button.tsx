@@ -26,15 +26,29 @@ import { usePermissions } from "@/lib/use-permissions";
  * here rather than hidden, because "same digest" is the only real evidence
  * that what shipped is what was measured.
  */
-export function PromoteButton({
+/**
+ * The promote form itself, without the control that opens it.
+ *
+ * Shared by the leaderboard (where a ranked row is promoted) and the
+ * comparison (where the user picks the config first, because no rank
+ * exists). Both must produce the same request and the same digest echo —
+ * two implementations would drift, and the drift would be invisible until
+ * a promoted pipeline stopped matching what was measured.
+ *
+ * `pipelineId` may be empty: the comparison's chooser renders this before a
+ * config is picked, and the submit stays disabled until it is.
+ */
+export function PromoteForm({
   evalSetId,
   pipelineId,
+  onDone,
+  onCancel,
 }: {
   evalSetId: string;
   pipelineId: string;
+  onDone?: () => void;
+  onCancel?: () => void;
 }) {
-  const { can } = usePermissions();
-  const [open, setOpen] = useState(false);
   const [newId, setNewId] = useState("");
   const [name, setName] = useState("");
   const [outputId, setOutputId] = useState("");
@@ -42,11 +56,9 @@ export function PromoteButton({
   const toast = useToast();
 
   const { data: destinations } = useSWR<Destination[]>(
-    open ? ["destinations", "promote"] : null,
+    ["destinations", "promote"],
     () => listDestinations(),
   );
-
-  if (!can("eval:write")) return null;
 
   const go = async () => {
     setBusy(true);
@@ -61,7 +73,7 @@ export function PromoteButton({
         title: `Promoted to ${res.pipeline_id}`,
         message: `Same config digest (${res.config_digest.slice(0, 12)}) — what ships is what was scored.`,
       });
-      setOpen(false);
+      onDone?.();
     } catch (e) {
       toast.error(humanizeError(e, { action: "promote", entity: "pipeline" }));
     } finally {
@@ -69,24 +81,8 @@ export function PromoteButton({
     }
   };
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        className="text-[11.5px] text-subtle hover:text-[color:var(--accent)]"
-        onClick={() => setOpen(true)}
-        title="Copy this config into a transform pipeline that writes real output"
-      >
-        Promote
-      </button>
-    );
-  }
-
   return (
-    <div className="w-full mt-2">
-      <Panel>
-        <PanelHead label={`Promote ${pipelineId}`} />
-        <div className="px-4 py-3 flex flex-col gap-2">
+    <>
           <p className="text-[12.5px] text-muted">
             Copies this exact extract + structure config into a transform
             pipeline. The steps are copied verbatim, so the promoted pipeline
@@ -117,15 +113,61 @@ export function PromoteButton({
             <Button
               variant="primary"
               size="sm"
-              disabled={busy || !newId.trim() || !outputId}
+              disabled={busy || !pipelineId || !newId.trim() || !outputId}
               onClick={() => void go()}
             >
               {busy ? "Promoting…" : "Promote"}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
+            {onCancel && (
+              <Button variant="ghost" size="sm" onClick={onCancel}>
+                Cancel
+              </Button>
+            )}
           </div>
+    </>
+  );
+}
+
+/**
+ * The leaderboard's entry point: a ranked row is already the chosen config,
+ * so the control opens straight onto the form.
+ */
+export function PromoteButton({
+  evalSetId,
+  pipelineId,
+}: {
+  evalSetId: string;
+  pipelineId: string;
+}) {
+  const { can } = usePermissions();
+  const [open, setOpen] = useState(false);
+
+  if (!can("eval:write")) return null;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="text-[11.5px] text-subtle hover:text-[color:var(--accent)]"
+        onClick={() => setOpen(true)}
+        title="Copy this config into a transform pipeline that writes real output"
+      >
+        Promote
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-full mt-2">
+      <Panel>
+        <PanelHead label={`Promote ${pipelineId}`} />
+        <div className="px-4 py-3 flex flex-col gap-2">
+          <PromoteForm
+            evalSetId={evalSetId}
+            pipelineId={pipelineId}
+            onDone={() => setOpen(false)}
+            onCancel={() => setOpen(false)}
+          />
         </div>
       </Panel>
     </div>

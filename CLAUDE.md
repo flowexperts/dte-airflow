@@ -492,6 +492,29 @@ never rendered as zero**.
   output. Affordable only because plan 050 caches by content hash; opening
   the page parses no PDF and calls no model.
 
+**Shipping the winner is on the comparison, not only the leaderboard**
+(plan 054). `promote` used to be rendered solely on the leaderboard, which
+ranks *scored* runs — so the page that works without labels had no exit,
+and the documented route out (accept labels → leaderboard → promote) is
+refused outright whenever every config shares a provider, which is what a
+model or prompt sweep produces. `PromoteFromComparison` puts one
+`Ship a config…` in the summary bar and chooses the config inside the form.
+
+- **One control, not one per cell.** The promote form does not fit a 220px
+  card, and Promote is the page's exit rather than a property of a cell —
+  by the time it is reached the decision is made.
+- **Nothing is preselected.** Unlabelled, the page computes no ranking;
+  labelled, it computes ties rather than winners. A default would assert
+  what neither state supports.
+- **Unshippable cells stay in the list with the reason attached**
+  (`lib/comparison-shippable.ts`). The one that matters: a run whose every
+  call failed is `completed` and green, because `on_error: null` fills
+  nulls rather than failing — shipping it ships empty columns. A missing
+  option reads as a bug; "every row errored" is the useful thing to say.
+- `PromoteForm` is shared with the leaderboard. Two implementations would
+  drift, and the drift is invisible until a promoted pipeline stops
+  matching the digest that was measured.
+
 **`regex` is gated on patterns** (`lib/compare-matrix.ts`). Without a
 `pattern` per field the provider returns nothing on every row and the cell
 scores ~0 — which reads as "regex is bad at this" rather than "regex was
