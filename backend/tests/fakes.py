@@ -156,6 +156,25 @@ class FakeRunStore:
         rows.reverse()
         return rows[offset : offset + limit]
 
+    async def list_for_sweep(self, sweep_id: str, limit: int = 50) -> list[dict]:
+        # Oldest first, matching the Postgres `ORDER BY started_at ASC` — the
+        # comparison grid's columns follow the order the matrix declared.
+        rows = [r for r in self._data.values() if r.get("sweep_id") == sweep_id]
+        return rows[:limit]
+
+    async def list_sweep_runs_for_root(
+        self, root_pipeline_id: str, limit: int = 500
+    ) -> list[dict]:
+        rows = [
+            r for r in self._data.values()
+            if r.get("sweep_id")
+            and (r["pipeline_id"] == root_pipeline_id
+                 or r["pipeline_id"].startswith(f"{root_pipeline_id}__"))
+        ]
+        # Newest first, matching the Postgres `ORDER BY started_at DESC`.
+        rows.reverse()
+        return rows[:limit]
+
     async def count_for_pipeline(self, pipeline_id: str) -> int:
         return sum(1 for r in self._data.values() if r["pipeline_id"] == pipeline_id)
 
@@ -563,15 +582,25 @@ class FakeConnectionStore:
         self._data[connection.id] = row
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[Connection]:
+        from dte.secrets.encrypted_json import UnreadableCredentials
+
         items = list(self._data.values())
-        # Mask: return copies with credentials={}
+        # Mask: return copies with credentials={}. A row whose credentials
+        # failed to decrypt (real Postgres) / were seeded as unreadable
+        # (tests) stays flagged even though masked, mirroring
+        # PostgresConnectionStore.list.
         masked = []
         for c in items[offset:offset + limit]:
+            creds = c.credentials
             masked_row = Connection(
                 id=c.id,
                 name=c.name,
                 connection_type=c.connection_type,
-                credentials={},
+                credentials=(
+                    UnreadableCredentials(b"", reason=creds.reason)
+                    if isinstance(creds, UnreadableCredentials)
+                    else {}
+                ),
             )
             masked.append(masked_row)
         return masked

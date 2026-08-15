@@ -23,6 +23,7 @@ from dte.api.routes.evals import router as evals_router
 from dte.api.routes.schedules import router as schedules_router
 from dte.api.routes.pipelines import router as pipelines_router
 from dte.api.routes.runs import router as runs_router
+from dte.api.routes.providers import router as providers_router
 from dte.api.routes.schema import router as schema_router
 from dte.api.routes.sources import router as sources_router
 from dte.api.routes.users import router as users_router
@@ -113,6 +114,7 @@ app.include_router(pipelines_router, prefix="/api", dependencies=_auth)
 app.include_router(runs_router, prefix="/api", dependencies=_auth)
 app.include_router(artifacts_router, prefix="/api", dependencies=_auth)
 app.include_router(schema_router, prefix="/api", dependencies=_auth)
+app.include_router(providers_router, prefix="/api", dependencies=_auth)
 app.include_router(sources_router, prefix="/api", dependencies=_auth)
 app.include_router(destinations_router, prefix="/api", dependencies=_auth)
 app.include_router(connections_router, prefix="/api", dependencies=_auth)

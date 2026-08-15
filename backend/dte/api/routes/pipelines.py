@@ -415,6 +415,186 @@ async def delete_pipeline(
     return Response(status_code=204)
 
 
+def _normalise_sweepable_keys(step: dict) -> dict:
+    """Fill the structure-step keys a sweep will want to override.
+
+    `apply_cell` refuses to *create* a leaf that does not already exist —
+    a `params.model` sweep against a step that never named a model raises
+    "no 'model' under 'params'". That guard is worth keeping: it is what
+    stops a typo'd axis silently becoming N identical cells that read as
+    "this setting makes no difference". So the twin is filled in instead of
+    the guard being loosened.
+
+    Only ever fills what is absent. An explicitly pinned model is the
+    user's decision and stays put; the sweep overrides it per cell anyway.
+
+    `regex` deliberately gets no `model` param — it makes no model calls,
+    and the key would surface in the wizard as an axis that changes nothing.
+    """
+    from dte.providers.structure import DEFAULT_CLAUDE_MODEL, DEFAULT_OPENAI_MODEL
+
+    step = dict(step)
+    step["params"] = dict(step.get("params") or {})
+    step["model"] = dict(step.get("model") or {})
+    step["model"].setdefault("instructions", "")
+
+    defaults = {"claude": DEFAULT_CLAUDE_MODEL, "openai": DEFAULT_OPENAI_MODEL}
+    default_model = defaults.get(step.get("provider") or "claude")
+    if default_model and not step["params"].get("model"):
+        step["params"]["model"] = default_model
+    return step
+
+
+@router.post(
+    "/pipelines/{pipeline_id}/as-eval",
+    dependencies=[Depends(requires("eval:write"))],
+)
+async def pipeline_as_eval(
+    pipeline_id: str,
+    response: Response,
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    s_store: SourceStore = Depends(get_source_store),
+):
+    """The eval twin of an extraction pipeline — same steps, no destination.
+
+    Until this existed, `pipeline_type` could only be chosen on create: the
+    builder's control is mounted by `/pipelines/new` and the edit route is
+    a redirect. Evaluating a pipeline you already had therefore meant
+    rebuilding it by hand in a second pipeline and retyping every field —
+    at which point the comparison is partly measuring your typing.
+
+    Idempotent, because Compare is a button people press twice. A second
+    press returns the existing twin rather than accumulating
+    `__eval__eval`, each with its own runs diluting one leaderboard.
+    """
+    source = await p_store.get(pipeline_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    # An eval pipeline is already its own twin. Returning it keeps the
+    # caller's flow identical whichever kind of pipeline they pressed
+    # Compare on.
+    if getattr(source, "pipeline_type", "transform") == "eval":
+        return {"pipeline_id": pipeline_id, "created": False}
+
+    steps = list(getattr(source, "steps", None) or [])
+    idx = next(
+        (i for i, s in enumerate(steps) if isinstance(s, dict) and s.get("op") == "structure"),
+        None,
+    )
+    if idx is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "comparing configs means varying a structure step, and this "
+                "pipeline has none — there is nothing to compare"
+            ),
+        )
+
+    # Labels join to extracted rows by document hash, which only a documents
+    # source produces. Refusing here names the real problem; allowing it
+    # produces a twin whose every run scores a flat zero.
+    kinds = {}
+    for sid in getattr(source, "sources", None) or []:
+        row = await s_store.get(sid)
+        if row is not None:
+            kinds[sid] = row.source_type
+    if "documents" not in kinds.values():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"pipeline '{pipeline_id}' reads {sorted(kinds.values()) or 'nothing'}, "
+                "but scoring needs a 'documents' source: labels are keyed by "
+                "document hash and no other source kind produces one"
+            ),
+        )
+
+    twin_id = f"{pipeline_id}__eval"
+    if await p_store.get(twin_id):
+        return {"pipeline_id": twin_id, "created": False}
+
+    from dte.evals.sweep import detached_copy
+
+    twin = detached_copy(source)
+    twin.id = twin_id
+    twin.name = f"{source.name} · eval"
+    twin.pipeline_type = "eval"
+    twin.output_id = None
+    twin_steps = list(twin.steps)
+    twin_steps[idx] = _normalise_sweepable_keys(twin_steps[idx])
+    twin.steps = twin_steps
+    await p_store.save(twin)
+    response.status_code = 201
+    return {"pipeline_id": twin_id, "created": True}
+
+
+@router.get(
+    "/pipelines/{pipeline_id}/comparisons",
+    dependencies=[Depends(requires("eval:read"))],
+)
+async def list_pipeline_comparisons(
+    pipeline_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    r_store: RunStore = Depends(get_run_store),
+):
+    """Comparisons already run for this pipeline, newest first.
+
+    The compare page shipped reachable only from the redirect fired once at
+    launch — navigate away and the comparison was gone unless you had kept
+    the URL. That is the same "reachable from nowhere" failure this plan was
+    written to fix elsewhere.
+
+    Two details, both consequences of the variant namespace:
+
+    A sweep's runs are filed under the *cells* it created, never under the
+    pipeline that was swept, so the obvious lookup by `pipeline_id` returns
+    nothing at all.
+
+    Asking from a cell answers for the root. Someone who followed a link to
+    a variant must see the same history, not an empty page implying nothing
+    was ever compared.
+    """
+    from dte.evals.sweep import root_pipeline_id
+
+    if await p_store.get(pipeline_id) is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    root = root_pipeline_id(pipeline_id)
+
+    runs = await r_store.list_sweep_runs_for_root(root)
+    grouped: dict[str, dict] = {}
+    for run in runs:
+        sweep_id = run.get("sweep_id")
+        if not sweep_id:
+            continue
+        entry = grouped.setdefault(sweep_id, {
+            "sweep_id": sweep_id,
+            "eval_set_id": run.get("eval_set_id"),
+            "started_at": run.get("started_at"),
+            "cells": 0,
+            "pending": 0,
+            # None, never 0.0 — an unlabelled comparison is the normal case
+            # in this flow, and zero would read as "every config failed".
+            "best_macro_f1": None,
+        })
+        entry["cells"] += 1
+        if run.get("status") in ("pending", "running"):
+            entry["pending"] += 1
+        f1 = (run.get("scores") or {}).get("macro_f1")
+        if f1 is not None:
+            best = entry["best_macro_f1"]
+            entry["best_macro_f1"] = f1 if best is None else max(best, f1)
+        # Runs arrive newest-first; the comparison is as old as its first cell.
+        started = run.get("started_at")
+        if started and (entry["started_at"] is None or started > entry["started_at"]):
+            entry["started_at"] = started
+
+    return {
+        "pipeline_id": root,
+        "comparisons": list(grouped.values())[:limit],
+    }
+
+
 @router.get(
     "/pipelines/{pipeline_id}/revisions",
     dependencies=[Depends(requires("pipeline:read"))],
@@ -793,6 +973,37 @@ async def preview_pipeline(
     }
 
 
+async def validate_eval_corpus_match(pipeline, eval_set_id: str, es_store) -> None:
+    """The pipeline must read the corpus its labels describe.
+
+    Labels join by `doc_key` (sha256 of the document), so a pipeline
+    pointed at a different documents source produces hashes that match
+    nothing: the run completes green having scored zero documents, which
+    reads as a broken extractor rather than a mismatched corpus.
+
+    Presence, not exclusivity — a pipeline may carry other sources
+    alongside the corpus and still be scoring the right documents.
+
+    Shared by `trigger_pipeline` and the sweep launcher. The sweep used to
+    skip it, which was survivable while a sweep was a side door; now that
+    it is the primary path into scoring, a mismatch is inherited by every
+    cell of the matrix and billed for on each one.
+    """
+    eval_set = await es_store.get(eval_set_id)
+    if eval_set is None:
+        raise HTTPException(status_code=422, detail=f"eval set not found: {eval_set_id}")
+    if eval_set.source_id not in (getattr(pipeline, "sources", None) or []):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"eval set '{eval_set_id}' labels documents from source "
+                f"'{eval_set.source_id}', but pipeline '{pipeline.id}' reads "
+                f"{list(getattr(pipeline, 'sources', None) or [])}. Scoring "
+                f"these together would match no labels and report zero."
+            ),
+        )
+
+
 async def start_eval_run(
     pipeline_id: str,
     *,
@@ -917,27 +1128,7 @@ async def trigger_pipeline(
             detail=f"eval_set_id is only valid for eval pipelines (this one is {_ptype!r})",
         )
     if eval_set_id:
-        # The pipeline must read the corpus the labels describe. Labels join
-        # by doc_key (sha256 of the document), so a pipeline pointed at a
-        # different documents source produces hashes that match nothing: the
-        # run completes green having scored zero documents, which reads as a
-        # broken extractor rather than a mismatched corpus.
-        #
-        # Presence, not exclusivity — a pipeline may carry other sources
-        # alongside the corpus and still be scoring the right documents.
-        _set = await es_store.get(eval_set_id)
-        if _set is None:
-            raise HTTPException(status_code=422, detail=f"eval set not found: {eval_set_id}")
-        if _set.source_id not in (pipeline.sources or []):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"eval set '{eval_set_id}' labels documents from source "
-                    f"'{_set.source_id}', but pipeline '{pipeline_id}' reads "
-                    f"{list(pipeline.sources or [])}. Scoring these together "
-                    f"would match no labels and report zero."
-                ),
-            )
+        await validate_eval_corpus_match(pipeline, eval_set_id, es_store)
     await _resolve_lookups(pipeline, lt_store)
     # Engine compatibility: catches cases where a pipeline was saved before
     # the engine matrix existed, or a source's connection type changed

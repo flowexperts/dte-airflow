@@ -1117,6 +1117,11 @@ export interface SweepEstimate {
   est_cost_usd?: number | null;
   cost_basis?: string;
   matrix: Record<string, unknown>[];
+  /**
+   * Combinations removed before running, each with a reason — a cell count
+   * smaller than the product you built must never be silent.
+   */
+  dropped?: { cell: Record<string, unknown>; reason: string }[];
   enqueued: boolean;
   sweep_id?: string;
   /** Only present once confirmed — one real pipeline and run per cell. */
@@ -1134,6 +1139,135 @@ export const launchSweep = (id: string, pipelineId: string, matrix: Record<strin
     method: "POST",
     body: JSON.stringify({ pipeline_id: pipelineId, matrix, confirm: true }),
   });
+
+/**
+ * The eval twin of a pipeline — same steps, no destination.
+ *
+ * Idempotent: a second call returns the existing twin. Compare is a button
+ * people press twice, and two twins would split one comparison across two
+ * leaderboards.
+ */
+export const pipelineAsEval = (pipelineId: string) =>
+  apiFetch<{ pipeline_id: string; created: boolean }>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/as-eval`,
+    { method: "POST" },
+  );
+
+/**
+ * The eval set a pipeline implies, derived from its structure step.
+ *
+ * Also idempotent, keyed on a fingerprint of field names and comparator
+ * types — so two pipelines extracting the same fields from the same corpus
+ * land on one set and can actually be ranked against each other.
+ */
+export const evalSetForPipeline = (pipelineId: string) =>
+  apiFetch<{ eval_set_id: string; created: boolean; labels_version: number }>(
+    `/api/eval-sets:for-pipeline`,
+    { method: "POST", body: JSON.stringify({ pipeline_id: pipelineId }) },
+  );
+
+export interface ComparisonCell {
+  cell_id: string;
+  pipeline_id: string;
+  run_id: string;
+  status: string;
+  error?: string | null;
+  cell: Record<string, unknown>;
+  documents: number;
+  null_rate: number | null;
+  /** Rows whose provider call failed. A null is a finding; an error is not. */
+  error_count: number;
+  error_sample: string | null;
+  cost_usd: number | null;
+  latency_p95_ms: number | null;
+  cache_hit_rate: number | null;
+  /** Absent until labels exist — absent is the normal case, not an error. */
+  macro_f1?: number | null;
+  macro_f1_interval?: [number, number] | null;
+  n?: number | null;
+  rank?: number;
+  tied_with_leader?: boolean;
+}
+
+export interface ComparisonField {
+  name: string;
+  /** Null with a single cell: agreement is undefined, not 100%. */
+  agreement_rate: number | null;
+  disagreement_count: number | null;
+}
+
+export interface ComparisonDocument {
+  doc_key: string;
+  doc_ref: string | null;
+  values: Record<string, Record<string, unknown>>;
+  agrees: boolean | null;
+  /**
+   * Per field, decided by the eval set's comparators server-side. The table
+   * must highlight from this and never recompute — client-side equality
+   * would call `1240.50` and `1240.5` a disagreement while the field panel
+   * above it, using the comparators, calls them agreement.
+   *
+   * `null` means agreement is undefined (a single config).
+   */
+  field_agrees: Record<string, boolean | null>;
+}
+
+export interface SweepComparison {
+  sweep_id: string;
+  eval_set_id: string;
+  labels_version: number;
+  pending: number;
+  cells: ComparisonCell[];
+  fields: ComparisonField[];
+  documents: ComparisonDocument[];
+  labels: {
+    total: number;
+    agreed_unlabeled: number;
+    /** False when every config shares a provider — bootstrap refuses the write. */
+    auto_accept: boolean;
+    warning: string | null;
+  };
+}
+
+export interface ProviderStatus {
+  configured: boolean;
+  /** Names the environment variable to set. Never carries the value. */
+  reason: string | null;
+}
+
+/**
+ * Which structure providers are configured well enough to offer.
+ *
+ * Configuration, not validity — a present-but-expired key still fails at
+ * call time, and proving otherwise would cost a billable request per load.
+ */
+export const getStructureProviderStatus = () =>
+  apiFetch<{ providers: Record<string, ProviderStatus> }>("/api/providers/structure");
+
+export interface PipelineComparison {
+  sweep_id: string;
+  eval_set_id: string | null;
+  started_at: string | null;
+  cells: number;
+  pending: number;
+  /** Null until labels exist — never 0, which would read as total failure. */
+  best_macro_f1: number | null;
+}
+
+/**
+ * Comparisons already run for a pipeline, newest first.
+ *
+ * Asking from a sweep variant answers for its root, and `pipeline_id` in
+ * the response says which root that was.
+ */
+export const listPipelineComparisons = (pipelineId: string) =>
+  apiFetch<{ pipeline_id: string; comparisons: PipelineComparison[] }>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/comparisons`,
+  );
+
+/** Side-by-side outputs for one sweep. Works with no labels at all. */
+export const getSweepComparison = (sweepId: string) =>
+  apiFetch<SweepComparison>(`/api/sweeps/${encodeURIComponent(sweepId)}/comparison`);
 
 /** Trigger an eval pipeline against a corpus. */
 export const triggerEval = (pipelineId: string, evalSetId: string) =>

@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     run_timeout_seconds: int = 60 * 30  # 30 min default
     run_max_rows: int = 10_000_000
 
+    # Hard stop on sweep size. Read via getattr by the sweep route since
+    # plan 051, but never declared here — so `extra="ignore"` swallowed
+    # DTE_EVAL_MAX_SWEEP_CELLS and the cap the error message told users to
+    # raise was in fact a constant.
+    eval_max_sweep_cells: int = 50
+
     # Logging
     log_level: str = "INFO"
     log_json: bool = False  # default False in dev; set true in prod

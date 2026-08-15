@@ -35,6 +35,7 @@ import { usePermissions } from "@/lib/use-permissions";
 import { cn } from "@/lib/cn";
 import { AutoInferSchemas, AutoStepSchemas } from "./schema-sync";
 import { TriggerRunButton } from "./trigger";
+import { CompareButton } from "./compare-button";
 import {
   RunTone,
   destinationPathLabel,
@@ -45,8 +46,12 @@ import {
 import { StepsColumn } from "./steps-column";
 import { Rail } from "./rail";
 import { HistoryPane, RunsPane, usePipelineRuns } from "./activity";
+import {
+  ComparisonsPane,
+  usePipelineComparisons,
+} from "@/components/evals/comparisons-panel";
 
-type PipelineView = "spec" | "runs" | "history";
+type PipelineView = "spec" | "runs" | "history" | "comparisons";
 
 /** Read-only sources, for viewers without write permission. */
 function SourcesCard({
@@ -173,7 +178,9 @@ export function PipelineCanvas({
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
   const [view, setView] = useState<PipelineView>(
-    tabParam === "runs" || tabParam === "history" ? tabParam : "spec",
+    tabParam === "runs" || tabParam === "history" || tabParam === "comparisons"
+      ? tabParam
+      : "spec",
   );
 
   const changeView = (next: PipelineView) => {
@@ -184,6 +191,16 @@ export function PipelineCanvas({
     else url.searchParams.set("tab", next);
     window.history.replaceState(null, "", url);
   };
+
+  /* Same gate as the Compare… button: without a `structure` step there is
+     nothing to compare configs *of*. Derived from the spec rather than from
+     the comparisons list, so the tab strip does not reflow once an async
+     fetch lands. */
+  const comparable = (pipeline.steps ?? []).some(
+    (s) => (s as { op?: string }).op === "structure",
+  );
+  const { data: comparisonsData } = usePipelineComparisons(pipeline.id);
+  const comparisonCount = comparisonsData?.comparisons?.length ?? 0;
 
   /* Fetched at the canvas level, not inside the Runs pane: the tab badge
      shows last-run health on every tab, so the spec view answers "is this
@@ -384,6 +401,7 @@ export function PipelineCanvas({
                   {saving ? "Saving…" : "Save"}
                 </Button>
               )}
+              <CompareButton pipeline={pipeline} />
               <TriggerRunButton
                 pipeline={pipeline}
                 variant="primary"
@@ -437,6 +455,19 @@ export function PipelineCanvas({
                 ),
               },
               { value: "history", label: "History" },
+              /* Only where a comparison is possible — the same `structure`
+                 step gate Compare… uses. A tab present on every pipeline
+                 that can never have one is the noise the rail panel avoided
+                 by rendering null, and a tab cannot render null. */
+              ...(comparable
+                ? [
+                    {
+                      value: "comparisons" as const,
+                      label: "Comparisons",
+                      ...(comparisonCount > 0 ? { badge: comparisonCount } : {}),
+                    },
+                  ]
+                : []),
             ]}
             value={view}
             onChange={changeView}
@@ -446,14 +477,37 @@ export function PipelineCanvas({
         )}
 
         {view === "spec" && (
-          /* Every step editor is open, so the spec column always needs the
-             room: the rules rows want ~620px and an even split gives ~536px.
-             A fixed 340px rail keeps the live preview on screen while leaving
-             ~700px at 1440 and ~1160px at 1920. */
+          /* Rail width, and why it differs by pipeline type.
+             Usable spec width is roughly `viewport − 260 sidebar − 112 inset
+             − 24 gap − rail`, so at 1440 the spec column is `1044 − rail`.
+
+             The ~620px floor that pinned this at 340px comes from the **rules
+             rows**, and those only exist on a quality pipeline — which never
+             renders the preview (`showPreview={!quality}`). The constraint and
+             the thing needing room are on mutually exclusive pages, so they
+             get different tracks:
+
+               quality      xl 420  2xl 480   → 624px spec at 1440, the floor
+               everything   xl 560  2xl 680   → 484px spec at 1440
+
+             The non-quality track is now taking real width off the step
+             editors — 484px at 1440, 464px at 1280. That is close to their
+             limit: below ~450px the Filter editor's Basic rows and the
+             Rename pairs start wrapping. If the preview still needs more
+             room, the answer is no longer this number — it is giving the
+             preview its own full-width surface, not shrinking the spec
+             further.
+
+             340px was too narrow for the preview's own table — sample rows
+             wrapped into unreadable columns. Widen the quality track only by
+             raising the breakpoint, never by cutting into its xl figure. */
           <div
             className={cn(
               "px-14 py-8 grid grid-cols-1 gap-6 items-start",
-              rail && "xl:grid-cols-[1fr_340px]",
+              rail &&
+                (quality
+                  ? "xl:grid-cols-[1fr_420px] 2xl:grid-cols-[1fr_480px]"
+                  : "xl:grid-cols-[1fr_560px] 2xl:grid-cols-[1fr_680px]"),
             )}
           >
             <div className="space-y-5 min-w-0">
@@ -488,6 +542,12 @@ export function PipelineCanvas({
         {view === "history" && (
           <div className="px-14 py-8">
             <HistoryPane pipelineId={pipeline.id} />
+          </div>
+        )}
+
+        {view === "comparisons" && (
+          <div className="px-14 py-8">
+            <ComparisonsPane pipelineId={pipeline.id} />
           </div>
         )}
 

@@ -36,20 +36,21 @@ export default function DocumentPage({
           { label: "Document" },
         ]}
       />
+      {/* PageHeader supplies its own `px-14 py-6` and a full-bleed border,
+          so it belongs outside the padded body — nested, the inset applied
+          twice and the title sat right of every other page's baseline. */}
+      <PageHeader
+        title={q.name || "Document"}
+        sub={`artifact ${key.slice(0, 12)}…`}
+        lede="The source document behind an extracted row."
+      />
       <div className="px-14 py-8">
-        <PageHeader
-          title={q.name || "Document"}
-          sub={`artifact ${key.slice(0, 12)}…`}
-          lede="The source document behind an extracted row."
+        <DocumentInspector
+          docKey={key}
+          extractKey={q.extract ?? null}
+          initialPage={page}
+          filename={q.name ?? null}
         />
-        <div className="mt-6">
-          <DocumentInspector
-            docKey={key}
-            extractKey={q.extract ?? null}
-            initialPage={page}
-            filename={q.name ?? null}
-          />
-        </div>
       </div>
     </>
   );

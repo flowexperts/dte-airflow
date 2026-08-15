@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -32,6 +33,7 @@ from dte.models.pipeline import (
     SourceBase,
 )
 from dte.models.user import Role, User, UserBase, UserRoleLink
+from dte.secrets.encrypted_json import UnreadableCredentials
 from dte.tenancy import get_current_tenant
 
 
@@ -223,6 +225,50 @@ class PostgresRunStore:
                     "ORDER BY started_at DESC LIMIT :limit OFFSET :offset"
                 ),
                 {"esid": eval_set_id, "limit": limit, "offset": offset},
+            )
+            return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
+
+    async def list_for_sweep(self, sweep_id: str, limit: int = 50) -> list[dict]:
+        """Every cell of one sweep — the side-by-side comparison's read path.
+
+        Ordered oldest-first, unlike the leaderboard: the columns of a
+        comparison grid should sit in the order the matrix declared them, so
+        the same sweep always renders the same way.
+        """
+        async with _open_tenant_session(self._factory) as s:
+            result = await s.execute(
+                text(
+                    f"SELECT {_RUN_COLUMNS} FROM runs WHERE sweep_id = :sid "
+                    "ORDER BY started_at ASC LIMIT :limit"
+                ),
+                {"sid": sweep_id, "limit": limit},
+            )
+            return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
+
+    async def list_sweep_runs_for_root(
+        self, root_pipeline_id: str, limit: int = 500
+    ) -> list[dict]:
+        """Every sweep run belonging to a pipeline or any of its cells.
+
+        A sweep's runs are filed under the *variants* it created
+        (`root__digest`), never under the pipeline that was swept — so the
+        obvious `WHERE pipeline_id = :root` finds nothing and the
+        comparison history reads as empty on the one page you would look.
+
+        `LIKE :prefix` is safe against a root id containing `%` or `_`
+        because ids are validated on save, and the `sweep_id IS NOT NULL`
+        clause keeps plain triggers out.
+        """
+        async with _open_tenant_session(self._factory) as s:
+            result = await s.execute(
+                text(
+                    f"SELECT {_RUN_COLUMNS} FROM runs "
+                    "WHERE sweep_id IS NOT NULL "
+                    "AND (pipeline_id = :root OR pipeline_id LIKE :prefix) "
+                    "ORDER BY started_at DESC LIMIT :limit"
+                ),
+                {"root": root_pipeline_id, "prefix": f"{root_pipeline_id}\\_\\_%",
+                 "limit": limit},
             )
             return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
 
@@ -652,6 +698,20 @@ class PostgresScheduleStore:
             return True
 
 
+_connection_store_logger = logging.getLogger("dte.store.connections")
+
+
+def _warn_if_unreadable(row: "Connection | None") -> None:
+    """Log a warning naming the connection id when its credentials failed
+    to decrypt/parse — never any credential content, ciphertext included."""
+    if row is not None and isinstance(row.credentials, UnreadableCredentials):
+        _connection_store_logger.warning(
+            "connection %r has unreadable credentials (%s)",
+            row.id,
+            row.credentials.reason or "unknown reason",
+        )
+
+
 class PostgresConnectionStore:
     """Stores connection rows with credentials encrypted at rest via
     `EncryptedJSON` — the TypeDecorator handles encrypt/decrypt
@@ -670,7 +730,9 @@ class PostgresConnectionStore:
 
     async def get(self, id: str) -> Connection | None:
         async with _open_tenant_session(self._factory) as s:
-            return await s.get(Connection, id)
+            row = await s.get(Connection, id)
+        _warn_if_unreadable(row)
+        return row
 
     async def save(self, connection: "ConnectionBase | Connection") -> None:
         stmt = pg_insert(Connection).values(
@@ -705,11 +767,21 @@ class PostgresConnectionStore:
         # Return copies with masked credentials so callers never see plaintext.
         masked = []
         for row in rows:
+            _warn_if_unreadable(row)
+            creds = row.credentials
             masked_row = Connection(
                 id=row.id,
                 name=row.name,
                 connection_type=row.connection_type,
-                credentials={},
+                # Preserve the unreadable flag (as an empty sentinel — no
+                # ciphertext carried into the masked copy) so callers can
+                # still tell "genuinely no credentials" from "couldn't
+                # decrypt" without re-exposing plaintext or raw bytes.
+                credentials=(
+                    UnreadableCredentials(b"", reason=creds.reason)
+                    if isinstance(creds, UnreadableCredentials)
+                    else {}
+                ),
             )
             masked.append(masked_row)
         return masked

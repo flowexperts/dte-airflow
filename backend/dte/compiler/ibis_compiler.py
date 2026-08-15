@@ -363,12 +363,21 @@ def _apply_structure(
                     f"structure step {idx} failed on a row: {result.error}"
                 )
 
-        store.put(
-            key,
-            json.dumps({"values": result.values, "provenance": result.provenance,
-                        "error": result.error}, default=str).encode("utf-8"),
-            "application/json",
-        )
+        # A failure is a property of the attempt, not of the input. Caching
+        # one turns a missing key, a 429 or a five-minute outage into a
+        # permanent property of that document: every later run *hits* the
+        # cache, calls nothing, costs nothing, and returns the same nulls —
+        # so fixing the cause changes nothing and the config reads as
+        # permanently incapable. Worse, it reports as a clean, fast,
+        # zero-cost abstention, which is indistinguishable from a model that
+        # looked and found nothing.
+        if result.error is None:
+            store.put(
+                key,
+                json.dumps({"values": result.values, "provenance": result.provenance,
+                            "error": None}, default=str).encode("utf-8"),
+                "application/json",
+            )
         return [{
             **result.values,
             "structure_meta": json.dumps({
@@ -479,11 +488,15 @@ def _apply_extract(
                 for b in result.blocks
             ]
             meta.update(ms=result.elapsed_ms, error=result.error)
-            store.put(
-                key,
-                json.dumps({"blocks": blocks, "error": result.error}).encode("utf-8"),
-                "application/json",
-            )
+            # Same rule as `structure`: never cache a failure. A PDF that
+            # failed to parse because the file was briefly unreadable must
+            # be retried, not remembered as unparseable forever.
+            if result.error is None:
+                store.put(
+                    key,
+                    json.dumps({"blocks": blocks, "error": None}).encode("utf-8"),
+                    "application/json",
+                )
 
         if not blocks:
             return [_row(step, None, 0, None, f"artifact://{dk}", meta)]

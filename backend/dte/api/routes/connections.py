@@ -10,12 +10,18 @@ from dte.api.deps import (
 )
 from dte.logging import decrypt_context_var
 from dte.models.pipeline import Connection, ConnectionBase
+from dte.secrets.encrypted_json import UnreadableCredentials
 from dte.security.permissions import requires
 from dte.sources.connection_test import probe_connection
 from dte.sources.pools import mongo as mongo_pool
 from dte.store.base import ConnectionStore, DestinationStore, SourceStore
 
 BULK_DELETE_LIMIT = 200
+
+UNREADABLE_CREDENTIALS_DETAIL = (
+    "Credentials unreadable — stored under a different secrets key or "
+    "corrupted. Re-enter them."
+)
 
 
 class BulkDeleteRequest(BaseModel):
@@ -24,14 +30,29 @@ class BulkDeleteRequest(BaseModel):
 router = APIRouter()
 
 
+def _is_unreadable(credentials) -> bool:
+    return isinstance(credentials, UnreadableCredentials) or getattr(
+        credentials, "unreadable", False
+    ) is True
+
+
 def _mask(c: Connection) -> dict:
-    """Return a plain dict with credentials values replaced by '***'."""
-    return {
+    """Return a plain dict with credentials values replaced by '***'.
+
+    A row whose credentials failed to decrypt gets `credentials_unreadable:
+    true` instead of any '***' entries — there's nothing to mask, and the
+    flag is what lets the UI say "re-enter them" instead of showing a
+    connection that quietly has zero configured fields.
+    """
+    body = {
         "id": c.id,
         "name": c.name or c.id,
         "connection_type": c.connection_type,
         "credentials": {k: "***" for k in c.credentials},
     }
+    if _is_unreadable(c.credentials):
+        body["credentials_unreadable"] = True
+    return body
 
 
 @router.post("/connections", status_code=201, dependencies=[Depends(requires("connection:write"))])
@@ -81,6 +102,8 @@ async def get_connection(
     if not c:
         raise HTTPException(status_code=404, detail="Connection not found")
     if reveal:
+        if _is_unreadable(c.credentials):
+            raise HTTPException(status_code=422, detail=UNREADABLE_CREDENTIALS_DETAIL)
         # Reveal path is a deliberate escape hatch (e.g., the UI edit form
         # pre-populating fields). Callers should treat this as sensitive.
         return {
@@ -132,6 +155,9 @@ async def test_connection(
     c = await store.get(connection_id)
     if not c:
         raise HTTPException(status_code=404, detail="Connection not found")
+    if _is_unreadable(c.credentials):
+        # Clean failure, not a 500 — there's nothing to probe with.
+        return {"ok": False, "elapsed_ms": 0, "detail": UNREADABLE_CREDENTIALS_DETAIL}
     return probe_connection(c)
 
 

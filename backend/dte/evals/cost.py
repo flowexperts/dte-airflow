@@ -39,6 +39,12 @@ PRICES: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-fable-5": (10.00, 50.00),
+    # The comparison flow's headline question is whether a model is worth
+    # what it costs against a cheaper one. With OpenAI unpriced, one such
+    # column nulls the total for the whole comparison — correct under the
+    # "never guess" rule above, and useless for the question being asked.
+    "gpt-5": (1.25, 10.00),
+    "gpt-5-mini": (0.25, 2.00),
     # Deterministic providers make no calls and cost nothing. Listed
     # explicitly so a regex-only run reports $0.00 rather than "unknown".
     "regex": (0.0, 0.0),

@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from dte.api.main import app
-from dte.models.pipeline import Source
+from dte.models.pipeline import Connection, Source
+from dte.secrets.encrypted_json import UnreadableCredentials
 
 
 def _conn(cid="c1", ctype="s3"):
@@ -179,6 +180,58 @@ def test_duplicate_name_returns_409(fake_stores):
     # UNIQUE(tenant_id, name) constraint.
     r2 = c.post("/api/connections", json=body)
     assert r2.status_code == 409, r2.text
+
+
+# ── Unreadable credentials (a row whose blob failed to decrypt) ───────────
+
+def test_list_returns_200_with_mixed_good_and_bad_rows(fake_stores):
+    """One rotten row (credentials encrypted under a different key, or by a
+    different resolver) must not 500 the whole collection."""
+    c = TestClient(app)
+    c.post("/api/connections", json=_conn("c-good"))
+    fake_stores["connection"]._data["c-bad"] = Connection(
+        id="c-bad",
+        connection_type="s3",
+        credentials=UnreadableCredentials(b"garbage", reason="InvalidToken"),
+    )
+
+    r = c.get("/api/connections")
+    assert r.status_code == 200
+    by_id = {row["id"]: row for row in r.json()}
+    assert "c-good" in by_id and "c-bad" in by_id
+    # Good row unaffected.
+    assert by_id["c-good"].get("credentials_unreadable") is not True
+    # Bad row flagged, never leaks ciphertext, credentials still masked/empty.
+    assert by_id["c-bad"]["credentials_unreadable"] is True
+    assert by_id["c-bad"]["credentials"] == {}
+
+
+def test_get_single_unreadable_row_flagged_not_500(fake_stores):
+    fake_stores["connection"]._data["c-bad"] = Connection(
+        id="c-bad",
+        connection_type="s3",
+        credentials=UnreadableCredentials(b"garbage", reason="InvalidToken"),
+    )
+    c = TestClient(app)
+    r = c.get("/api/connections/c-bad")
+    assert r.status_code == 200
+    assert r.json()["credentials_unreadable"] is True
+
+
+def test_test_connection_on_unreadable_row_fails_cleanly(fake_stores):
+    """POST /connections/{id}/test must not 500 on a row whose credentials
+    can't be decrypted — it should behave like any other probe failure."""
+    fake_stores["connection"]._data["c-bad"] = Connection(
+        id="c-bad",
+        connection_type="s3",
+        credentials=UnreadableCredentials(b"garbage", reason="InvalidToken"),
+    )
+    c = TestClient(app)
+    r = c.post("/api/connections/c-bad/test")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is False
+    assert "credentials" in body["detail"].lower() or "unreadable" in body["detail"].lower()
 
 
 def test_put_renames_name_without_changing_id(fake_stores):

@@ -439,15 +439,27 @@ async def test_sweep_preflight_enqueues_nothing(client, scenario_ids, invoices_d
     es_id = await _make_eval_set(client, scenario_ids, src)
     await _label(client, es_id, doc_keys)
 
+    # `granularity` used to be the second axis here, and it is not a
+    # structure-step key at all — it belongs to `extract`, which a sweep
+    # deliberately cannot reach. The matrix could never have been confirmed;
+    # it passed only because the estimate did not validate its cells. That
+    # is now checked before a price is quoted, so the test uses two axes
+    # that exist.
     r = await client.post(f"/api/eval-sets/{es_id}/sweep", json={
         "pipeline_id": pipe,
-        "matrix": {"provider": ["regex", "claude"], "granularity": ["page", "document"]},
+        "matrix": {"provider": ["regex", "claude"],
+                   "model.instructions": ["", "be terse"]},
     })
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["cells"] == 4
+    # Three, not four: `regex` reads no instructions, so its two cells are
+    # one config and collapse. The estimate says so rather than quietly
+    # charging for a column that would have been a duplicate.
+    assert body["cells"] == 3
+    assert len(body["dropped"]) == 1
+    assert "regex" in body["dropped"][0]["reason"]
     assert body["documents"] == 3
-    assert body["uncached_calls"] == 12
+    assert body["uncached_calls"] == 9
     assert body["enqueued"] is False
 
     board = (await client.get(f"/api/eval-sets/{es_id}/leaderboard")).json()
@@ -591,9 +603,15 @@ async def test_a_confirmed_sweep_produces_one_scored_run_per_cell(
     es_id = await _make_eval_set(client, scenario_ids, src)
     await _label(client, es_id, doc_keys)
 
+    # `on_error` rather than instructions: this pipeline runs on `regex`,
+    # which reads no instructions, so those cells would collapse into one
+    # and there would be nothing to prove about two runs. `on_error` is a
+    # key regex genuinely honours, and both values succeed here because
+    # nothing fails — so the two cells are distinct configs with identical
+    # output, which is exactly what this test needs.
     r = await client.post(f"/api/eval-sets/{es_id}/sweep", json={
         "pipeline_id": pipe,
-        "matrix": {"model.instructions": ["v1", "v2"]},
+        "matrix": {"on_error": ["null", "fail"]},
         "confirm": True,
     })
     assert r.status_code == 200, r.text

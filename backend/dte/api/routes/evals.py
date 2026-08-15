@@ -25,7 +25,7 @@ import itertools
 import json
 import uuid as _uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from dte.api.deps import (
@@ -40,13 +40,27 @@ from dte.api.deps import (
     get_schedule_store,
     get_source_store,
 )
-from dte.api.routes.pipelines import materialise_pipeline_rows, start_eval_run
+from dte.api.routes.pipelines import (
+    materialise_pipeline_rows,
+    start_eval_run,
+    validate_eval_corpus_match,
+)
 from dte.config import get_settings
 from dte.evals.bootstrap import CONSENSUS_LABEL_SOURCE, consensus
+from dte.evals.comparison import build_comparison
+from dte.evals.derive import eval_set_fingerprint, field_specs_from_structure
 from dte.evals.runner import collapse_rows_by_doc
 from dte.evals.scoring import intervals_overlap
 from dte.evals.digest import config_digest
-from dte.evals.sweep import apply_cell, detached_copy, variant_id
+from dte.evals.sweep import (
+    _IGNORED_AXES,
+    apply_cell,
+    detached_copy,
+    prune_cells,
+    root_pipeline_id,
+    variant_id,
+    variant_name,
+)
 from dte.models.eval import EvalExampleBase, EvalSetBase
 from dte.security.permissions import requires
 from dte.store.base import EvalExampleStore, EvalSetStore, PipelineStore, RunStore
@@ -104,6 +118,92 @@ async def create_eval_set(
     await _validate_source(eval_set.source_id, s_store)
     await store.save(eval_set)
     return eval_set.model_dump()
+
+
+class ForPipelineRequest(BaseModel):
+    """Derive the eval set a pipeline implies, or find the one it already has."""
+
+    pipeline_id: str
+
+
+@router.post("/eval-sets:for-pipeline", dependencies=[Depends(requires("eval:write"))])
+async def eval_set_for_pipeline(
+    body: ForPipelineRequest,
+    response: Response,
+    store: EvalSetStore = Depends(get_eval_set_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    s_store=Depends(get_source_store),
+):
+    """The eval set implied by a pipeline's structure step and corpus.
+
+    Plan 051 made the user type their field list twice — once in the
+    structure step, once in `field_specs` — under a builder warning that a
+    mismatch "won't error; it scores zero on every document." That warning
+    is the design confessing. The pipeline already declares the fields, so
+    the set is derived from it and the two cannot drift.
+
+    The id is `<source>__<fingerprint>` and the fingerprint covers exactly
+    what changes the meaning of a score: field names, comparator types, and
+    comparator options. Not order, not descriptions — those are edits people
+    make constantly while iterating on a prompt, and minting a fresh set for
+    them would silently discard every label collected so far.
+
+    Consequently two pipelines extracting the same fields from the same
+    corpus land on one set, which is the whole point: claude and openai
+    scored against different sets would never appear on one leaderboard.
+    """
+    pipeline = await p_store.get(body.pipeline_id)
+    if pipeline is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    step = next(
+        (s for s in (getattr(pipeline, "steps", None) or [])
+         if isinstance(s, dict) and s.get("op") == "structure"),
+        None,
+    )
+    if step is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "an eval set scores the fields a structure step declares, and "
+                f"pipeline '{body.pipeline_id}' has no structure step"
+            ),
+        )
+
+    source_id = None
+    for sid in getattr(pipeline, "sources", None) or []:
+        row = await s_store.get(sid)
+        if row is not None and row.source_type == "documents":
+            source_id = sid
+            break
+    if source_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"pipeline '{body.pipeline_id}' reads no 'documents' source. "
+                "Labels are keyed by document hash and no other source kind "
+                "produces one, so there is nothing to score against."
+            ),
+        )
+
+    try:
+        specs = field_specs_from_structure(step)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    set_id = f"{source_id}__{eval_set_fingerprint(source_id, specs)}"
+    existing = await store.get(set_id)
+    if existing is not None:
+        return {"eval_set_id": set_id, "created": False, "labels_version": existing.labels_version}
+
+    await store.save(EvalSetBase(
+        id=set_id,
+        name=f"{pipeline.name} — {len(specs)} field{'' if len(specs) == 1 else 's'}",
+        source_id=source_id,
+        field_specs=specs,
+    ))
+    response.status_code = 201
+    return {"eval_set_id": set_id, "created": True, "labels_version": 1}
 
 
 @router.get("/eval-sets", dependencies=[Depends(requires("eval:read"))])
@@ -743,9 +843,18 @@ async def launch_sweep(
             status_code=422,
             detail="sweeps run eval pipelines; this pipeline is not one",
         )
+    # Checked before the estimate, not at confirm: refusing later would let
+    # someone build a matrix, read a cost, and decide to spend — only to be
+    # told the corpus never matched. Every cell would have scored zero.
+    await validate_eval_corpus_match(pipeline, eval_set_id, store)
 
     cells = _expand_matrix(body.matrix)
-    max_cells = getattr(get_settings(), "eval_max_sweep_cells", DEFAULT_MAX_SWEEP_CELLS)
+    # A blind cartesian product is right for independent axes and wrong the
+    # moment one axis makes another irrelevant — `regex × {haiku, sonnet}`
+    # is one config run twice, billed as two columns labelled with models it
+    # never read. Pruned before the cap so the cap counts real work.
+    cells, dropped_cells = prune_cells(pipeline, cells)
+    max_cells = get_settings().eval_max_sweep_cells
     if len(cells) > max_cells:
         raise HTTPException(
             status_code=422,
@@ -755,7 +864,18 @@ async def launch_sweep(
             ),
         )
 
-    documents = await ex_store.count_for_set(eval_set_id)
+    # Every cell must be applicable *before* a price is quoted. Validating
+    # only on the way to enqueueing lets someone read a clean estimate for a
+    # matrix that cannot run, then discover the typo at the moment they
+    # commit to spending — the same trap the corpus-match check sits above
+    # the estimate to avoid. `apply_cell` is pure, so this costs nothing.
+    for cell in cells:
+        try:
+            apply_cell(pipeline, cell)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    documents = await _corpus_size(eval_set, ex_store, r_store)
     per_doc, basis = await _cost_per_document(r_store, eval_set_id)
     estimate = {
         "cells": len(cells),
@@ -766,6 +886,9 @@ async def launch_sweep(
         "est_cost_usd": None if per_doc is None else per_doc * len(cells) * documents,
         "cost_basis": basis,
         "matrix": cells,
+        # Never silent: a cell count smaller than the product the user built
+        # must say which combinations went and why.
+        "dropped": dropped_cells,
     }
 
     if not body.confirm:
@@ -788,7 +911,9 @@ async def launch_sweep(
             raise HTTPException(status_code=422, detail=str(e)) from e
         vid = variant_id(pipeline, cell)
         variant.id = vid
-        variant.name = f"{pipeline.name} · {_cell_label(cell)}"
+        variant.name = await _unique_variant_name(
+            p_store, variant_name(pipeline, cell), vid
+        )
         await p_store.save(variant)
         run_id = await start_eval_run(
             vid, eval_set_id=eval_set_id, sweep_id=sweep_id,
@@ -802,6 +927,115 @@ async def launch_sweep(
     estimate["sweep_id"] = sweep_id
     estimate["runs"] = runs
     return estimate
+
+
+@router.get("/sweeps/{sweep_id}/comparison", dependencies=[Depends(requires("eval:read"))])
+async def sweep_comparison(
+    sweep_id: str,
+    limit: int = Query(200, ge=1, le=1000),
+    store: EvalSetStore = Depends(get_eval_set_store),
+    ex_store: EvalExampleStore = Depends(get_eval_example_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    r_store: RunStore = Depends(get_run_store),
+    s_store=Depends(get_source_store),
+    c_store=Depends(get_connection_store),
+    lt_store=Depends(get_lookup_table_store),
+):
+    """Side-by-side outputs for one sweep, with or without labels.
+
+    This is the surface plan 053 exists to add. The leaderboard needs
+    ground truth before it will show anything, which is why the harness sat
+    empty — so this endpoint answers the parts of the question that need no
+    labels at all: where the configs disagree, what each cost, how slow
+    each was, how often each abstained. Scores appear alongside once labels
+    exist; their absence is the normal case, not an error.
+
+    Rows are re-materialised rather than read back from the run, because an
+    eval run writes no output. That is affordable precisely because plan
+    050 caches extraction by document content and structure by text hash:
+    re-reading a finished cell parses no PDF and calls no model, so opening
+    this page costs nothing beyond a compile.
+    """
+    runs = await r_store.list_for_sweep(sweep_id, limit=limit)
+    if not runs:
+        raise HTTPException(status_code=404, detail=f"No runs found for sweep '{sweep_id}'")
+
+    eval_set_id = next((r.get("eval_set_id") for r in runs if r.get("eval_set_id")), None)
+    eval_set = await store.get(eval_set_id) if eval_set_id else None
+    if eval_set is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"sweep '{sweep_id}' is not bound to an eval set, so there is nothing to compare against",
+        )
+    specs = eval_set.to_field_specs()
+
+    cells = []
+    for run in runs:
+        pipeline = await p_store.get(run["pipeline_id"])
+        rows: list[dict] = []
+        if pipeline is not None and run.get("status") == "completed":
+            try:
+                rows = await materialise_pipeline_rows(
+                    pipeline, s_store, c_store, lt_store, limit=limit
+                )
+            except Exception as exc:  # pragma: no cover - surfaced, not raised
+                # One cell failing to re-materialise must not blank the whole
+                # comparison — the other columns are still the answer the user
+                # came for. The cell reports why instead.
+                run = {**run, "status": "unavailable", "error": str(exc)}
+        cells.append({
+            "cell_id": run["pipeline_id"],
+            "pipeline_id": run["pipeline_id"],
+            "run_id": run["id"],
+            "status": run.get("status"),
+            "error": run.get("error"),
+            "cell": _cell_from_pipeline(pipeline),
+            "rows": rows,
+            "scores": run.get("scores") or {},
+            "throughput": (run.get("scores") or {}).get("throughput") or {},
+        })
+
+    examples = await ex_store.list_for_set(eval_set.id, limit=10_000)
+    labelled = {e.doc_key for e in examples}
+
+    out = build_comparison(cells, specs, labelled_doc_keys=labelled)
+    out["sweep_id"] = sweep_id
+    out["eval_set_id"] = eval_set.id
+    out["labels_version"] = eval_set.labels_version
+    # Carried so the grid can show which cells are still running without a
+    # second request; a sweep is polled while it fills in.
+    out["pending"] = sum(
+        1 for r in runs if r.get("status") in ("pending", "running")
+    )
+    return out
+
+
+def _cell_from_pipeline(pipeline) -> dict:
+    """The config that names a column, read back off the variant pipeline.
+
+    The sweep's `cell` dict is not persisted anywhere — only the variant it
+    produced is. Reconstructing the interesting keys from the structure step
+    keeps the column headers honest even for a sweep launched months ago.
+    """
+    if pipeline is None:
+        return {}
+    for step in getattr(pipeline, "steps", None) or []:
+        if isinstance(step, dict) and step.get("op") == "structure":
+            provider = step.get("provider")
+            out = {"provider": provider}
+            # Only report settings this provider actually reads. A regex
+            # column headed "regex · claude-haiku-4-5" claims a model was
+            # used, and invites the reader to explain a score difference by
+            # a setting that had no effect.
+            ignored = _IGNORED_AXES.get(provider or "", frozenset())
+            model = (step.get("params") or {}).get("model")
+            if model and "params.model" not in ignored:
+                out["model"] = model
+            instructions = (step.get("model") or {}).get("instructions")
+            if instructions and "model.instructions" not in ignored:
+                out["instructions"] = instructions
+            return out
+    return {}
 
 
 class PromoteRequest(BaseModel):
@@ -894,8 +1128,57 @@ async def _cost_per_document(r_store, eval_set_id: str):
     return None, "no priced run yet — launch once to measure the per-document cost"
 
 
-def _cell_label(cell: dict) -> str:
-    return ", ".join(f"{k.split('.')[-1]}={v}" for k, v in cell.items())
+async def _corpus_size(eval_set, ex_store, r_store) -> int:
+    """How many documents a sweep cell will actually process.
+
+    This used to be the count of *labelled examples*, which is right for a
+    scored run and badly wrong for the flow plan 053 is built around: a
+    label-free comparison has no labels, so the estimate quoted zero
+    documents, zero calls and `$0.00` for a sweep over a corpus of any size.
+    An underquote is the one direction a cost preflight must never err in —
+    the whole guard exists to stop a mis-click spending real money, and a
+    confident zero invites exactly that click.
+
+    Taken from what a previous run of this set actually processed, not by
+    listing the source. Listing means filesystem or network I/O inside an
+    estimate request, and it makes the number depend on what happens to be
+    on disk at that moment. `documents_produced` is measured, free, and is
+    the same quantity the run will produce again.
+
+    Still zero for the very first sweep of an unlabelled set. That case is
+    covered by `cost_basis`, which says no run has priced this corpus yet —
+    an admitted unknown rather than a fabricated zero.
+    """
+    labelled = await ex_store.count_for_set(eval_set.id)
+    runs = await r_store.list_for_eval_set(eval_set.id, limit=20)
+    produced = max(
+        (int((r.get("scores") or {}).get("documents_produced") or 0) for r in runs),
+        default=0,
+    )
+    return max(labelled, produced)
+
+
+async def _unique_variant_name(p_store, name: str, variant_id_: str) -> str:
+    """A display name for one cell that will not violate UNIQUE(tenant, name).
+
+    Cell names are derived from the root config plus this cell's overrides,
+    which is what stops them accumulating into "demo · instructions=v3 ·
+    provider=regex · provider=claude". The cost is that two different
+    configs can want the same name — the root swept one way, and a variant
+    of it swept the same way — and rows left behind by the nesting bug make
+    that likely on existing installs.
+
+    Identity is the id, so the name is free to be disambiguated. The short
+    digest is already in the id, so borrowing it keeps the two consistent
+    and the result deterministic: re-running the sweep produces the same
+    name rather than climbing a counter.
+    """
+    # A scan, because there is no lookup-by-name on the store. Acceptable
+    # here: it runs once per cell of a sweep that is capped at 50.
+    for existing in await p_store.list(limit=1000):
+        if existing.name == name and existing.id != variant_id_:
+            return f"{name} ({variant_id_.rsplit('__', 1)[-1][:7]})"
+    return name
 
 
 def _expand_matrix(matrix: dict[str, list]) -> list[dict]:
