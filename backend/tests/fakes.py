@@ -582,15 +582,25 @@ class FakeConnectionStore:
         self._data[connection.id] = row
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[Connection]:
+        from dte.secrets.encrypted_json import UnreadableCredentials
+
         items = list(self._data.values())
-        # Mask: return copies with credentials={}
+        # Mask: return copies with credentials={}. A row whose credentials
+        # failed to decrypt (real Postgres) / were seeded as unreadable
+        # (tests) stays flagged even though masked, mirroring
+        # PostgresConnectionStore.list.
         masked = []
         for c in items[offset:offset + limit]:
+            creds = c.credentials
             masked_row = Connection(
                 id=c.id,
                 name=c.name,
                 connection_type=c.connection_type,
-                credentials={},
+                credentials=(
+                    UnreadableCredentials(b"", reason=creds.reason)
+                    if isinstance(creds, UnreadableCredentials)
+                    else {}
+                ),
             )
             masked.append(masked_row)
         return masked

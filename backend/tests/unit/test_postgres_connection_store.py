@@ -105,3 +105,60 @@ async def test_list_masks_credentials():
     # Credentials must be masked (empty dict).
     assert rows[0].credentials == {}
     assert rows[1].credentials == {}
+
+
+async def test_get_with_unreadable_credentials_logs_warning_naming_id(caplog):
+    """A row whose credentials failed to decrypt (EncryptedJSON already
+    degraded it to the sentinel by the time SQLAlchemy hands it back) must
+    surface a warning naming the connection id — never credential content."""
+    from dte.secrets.encrypted_json import UnreadableCredentials
+
+    session = _CapturingSession()
+    db_row = Connection(
+        id="c-broken",
+        connection_type="s3",
+        credentials=UnreadableCredentials(b"ciphertext-bytes", reason="InvalidToken: x"),
+    )
+    session.get.return_value = db_row
+
+    store = PostgresConnectionStore(_factory_with(session))
+    with caplog.at_level("WARNING"):
+        got = await store.get("c-broken")
+
+    assert got.credentials.unreadable is True
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("c-broken" in r.getMessage() for r in warnings)
+    assert not any("ciphertext-bytes" in r.getMessage() for r in warnings)
+
+
+async def test_list_preserves_unreadable_flag_and_logs_warning(caplog):
+    """list() masks credentials to {} for every row, but a row that failed
+    to decrypt must stay distinguishable from a row with genuinely empty
+    credentials (e.g. local_fs) — the UI needs to flag it."""
+    from dte.secrets.encrypted_json import UnreadableCredentials
+
+    session = _CapturingSession()
+    good = Connection(id="c-good", connection_type="s3", credentials={"aws_access_key_id": "K"})
+    bad = Connection(
+        id="c-bad",
+        connection_type="s3",
+        credentials=UnreadableCredentials(b"raw", reason="InvalidToken: x"),
+    )
+
+    scalars_mock = MagicMock()
+    scalars_mock.all.return_value = [good, bad]
+    result_mock = MagicMock()
+    result_mock.scalars.return_value = scalars_mock
+    session.execute.return_value = result_mock
+
+    store = PostgresConnectionStore(_factory_with(session))
+    with caplog.at_level("WARNING"):
+        rows = await store.list()
+
+    by_id = {r.id: r for r in rows}
+    assert by_id["c-good"].credentials == {}
+    assert getattr(by_id["c-good"].credentials, "unreadable", False) is False
+    assert by_id["c-bad"].credentials == {}
+    assert getattr(by_id["c-bad"].credentials, "unreadable", False) is True
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("c-bad" in r.getMessage() for r in warnings)

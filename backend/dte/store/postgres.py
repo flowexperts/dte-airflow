@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -32,6 +33,7 @@ from dte.models.pipeline import (
     SourceBase,
 )
 from dte.models.user import Role, User, UserBase, UserRoleLink
+from dte.secrets.encrypted_json import UnreadableCredentials
 from dte.tenancy import get_current_tenant
 
 
@@ -696,6 +698,20 @@ class PostgresScheduleStore:
             return True
 
 
+_connection_store_logger = logging.getLogger("dte.store.connections")
+
+
+def _warn_if_unreadable(row: "Connection | None") -> None:
+    """Log a warning naming the connection id when its credentials failed
+    to decrypt/parse — never any credential content, ciphertext included."""
+    if row is not None and isinstance(row.credentials, UnreadableCredentials):
+        _connection_store_logger.warning(
+            "connection %r has unreadable credentials (%s)",
+            row.id,
+            row.credentials.reason or "unknown reason",
+        )
+
+
 class PostgresConnectionStore:
     """Stores connection rows with credentials encrypted at rest via
     `EncryptedJSON` — the TypeDecorator handles encrypt/decrypt
@@ -714,7 +730,9 @@ class PostgresConnectionStore:
 
     async def get(self, id: str) -> Connection | None:
         async with _open_tenant_session(self._factory) as s:
-            return await s.get(Connection, id)
+            row = await s.get(Connection, id)
+        _warn_if_unreadable(row)
+        return row
 
     async def save(self, connection: "ConnectionBase | Connection") -> None:
         stmt = pg_insert(Connection).values(
@@ -749,11 +767,21 @@ class PostgresConnectionStore:
         # Return copies with masked credentials so callers never see plaintext.
         masked = []
         for row in rows:
+            _warn_if_unreadable(row)
+            creds = row.credentials
             masked_row = Connection(
                 id=row.id,
                 name=row.name,
                 connection_type=row.connection_type,
-                credentials={},
+                # Preserve the unreadable flag (as an empty sentinel — no
+                # ciphertext carried into the masked copy) so callers can
+                # still tell "genuinely no credentials" from "couldn't
+                # decrypt" without re-exposing plaintext or raw bytes.
+                credentials=(
+                    UnreadableCredentials(b"", reason=creds.reason)
+                    if isinstance(creds, UnreadableCredentials)
+                    else {}
+                ),
             )
             masked.append(masked_row)
         return masked
