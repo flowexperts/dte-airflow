@@ -25,12 +25,14 @@ function formatNextRun(iso: string | null): string {
 function ScheduleRow({
   schedule,
   pipelineParams,
+  pipelineType,
   onChanged,
   onDeleted,
   canWrite,
 }: {
   schedule: Schedule;
   pipelineParams: PipelineParam[] | undefined;
+  pipelineType?: string | undefined;
   onChanged: (s: Schedule) => void;
   onDeleted: (id: string) => void;
   canWrite: boolean;
@@ -103,6 +105,7 @@ function ScheduleRow({
       <ScheduleForm
         pipelineId={schedule.pipeline_id}
         pipelineParams={pipelineParams}
+        pipelineType={pipelineType}
         schedule={schedule}
         open={editOpen}
         onClose={() => setEditOpen(false)}
@@ -120,9 +123,11 @@ function ScheduleRow({
 export function SchedulePanel({
   pipelineId,
   pipelineParams,
+  pipelineType,
 }: {
   pipelineId: string;
   pipelineParams: PipelineParam[] | undefined;
+  pipelineType?: string | undefined;
 }) {
   const { data, error, isLoading, mutate } = useSWR(
     ["pipeline-schedules", pipelineId],
@@ -163,6 +168,7 @@ export function SchedulePanel({
           key={s.id}
           schedule={s}
           pipelineParams={pipelineParams}
+          pipelineType={pipelineType}
           onChanged={handleChanged}
           onDeleted={handleDeleted}
           canWrite={canWrite}
@@ -180,6 +186,7 @@ export function SchedulePanel({
       <ScheduleForm
         pipelineId={pipelineId}
         pipelineParams={pipelineParams}
+        pipelineType={pipelineType}
         schedule={null}
         open={createOpen}
         onClose={() => setCreateOpen(false)}

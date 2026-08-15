@@ -84,6 +84,7 @@ class _IdMinter:
         self.sources: list[str] = []
         self.connections: list[str] = []
         self.lookups: list[str] = []
+        self.eval_sets: list[str] = []
 
     def __call__(self, kind: str, suffix: str = "") -> str:
         """Mint an id like `scn_ab12cd34_src`. Also records it for teardown."""
@@ -95,6 +96,7 @@ class _IdMinter:
             "source": self.sources,
             "connection": self.connections,
             "lookup": self.lookups,
+            "eval_set": self.eval_sets,
         }[kind]
         bucket.append(new_id)
         return new_id
@@ -112,6 +114,10 @@ async def scenario_ids(client: AsyncClient):
     yield minter
     for pid in minter.pipelines:
         await client.delete(f"/api/pipelines/{pid}")
+    # Eval sets before sources: examples cascade off the set, and the set
+    # points at the source it labels.
+    for esid in minter.eval_sets:
+        await client.delete(f"/api/eval-sets/{esid}")
     for lid in minter.lookups:
         await client.delete(f"/api/lookup-tables/{lid}")
     for did in minter.destinations:

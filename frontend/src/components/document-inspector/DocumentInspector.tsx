@@ -6,6 +6,7 @@ import { getExtractedBlocks, type ExtractedBlock } from "@/lib/api";
 import { resolveHighlight, type Provenance, type Rect } from "@/lib/provenance";
 import { usePdfDocument } from "./use-pdf-document";
 import { PdfPageCanvas } from "./PdfPageCanvas";
+import { LabelFromInspector } from "@/components/evals/label-from-inspector";
 
 export interface InspectorField {
   name: string;
@@ -21,12 +22,16 @@ export function DocumentInspector({
   initialPage = 1,
   fields = [],
   filename,
+  labelable = false,
 }: {
   docKey: string;
   extractKey?: string | null;
   initialPage?: number;
   fields?: InspectorField[];
   filename?: string | null;
+  /** Offer "use this as ground truth". Off by default — the inspector is
+   *  also opened in read-only contexts where labeling would be noise. */
+  labelable?: boolean;
 }) {
   const { doc, error, loading, pages } = usePdfDocument(docKey);
   const [page, setPage] = useState(initialPage);
@@ -183,6 +188,16 @@ export function DocumentInspector({
           })}
         </div>
       </Panel>
+
+      {labelable && (
+        <div className="col-span-2">
+          <LabelFromInspector
+            docKey={docKey}
+            docRef={filename ?? null}
+            values={Object.fromEntries(fields.map((f) => [f.name, f.value]))}
+          />
+        </div>
+      )}
 
       {blocksErr && (
         <div className="col-span-2">

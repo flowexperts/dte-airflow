@@ -29,7 +29,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from dte.api.deps import get_pipeline_store, get_schedule_store
+from dte.api.deps import get_eval_set_store, get_pipeline_store, get_schedule_store
 from dte.compiler.interpolate import ParamValidationError, resolve_context
 from dte.models.pipeline import ScheduleBase
 from dte.scheduling.cron import InvalidCronExpression, InvalidTimezone, next_fire_after
@@ -51,6 +51,35 @@ class ScheduleWriteRequest(BaseModel):
     params: dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
     overlap: Literal["skip", "allow"] = "skip"
+    eval_set_id: str | None = None
+
+
+async def _validate_eval_set(pipeline, eval_set_id: str | None, es_store) -> None:
+    """Same three rules the trigger route enforces, applied at save time.
+
+    A schedule is a trigger on a timer. If the two paths disagree about
+    what a valid eval run looks like, the disagreement surfaces at 2am
+    with nobody watching — which is precisely the failure mode plan 047
+    calls out for params and that plan 051 inherits.
+    """
+    ptype = getattr(pipeline, "pipeline_type", "transform") or "transform"
+    if ptype == "eval" and not eval_set_id:
+        raise HTTPException(
+            status_code=422,
+            detail="eval pipelines must be scheduled with an eval_set_id — "
+                   "a scheduled eval run with no corpus scores nothing",
+        )
+    if eval_set_id and ptype != "eval":
+        raise HTTPException(
+            status_code=422,
+            detail=f"eval_set_id is only valid for eval pipelines (this one is {ptype!r})",
+        )
+    # Resolved here rather than at fire time: a typo'd id would otherwise
+    # persist happily and fail once a night, forever.
+    if eval_set_id and not await es_store.get(eval_set_id):
+        raise HTTPException(
+            status_code=422, detail=f"eval set not found: {eval_set_id}"
+        )
 
 
 def _compute_next_run_at(cron_expr: str, tz_name: str, enabled: bool) -> datetime | None:
@@ -86,6 +115,7 @@ async def create_schedule(
     body: ScheduleWriteRequest,
     p_store: PipelineStore = Depends(get_pipeline_store),
     sch_store: ScheduleStore = Depends(get_schedule_store),
+    es_store=Depends(get_eval_set_store),
 ):
     pipeline = await p_store.get(pipeline_id)
     if not pipeline:
@@ -93,6 +123,7 @@ async def create_schedule(
 
     next_run_at = _compute_next_run_at(body.cron_expr, body.timezone, body.enabled)
     _validate_params(pipeline, body.params)
+    await _validate_eval_set(pipeline, body.eval_set_id, es_store)
 
     schedule = ScheduleBase(
         id=body.id or str(_uuid.uuid4()),
@@ -103,6 +134,7 @@ async def create_schedule(
         enabled=body.enabled,
         overlap=body.overlap,
         next_run_at=next_run_at,
+        eval_set_id=body.eval_set_id,
     )
     await sch_store.save(schedule)
     return schedule
@@ -139,6 +171,7 @@ async def update_schedule(
     body: ScheduleWriteRequest,
     p_store: PipelineStore = Depends(get_pipeline_store),
     sch_store: ScheduleStore = Depends(get_schedule_store),
+    es_store=Depends(get_eval_set_store),
 ):
     existing = await sch_store.get(schedule_id)
     if not existing:
@@ -149,6 +182,7 @@ async def update_schedule(
 
     next_run_at = _compute_next_run_at(body.cron_expr, body.timezone, body.enabled)
     _validate_params(pipeline, body.params)
+    await _validate_eval_set(pipeline, body.eval_set_id, es_store)
 
     updated = ScheduleBase(
         id=schedule_id,
@@ -162,6 +196,7 @@ async def update_schedule(
         last_run_id=existing.last_run_id,
         last_fired_at=existing.last_fired_at,
         tenant_id=existing.tenant_id,
+        eval_set_id=body.eval_set_id,
     )
     await sch_store.save(updated)
     return updated

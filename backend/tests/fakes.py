@@ -9,6 +9,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from dte.models.eval import (
+    EvalExample, EvalExampleBase,
+    EvalSet, EvalSetBase,
+)
 from dte.models.pipeline import (
     Connection, ConnectionBase,
     Destination, DestinationBase,
@@ -119,6 +123,14 @@ class FakeRunStore:
             "job_id": None,
             "last_heartbeat_at": None,
             "schedule_id": None,
+            # Plan 051. Present-but-null on every run, not only eval runs, so
+            # a caller reading them off a transform run gets None rather than
+            # a KeyError — same contract the Postgres select list gives.
+            "eval_set_id": None,
+            "labels_version": None,
+            "config_digest": None,
+            "sweep_id": None,
+            "scores": None,
         }
         return run_id
 
@@ -134,6 +146,14 @@ class FakeRunStore:
         self, pipeline_id: str, limit: int = 50, offset: int = 0
     ) -> list[dict]:
         rows = [r for r in self._data.values() if r["pipeline_id"] == pipeline_id]
+        return rows[offset : offset + limit]
+
+    async def list_for_eval_set(
+        self, eval_set_id: str, limit: int = 50, offset: int = 0
+    ) -> list[dict]:
+        rows = [r for r in self._data.values() if r.get("eval_set_id") == eval_set_id]
+        # Newest first, matching the Postgres `ORDER BY started_at DESC`.
+        rows.reverse()
         return rows[offset : offset + limit]
 
     async def count_for_pipeline(self, pipeline_id: str) -> int:
@@ -483,6 +503,10 @@ class FakeScheduleStore:
         items = [s for s in self._data.values() if s.pipeline_id == pipeline_id]
         return sorted(items, key=lambda s: s.created_at or _utcnow(), reverse=True)
 
+    async def list_for_eval_set(self, eval_set_id: str) -> list[Schedule]:
+        items = [s for s in self._data.values() if s.eval_set_id == eval_set_id]
+        return sorted(items, key=lambda s: s.created_at or _utcnow(), reverse=True)
+
     async def list_due(self, now: datetime) -> list[Schedule]:
         return [
             s for s in self._data.values()
@@ -641,3 +665,108 @@ class FakeRoleStore:
 
     async def list(self) -> list[Role]:
         return sorted(self._data.values(), key=lambda r: r.name)
+
+
+class FakeEvalSetStore:
+    """In-memory eval-set store. `bump_labels_version` mirrors the Postgres
+    store's SQL increment — separate from `save` so a CRUD edit of the name
+    cannot invalidate every score recorded against the set."""
+
+    def __init__(self):
+        self._data: dict[str, EvalSet] = {}
+
+    async def get(self, id: str) -> EvalSet | None:
+        return self._data.get(id)
+
+    async def save(self, eval_set: "EvalSetBase | EvalSet") -> None:
+        existing = self._data.get(eval_set.id)
+        values = eval_set.model_dump(exclude={"created_at", "updated_at"})
+        if existing is not None:
+            # labels_version is owned by bump_labels_version, not by save.
+            values["labels_version"] = existing.labels_version
+        row = EvalSet(**values)
+        row.created_at = existing.created_at if existing else _utcnow()
+        row.updated_at = _utcnow()
+        self._data[row.id] = row
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[EvalSet]:
+        items = sorted(
+            self._data.values(), key=lambda e: e.created_at or _utcnow(), reverse=True
+        )
+        return items[offset : offset + limit]
+
+    async def delete(self, id: str) -> bool:
+        if id in self._data:
+            del self._data[id]
+            return True
+        return False
+
+    async def bump_labels_version(self, id: str) -> int:
+        row = self._data.get(id)
+        if row is None:
+            return 0
+        row.labels_version += 1
+        row.updated_at = _utcnow()
+        return row.labels_version
+
+
+class FakeEvalExampleStore:
+    """In-memory labeled-document store. Keyed by `(eval_set_id, doc_key)` —
+    the same natural key the Postgres UNIQUE constraint enforces — so
+    relabeling a document replaces its label rather than accumulating a second
+    contradictory one."""
+
+    def __init__(self):
+        self._data: dict[tuple[str, str], EvalExample] = {}
+
+    def _key(self, example) -> tuple[str, str]:
+        return (example.eval_set_id, example.doc_key)
+
+    async def get(self, id: str) -> EvalExample | None:
+        return next((e for e in self._data.values() if e.id == id), None)
+
+    async def get_by_doc_key(self, eval_set_id: str, doc_key: str) -> EvalExample | None:
+        return self._data.get((eval_set_id, doc_key.lower()))
+
+    async def save(self, example: "EvalExampleBase | EvalExample") -> None:
+        key = self._key(example)
+        existing = self._data.get(key)
+        values = example.model_dump(exclude={"created_at", "updated_at"})
+        if existing is not None:
+            # The row identity belongs to the document, not to whatever id the
+            # caller happened to mint for this write.
+            values["id"] = existing.id
+        row = EvalExample(**values)
+        row.created_at = existing.created_at if existing else _utcnow()
+        row.updated_at = _utcnow()
+        self._data[key] = row
+
+    async def list_for_set(
+        self,
+        eval_set_id: str,
+        split: str | None = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[EvalExample]:
+        items = [e for e in self._data.values() if e.eval_set_id == eval_set_id]
+        if split is not None:
+            items = [e for e in items if e.split == split]
+        items.sort(key=lambda e: e.created_at or _utcnow())
+        return items[offset : offset + limit]
+
+    async def count_for_set(self, eval_set_id: str, split: str | None = None) -> int:
+        return len(await self.list_for_set(eval_set_id, split=split, limit=10**9))
+
+    async def count_by_label_source(self, eval_set_id: str) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for e in self._data.values():
+            if e.eval_set_id == eval_set_id:
+                counts[e.label_source] = counts.get(e.label_source, 0) + 1
+        return counts
+
+    async def delete(self, id: str) -> bool:
+        key = next((k for k, e in self._data.items() if e.id == id), None)
+        if key is None:
+            return False
+        del self._data[key]
+        return True

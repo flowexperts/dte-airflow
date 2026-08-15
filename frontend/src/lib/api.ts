@@ -123,7 +123,7 @@ export interface Pipeline {
   /** Quality contracts evaluated after each run (plan 044). */
   quality_contracts?: QualityContract[];
   /** Pipeline type: "transform" (default) writes output data; "quality" asserts conditions. */
-  pipeline_type?: "transform" | "quality";
+  pipeline_type?: "transform" | "quality" | "eval";
 }
 
 /** Structured 4xx payloads returned by pipeline save / trigger when the
@@ -777,6 +777,9 @@ export interface Schedule {
   next_run_at: string | null;
   last_run_id: string | null;
   last_fired_at: string | null;
+  /** Required on an eval pipeline's schedule, forbidden on any other —
+   *  the corpus the nightly run scores against. */
+  eval_set_id: string | null;
 }
 
 /** Matches `ScheduleWriteRequest` on the backend — shared POST/PUT body. */
@@ -787,6 +790,7 @@ export interface ScheduleWriteRequest {
   params: Record<string, string>;
   enabled: boolean;
   overlap: OverlapPolicy;
+  eval_set_id?: string | null;
 }
 
 export const listSchedulesForPipeline = (pipelineId: string) =>
@@ -870,3 +874,283 @@ export const isTerminal = (status: RunStatus | undefined): boolean =>
 
 // re-export the OpenAPI namespaces for consumers wanting the raw types
 export type { components, paths } from "./api-types";
+
+// ── Evals (plan 051) ─────────────────────────────────────────────────────
+
+export type LabelSource = "human" | "consensus" | "imported" | "judge";
+export type EvalSplit = "train" | "holdout";
+
+export interface EvalFieldSpec {
+  name: string;
+  type: string;
+  description?: string;
+  comparator?: Record<string, unknown>;
+}
+
+export interface EvalSet {
+  id: string;
+  name: string;
+  source_id: string;
+  field_specs: EvalFieldSpec[];
+  labels_version: number;
+  example_count?: number;
+  holdout_count?: number;
+  label_sources?: Record<string, number>;
+  judge_labeled_warning?: string | null;
+  /** Best macro-F1 among runs scored against the *current* labels. Null
+   *  means never run — not zero, which is a measured failure. */
+  best_macro_f1?: number | null;
+  last_run_at?: string | null;
+}
+
+export interface EvalExample {
+  id: string;
+  eval_set_id: string;
+  doc_key: string;
+  doc_ref: string | null;
+  labels: Record<string, unknown>;
+  label_source: LabelSource;
+  split: EvalSplit;
+  labels_version: number | null;
+}
+
+export interface FieldMetrics {
+  name: string;
+  tp: number;
+  fp: number;
+  fn: number;
+  tn: number;
+  n: number;
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
+  exact_match_rate: number | null;
+  null_rate: number | null;
+}
+
+export interface EvalScores {
+  macro_f1: number | null;
+  n: number;
+  fields: FieldMetrics[];
+  macro_f1_interval?: [number, number];
+  holdout?: EvalScores | null;
+  label_sources?: Record<string, number>;
+  documents_produced?: number;
+  regression?: {
+    previous_run_id: string;
+    previous_macro_f1: number;
+    current_macro_f1: number;
+    drop: number;
+  } | null;
+}
+
+export interface LeaderboardEntry {
+  run_id: string;
+  pipeline_id: string;
+  status: RunStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  config_digest: string | null;
+  sweep_id: string | null;
+  labels_version: number | null;
+  /** Scored against labels that have since changed — shown, never ranked. */
+  stale: boolean;
+  macro_f1: number | null;
+  macro_f1_interval?: [number, number];
+  n: number;
+  fields: FieldMetrics[];
+  holdout?: EvalScores | null;
+  regression?: EvalScores["regression"];
+  rank?: number;
+  tied_with_leader?: boolean;
+  throughput?: Throughput | null;
+}
+
+export interface Leaderboard {
+  entries: LeaderboardEntry[];
+  ranking: LeaderboardEntry[];
+  labels_version: number;
+  judge_labeled_warning: string | null;
+}
+
+export interface FieldFailure {
+  doc_key: string;
+  doc_ref: string | null;
+  field: string;
+  expected: unknown;
+  actual: unknown;
+  split: EvalSplit;
+}
+
+export const listEvalSets = () => apiFetch<EvalSet[]>("/api/eval-sets");
+
+export const getEvalSet = (id: string) =>
+  apiFetch<EvalSet>(`/api/eval-sets/${encodeURIComponent(id)}`);
+
+export const createEvalSet = (body: Partial<EvalSet>) =>
+  apiFetch<EvalSet>("/api/eval-sets", { method: "POST", body: JSON.stringify(body) });
+
+export const updateEvalSet = (id: string, body: Partial<EvalSet>) =>
+  apiFetch<EvalSet>(`/api/eval-sets/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteEvalSet = (id: string) =>
+  apiFetch<void>(`/api/eval-sets/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+export const listEvalExamples = (id: string, opts: { split?: string; limit?: number; offset?: number } = {}) => {
+  const q = new URLSearchParams();
+  if (opts.split) q.set("split", opts.split);
+  if (opts.limit != null) q.set("limit", String(opts.limit));
+  if (opts.offset != null) q.set("offset", String(opts.offset));
+  const qs = q.toString();
+  return apiFetch<{ examples: EvalExample[]; total: number }>(
+    `/api/eval-sets/${encodeURIComponent(id)}/examples${qs ? `?${qs}` : ""}`,
+  );
+};
+
+export const upsertEvalExample = (
+  id: string,
+  body: {
+    doc_key: string;
+    doc_ref?: string | null;
+    labels: Record<string, unknown>;
+    label_source?: LabelSource;
+    split?: EvalSplit;
+  },
+) =>
+  apiFetch<{ example: EvalExample; labels_version: number }>(
+    `/api/eval-sets/${encodeURIComponent(id)}/examples`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const importEvalExamples = (
+  id: string,
+  body: { format: "csv" | "jsonl"; content: string; label_source?: LabelSource; split?: EvalSplit },
+) =>
+  apiFetch<{ imported: number; errors: { row: number; error: string }[]; labels_version: number }>(
+    `/api/eval-sets/${encodeURIComponent(id)}/examples:import`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+/** One document several variants disagreed on — the review queue's unit of
+ *  work. `candidates` is per contested field, keyed by variant. */
+export interface ConsensusDisagreement {
+  doc_key: string;
+  agreed_fields: Record<string, unknown>;
+  candidates: Record<string, Record<string, unknown>>;
+}
+
+export interface BootstrapResult {
+  agreed: { doc_key: string; labels: Record<string, unknown> }[];
+  disagreed: ConsensusDisagreement[];
+  auto_accept: boolean;
+  warning: string | null;
+  n_documents: number;
+  written: number;
+  labels_version: number;
+}
+
+/** `confirm: false` returns proposals and writes nothing. Bootstrap writes
+ *  ground truth, so the preview is always the default. */
+export const bootstrapEvalSet = (
+  id: string,
+  variantPipelineIds: string[],
+  confirm = false,
+) =>
+  apiFetch<BootstrapResult>(`/api/eval-sets/${encodeURIComponent(id)}/bootstrap`, {
+    method: "POST",
+    body: JSON.stringify({ variant_pipeline_ids: variantPipelineIds, confirm }),
+  });
+
+export interface ProposeResult {
+  proposals: { doc_key: string; labels: Record<string, unknown> }[];
+  written: number;
+  labels_version: number;
+  warning: string;
+}
+
+export const proposeEvalLabels = (id: string, pipelineId: string, confirm = false) =>
+  apiFetch<ProposeResult>(`/api/eval-sets/${encodeURIComponent(id)}/propose`, {
+    method: "POST",
+    body: JSON.stringify({ pipeline_id: pipelineId, confirm }),
+  });
+
+/** Copy a scored eval config into a shippable transform pipeline. */
+export const promoteEvalPipeline = (
+  id: string,
+  body: { pipeline_id: string; new_pipeline_id: string; name: string; output_id: string },
+) =>
+  apiFetch<{ pipeline_id: string; config_digest: string }>(
+    `/api/eval-sets/${encodeURIComponent(id)}/promote`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const getLeaderboard = (id: string) =>
+  apiFetch<Leaderboard>(`/api/eval-sets/${encodeURIComponent(id)}/leaderboard`);
+
+export const getFieldFailures = (id: string, field: string, runId?: string) =>
+  apiFetch<{ run_id: string; field: string; failures: FieldFailure[] }>(
+    `/api/eval-sets/${encodeURIComponent(id)}/fields/${encodeURIComponent(field)}/failures` +
+      (runId ? `?run_id=${encodeURIComponent(runId)}` : ""),
+  );
+
+/** Cost, cache-hit rate and latency for one run, measured from the rows
+ *  that were actually scored. Nulls are load-bearing: an unpriced model or
+ *  a run with no model calls reports null rather than a misleading zero. */
+export interface Throughput {
+  n_calls: number;
+  cache_hit_rate: number | null;
+  latency_p50_ms: number | null;
+  latency_p95_ms: number | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+}
+
+export interface SweepEstimate {
+  cells: number;
+  documents: number;
+  uncached_calls: number;
+  /** Null when no prior run has established a per-document price. */
+  est_cost_usd?: number | null;
+  cost_basis?: string;
+  matrix: Record<string, unknown>[];
+  enqueued: boolean;
+  sweep_id?: string;
+  /** Only present once confirmed — one real pipeline and run per cell. */
+  runs?: { cell: Record<string, unknown>; pipeline_id: string; run_id: string }[];
+}
+
+export const previewSweep = (id: string, pipelineId: string, matrix: Record<string, unknown[]>) =>
+  apiFetch<SweepEstimate>(`/api/eval-sets/${encodeURIComponent(id)}/sweep`, {
+    method: "POST",
+    body: JSON.stringify({ pipeline_id: pipelineId, matrix, confirm: false }),
+  });
+
+export const launchSweep = (id: string, pipelineId: string, matrix: Record<string, unknown[]>) =>
+  apiFetch<SweepEstimate>(`/api/eval-sets/${encodeURIComponent(id)}/sweep`, {
+    method: "POST",
+    body: JSON.stringify({ pipeline_id: pipelineId, matrix, confirm: true }),
+  });
+
+/** Trigger an eval pipeline against a corpus. */
+export const triggerEval = (pipelineId: string, evalSetId: string) =>
+  apiFetch<{ run_id: string }>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/trigger`,
+    { method: "POST", body: JSON.stringify({ eval_set_id: evalSetId }) },
+  );
+
+/**
+ * Two configs are indistinguishable when their confidence intervals overlap.
+ * Mirrors `dte.evals.scoring.intervals_overlap` — the UI must not render a
+ * ranking the backend refused to make.
+ */
+export const intervalsOverlap = (
+  a: [number, number] | undefined,
+  b: [number, number] | undefined,
+): boolean => {
+  if (!a || !b) return false;
+  return a[0] <= b[1] && b[0] <= a[1];
+};

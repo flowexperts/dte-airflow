@@ -389,6 +389,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/artifacts/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Artifact
+         * @description Stream a stored artifact by content hash.
+         *
+         *     Rows carry `artifact://<key>` refs rather than blobs; this is where the
+         *     document inspector fetches the bytes to render a PDF page.
+         *
+         *     Served as a stream with byte-range support so a 500-page document costs
+         *     the client only the pages it looks at and the server only a chunk of RSS
+         *     per request — reading the whole artifact to answer either would put a
+         *     hard ceiling on document size.
+         *
+         *     Guarded by `run:read` rather than a new permission: artifacts are run
+         *     output, and anyone who may read a run's rows may read what those rows
+         *     point at.
+         */
+        get: operations["get_artifact_api_artifacts__key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/schema/infer": {
         parameters: {
             query?: never;
@@ -708,6 +740,215 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/eval-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Eval Sets */
+        get: operations["list_eval_sets_api_eval_sets_get"];
+        put?: never;
+        /** Create Eval Set */
+        post: operations["create_eval_set_api_eval_sets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Set */
+        get: operations["get_eval_set_api_eval_sets__eval_set_id__get"];
+        /** Update Eval Set */
+        put: operations["update_eval_set_api_eval_sets__eval_set_id__put"];
+        post?: never;
+        /** Delete Eval Set */
+        delete: operations["delete_eval_set_api_eval_sets__eval_set_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}/examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Examples */
+        get: operations["list_examples_api_eval_sets__eval_set_id__examples_get"];
+        put?: never;
+        /** Upsert Example */
+        post: operations["upsert_example_api_eval_sets__eval_set_id__examples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}/examples/{example_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Example */
+        delete: operations["delete_example_api_eval_sets__eval_set_id__examples__example_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}/examples:import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Examples */
+        post: operations["import_examples_api_eval_sets__eval_set_id__examples_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bootstrap Eval Set */
+        post: operations["bootstrap_eval_set_api_eval_sets__eval_set_id__bootstrap_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}/propose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose Labels */
+        post: operations["propose_labels_api_eval_sets__eval_set_id__propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Leaderboard */
+        get: operations["leaderboard_api_eval_sets__eval_set_id__leaderboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}/fields/{field}/failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Field Failures
+         * @description Every document where `field` did not match, for one run.
+         *
+         *     Defaults to the most recent scored run so the drill-down works straight
+         *     off the leaderboard without the caller tracking run ids.
+         */
+        get: operations["field_failures_api_eval_sets__eval_set_id__fields__field__failures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}/sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Launch Sweep */
+        post: operations["launch_sweep_api_eval_sets__eval_set_id__sweep_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets/{eval_set_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote Pipeline
+         * @description Copy a scored config into a transform pipeline that writes somewhere.
+         *
+         *     This closes the loop the whole harness exists for. Without it, the
+         *     answer to "which config should I ship" is a number someone re-types
+         *     into the builder by hand — which is exactly where the config that was
+         *     measured and the config that ships start to diverge.
+         *
+         *     The steps are copied verbatim for that reason: the promoted pipeline
+         *     must hash to the same `config_digest` that earned the score, or the
+         *     score is about something else.
+         */
+        post: operations["promote_pipeline_api_eval_sets__eval_set_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users": {
         parameters: {
             query?: never;
@@ -804,6 +1045,30 @@ export interface components {
             /** Role Id */
             role_id: string;
         };
+        /**
+         * BootstrapRequest
+         * @description Run several variants over the corpus and keep what they all agree on.
+         *
+         *     `confirm` defaults False for the same reason `POST /sweep` does, but the
+         *     stake is different and higher: a sweep spends money, while this writes
+         *     *ground truth*. Every future comparison is measured against the corpus,
+         *     so a mis-click here produces an eval set that looks populated and
+         *     quietly encodes whatever the models happened to agree on.
+         */
+        BootstrapRequest: {
+            /** Variant Pipeline Ids */
+            variant_pipeline_ids?: string[];
+            /**
+             * Limit
+             * @default 500
+             */
+            limit: number;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
         /** BulkDeleteRequest */
         BulkDeleteRequest: {
             /** Ids */
@@ -882,10 +1147,88 @@ export interface components {
              */
             tenant_id: string;
         };
+        /**
+         * EvalSetBase
+         * @description A labeled corpus for one extraction task.
+         */
+        EvalSetBase: {
+            /** Id */
+            id?: string;
+            /** Name */
+            name: string;
+            /** Source Id */
+            source_id: string;
+            /** Field Specs */
+            field_specs?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Labels Version
+             * @default 1
+             */
+            labels_version: number;
+            /**
+             * Tenant Id
+             * @default default
+             */
+            tenant_id: string;
+        };
+        /**
+         * ExampleWrite
+         * @description One label write. `id` is server-generated; identity is the document.
+         */
+        ExampleWrite: {
+            /** Doc Key */
+            doc_key: string;
+            /** Doc Ref */
+            doc_ref?: string | null;
+            /** Labels */
+            labels?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Label Source
+             * @default human
+             */
+            label_source: string;
+            /**
+             * Split
+             * @default train
+             */
+            split: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * ImportRequest
+         * @description CSV or JSONL keyed by `doc_key`.
+         *
+         *     Importing by filename is deliberately *not* supported here: resolving a
+         *     name to a content hash means reading the bytes, which this endpoint does
+         *     not have. The UI resolves names against the source listing first and sends
+         *     hashes, so a rename can never silently retarget a label.
+         */
+        ImportRequest: {
+            /**
+             * Format
+             * @default jsonl
+             */
+            format: string;
+            /** Content */
+            content: string;
+            /**
+             * Label Source
+             * @default imported
+             */
+            label_source: string;
+            /**
+             * Split
+             * @default train
+             */
+            split: string;
         };
         /** InferSchemaResponse */
         InferSchemaResponse: {
@@ -996,7 +1339,7 @@ export interface components {
              * @default transform
              * @enum {string}
              */
-            pipeline_type: "transform" | "quality";
+            pipeline_type: "transform" | "quality" | "eval";
             /** Quality Contracts */
             quality_contracts?: unknown[];
             /** Params */
@@ -1032,6 +1375,45 @@ export interface components {
             default?: string | null;
             /** Description */
             description?: string | null;
+        };
+        /**
+         * PromoteRequest
+         * @description Turn the winning eval config into a shippable transform pipeline.
+         */
+        PromoteRequest: {
+            /** Pipeline Id */
+            pipeline_id: string;
+            /** New Pipeline Id */
+            new_pipeline_id: string;
+            /** Name */
+            name: string;
+            /** Output Id */
+            output_id: string;
+        };
+        /**
+         * ProposeRequest
+         * @description One model proposes labels for the whole corpus; a human confirms.
+         *
+         *     The fastest cold start there is, and the one that most needs to stay
+         *     visible: part of the corpus becomes this model's opinion, so scores
+         *     computed against it are partly the model grading itself. Permanently
+         *     tagged `judge` — the leaderboard's >50% warning depends on the tag
+         *     surviving, and folding these into `human` would erase the only signal
+         *     that the circularity exists.
+         */
+        ProposeRequest: {
+            /** Pipeline Id */
+            pipeline_id: string;
+            /**
+             * Limit
+             * @default 500
+             */
+            limit: number;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
         };
         /** RegisterBody */
         RegisterBody: {
@@ -1084,6 +1466,8 @@ export interface components {
              * @enum {string}
              */
             overlap: "skip" | "allow";
+            /** Eval Set Id */
+            eval_set_id?: string | null;
         };
         /**
          * SchemaFieldNode
@@ -1122,7 +1506,7 @@ export interface components {
              * Source Type
              * @enum {string}
              */
-            source_type: "filesystem" | "s3" | "gcs" | "azure" | "sql_database" | "mongodb" | "rest_api";
+            source_type: "filesystem" | "s3" | "gcs" | "azure" | "sql_database" | "mongodb" | "rest_api" | "documents";
             /** Config */
             config?: {
                 [key: string]: unknown;
@@ -1136,6 +1520,25 @@ export interface components {
              * @default default
              */
             tenant_id: string;
+        };
+        /**
+         * SweepRequest
+         * @description A config matrix to expand into one run per cell.
+         *
+         *     `confirm` defaults to False: the first call is always an estimate.
+         */
+        SweepRequest: {
+            /** Pipeline Id */
+            pipeline_id: string;
+            /** Matrix */
+            matrix?: {
+                [key: string]: unknown[];
+            };
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
         };
         /** TokenResponse */
         TokenResponse: {
@@ -1157,6 +1560,10 @@ export interface components {
             params?: {
                 [key: string]: string;
             };
+            /** Eval Set Id */
+            eval_set_id?: string | null;
+            /** Sweep Id */
+            sweep_id?: string | null;
         };
         /** UserPublic */
         UserPublic: {
@@ -1522,6 +1929,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                offset?: number;
             };
             header?: never;
             path: {
@@ -1852,6 +2260,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                offset?: number;
             };
             header?: never;
             path: {
@@ -1933,6 +2342,37 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_artifact_api_artifacts__key__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                Range?: string | null;
+            };
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -2963,6 +3403,508 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_eval_sets_api_eval_sets_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_eval_set_api_eval_sets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalSetBase"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_set_api_eval_sets__eval_set_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_eval_set_api_eval_sets__eval_set_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalSetBase"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_eval_set_api_eval_sets__eval_set_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_examples_api_eval_sets__eval_set_id__examples_get: {
+        parameters: {
+            query?: {
+                split?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_example_api_eval_sets__eval_set_id__examples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExampleWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_example_api_eval_sets__eval_set_id__examples__example_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+                example_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_examples_api_eval_sets__eval_set_id__examples_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bootstrap_eval_set_api_eval_sets__eval_set_id__bootstrap_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BootstrapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_labels_api_eval_sets__eval_set_id__propose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    leaderboard_api_eval_sets__eval_set_id__leaderboard_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    field_failures_api_eval_sets__eval_set_id__fields__field__failures_get: {
+        parameters: {
+            query?: {
+                run_id?: string | null;
+            };
+            header?: never;
+            path: {
+                eval_set_id: string;
+                field: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    launch_sweep_api_eval_sets__eval_set_id__sweep_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SweepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_pipeline_api_eval_sets__eval_set_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eval_set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

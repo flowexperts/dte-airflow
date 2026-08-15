@@ -19,6 +19,7 @@ from dte.api.routes.connections import router as connections_router
 from dte.api.routes.destinations import router as destinations_router
 from dte.api.routes.health import router as health_router
 from dte.api.routes.lookup_tables import router as lookup_tables_router
+from dte.api.routes.evals import router as evals_router
 from dte.api.routes.schedules import router as schedules_router
 from dte.api.routes.pipelines import router as pipelines_router
 from dte.api.routes.runs import router as runs_router
@@ -117,6 +118,7 @@ app.include_router(destinations_router, prefix="/api", dependencies=_auth)
 app.include_router(connections_router, prefix="/api", dependencies=_auth)
 app.include_router(lookup_tables_router, prefix="/api", dependencies=_auth)
 app.include_router(schedules_router, prefix="/api", dependencies=_auth)
+app.include_router(evals_router, prefix="/api", dependencies=_auth)
 app.include_router(users_router, prefix="/api", dependencies=_auth)
 
 # Mount FastAdmin at /admin when DTE_ADMIN_ENABLED=true. Off by default so

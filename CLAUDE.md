@@ -316,14 +316,126 @@ step's `params.api_key`: step params are stored unencrypted in
 `pipelines.steps` JSONB and copied into every revision. See
 `plans/052-model-provider-connections.md`.
 
-### Eval scoring core (plan 051)
+### Eval harness (plan 051)
 
-`dte/evals/` — `comparators.py` and `scoring.py`. Pure functions, no I/O, no
-storage; the rest of the harness is unbuilt. Comparators are forgiving on
-formatting and strict on semantics (`$1,240.50` matches `1240.5`; `1240.50`
-does not match `1204.50`). Metrics are precision/recall/F1, never accuracy,
-and correct abstention (`tn`) is counted separately from a silent miss (`fn`)
-— without that split an extractor that answers nothing scores well.
+**Scoring core.** `dte/evals/` — `comparators.py` and `scoring.py`. Pure
+functions, no I/O, no storage. Comparators are forgiving on formatting and
+strict on semantics (`$1,240.50` matches `1240.5`; `1240.50` does not match
+`1204.50`). Metrics are precision/recall/F1, never accuracy, and correct
+abstention (`tn`) is counted separately from a silent miss (`fn`) — without
+that split an extractor that answers nothing scores well.
+
+**Storage** (migration `034`). `eval_sets` holds a labeled corpus for one
+extraction task; `eval_examples` holds one labeled document per row. Models in
+`dte/models/eval.py`, stores in `dte/store/postgres.py`, protocols in
+`store/base.py`, fakes in `tests/fakes.py`.
+
+- **`doc_key` is `sha256(document bytes)`** — the same key the plan-050
+  artifact store uses. Labels therefore survive renames and directory moves,
+  and join directly against extraction output with no path matching. The model
+  rejects anything that isn't a 64-char hex digest: a filename here would join
+  against nothing and the set would score a permanent zero with no error.
+- **`eval_examples` is upserted on `(eval_set_id, doc_key)`, not on `id`.**
+  The natural identity of a label is the document it labels; without the
+  UNIQUE constraint, relabeling appends a contradictory second row that then
+  gets scored twice.
+- **`labels_version` is owned by `bump_labels_version`, never by `save`.**
+  Every label write bumps it and runs pin what they scored against, so folding
+  it into `save` would let a rename invalidate every historical score. The
+  Postgres increment happens in SQL — two concurrent labelers must not both
+  read 3 and both write 4.
+- **`field_specs` is the scorer's own model.** `EvalSetBase.to_field_specs()`
+  is the single conversion, and an unknown comparator type is rejected at save
+  time — a bad comparator must fail when the set is created, not at the end of
+  a paid sweep.
+- **Five new `runs` columns**: `eval_set_id`, `labels_version`,
+  `config_digest`, `sweep_id`, `scores`. All nullable with no default —
+  "never scored" must stay distinguishable from "scored zero". `runs` is raw
+  SQL with no SQLModel, so the select list now lives in one constant
+  (`_RUN_COLUMNS`) and the jsonb write set in another (`_RUN_JSONB_COLUMNS`);
+  adding a column means editing those two plus the migration. It used to be
+  duplicated across `get` and `list_for_pipeline`, where a column added to one
+  and forgotten in the other simply vanished from that read path.
+- `eval:read` / `eval:write` / `eval:delete` are granted to the seeded roles
+  by migration `034` itself. Adding a value to `Permission` in code only
+  changes what *may* be checked; the `roles` table holds what is granted.
+
+**The run path.** `pipeline_type: "eval"` pipelines go through the eval branch
+of `_run_body`: compile → materialise → join to labels on `doc_key` → score →
+persist. Scoring lives in the runner, not the compiler, mirroring
+`evaluate_contracts` — precision/recall over a corpus *is* an aggregation, and
+`_validate_steps` rejects `aggregate` outside transform pipelines.
+
+- **`artifact_ref` is `artifact://<sha256>`, `doc_key` is the bare digest.**
+  `_doc_key_from_ref` strips the scheme. Without it every join misses, the
+  corpus scores a flat zero, and nothing errors.
+- **`FieldMetrics.f1` is `2tp/(2tp+fp+fn)`**, not the harmonic mean of
+  precision and recall. Precision is undefined when an extractor answers
+  nothing, so the harmonic form returned `None` for a total failure — which
+  renders as "unrated" and drops out of ranking exactly like an unscored set.
+- Eval and quality pipelines both have **no destination**. Anything gating on
+  `output_id` (the builder's save validation, its schema-inference effect)
+  needs to allow both or an eval pipeline cannot be saved or edited.
+
+**Labeling** — four paths, all writing through `EvalExampleStore.save`, all
+bumping `labels_version`:
+
+- `POST /eval-sets/{id}/examples:import` (CSV/JSONL), `.../bootstrap`
+  (consensus over N variants), `.../propose` (LLM judge), and the
+  **inspector's Correct / Fix buttons**, which are the highest-leverage path
+  because the reviewer is already comparing the value to the page.
+- **`consensus()` requires unanimity, uses the eval set's own comparators, and
+  refuses to treat unanimous null as agreement.** All three matter: majority
+  voting among variants sharing a model counts one opinion twice; string
+  equality would route a currency corpus into review; and a null label asserts
+  the right answer is *nothing*, after which every abstaining extractor scores
+  a hit. The review UI must agree with this — a variant's miss is never
+  offered as a pickable label, and "document doesn't state this" is a separate,
+  explicit option.
+- Variants sharing a `provider` block auto-accept (409). Judge labels are
+  permanently tagged; the leaderboard's >50% warning depends on the tag.
+
+**Sweeps.** `POST /eval-sets/{id}/sweep` with `confirm=false` estimates and
+enqueues nothing. Confirmed, each cell becomes a **real pipeline and run** via
+`start_eval_run` — the same path a manual trigger uses. `dte/evals/sweep.py`:
+
+- `detached_copy` rebuilds from `model_dump()` rather than `copy.deepcopy`. A
+  pipeline loaded from Postgres is SQLAlchemy-instrumented; deep-copying it
+  and assigning `.id` raises `ObjectDereferencedError`. The fakes return
+  detached instances, so this passes every unit test and 500s in production.
+- `variant_id` is derived from the config digest, so relaunching a sweep
+  reuses rows and hits the extract cache instead of re-paying under a new name.
+- An unknown matrix axis **raises**. Dropping a typo silently yields N
+  identical cells scoring the same, which reads as "this setting makes no
+  difference".
+
+**Schedules** carry an optional `eval_set_id` (migration `035`) and the ticker
+stamps it onto the run row, only when set. Validation at save time repeats the
+trigger route's rules exactly — a schedule is a trigger on a timer, and a
+disagreement between the two surfaces at 2am. No FK: deleting an eval set a
+schedule references returns 409 naming the schedules.
+
+**Frontend** — `/eval-sets` (list, with best-F1 and last-run), `/eval-sets/new`
+(create) and `/eval-sets/[id]` (Leaderboard / Examples / Review).
+`pipeline_type` includes `"eval"` in `api.ts`, the builder, and `StepsPanel`
+(which hides `aggregate`/`pivot` — they would collapse the rows the labels
+join against). `/eval-sets` is a **server component**: never
+`toLocaleDateString()` there, it hydration-mismatches.
+
+**Three objects, and "eval" used to name two of them.** An **eval set** is the
+labeled corpus (`/eval-sets`); an **eval pipeline** is an extraction config
+under test (`/pipelines?type=eval`); an **eval run** is one scoring of one
+pipeline against one set at one `labels_version`. The route was `/evals` while
+the nav also carried "Eval" for pipelines — two different objects a letter
+apart. The frontend route now matches the model, the table and the API, all of
+which were already `eval_set(s)`; `next.config.ts` keeps a permanent redirect
+from `/evals/*`.
+
+Anything user-visible that filters by `pipeline_type` must come from
+`PIPELINE_TYPE_TABS` (`lib/pipeline-type.ts`), which drives the sidebar and
+the list page together. Eval pipelines shipped creatable and reachable from
+nowhere because the nav and the page each knew about a different subset of
+types, and an unrecognised `?type=` silently means "no filter".
 
 ### Field references and nested columns
 
@@ -430,6 +542,20 @@ GET    /api/connections/{id}              read (?reveal=true for plaintext creds
 PUT    /api/connections/{id}              update (empty credentials keeps existing)
 DELETE /api/connections/{id}              409 with {referenced_by: {sources, destinations}} if in use
 POST   /api/connections/{id}/test         connectivity probe → {ok, elapsed_ms, detail}
+
+POST   /api/eval-sets                     create eval set
+GET    /api/eval-sets                     list (+ best_macro_f1, last_run_at)
+GET/PUT/DELETE /api/eval-sets/{id}        read / update / delete (409 if scheduled)
+POST   /api/eval-sets/{id}/examples       upsert one label on (eval_set_id, doc_key)
+GET    /api/eval-sets/{id}/examples       list labels
+DELETE /api/eval-sets/{id}/examples/{eid} remove a label
+POST   /api/eval-sets/{id}/examples:import CSV/JSONL bulk import
+POST   /api/eval-sets/{id}/bootstrap      consensus over N variants (confirm to write)
+POST   /api/eval-sets/{id}/propose        LLM-judge labels (confirm to write)
+POST   /api/eval-sets/{id}/sweep          estimate, then confirm to enqueue one run/cell
+POST   /api/eval-sets/{id}/promote        copy a winning config into a transform pipeline
+GET    /api/eval-sets/{id}/leaderboard    ranked runs; ties within the Wilson interval
+GET    /api/eval-sets/{id}/fields/{f}/failures  expected-vs-got for one field
 ```
 
 `Run` responses include `id`, `pipeline_id`, `status` (`pending`/`running`/`completed`/`failed`), `error`, `rows_written`, `started_at`, `finished_at`. Per-step run events are **not** recorded yet — the frontend `Timeline` renders an empty state placeholder.

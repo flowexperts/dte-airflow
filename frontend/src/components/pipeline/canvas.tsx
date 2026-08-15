@@ -328,7 +328,11 @@ export function PipelineCanvas({
    * Hidden on a revision: schedules are not versioned, so showing one beside
    * a historical spec would imply a cadence that spec never carried. */
   const scheduleBlock = revision ? null : (
-    <SchedulePanel pipelineId={pipeline.id} pipelineParams={pipeline.params} />
+    <SchedulePanel
+      pipelineId={pipeline.id}
+      pipelineParams={pipeline.params}
+      pipelineType={pipeline.pipeline_type}
+    />
   );
 
   /* No rail on a revision. Preview compiles the *saved* pipeline, so showing

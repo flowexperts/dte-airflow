@@ -65,11 +65,22 @@ def test_execute_pipeline_signature_unchanged():
 
     from dte.worker.tasks import _execute_pipeline
 
-    params = list(inspect.signature(_execute_pipeline).parameters)
-    assert params == [
+    sig = inspect.signature(_execute_pipeline)
+    positional = [
+        name for name, p in sig.parameters.items()
+        if p.kind is not inspect.Parameter.KEYWORD_ONLY
+    ]
+    assert positional == [
         "pipeline_id", "run_id", "p_store", "r_store", "re_store",
         "s_store", "d_store", "c_store", "lt_store",
     ]
+    # Plan 051 added the eval stores. They are keyword-only and default to
+    # None precisely so the positional contract above stays intact and every
+    # existing caller keeps working untouched — which is what this test is
+    # actually guarding.
+    for name in ("es_store", "ee_store"):
+        assert sig.parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+        assert sig.parameters[name].default is None
 
 
 @pytest.fixture

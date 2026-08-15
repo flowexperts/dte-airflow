@@ -307,6 +307,18 @@ def _apply_structure(
     stats = {"calls": 0, "cached": 0, "errors": 0,
              "input_tokens": 0, "output_tokens": 0}
 
+    def _structure_model(step) -> str:
+        """The model that actually served the call, for per-row pricing.
+
+        `params["model"]` when set, else the provider's default. Recorded
+        per row rather than per run because a sweep varies it, and a run
+        priced against the wrong model is a wrong bill.
+        """
+        explicit = (step.params or {}).get("model")
+        if explicit:
+            return str(explicit)
+        return getattr(provider, "_default_model", "") or step.provider
+
     def _mapper(row: dict) -> list[dict]:
         text = row.get(step.input_field)
         blank = {f.name: None for f in step.model.fields}
@@ -327,6 +339,11 @@ def _apply_structure(
             stats["cached"] += 1
             meta = {"provider": step.provider, "cached": True,
                     "error": payload.get("error"), "ms": 0,
+                    # Zero tokens is the literal truth on a cache hit: no
+                    # call was made. That is what makes the cache visible
+                    # in the run's cost rather than merely asserted.
+                    "input_tokens": 0, "output_tokens": 0,
+                    "model": _structure_model(step),
                     "fields": payload.get("provenance", {})}
             return [{**payload["values"], "structure_meta": json.dumps(meta, default=str)}]
 
@@ -357,6 +374,9 @@ def _apply_structure(
             "structure_meta": json.dumps({
                 "provider": step.provider, "cached": False,
                 "error": result.error, "ms": result.elapsed_ms,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+                "model": _structure_model(step),
                 "fields": result.provenance,
             }, default=str),
         }]

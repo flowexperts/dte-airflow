@@ -51,6 +51,9 @@ async def _execute_pipeline(
     d_store: DestinationStore,
     c_store: ConnectionStore,
     lt_store: LookupTableStore,
+    *,
+    es_store=None,
+    ee_store=None,
 ):
     settings = get_settings()
     token = run_id_var.set(run_id)
@@ -65,6 +68,7 @@ async def _execute_pipeline(
             _run_body(
                 pipeline_id, run_id, p_store, r_store, re_store,
                 s_store, d_store, c_store, lt_store,
+                es_store=es_store, ee_store=ee_store,
             ),
             timeout=settings.run_timeout_seconds,
         )
@@ -157,6 +161,8 @@ async def execute_run_job(
     d_store: DestinationStore | None = None,
     c_store: ConnectionStore | None = None,
     lt_store: LookupTableStore | None = None,
+    es_store=None,
+    ee_store=None,
     fetch_actual_tenant_id=None,
 ) -> None:
     """Job body for the procrastinate ``execute_run`` task (registered as a
@@ -187,6 +193,10 @@ async def execute_run_job(
     if any(s is None for s in stores):
         stores = _default_stores()
     p_store, r_store, re_store, s_store, d_store, c_store, lt_store = stores
+    # Eval stores are deliberately *not* resolved here. Only an eval run
+    # reads them, and constructing one requires DATABASE_URL — eagerly
+    # building them would make every transform run depend on config it
+    # never uses. `_run_eval_body` resolves them lazily instead.
 
     if actual_tenant_id != tenant_id:
         _log.error(
@@ -219,6 +229,7 @@ async def execute_run_job(
         await _execute_pipeline(
             pipeline_id, run_id, p_store, r_store, re_store,
             s_store, d_store, c_store, lt_store,
+            es_store=es_store, ee_store=ee_store,
         )
     finally:
         heartbeat_task.cancel()

@@ -139,7 +139,14 @@ async def _fire_or_skip(
         schedule.pipeline_id, revision_id,
         tenant_id=schedule.tenant_id, schedule_id=schedule.id,
     )
-    await r_store.update(run_id, params=run_context)
+    # `eval_set_id` only when set: `_run_body` reads it off the run row to
+    # decide there is a corpus to score against, and writing an explicit
+    # NULL for every transform run would blur "never an eval run" into
+    # "scored nothing".
+    run_fields = {"params": run_context}
+    if schedule.eval_set_id:
+        run_fields["eval_set_id"] = schedule.eval_set_id
+    await r_store.update(run_id, **run_fields)
     await sch_store.advance(
         schedule.id, next_run_at=next_run_at,
         last_run_id=run_id, last_fired_at=now,

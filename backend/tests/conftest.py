@@ -29,6 +29,8 @@ from dte.api.deps import (
     get_current_user,
     get_current_tenant_id,
     get_lookup_table_store,
+    get_eval_example_store,
+    get_eval_set_store,
     get_schedule_store,
 )
 from dte.models.pipeline import Connection
@@ -46,6 +48,8 @@ from tests.fakes import (
     FakeRoleStore,
     FakeUserStore,
     FakeLookupTableStore,
+    FakeEvalExampleStore,
+    FakeEvalSetStore,
     FakeScheduleStore,
 )
 
@@ -127,6 +131,7 @@ def fake_stores():
         FakePipelineRevisionStore(),
         FakeScheduleStore(),
     )
+    es, ee = FakeEvalSetStore(), FakeEvalExampleStore()
     # Every test gets a `local_fs` connection pre-seeded — most sources /
     # destinations use it, tests don't have to re-declare it every time.
     c._data["local_fs"] = _make_local_fs_connection()
@@ -141,6 +146,8 @@ def fake_stores():
     app.dependency_overrides[get_lookup_table_store] = lambda: lt
     app.dependency_overrides[get_pipeline_revision_store] = lambda: pr
     app.dependency_overrides[get_schedule_store] = lambda: sch
+    app.dependency_overrides[get_eval_set_store] = lambda: es
+    app.dependency_overrides[get_eval_example_store] = lambda: ee
     # Bypass auth for existing tests — auth-flow tests opt out per-test.
     app.dependency_overrides[get_current_user] = lambda: _fake_test_user()
     # Bypass tenant_id dep — tests always use the "default" tenant.
@@ -157,6 +164,8 @@ def fake_stores():
         "lookup_table": lt,
         "pipeline_revision": pr,
         "schedule": sch,
+        "eval_set": es,
+        "eval_example": ee,
     }
     app.dependency_overrides.clear()
 

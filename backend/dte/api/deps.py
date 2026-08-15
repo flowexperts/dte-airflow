@@ -21,6 +21,8 @@ from dte.store.base import UserStore
 from dte.store.postgres import (
     PostgresConnectionStore,
     PostgresDestinationStore,
+    PostgresEvalExampleStore,
+    PostgresEvalSetStore,
     PostgresLookupTableStore,
     PostgresPipelineRevisionStore,
     PostgresPipelineStore,
@@ -87,6 +89,14 @@ def get_lookup_table_store():
 
 def get_schedule_store():
     return PostgresScheduleStore(_session_factory())
+
+
+def get_eval_set_store():
+    return PostgresEvalSetStore(_session_factory())
+
+
+def get_eval_example_store():
+    return PostgresEvalExampleStore(_session_factory())
 
 
 # Swagger UI Authorize button wires to this URL.

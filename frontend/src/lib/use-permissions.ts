@@ -3,7 +3,7 @@
 import useSWR from "swr";
 import type { CurrentUser } from "./api";
 
-type Resource = "pipeline" | "connection" | "source" | "destination" | "lookup_table" | "run" | "user";
+type Resource = "pipeline" | "connection" | "source" | "destination" | "lookup_table" | "run" | "user" | "eval";
 type Action = "read" | "write" | "delete" | "trigger" | "test";
 
 export function usePermissions() {

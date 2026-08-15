@@ -19,6 +19,7 @@ Permission = Literal[
     "connection:read", "connection:write", "connection:delete", "connection:test",
     "lookup_table:read", "lookup_table:write", "lookup_table:delete",
     "run:read", "run:delete",
+    "eval:read", "eval:write", "eval:delete",
     "user:read", "user:write", "user:delete",
 ]
 

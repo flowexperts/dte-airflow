@@ -13,7 +13,7 @@ export function StepsPanel({
 }: {
   steps: StepShape[];
   onChange: (next: StepShape[]) => void;
-  pipelineType?: "transform" | "quality";
+  pipelineType?: "transform" | "quality" | "eval";
 }) {
   const [addOpen, setAddOpen] = useState(false);
 
@@ -42,11 +42,22 @@ export function StepsPanel({
     setAddOpen(false);
   };
 
-  const filteredOps = STEP_OPS.filter((o) =>
-    pipelineType === "quality"
-      ? o.category === "quality" || ["filter", "rename", "select", "join"].includes(o.op)
-      : o.category !== "quality",
-  );
+  const filteredOps = STEP_OPS.filter((o) => {
+    if (pipelineType === "quality") {
+      return o.category === "quality" || ["filter", "rename", "select", "join"].includes(o.op);
+    }
+    // An eval pipeline's job is to produce the fields being scored, so it
+    // needs extract/structure and the shaping ops around them. Aggregates
+    // are pointless here — scoring aggregates the corpus itself, in the
+    // runner, and a pipeline-level aggregate would collapse the very rows
+    // the labels join against.
+    if (pipelineType === "eval") {
+      return (
+        o.category !== "quality" && !["aggregate", "pivot"].includes(o.op)
+      );
+    }
+    return o.category !== "quality";
+  });
 
   return (
     <Panel>

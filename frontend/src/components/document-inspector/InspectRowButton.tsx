@@ -81,6 +81,11 @@ export function InspectRowButton({ row }: { row: Record<string, unknown> }) {
                 initialPage={info.page}
                 fields={info.fields}
                 filename={info.filename}
+                // This modal is opened from run output and preview rows —
+                // someone is checking an extracted value against the page,
+                // which is exactly the judgement a label records. Capturing
+                // it here is what stops eval sets from starting empty.
+                labelable
               />
             </div>
           </div>,

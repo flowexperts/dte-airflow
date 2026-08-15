@@ -76,10 +76,24 @@ class FieldMetrics:
 
     @property
     def f1(self) -> float | None:
-        p, r = self.precision, self.recall
-        if p is None or r is None or (p + r) == 0:
-            return 0.0 if (p is not None and r is not None) else None
-        return 2 * p * r / (p + r)
+        """`2tp / (2tp + fp + fn)` — algebraically identical to the harmonic
+        mean of precision and recall wherever both are defined, but defined in
+        one case where they are not.
+
+        An extractor that answered *nothing* on a corpus with labels has
+        `tp = fp = 0, fn > 0`: precision is undefined (it made no claims), so
+        deriving F1 from precision and recall yields `None`. `None` means
+        "unrated" and drops the config out of ranking — which hides a total
+        failure behind the same rendering as a set nobody has scored yet.
+        That is the abstention blind spot this module exists to close, so the
+        direct form is used instead and reports 0.0.
+
+        `None` is still returned when there is genuinely nothing to score
+        (`2tp + fp + fn == 0`): every document correctly abstained, and an
+        undefined score must never be rendered as a real one.
+        """
+        denom = 2 * self.tp + self.fp + self.fn
+        return (2 * self.tp) / denom if denom else None
 
     @property
     def exact_match_rate(self) -> float | None:
