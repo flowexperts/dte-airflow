@@ -1201,6 +1201,15 @@ export interface ComparisonDocument {
   doc_ref: string | null;
   values: Record<string, Record<string, unknown>>;
   agrees: boolean | null;
+  /**
+   * Per field, decided by the eval set's comparators server-side. The table
+   * must highlight from this and never recompute — client-side equality
+   * would call `1240.50` and `1240.5` a disagreement while the field panel
+   * above it, using the comparators, calls them agreement.
+   *
+   * `null` means agreement is undefined (a single config).
+   */
+  field_agrees: Record<string, boolean | null>;
 }
 
 export interface SweepComparison {

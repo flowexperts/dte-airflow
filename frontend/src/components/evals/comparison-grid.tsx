@@ -261,12 +261,24 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
               {data.documents.map((doc) =>
                 fieldNames.map((field, i) => {
                   const values = data.cells.map((c) => doc.values[c.cell_id]?.[field]);
-                  const differs =
-                    new Set(values.map((v) => JSON.stringify(v ?? null))).size > 1;
+                  /*
+                   * Server-decided, via the eval set's comparators — never
+                   * recomputed here. Client-side equality would mark
+                   * `1240.50` against `1240.5` as a disagreement while the
+                   * field panel directly above, which uses the comparators,
+                   * calls the same pair agreement.
+                   */
+                  const differs = doc.field_agrees?.[field] === false;
                   return (
                     <tr
                       key={`${doc.doc_key}:${field}`}
-                      className={cn("border-b border-border/50", differs && "bg-gold/5")}
+                      className={cn(
+                        "border-b border-border/50",
+                        // 5% gold on the dark theme was invisible — the row
+                        // that is the entire reason to open this page read
+                        // exactly like the rows that agree.
+                        differs && "bg-gold/12",
+                      )}
                     >
                       {i === 0 && (
                         <td
@@ -281,7 +293,14 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
                           </Link>
                         </td>
                       )}
-                      <td className="px-3 py-2 font-mono text-[11.5px] text-subtle">
+                      <td
+                        className={cn(
+                          "px-3 py-2 font-mono text-[11.5px]",
+                          differs
+                            ? "text-gold border-l-2 border-gold"
+                            : "text-subtle border-l-2 border-transparent",
+                        )}
+                      >
                         {field}
                       </td>
                       {values.map((v, vi) => (
@@ -293,6 +312,13 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
                             // Rendering it as an em dash rather than empty
                             // keeps the column readable at a glance.
                             v == null && "text-subtle",
+                            // Every value in a disagreeing field is toned —
+                            // none of them is marked "wrong". Which one is
+                            // correct is exactly what this page does not
+                            // know, and colouring a minority as the outlier
+                            // would assert a majority vote the label rules
+                            // explicitly refuse.
+                            differs && v != null && "text-gold",
                           )}
                         >
                           {v == null ? "—" : String(v)}

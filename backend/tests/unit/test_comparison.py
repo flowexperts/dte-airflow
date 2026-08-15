@@ -362,3 +362,50 @@ class TestRejections:
     def test_no_specs_raises(self):
         with pytest.raises(ValueError, match="field"):
             build_comparison([_cell("claude", {"a" * 64: {}})], [])
+
+
+class TestPerFieldAgreementIsExposed:
+    """The table has to mark *which* value disagrees, not just that the row does.
+
+    Without this the frontend recomputes agreement itself, and the only
+    tool it has is string equality — so `1240.50` vs `1240.5` renders as a
+    disagreement in the table while the field panel directly above it,
+    which uses the comparators, calls the same pair agreement. Two numbers
+    on one screen contradicting each other about the same documents.
+    """
+
+    def test_field_agrees_is_per_field_not_just_per_document(self):
+        out = build_comparison(
+            [
+                _cell("claude", {"a" * 64: {"total": "1240.50", "vendor": "Acme"}}),
+                _cell("openai", {"a" * 64: {"total": "1240.50", "vendor": "Globex"}}),
+            ],
+            SPECS,
+        )
+        doc = out["documents"][0]
+        assert doc["agrees"] is False
+        # The row disagrees, but only on vendor — total must not be marked.
+        assert doc["field_agrees"] == {"total": True, "vendor": False}
+
+    def test_formatting_only_difference_is_agreement(self):
+        """The comparators' whole point: `1,240.50` is `1240.5`."""
+        out = build_comparison(
+            [
+                _cell("claude", {"a" * 64: {"total": "1240.5", "vendor": "Acme"}}),
+                _cell("regex", {"a" * 64: {"total": "1,240.50", "vendor": "Acme"}}),
+            ],
+            SPECS,
+        )
+        doc = out["documents"][0]
+        assert doc["field_agrees"]["total"] is True
+        assert doc["agrees"] is True
+
+    def test_single_cell_has_no_field_agreement(self):
+        """Agreement is undefined with one config — None, never True."""
+        out = build_comparison(
+            [_cell("claude", {"a" * 64: {"total": "1240.50", "vendor": "Acme"}})],
+            SPECS,
+        )
+        doc = out["documents"][0]
+        assert doc["agrees"] is None
+        assert doc["field_agrees"] == {"total": None, "vendor": None}

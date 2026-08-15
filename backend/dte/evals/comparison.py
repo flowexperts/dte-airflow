@@ -185,10 +185,18 @@ def build_comparison(
             for cell_id in collapsed
         }
         agrees = True
+        # Per field, not just rolled up: the table marks the cell that
+        # disagrees, and it must mark it from *this* — the comparators —
+        # rather than recomputing with string equality on the client, where
+        # `1240.50` and `1240.5` would render as a disagreement directly
+        # under a field panel calling them agreement.
+        field_agrees: dict[str, bool | None] = dict.fromkeys(names, None)
         if comparable:
             for name in names:
                 votes = [values[cell_id][name] for cell_id in values]
-                if not _values_agree(votes, by_name[name]):
+                ok = _values_agree(votes, by_name[name])
+                field_agrees[name] = ok
+                if not ok:
                     disagreements[name] += 1
                     agrees = False
         documents.append({
@@ -196,6 +204,7 @@ def build_comparison(
             "doc_ref": refs.get(doc_key),
             "values": values,
             "agrees": agrees if comparable else None,
+            "field_agrees": field_agrees,
         })
 
     # Disagreements first — they are the reason to open this page, and at a
