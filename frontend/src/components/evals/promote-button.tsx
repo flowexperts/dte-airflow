@@ -1,13 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import useSWR from "swr";
-import { Button, Dropdown, Input, Panel, PanelHead } from "@/components/ui";
-import {
-  listDestinations,
-  promoteEvalPipeline,
-  type Destination,
-} from "@/lib/api";
+import { Button, Input, Panel, PanelHead } from "@/components/ui";
+import { DestinationPicker } from "@/components/builder/DestinationPicker";
+import { promoteEvalPipeline } from "@/lib/api";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
 import { usePermissions } from "@/lib/use-permissions";
@@ -55,11 +51,6 @@ export function PromoteForm({
   const [busy, setBusy] = useState(false);
   const toast = useToast();
 
-  const { data: destinations } = useSWR<Destination[]>(
-    ["destinations", "promote"],
-    () => listDestinations(),
-  );
-
   const go = async () => {
     setBusy(true);
     try {
@@ -100,15 +91,15 @@ export function PromoteForm({
               placeholder="display name"
             />
           </div>
-          <Dropdown
-            value={outputId}
-            onChange={setOutputId}
-            placeholder="— where should it write? —"
-            options={(destinations ?? []).map((d) => ({
-              value: d.id,
-              label: d.name ?? d.id,
-            }))}
-          />
+          {/* The builder's own picker, not a plain dropdown of what already
+              exists. Promote *creates a pipeline*, so the destination it
+              writes to very often does not exist yet — and a list with no way
+              to add to it reads as "you must have prepared one first", which
+              is not true. `DestinationPicker` carries "+ Create new
+              destination…" and Edit inline, and it is the same control the
+              builder uses for the same slot, so the two surfaces cannot
+              drift on what a valid destination looks like. */}
+          <DestinationPicker outputId={outputId} onChange={setOutputId} />
           <div className="flex items-center gap-2">
             <Button
               variant="primary"

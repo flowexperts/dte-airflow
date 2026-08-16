@@ -171,6 +171,12 @@ cd backend  && uv run pytest          # unchanged; promote already covered
 
 - Promoting into an *existing* pipeline (overwrite semantics, revision
   implications — separate).
-- Creating a destination inline from the promote form; you pick an existing
-  one, as the leaderboard's promote does today.
+- ~~Creating a destination inline from the promote form.~~ **Done, and it
+  should never have been scoped out.** An eval pipeline has no destination —
+  that is the point of the twin — so promote is the moment one first becomes
+  necessary, and it very often does not exist yet. A flat list of existing
+  destinations reads as "you must have prepared one first", which is false.
+  `DestinationPicker` already carried "+ Create new destination…" and Edit
+  inline, so this was an import, not a feature: the promote form now uses the
+  same control the builder uses for the same slot.
 - Any change to how promote works server-side.
