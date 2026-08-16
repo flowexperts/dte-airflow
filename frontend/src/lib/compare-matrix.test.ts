@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildMatrix,
   cellCount,
+  draftFromMatrix,
   regexAvailability,
+  unknownAxes,
   type CompareDraft,
 } from "./compare-matrix";
 
@@ -152,5 +154,54 @@ describe("regexAvailability", () => {
 
   it("is unavailable with no fields at all", () => {
     expect(regexAvailability([]).available).toBe(false);
+  });
+});
+
+describe("draftFromMatrix", () => {
+  /*
+   * The inverse of buildMatrix, and the reason the matrix can be *stored*
+   * at all. Reopening a saved comparison has to restore the chips that
+   * produced it — without this the panel renders empty and the next save
+   * silently discards every axis the user configured.
+   */
+  it("round-trips a full matrix", () => {
+    const matrix = {
+      provider: ["claude", "regex"],
+      "params.model": ["claude-opus-5"],
+      "model.instructions": ["be terse"],
+    };
+    expect(buildMatrix(draftFromMatrix(matrix))).toEqual(matrix);
+  });
+
+  it("round-trips a provider-only matrix", () => {
+    const matrix = { provider: ["claude", "openai"] };
+    expect(buildMatrix(draftFromMatrix(matrix))).toEqual(matrix);
+  });
+
+  it("reads null and undefined as an empty draft", () => {
+    for (const empty of [null, undefined]) {
+      const draft = draftFromMatrix(empty);
+      expect(draft).toEqual({ providers: [], models: [], instructions: [] });
+      expect(buildMatrix(draft)).toEqual({});
+    }
+  });
+
+  it("ignores axes it does not own rather than dropping them silently", () => {
+    /*
+     * `params.max_tokens` is a legal sweep axis the panel has no control
+     * for. Parsing it into the draft would be a lie; the panel reports it
+     * instead, because a saved axis that vanishes on the next save is the
+     * worst outcome.
+     */
+    const draft = draftFromMatrix({ "params.max_tokens": [1000, 2000] });
+    expect(draft.providers).toEqual([]);
+    expect(unknownAxes({ "params.max_tokens": [1000] })).toEqual([
+      "params.max_tokens",
+    ]);
+  });
+
+  it("coerces non-string values to strings", () => {
+    // JSONB round-trips numbers as numbers; the chips are strings.
+    expect(draftFromMatrix({ "params.model": [5] }).models).toEqual(["5"]);
   });
 });

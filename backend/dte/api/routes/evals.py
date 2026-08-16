@@ -848,7 +848,17 @@ async def launch_sweep(
     # told the corpus never matched. Every cell would have scored zero.
     await validate_eval_corpus_match(pipeline, eval_set_id, store)
 
-    cells = _expand_matrix(body.matrix)
+    # The body wins when it carries a matrix — estimate and confirm must
+    # price exactly what the user is looking at, including edits they have
+    # not saved. Otherwise the pipeline's own matrix is the comparison, which
+    # is what lets a caller with no body (the scheduler) run one at all.
+    matrix = body.matrix or getattr(pipeline, "matrix", None) or {}
+    # No matrix is N=1, not zero: the pipeline's own config, run once. That
+    # is the nightly regression check ("did my prompt edit make this
+    # worse?"), and it has to be a real run rather than a comparison of
+    # nothing. `_expand_matrix` keeps returning [] for an empty product so
+    # its other callers are unaffected.
+    cells = _expand_matrix(matrix) or [{}]
     # A blind cartesian product is right for independent axes and wrong the
     # moment one axis makes another irrelevant — `regex × {haiku, sonnet}`
     # is one config run twice, billed as two columns labelled with models it

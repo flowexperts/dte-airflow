@@ -1227,10 +1227,45 @@ class PipelineBase(SQLModel):
     engine: EngineChoice = "auto"
     pipeline_type: Literal["transform", "quality", "eval"] = "transform"
     quality_contracts: list = SMField(default_factory=list)  # list[Contract] — typed by validator
+    # The comparison this eval pipeline expands to: dotted axis path → values
+    # to vary, e.g. {"provider": ["claude", "regex"]}. Absent means N=1 — an
+    # ordinary single-config eval run, which is what a nightly regression
+    # check schedules and so stays first-class.
+    #
+    # Stored rather than posted per-launch (plan 055). While it lived only in
+    # the Compare wizard a comparison could not be reopened, adjusted and
+    # re-run: you started from an empty form and minted a fresh set of variant
+    # pipelines every time.
+    matrix: dict[str, list] | None = None
     # Declared trigger-time inputs. Referenced from filter/map expressions as
     # {{params.<name>}}; validated against declared types on trigger.
     params: list[PipelineParam] = SMField(default_factory=list)
     tenant_id: str = "default"
+
+    @model_validator(mode="after")
+    def _validate_matrix(self):
+        """A comparison matrix belongs to an eval pipeline, and its axes must
+        be ones a sweep could actually apply.
+
+        Both halves refuse rather than ignore. A matrix on a transform
+        pipeline would be stored and silently do nothing; an axis nothing
+        reads would expand to N identical cells that look like proof the
+        setting makes no difference.
+        """
+        if self.matrix is None:
+            return self
+        if self.pipeline_type != "eval":
+            raise ValueError(
+                "only an eval pipeline carries a comparison matrix; this one "
+                f"is {self.pipeline_type!r}. Convert it first "
+                "(POST /api/pipelines/{id}/as-eval)."
+            )
+        # Imported here, not at module scope: the authority for what a sweep
+        # can apply lives in dte.evals, which is a layer above models.
+        from dte.evals.sweep import validate_matrix_axes
+
+        validate_matrix_axes(self.steps, self.matrix)
+        return self
 
     @model_validator(mode="after")
     def _validate_steps(self):
@@ -1368,6 +1403,12 @@ class Pipeline(PipelineBase, table=True):
     )
     tenant_id: str = SMField(  # type: ignore[override]
         default="default", sa_column=Column(Text, nullable=False, server_default="default")
+    )
+    # Nullable with no default: "no matrix" (a single-config eval run) must
+    # stay distinguishable from "an empty matrix" — the same rule the eval
+    # columns on `runs` follow.
+    matrix: dict[str, list] | None = SMField(  # type: ignore[override]
+        default=None, sa_column=Column(JSONB, nullable=True)
     )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())

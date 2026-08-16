@@ -515,6 +515,40 @@ model or prompt sweep produces. `PromoteFromComparison` puts one
   drift, and the drift is invisible until a promoted pipeline stops
   matching the digest that was measured.
 
+**The matrix is a property of the eval pipeline** (plan 055, migration
+`036`). `Pipeline.matrix` is a nullable JSONB map of dotted axis path →
+values to vary; `MatrixPanel` edits it in the builder, above the steps it
+varies, and it saves with the pipeline. The Compare wizard is **deleted** —
+its matrix was transient, so a comparison could not be reopened, adjusted
+and re-run: you started from an empty form and minted a fresh set of
+variant pipelines each time.
+
+- **Absent means N=1**, not zero: the config as it stands, run once. That
+  is the nightly regression check, and `_expand_matrix` returning `[]` for
+  an empty product is turned into one cell *at the sweep route*, so its
+  other callers are unaffected.
+- **A matrix on a non-eval pipeline is a 422**, and so is an axis nothing
+  reads. `validate_matrix_axes` (`dte/evals/sweep.py`) is the same rule
+  `apply_cell` enforces, hoisted so it also fires at save — it used to fire
+  only at spend, after a typo had been estimated and priced.
+- **The sweep body still wins when present**; the stored matrix is the
+  fallback. Estimate and confirm must price exactly what is on screen,
+  including unsaved edits, while a caller with no body (the scheduler) gets
+  the pipeline's own comparison.
+- `draftFromMatrix` is the inverse of `buildMatrix` and is what makes the
+  matrix storable: without it the panel renders empty over a saved matrix
+  and the next save discards every axis. Axes the panel has no control for
+  (`params.max_tokens`) are reported and preserved, never silently dropped.
+- `CompareButton` on a *transform* pipeline now only derives the twin and
+  its eval set, then navigates there. On an eval pipeline it renders
+  nothing — the panel is already on the page.
+
+**Sweep cells are still real pipelines.** The variant machinery
+(`prune_cells`, `root_pipeline_id`, `variant_name`, `isSweepVariant`)
+survives; collapsing cells so they stop being pipelines is the follow-on
+plan, and the migration of existing variants and their runs is where its
+risk lives.
+
 **`regex` is gated on patterns** (`lib/compare-matrix.ts`). Without a
 `pattern` per field the provider returns nothing on every row and the cell
 scores ~0 — which reads as "regex is bad at this" rather than "regex was
@@ -711,7 +745,10 @@ cd ../backend && uv venv && uv pip install -e ".[dev]"   # 4
 3. `PageProps` / `LayoutProps` are Next 16 **generated globals**. Without
    `next typegen` (or a `dev`/`build` run) `tsc` reports
    `Cannot find name 'LayoutProps'` in files nobody touched.
-4. No venv means `uv run pytest` fails with `Failed to spawn: pytest`.
+4. No venv means `uv run pytest` fails with `Failed to spawn: pytest`. The
+   `[dev]` extra does **not** pull `trino`, so a fresh venv fails 6 tests in
+   `tests/unit/test_engine_seam.py` that read as a Trino regression and are
+   not one — `uv pip install "ibis-framework[trino]"` fixes them.
 
 ### Docker from a worktree
 

@@ -129,6 +129,49 @@ def apply_cell(pipeline: Any, cell: Mapping[str, Any]) -> Any:
     return variant
 
 
+def validate_matrix_axes(steps: list, matrix: Mapping[str, Any]) -> None:
+    """Raise if `matrix` names an axis a sweep could not apply.
+
+    The same rule `apply_cell` enforces, hoisted so it can also run at *save*
+    time. It used to fire only at spend — after a matrix had been typed,
+    estimated and priced — which is late for a typo whose whole effect is N
+    identical cells reading as "this setting makes no difference".
+
+    Deliberately shares `_CREATABLE_AXES` and `_structure_step` with
+    `apply_cell` rather than restating them: a save-time check that disagreed
+    with the run-time one would either reject configs that work or accept
+    configs that fail at the end of a paid sweep.
+    """
+    if not matrix:
+        return
+    step = _structure_step(steps)
+    if step is None:
+        raise ValueError(
+            "a comparison matrix varies the structure step's config, and "
+            "this pipeline has no structure step"
+        )
+    for path, values in matrix.items():
+        path = str(path)
+        if not isinstance(values, (list, tuple)):
+            raise ValueError(
+                f"matrix axis {path!r} must be a list of values to vary"
+            )
+        if len(values) == 0:
+            # An empty axis contributes nothing to the product, so the user
+            # gets fewer cells than they configured with nothing said.
+            raise ValueError(
+                f"matrix axis {path!r} has no values — remove the axis, or "
+                "give it something to vary"
+            )
+        head = path.split(".")[0]
+        if head not in step and path not in _CREATABLE_AXES:
+            raise ValueError(
+                f"unknown matrix axis {path!r}: the structure step has no "
+                f"{head!r}. Axes are dotted paths into that step, e.g. "
+                "'provider' or 'model.instructions'."
+            )
+
+
 # Axes a provider does not read. Sweeping one of these against that
 # provider produces cells that differ on paper and are identical in fact.
 _IGNORED_AXES: dict[str, frozenset[str]] = {

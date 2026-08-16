@@ -50,6 +50,7 @@ import {
   ComparisonsPane,
   usePipelineComparisons,
 } from "@/components/evals/comparisons-panel";
+import { MatrixPanel } from "@/components/evals/matrix-panel";
 
 type PipelineView = "spec" | "runs" | "history" | "comparisons";
 
@@ -250,6 +251,19 @@ export function PipelineCanvas({
   ) : (
     <DestinationCard pipeline={pipeline} destination={destination} />
   );
+
+  /* Above the steps it varies, because it is the thing the pipeline is for:
+     an eval pipeline exists to be compared, and reading "these three
+     configs" before "here is the config" is the order the user thinks in.
+     Eval only — a transform pipeline cannot carry a matrix (422 on save). */
+  const matrixBlock =
+    pipeline.pipeline_type === "eval" ? (
+      <MatrixPanel
+        pipeline={pipeline}
+        onChange={(matrix) => patch({ matrix })}
+        readOnly={!canEdit}
+      />
+    ) : null;
 
   const stepsBlock = (
     <StepsColumn
@@ -524,6 +538,7 @@ export function PipelineCanvas({
               {outputBlock}
               {inputsBlock}
               {scheduleBlock}
+              {matrixBlock}
               {stepsBlock}
               {settingsBlock}
             </div>
