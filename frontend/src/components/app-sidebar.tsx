@@ -11,8 +11,8 @@ import {
   NavItem,
   NavFooter,
 } from "@/components/ui";
-import { type CurrentUser, clearToken } from "@/lib/api";
-import { PIPELINE_TYPE_TABS } from "@/lib/pipeline-type";
+import { type CurrentUser, type Pipeline, clearToken } from "@/lib/api";
+import { PIPELINE_TYPE_TABS, type PipelineTypeFilter } from "@/lib/pipeline-type";
 
 export function AppSidebar() {
   const pathname = usePathname() ?? "";
@@ -27,6 +27,27 @@ export function AppSidebar() {
       : pathname === prefix || pathname.startsWith(prefix + "/");
 
   const { data: user } = useSWR<CurrentUser>("/api/auth/me");
+
+  /* A pipeline detail page (`/pipelines/<id>`, `/edit`, `/compare`,
+     `/revisions/<rev>`) carries no `?type=` — that query param only exists
+     on the list page. Without knowing the pipeline's own type, every detail
+     page fell through to the "no filter" default below and permanently
+     highlighted Transform, including for a quality or eval pipeline. */
+  const detailMatch = /^\/pipelines\/([^/]+)/.exec(pathname);
+  const detailSegment = detailMatch?.[1];
+  const detailId =
+    detailSegment && detailSegment !== "new" ? decodeURIComponent(detailSegment) : null;
+  const { data: currentPipeline } = useSWR<Pipeline>(
+    detailId ? `/api/pipelines/${encodeURIComponent(detailId)}` : null,
+  );
+
+  const activePipelineType: PipelineTypeFilter | null = detailId
+    ? currentPipeline
+      ? ((currentPipeline.pipeline_type as PipelineTypeFilter | undefined) ?? "transform")
+      : null // unknown until it loads — no highlight beats a wrong one
+    : on("/pipelines") && !on("/pipelines/new")
+      ? ((typeParam as PipelineTypeFilter | null) ?? "transform")
+      : null;
 
   function onLogout() {
     clearToken();
@@ -71,14 +92,7 @@ export function AppSidebar() {
                 href={`/pipelines?type=${type}`}
                 label={label}
                 indent
-                active={
-                  on("/pipelines") &&
-                  !on("/pipelines/new") &&
-                  (typeParam === type ||
-                    // Bare /pipelines shows everything; highlight Transform
-                    // rather than nothing, as before.
-                    (typeParam === null && type === "transform"))
-                }
+                active={activePipelineType === type}
               />
             ))}
             {/* No "+ New pipeline" here. Creation belongs on the list page,

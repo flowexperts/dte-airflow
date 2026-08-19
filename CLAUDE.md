@@ -531,12 +531,30 @@ model or prompt sweep produces. `PromoteFromComparison` puts one
 
 **The matrix is a property of the eval pipeline** (plan 055, migration
 `036`). `Pipeline.matrix` is a nullable JSONB map of dotted axis path →
-values to vary; `MatrixPanel` edits it in the builder, above the steps it
-varies, and it saves with the pipeline. The Compare wizard is **deleted** —
-its matrix was transient, so a comparison could not be reopened, adjusted
-and re-run: you started from an empty form and minted a fresh set of
-variant pipelines each time.
+values to vary, and it saves with the pipeline. The Compare wizard is
+**deleted** — its matrix was transient, so a comparison could not be
+reopened, adjusted and re-run: you started from an empty form and minted a
+fresh set of variant pipelines each time.
 
+- **`MatrixPanel` is reached on demand, not shown inline.** It first
+  rendered permanently above the steps, on the theory that "an eval run is
+  a comparison run" should be visible every time you open the pipeline. In
+  practice most visits are to read a step or check how the last run scored,
+  not to launch a new comparison — a block that is 90% of the time inert
+  crowds the thing people actually came to look at. `CompareDialog`
+  (`components/evals/compare-dialog.tsx`) now hosts the same `MatrixPanel`,
+  unmodified, inside a modal opened by the **Compare…** button in the page's
+  action row (`CompareButton`, next to Save/Trigger) — the same button a
+  transform pipeline uses to derive its eval twin. Edits still flow through
+  the pipeline's own `onChange`/Save; the modal has no second dirty state.
+- **The structure step's Provider dropdown is unconditional again.** An
+  earlier version hid it on eval pipelines on the theory that the matrix
+  was the only thing that set provider. That was wrong for the common case
+  the matrix explicitly stays out of the way of: an unticked matrix (N=1,
+  "the nightly regression check") runs the step's own raw config directly —
+  and so does a **schedule**, which calls the same trigger path and never
+  reads `pipeline.matrix` at all. Hiding the dropdown left that case with no
+  way to choose a provider.
 - **Absent means N=1**, not zero: the config as it stands, run once. That
   is the nightly regression check, and `_expand_matrix` returning `[]` for
   an empty product is turned into one cell *at the sweep route*, so its
@@ -548,14 +566,14 @@ variant pipelines each time.
 - **The sweep body still wins when present**; the stored matrix is the
   fallback. Estimate and confirm must price exactly what is on screen,
   including unsaved edits, while a caller with no body (the scheduler) gets
-  the pipeline's own comparison.
+  the pipeline's own comparison — though see above: a schedule fires a
+  plain trigger, not a sweep, so today it always gets N=1 regardless of
+  what the matrix holds. Making a schedule actually run the matrix is not
+  done.
 - `draftFromMatrix` is the inverse of `buildMatrix` and is what makes the
   matrix storable: without it the panel renders empty over a saved matrix
   and the next save discards every axis. Axes the panel has no control for
   (`params.max_tokens`) are reported and preserved, never silently dropped.
-- `CompareButton` on a *transform* pipeline now only derives the twin and
-  its eval set, then navigates there. On an eval pipeline it renders
-  nothing — the panel is already on the page.
 
 **Sweep cells are still real pipelines.** The variant machinery
 (`prune_cells`, `root_pipeline_id`, `variant_name`, `isSweepVariant`)
