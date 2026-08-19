@@ -8,25 +8,35 @@ import { isSweepVariant, rootPipelineId } from "@/lib/pipeline-variant";
 import { evalSetForPipeline, pipelineAsEval, type Pipeline } from "@/lib/api";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
+import { CompareDialog } from "@/components/evals/compare-dialog";
 
 /**
- * Turn an extraction pipeline into one that can be compared.
+ * Turn an extraction pipeline into one that can be compared — and, for a
+ * pipeline that already is an eval pipeline, open the comparison launcher.
  *
- * This used to open a wizard that configured a matrix and launched it in one
- * transient step. The matrix now lives on the eval pipeline (plan 055), so
- * the button's job is only the part that had to happen first: derive the
- * eval twin and its set, then hand the user to the pipeline where the
- * comparison is configured and run.
+ * The matrix lives on the eval pipeline (plan 055), but editing it is on
+ * demand from here rather than a block sitting permanently open above the
+ * steps — most visits to an eval pipeline are to look at what it does or
+ * how it last scored, not to launch a new comparison.
  *
- * Both derivations are idempotent — Compare is a button people press twice,
- * and a second press must not accumulate `__eval__eval`, each with its own
- * runs diluting one leaderboard.
+ * Both eval-twin derivations are idempotent — Compare is a button people
+ * press twice, and a second press must not accumulate `__eval__eval`, each
+ * with its own runs diluting one leaderboard.
  */
-export function CompareButton({ pipeline }: { pipeline: Pipeline }) {
+export function CompareButton({
+  pipeline,
+  onMatrixChange,
+}: {
+  pipeline: Pipeline;
+  /** Only used when `pipeline.pipeline_type === "eval"` — persists matrix
+   *  edits the same way the rest of the pipeline is edited (dirty + Save). */
+  onMatrixChange?: (matrix: Record<string, string[]> | null) => void;
+}) {
   const { can } = usePermissions();
   const router = useRouter();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   // Nothing to compare configs *of*. Hiding the button beats offering it
   // and rejecting the click with a message about structure steps.
@@ -59,10 +69,29 @@ export function CompareButton({ pipeline }: { pipeline: Pipeline }) {
     );
   }
 
-  /* An eval pipeline already *is* the thing that carries a matrix — the
-     panel is on this page. Sending someone away to configure what is in
-     front of them would be a detour through their own pipeline. */
-  if (pipeline.pipeline_type === "eval") return null;
+  /* An eval pipeline already *is* the thing that carries a matrix — this
+     button opens the launcher on it rather than sending someone away. */
+  if (pipeline.pipeline_type === "eval") {
+    return (
+      <>
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => setDialogOpen(true)}
+          title="Configure and run a comparison over this pipeline's providers, models or prompts"
+        >
+          Compare…
+        </Button>
+        <CompareDialog
+          pipeline={pipeline}
+          onChange={onMatrixChange ?? (() => {})}
+          readOnly={!can("eval:write")}
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+        />
+      </>
+    );
+  }
 
   const go = async () => {
     setBusy(true);
@@ -71,7 +100,7 @@ export function CompareButton({ pipeline }: { pipeline: Pipeline }) {
       await evalSetForPipeline(pipeline_id);
       toast.success({
         title: "Eval twin ready",
-        message: "Configure the comparison here, then run it.",
+        message: "Press Compare… here to configure and run it.",
       });
       router.push(`/pipelines/${encodeURIComponent(pipeline_id)}`);
     } catch (e) {

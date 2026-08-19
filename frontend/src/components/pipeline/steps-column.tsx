@@ -35,7 +35,7 @@ export function StepsColumn({
 }: {
   steps: StepShape[];
   onChange: (steps: StepShape[]) => void;
-  pipelineType: "transform" | "quality";
+  pipelineType: "transform" | "quality" | "eval";
   /** Deep-linked step, highlighted and scrolled to. */
   openIndex: number | null;
   onOpenChange: (i: number | null) => void;
@@ -66,12 +66,20 @@ export function StepsColumn({
   const isQuality = pipelineType === "quality";
   const label = isQuality ? "Checks" : "Steps";
 
-  const ops = STEP_OPS.filter((o) =>
-    isQuality
-      ? o.category === "quality" ||
-        ["filter", "rename", "select", "join"].includes(o.op)
-      : o.category !== "quality",
-  );
+  const ops = STEP_OPS.filter((o) => {
+    if (isQuality) {
+      return o.category === "quality" || ["filter", "rename", "select", "join"].includes(o.op);
+    }
+    // An eval pipeline's job is to produce the fields being scored, so it
+    // needs extract/structure and the shaping ops around them. Aggregates
+    // are pointless here — scoring aggregates the corpus itself, in the
+    // runner, and a pipeline-level aggregate would collapse the very rows
+    // the labels join against.
+    if (pipelineType === "eval") {
+      return o.category !== "quality" && !["aggregate", "pivot"].includes(o.op);
+    }
+    return o.category !== "quality";
+  });
 
   const update = (i: number, patch: Partial<StepShape>) =>
     onChange(steps.map((s, j) => (j === i ? { ...s, ...patch } : s)));
