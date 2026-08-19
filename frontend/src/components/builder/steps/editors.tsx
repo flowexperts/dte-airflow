@@ -14,6 +14,7 @@ import {
 } from "@/components/ui";
 import { usePopoverPosition } from "@/components/ui/use-popover-position";
 import { useStepFields, useJoinOperands } from "../schema-context";
+import type { SchemaField } from "@/lib/api";
 import { usePipelineParams } from "../params-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -1280,6 +1281,141 @@ function OperandPicker({
   );
 }
 
+type JoinOnValue = string | string[] | Record<string, string>;
+
+function toPairs(value: JoinOnValue | undefined): [string, string][] {
+  const entries = typeof value === "object" && value !== null && !Array.isArray(value)
+    ? Object.entries(value)
+    : [];
+  return entries.length ? entries : [["", ""]];
+}
+
+/** `on` is same-name (`str`/`str[]`, matched identically on both sides) or
+ *  a `{left_col: right_col}` map for a key that isn't named the same on
+ *  both sides (e.g. `orders.customer_id` vs `customers.id`) — a composite
+ *  mismatched key is just more entries in the map.
+ *
+ *  Pairs are kept in local state, keyed by array position rather than by
+ *  the dict itself: an empty or duplicate left column while typing can't
+ *  survive a round-trip through `Record<string, string>` (empty/collided
+ *  keys collapse), so — same pattern as `Rename`/`Select` elsewhere in
+ *  this file — the editable list lives locally and only well-formed pairs
+ *  are pushed up to the pipeline's `on` value. */
+function JoinOnEditor({
+  value,
+  onChange,
+  allFields,
+}: {
+  value: JoinOnValue | undefined;
+  onChange: (v: JoinOnValue) => void;
+  allFields: SchemaField[];
+}) {
+  const isPairs = typeof value === "object" && value !== null && !Array.isArray(value);
+  const mode: "same" | "different" = isPairs ? "different" : "same";
+  const [pairs, setPairs] = useState<[string, string][]>(() => toPairs(value));
+
+  useEffect(() => {
+    if (!isPairs) return;
+    const emitted = Object.fromEntries(pairs.filter(([l]) => l));
+    if (JSON.stringify(emitted) !== JSON.stringify(value ?? {})) {
+      setPairs(toPairs(value));
+    }
+    // Only re-sync when the external value changes — re-running on every
+    // local `pairs` edit would fight the transient empty/duplicate state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, isPairs]);
+
+  const setMode = (next: "same" | "different") => {
+    if (next === "different") {
+      const next_ = toPairs(value);
+      setPairs(next_);
+      onChange(Object.fromEntries(next_.filter(([l]) => l)));
+    } else {
+      onChange("");
+    }
+  };
+
+  const commit = (next: [string, string][]) => {
+    setPairs(next);
+    onChange(Object.fromEntries(next.filter(([l]) => l)));
+  };
+
+  const setPair = (i: number, side: 0 | 1, v: string) => {
+    const copy = pairs.map((p) => [...p] as [string, string]);
+    copy[i]![side] = v;
+    commit(copy);
+  };
+
+  const addPair = () => commit([...pairs, ["", ""]]);
+  const removePair = (i: number) => commit(pairs.length > 1 ? pairs.filter((_, j) => j !== i) : [["", ""]]);
+
+  return (
+    <Field label="On" hint={mode === "same" ? "single field or comma-separated list" : "left column → right column"}>
+      <div className="flex flex-col gap-2">
+        <Segmented<"same" | "different">
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "same", label: "Same name" },
+            { value: "different", label: "Different names" },
+          ]}
+        />
+        {mode === "same" ? (
+          <FieldPicker
+            value={Array.isArray(value) ? value.join(", ") : (value as string) ?? ""}
+            onChange={(v) => {
+              const parts = v.split(",").map((s) => s.trim()).filter(Boolean);
+              onChange(parts.length > 1 ? parts : v);
+            }}
+            options={allFields}
+            placeholder="user_id"
+            variant="tree"
+          />
+        ) : (
+          <div className="grid gap-1.5">
+            {pairs.map(([l, r], i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <FieldPicker
+                  value={l}
+                  onChange={(v) => setPair(i, 0, v)}
+                  options={allFields}
+                  placeholder="left column"
+                  variant="tree"
+                />
+                <span className="text-subtle text-[12px]">→</span>
+                <FieldPicker
+                  value={r}
+                  onChange={(v) => setPair(i, 1, v)}
+                  options={allFields}
+                  placeholder="right column"
+                  variant="tree"
+                />
+                {pairs.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removePair(i)}
+                    aria-label="Remove column pair"
+                    className="text-subtle hover:text-red text-[16px] leading-none px-1"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addPair}
+              className="font-mono text-[11.5px] text-accent hover:text-accent-h text-left"
+            >
+              + Add column pair
+            </button>
+          </div>
+        )}
+      </div>
+    </Field>
+  );
+}
+
 export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
   const allFields = useStepFields();
   const operands = useJoinOperands();
@@ -1305,18 +1441,11 @@ export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="On" hint="single field or comma-separated list">
-          <FieldPicker
-            value={Array.isArray(step.on) ? (step.on as string[]).join(", ") : (step.on as string) ?? ""}
-            onChange={(v) => {
-              const parts = v.split(",").map((s) => s.trim()).filter(Boolean);
-              set({ on: parts.length > 1 ? parts : v });
-            }}
-            options={allFields}
-            placeholder="user_id"
-            variant="tree"
-          />
-        </Field>
+        <JoinOnEditor
+          value={step.on as JoinOnValue | undefined}
+          onChange={(v) => set({ on: v })}
+          allFields={allFields}
+        />
         <Field label="Output id" hint="name of the resulting table in the registry">
           <Input value={(step.output_id as string) ?? ""} onChange={(e) => set({ output_id: e.target.value })} placeholder="joined" />
         </Field>

@@ -769,9 +769,20 @@ class JoinStep(BaseModel):
     op: Literal["join"]
     left: str
     right: str
-    on: str | list[str]
+    # str/list[str]: same column name on both sides (the common case).
+    # dict[str, str]: left column -> right column, for a key that isn't
+    # named the same on both sides (e.g. `orders.customer_id` vs
+    # `customers.id`) — one entry per join column for a composite key.
+    on: str | list[str] | dict[str, str]
     how: Literal["inner", "left", "right", "outer"] = "inner"
     output_id: str
+
+    @field_validator("on")
+    @classmethod
+    def _on_non_empty(cls, v: str | list[str] | dict[str, str]) -> str | list[str] | dict[str, str]:
+        if not v:
+            raise ValueError("join step needs at least one 'on' column")
+        return v
 
 
 class PivotStep(BaseModel):

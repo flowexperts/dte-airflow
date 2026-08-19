@@ -465,6 +465,20 @@ def orders_table(con):
 
 
 @pytest.fixture
+def orders_table_fk(con):
+    """Same data as `orders_table`, but the key column is named `user_id`
+    — a mismatched-name join partner for `users_table` (whose key is
+    `id`), the common real-world shape a same-name-only `on` can't
+    express."""
+    df = pd.DataFrame([
+        {"user_id": 1, "amount": 100},
+        {"user_id": 2, "amount": 200},
+        {"user_id": 4, "amount": 50},
+    ])
+    return con.create_table("orders_fk", df, overwrite=True)
+
+
+@pytest.fixture
 def regional_orders_table(con):
     df = pd.DataFrame([
         {"id": 1, "region": "east", "amount": 100},
@@ -586,6 +600,56 @@ def test_join_on_multiple_columns(regional_users_table, regional_orders_table):
     assert "amount" in df.columns
 
 
+def test_join_on_mismatched_column_names(users_table, orders_table_fk):
+    """`on` as a dict maps left column -> right column, so a join no
+    longer requires the key to share a name on both sides (`users.id` vs
+    `orders_fk.user_id`)."""
+    pipeline = make_join_pipeline(
+        sources=[_src("users"), _src("orders_fk")],
+        steps=[{
+            "op": "join",
+            "left": "users",
+            "right": "orders_fk",
+            "on": {"id": "user_id"},
+            "how": "inner",
+            "output_id": "joined",
+        }],
+    )
+    result = _run(pipeline, {"users": users_table, "orders_fk": orders_table_fk})
+    df = result.execute()
+    assert len(df) == 2
+    assert "name" in df.columns
+    assert "amount" in df.columns
+
+
+def test_join_on_mismatched_composite_columns(regional_users_table, con):
+    """Composite mismatched-name key: multiple entries in the `on` dict."""
+    df = pd.DataFrame([
+        {"uid": 1, "zone": "east", "amount": 100},
+        {"uid": 2, "zone": "west", "amount": 200},
+    ])
+    regional_orders_fk = con.create_table("regional_orders_fk", df, overwrite=True)
+    pipeline = make_join_pipeline(
+        sources=[_src("regional_users"), _src("regional_orders_fk")],
+        steps=[{
+            "op": "join",
+            "left": "regional_users",
+            "right": "regional_orders_fk",
+            "on": {"id": "uid", "region": "zone"},
+            "how": "inner",
+            "output_id": "joined",
+        }],
+    )
+    result = _run(pipeline, {
+        "regional_users": regional_users_table,
+        "regional_orders_fk": regional_orders_fk,
+    })
+    df = result.execute()
+    assert len(df) == 2
+    assert "name" in df.columns
+    assert "amount" in df.columns
+
+
 def test_join_result_available_for_next_step(users_table, orders_table):
     pipeline = make_join_pipeline(
         sources=[_src("users"), _src("orders")],
@@ -650,6 +714,36 @@ def test_pivot_count(pivot_sales_table):
     east_row = df[df["region"] == "East"]
     assert east_row["A"].iloc[0] == 1
     assert east_row["B"].iloc[0] == 1
+
+
+def test_pivot_against_non_duckdb_backend(pivot_sales_table):
+    """`_apply_pivot` used to shell out to raw DuckDB PIVOT syntax via the
+    connection's own execute() — which doesn't exist on the native
+    postgres/mysql/sqlite backends plan 056 loads `sql_database` sources
+    through. `pivot_wider` compiles to portable SQL instead; sqlite (no
+    PIVOT statement of its own, no network dependency) stands in for
+    'any non-DuckDB backend' here."""
+    sqlite_con = ibis.sqlite.connect()
+    df = pd.DataFrame([
+        {"region": "East", "product": "A", "sales": 100},
+        {"region": "East", "product": "B", "sales": 150},
+        {"region": "West", "product": "A", "sales": 200},
+    ])
+    sqlite_table = sqlite_con.create_table("pivot_sales_sqlite", df, overwrite=True)
+    pipeline = make_pipeline([{
+        "op": "pivot",
+        "index": "region",
+        "columns": "product",
+        "values": "sales",
+        "agg": "sum",
+    }])
+    result = _run(pipeline, {"src": sqlite_table})
+    df_out = result.execute()
+    assert "A" in df_out.columns
+    assert "B" in df_out.columns
+    east_row = df_out[df_out["region"] == "East"]
+    assert east_row["A"].iloc[0] == 100
+    assert east_row["B"].iloc[0] == 150
 
 
 @pytest.fixture
