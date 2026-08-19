@@ -17,7 +17,12 @@ class BulkDeleteRequest(BaseModel):
 from dte.api.routes.schema import InferSchemaResponse, _walk
 from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
-from dte.models.pipeline import SOURCE_CONNECTION_COMPAT, Source, SourceBase
+from dte.models.pipeline import (
+    SOURCE_CONNECTION_COMPAT,
+    Source,
+    SourceBase,
+    coerce_source_refs,
+)
 from dte.security.permissions import requires
 from dte.sources.loader import load_source
 from dte.store.base import ConnectionStore, PipelineStore, SourceStore
@@ -111,7 +116,10 @@ async def bulk_delete_sources(
         if not await s_store.get(sid):
             not_found.append(sid)
             continue
-        referenced_by = [p.id for p in pipelines if sid in (p.sources or [])]
+        referenced_by = [
+            p.id for p in pipelines
+            if any(r.source_id == sid for r in coerce_source_refs(p.sources or []))
+        ]
         if referenced_by:
             blocked.append({"id": sid, "referenced_by": referenced_by})
             continue
@@ -130,7 +138,7 @@ async def delete_source(
         raise HTTPException(status_code=404, detail="Source not found")
     referenced_by = [
         p.id for p in await p_store.list(limit=10_000)
-        if source_id in (p.sources or [])
+        if any(r.source_id == source_id for r in coerce_source_refs(p.sources or []))
     ]
     if referenced_by:
         raise HTTPException(status_code=409, detail={"referenced_by": referenced_by})
@@ -141,9 +149,13 @@ async def delete_source(
 @router.get("/sources/{source_id}/schema", response_model=InferSchemaResponse, dependencies=[Depends(requires("source:read"))])
 async def source_schema(
     source_id: str,
+    table: str | None = None,
     store: SourceStore = Depends(get_source_store),
     c_store: ConnectionStore = Depends(get_connection_store),
 ):
+    """`table` — required for `sql_database` sources (they no longer carry
+    a table in their own config; which table is read is a
+    per-pipeline-per-use decision). Ignored for every other kind."""
     source = await store.get(source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -167,8 +179,42 @@ async def source_schema(
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     try:
-        table = load_source(source, registry, conn, conn.credentials)
+        result_table = load_source(source, registry, conn, conn.credentials, table=table)
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
-    fields = [_walk(name, dtype) for name, dtype in table.schema().items()]
+    fields = [_walk(name, dtype) for name, dtype in result_table.schema().items()]
     return InferSchemaResponse(fields=fields)
+
+
+@router.get("/sources/{source_id}/tables", dependencies=[Depends(requires("source:read"))])
+async def source_tables(
+    source_id: str,
+    store: SourceStore = Depends(get_source_store),
+    c_store: ConnectionStore = Depends(get_connection_store),
+):
+    """Table names visible through a `sql_database` source's connection,
+    respecting the source's configured `schema` if any. 422 (not 500) for
+    non-`sql_database` sources or a real driver failure."""
+    source = await store.get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    if source.source_type != "sql_database":
+        raise HTTPException(
+            status_code=422,
+            detail=f"Source '{source_id}' is a {source.source_type!r} source — "
+            "table listing only applies to sql_database sources",
+        )
+    conn = await c_store.get(source.connection_id)
+    if not conn:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Source '{source_id}' references missing connection '{source.connection_id}'",
+        )
+    from dte.sources.loader import list_tables as _list_tables
+    try:
+        tables = _list_tables(conn, conn.credentials, schema=source.config.get("schema"))
+    except NotImplementedError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"{type(e).__name__}: {e}")
+    return {"tables": tables}

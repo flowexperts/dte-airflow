@@ -13,7 +13,7 @@ import {
   type DropdownOption,
 } from "@/components/ui";
 import { usePopoverPosition } from "@/components/ui/use-popover-position";
-import { useStepFields } from "../schema-context";
+import { useStepFields, useJoinOperands } from "../schema-context";
 import { usePipelineParams } from "../params-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -1250,13 +1250,48 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
   );
 }
 
+/** Left/right operands must resolve to a declared source alias or an
+ *  earlier step's `output_id` (plan 056) — offered as a dropdown from
+ *  `useJoinOperands()` rather than typed blind. Falls back to a free-text
+ *  option for a value that predates this list (e.g. a bare source id from
+ *  before the clean break) so it isn't silently discarded. */
+function OperandPicker({
+  value,
+  onChange,
+  operands,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  operands: string[];
+}) {
+  const opts: DropdownOption<string>[] = [
+    ...operands.map<DropdownOption<string>>((o) => ({ value: o, label: o })),
+    ...(value && !operands.includes(value)
+      ? ([{ value, label: `${value} (unresolved)`, disabled: true }] as DropdownOption<string>[])
+      : []),
+  ];
+  return (
+    <Dropdown<string>
+      value={value}
+      onChange={onChange}
+      options={opts}
+      placeholder="— pick an alias —"
+    />
+  );
+}
+
 export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
   const allFields = useStepFields();
+  const operands = useJoinOperands();
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-3 gap-3">
-        <Field label="Left"><Input value={(step.left as string) ?? ""} onChange={(e) => set({ left: e.target.value })} /></Field>
-        <Field label="Right"><Input value={(step.right as string) ?? ""} onChange={(e) => set({ right: e.target.value })} /></Field>
+        <Field label="Left">
+          <OperandPicker value={(step.left as string) ?? ""} onChange={(v) => set({ left: v })} operands={operands} />
+        </Field>
+        <Field label="Right">
+          <OperandPicker value={(step.right as string) ?? ""} onChange={(v) => set({ right: v })} operands={operands} />
+        </Field>
         <Field label="How">
           <select
             value={(step.how as string) ?? "inner"}

@@ -257,3 +257,22 @@ def test_put_renames_name_without_changing_id(fake_stores):
     got = c.get(f"/api/connections/{cid}").json()
     assert got["id"] == cid
     assert got["name"] == "new"
+
+
+# ─── GET /connections/{id}/schemas (plan 056) ──────────────────────────────
+
+
+def test_list_schemas_404_for_missing_connection(fake_stores):
+    c = TestClient(app)
+    r = c.get("/api/connections/does-not-exist/schemas")
+    assert r.status_code == 404
+
+
+def test_list_schemas_422_for_connection_type_with_no_native_backend(fake_stores):
+    """s3 (filesystem-family) has no native ibis backend to introspect —
+    422, not 500."""
+    c = TestClient(app)
+    c.post("/api/connections", json=_conn())
+    r = c.get("/api/connections/c1/schemas")
+    assert r.status_code == 422, r.text
+    assert "no native ibis backend" in r.json()["detail"].lower()

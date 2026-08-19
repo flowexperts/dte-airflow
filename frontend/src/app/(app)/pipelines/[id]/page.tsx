@@ -23,8 +23,8 @@ export default async function PipelineDetail({ params }: { params: Params }) {
     // error — the canvas shows it as "not found" so it can be fixed in place.
     const [sources, destination] = await Promise.all([
       Promise.all(
-        (pipeline.sources ?? []).map((sid) =>
-          getSource(sid).catch(orNull<Source>),
+        (pipeline.sources ?? []).map((ref) =>
+          getSource(ref.source_id).catch(orNull<Source>),
         ),
       ),
       pipeline.output_id

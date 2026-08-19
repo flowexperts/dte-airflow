@@ -2,23 +2,27 @@
 
 import { useEffect, useRef } from "react";
 import { useSchemas } from "@/components/builder/schema-context";
-import { pipelineStepSchemas, type Pipeline } from "@/lib/api";
+import { pipelineStepSchemas, type Pipeline, type SourceTableRef } from "@/lib/api";
 
 /* Field autocomplete needs the same two background syncs BuilderForm runs.
  * They live inside BuilderForm today; lifted here so any surface that mounts a
  * step editor gets working field pickers. */
 
-/** Source schemas, fetched once per saved source id. */
-export function AutoInferSchemas({ sourceIds }: { sourceIds: string[] }) {
+/** Source schemas, fetched once per pipeline source ref — keyed by `alias`,
+ *  not `source_id`, so a two-table pipeline off one source gets two distinct
+ *  field sets instead of one overwriting the other. */
+export function AutoInferSchemas({ sources }: { sources: SourceTableRef[] }) {
   const { schemas, refreshById } = useSchemas();
   const inflight = useRef<Set<string>>(new Set());
   useEffect(() => {
-    for (const id of sourceIds) {
-      if (!id || inflight.current.has(id) || schemas[id]) continue;
-      inflight.current.add(id);
-      refreshById(id);
+    for (const ref of sources) {
+      if (!ref.source_id || !ref.alias) continue;
+      const key = ref.alias;
+      if (inflight.current.has(key) || schemas[key]) continue;
+      inflight.current.add(key);
+      refreshById(ref.source_id, ref.alias, ref.table);
     }
-  }, [sourceIds, schemas, refreshById]);
+  }, [sources, schemas, refreshById]);
   return null;
 }
 

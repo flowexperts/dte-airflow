@@ -62,6 +62,7 @@ from dte.evals.sweep import (
     variant_name,
 )
 from dte.models.eval import EvalExampleBase, EvalSetBase
+from dte.models.pipeline import coerce_source_refs
 from dte.security.permissions import requires
 from dte.store.base import EvalExampleStore, EvalSetStore, PipelineStore, RunStore
 
@@ -171,10 +172,10 @@ async def eval_set_for_pipeline(
         )
 
     source_id = None
-    for sid in getattr(pipeline, "sources", None) or []:
-        row = await s_store.get(sid)
+    for ref in coerce_source_refs(getattr(pipeline, "sources", None) or []):
+        row = await s_store.get(ref.source_id)
         if row is not None and row.source_type == "documents":
-            source_id = sid
+            source_id = ref.source_id
             break
     if source_id is None:
         raise HTTPException(

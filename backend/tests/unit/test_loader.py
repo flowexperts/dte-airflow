@@ -441,11 +441,11 @@ def test_sql_database_loader_end_to_end(tmp_path):
     src = Source(connection_id="local_fs",
         id="sql1",
         source_type="sql_database",
-        config={"table": "customers"},
+        config={},
         table="customers_out",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con, {"url": f"sqlite:///{db_path}"})
+    result = load_source(src, con, {"url": f"sqlite:///{db_path}"}, table="customers")
     df = result.execute()
     assert len(df) == 3
     assert set(df.columns).issuperset({"id", "name", "age"})
@@ -466,13 +466,13 @@ def test_sql_database_credentials_resolved_from_env(monkeypatch, tmp_path):
     src = Source(connection_id="local_fs",
         id="sql2",
         source_type="sql_database",
-        config={"table": "t"},
+        config={},
         table="t_out",
     )
     con = ibis.duckdb.connect()
     # Credentials come from the connection; env-indirection still supported on
     # individual values for the env-backed SecretResolver.
-    result = load_source(src, con, {"url": {"env": "DTE_SQL_DSN"}})
+    result = load_source(src, con, {"url": {"env": "DTE_SQL_DSN"}}, table="t")
     df = result.execute()
     assert df["x"].tolist() == [42]
 
@@ -489,13 +489,13 @@ def test_sql_database_snowflake_without_extra_raises_helpfully():
     src = Source(connection_id="local_fs",
         id="sql_snow",
         source_type="sql_database",
-        config={"table": "t"},
+        config={},
         table="t",
     )
     con = ibis.duckdb.connect()
     # Extra not installed in the dev env → RuntimeError mentioning the extra.
     with pytest.raises(RuntimeError, match="snowflake-source"):
-        load_source(src, con, {"url": "snowflake://user:pw@acct"})
+        load_source(src, con, {"url": "snowflake://user:pw@acct"}, table="t")
 
 
 def test_mongodb_loader_end_to_end(monkeypatch):

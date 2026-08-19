@@ -43,11 +43,18 @@ def _walk(name: str, dtype: dt.DataType) -> SchemaFieldNode:
 @router.post("/schema/infer", response_model=InferSchemaResponse, dependencies=[Depends(requires("source:read"))])
 async def infer_schema(
     source: Source,
+    table: str | None = None,
     c_store: ConnectionStore = Depends(get_connection_store),
 ):
     """Infer schema for an in-flight (unsaved) source. Requires
     `source.connection_id` to reference an existing Connection so the
-    loader can decrypt credentials."""
+    loader can decrypt credentials.
+
+    `table` — required for `sql_database` sources (they no longer carry a
+    table in their own config; which table is read is a
+    per-pipeline-per-use decision, so the caller supplies it here for a
+    preview of a table not yet saved on any pipeline). Ignored for every
+    other kind."""
     conn = await c_store.get(source.connection_id)
     if not conn:
         raise HTTPException(
@@ -57,9 +64,9 @@ async def infer_schema(
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     try:
-        table = load_source(source, registry, conn, conn.credentials)
+        result_table = load_source(source, registry, conn, conn.credentials, table=table)
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    fields = [_walk(name, dtype) for name, dtype in table.schema().items()]
+    fields = [_walk(name, dtype) for name, dtype in result_table.schema().items()]
     return InferSchemaResponse(fields=fields)

@@ -492,6 +492,40 @@ def _src(src_id):
     }
 
 
+def test_join_uses_alias_not_source_id_as_registry_key(users_table, orders_table):
+    """Plan 056: the compiler's table registry is keyed by
+    `SourceTableRef.alias`, not the bare source id — this is what lets one
+    `sql_database` Source be picked twice (different tables) in one
+    pipeline. Here both refs point at the same fictional source id but
+    carry distinct aliases; the `tables` dict the caller builds is keyed
+    by those aliases."""
+    pipeline = Pipeline(
+        id="p1", name="test",
+        sources=[
+            {"source_id": "pgsrc", "alias": "users_ref", "table": "users"},
+            {"source_id": "pgsrc", "alias": "orders_ref", "table": "orders"},
+        ],
+        steps=[{
+            "op": "join",
+            "left": "users_ref",
+            "right": "orders_ref",
+            "on": "id",
+            "how": "inner",
+            "output_id": "joined",
+        }],
+        output_id="out1",
+    )
+    result = compile_pipeline(
+        pipeline,
+        {"users_ref": users_table, "orders_ref": orders_table},
+        output=_output(),
+    )
+    df = result.execute()
+    assert len(df) == 2
+    assert "name" in df.columns
+    assert "amount" in df.columns
+
+
 def test_join_inner(users_table, orders_table):
     pipeline = make_join_pipeline(
         sources=[_src("users"), _src("orders")],

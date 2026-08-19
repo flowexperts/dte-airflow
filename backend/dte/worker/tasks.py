@@ -95,7 +95,11 @@ async def _execute_pipeline(
         # Multi-source runs still surface via HTTP RED metrics on trigger.
         try:
             pipeline = await p_store.get(pipeline_id)
-            first_src = await s_store.get(pipeline.sources[0]) if pipeline and pipeline.sources else None
+            first_src = None
+            if pipeline and pipeline.sources:
+                from dte.models.pipeline import coerce_source_refs
+                first_ref = coerce_source_refs(pipeline.sources)[0]
+                first_src = await s_store.get(first_ref.source_id)
             src_type = first_src.source_type if first_src else "unknown"
         except Exception:  # noqa — metric emission must never mask a run error
             src_type = "unknown"

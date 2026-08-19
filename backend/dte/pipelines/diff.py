@@ -32,6 +32,19 @@ class PipelineDiff(TypedDict):
     steps: list[StepChange]
 
 
+def _source_ref_key(source: Any) -> str:
+    """`sources` entries are `SourceTableRef` dicts (`{source_id, table,
+    alias}`) or, from a bare-id back-compat shorthand, plain strings.
+    Reduce either to one comparable/hashable/displayable string — a dict
+    isn't hashable, so `set()` over raw entries breaks the moment a ref
+    carries a `table`."""
+    if isinstance(source, dict):
+        alias = source.get("alias") or source.get("source_id")
+        table = source.get("table")
+        return f"{alias}:{table}" if table else str(alias)
+    return str(source)
+
+
 def diff_pipeline(before: dict[str, Any], after: dict[str, Any]) -> PipelineDiff:
     """Compare two `PipelineBase.model_dump()` dicts.
 
@@ -60,8 +73,8 @@ def diff_pipeline(before: dict[str, Any], after: dict[str, Any]) -> PipelineDiff
                 "after": a,
             })
 
-    b_sources = set(before.get("sources") or [])
-    a_sources = set(after.get("sources") or [])
+    b_sources = {_source_ref_key(s) for s in (before.get("sources") or [])}
+    a_sources = {_source_ref_key(s) for s in (after.get("sources") or [])}
     sources_added = sorted(a_sources - b_sources)
     sources_removed = sorted(b_sources - a_sources)
 

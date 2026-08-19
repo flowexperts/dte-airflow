@@ -5,26 +5,45 @@ import useSWR from "swr";
 import { Button, Dropdown, Panel, PanelHead, type DropdownOption } from "@/components/ui";
 import {
   createSource,
+  listSourceTables,
   updateSource,
   type Source,
+  type SourceTableRef,
 } from "@/lib/api";
 import { SourceEditor } from "./SourceEditor";
 import { emptySource } from "./types";
 import { useSchemas } from "../schema-context";
 
+const emptySlot = (): SourceTableRef => ({ source_id: "", table: null, alias: "" });
+
+/** Turns a table/source name into something that satisfies the backend's
+ *  alias regex (`^[A-Za-z_][A-Za-z0-9_]*$`), then dedupes it against the
+ *  aliases already in use — `orders`, `orders_2` on collision. */
+function suggestAlias(base: string, taken: Set<string>): string {
+  let candidate = base.replace(/[^A-Za-z0-9_]/g, "_");
+  if (!candidate || /^[0-9]/.test(candidate)) candidate = `_${candidate}`;
+  if (!taken.has(candidate)) return candidate;
+  let n = 2;
+  while (taken.has(`${candidate}_${n}`)) n++;
+  return `${candidate}_${n}`;
+}
+
 /**
- * Slots are ordered source-id references. The picker shows saved sources
- * from `/api/sources`. "+ New source" opens an inline editor whose Save
- * button POSTs to /api/sources then appends the id to the slots list.
- * Editing a saved slot updates the shared record.
+ * Slots are ordered `SourceTableRef`s: `{source_id, table, alias}` (plan
+ * 056). A `sql_database` Source is database-scoped — the table read is a
+ * per-slot decision, offered as a dropdown fed by `GET
+ * /api/sources/{id}/tables` once a source is picked. `alias` is the
+ * compiler's join-registry key; it is never defaulted server-side, so this
+ * panel fills it in the moment there's a table (or, for non-DB sources, a
+ * source) to name it after.
  */
 export function SourcesPanel({
   sources,
   onChange,
   error,
 }: {
-  sources: string[];
-  onChange: (next: string[]) => void;
+  sources: SourceTableRef[];
+  onChange: (next: SourceTableRef[]) => void;
   /** Validation error to display beneath the panel. */
   error?: string | undefined;
 }) {
@@ -38,17 +57,41 @@ export function SourcesPanel({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const setSlot = (i: number, id: string) => {
-    const otherSlots = sources.filter((_, j) => j !== i);
-    if (id && otherSlots.includes(id)) return;
+  const aliasesExcept = (i: number) =>
+    new Set(sources.filter((_, j) => j !== i).map((r) => r.alias).filter(Boolean));
+
+  const setSlot = (i: number, ref: SourceTableRef) => {
     if (i >= sources.length) {
-      onChange([...sources, id]);
+      onChange([...sources, ref]);
       return;
     }
     const copy = [...sources];
-    copy[i] = id;
+    copy[i] = ref;
     onChange(copy);
   };
+
+  const pickSource = (i: number, sourceId: string) => {
+    const info = available.find((s) => s.id === sourceId);
+    const isDb = info?.source_type === "sql_database";
+    const taken = aliasesExcept(i);
+    const alias = isDb ? "" : suggestAlias(info?.name ?? sourceId, taken);
+    setSlot(i, { source_id: sourceId, table: null, alias });
+  };
+
+  const pickTable = (i: number, table: string) => {
+    const ref = sources[i];
+    if (!ref) return;
+    const taken = aliasesExcept(i);
+    const alias = ref.alias ? ref.alias : suggestAlias(table, taken);
+    setSlot(i, { ...ref, table, alias });
+  };
+
+  const setAlias = (i: number, alias: string) => {
+    const ref = sources[i];
+    if (!ref) return;
+    setSlot(i, { ...ref, alias });
+  };
+
   const remove = (i: number) => onChange(sources.filter((_, j) => j !== i));
 
   const openNewAtSlot = (slot: number) => {
@@ -57,7 +100,7 @@ export function SourcesPanel({
     setErr(null);
   };
   const openEdit = async (slot: number) => {
-    const id = sources[slot];
+    const id = sources[slot]?.source_id;
     const existing = available.find((s) => s.id === id);
     if (!existing) {
       setErr(`Source '${id}' not found on server.`);
@@ -75,9 +118,7 @@ export function SourcesPanel({
       if (editing.isNew) {
         // Server generates the id — use the response, not the draft.
         const created = await createSource(editing.draft);
-        const copy = [...sources];
-        copy[editing.slot] = created.id;
-        onChange(copy);
+        pickSource(editing.slot, created.id);
       } else {
         await updateSource(editing.draft.id, editing.draft);
       }
@@ -93,102 +134,41 @@ export function SourcesPanel({
   return (
     <Panel>
       <PanelHead label="Sources" count={sources.length} />
-      {[...sources, ""].map((id, i) => {
+      {[...sources, emptySlot()].map((ref, i) => {
         const isTrailing = i === sources.length;
-        const info = available.find((s) => s.id === id);
-        const otherSelected = new Set(sources.filter((_, j) => j !== i && !!_));
-        const isDuplicate = !!id && otherSelected.has(id);
+        const info = available.find((s) => s.id === ref.source_id);
+        const isDb = info?.source_type === "sql_database";
+        const schemaKey = ref.alias;
         const opts: DropdownOption<string>[] = [
           { kind: "action", label: "+ Create new source…", onSelect: () => openNewAtSlot(i) },
           ...(available.length > 0 ? ([{ kind: "divider" }] as DropdownOption<string>[]) : []),
           ...available.map<DropdownOption<string>>((s) => {
             const cfg = (s.config ?? {}) as Record<string, string>;
-            const meta = cfg.bucket_url ?? cfg.connection_url ?? s.source_type;
-            const used = otherSelected.has(s.id);
-            return {
-              value: s.id,
-              label: s.name ?? s.id,
-              meta: used ? "Already added" : meta,
-              disabled: used,
-            };
+            const meta = cfg.bucket_url ?? cfg.connection_string ?? s.source_type;
+            return { value: s.id, label: s.name ?? s.id, meta };
           }),
-          ...(id && !info
-            ? ([{ value: id, label: `${id} (missing)`, disabled: true }] as DropdownOption<string>[])
+          ...(ref.source_id && !info
+            ? ([{ value: ref.source_id, label: `${ref.source_id} (missing)`, disabled: true }] as DropdownOption<string>[])
             : []),
         ];
         return (
-          <div
-            key={`${id}-${i}`}
-            className="p-3 border-b border-border last:border-b-0"
-          >
-            <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <Dropdown<string>
-                  value={id}
-                  onChange={(v) => setSlot(i, v)}
-                  options={opts}
-                  placeholder="— pick a source —"
-                />
-              </div>
-              {id && info && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => refreshById(id)}
-                    disabled={schemas[id]?.loading}
-                    className={`font-mono text-[10.5px] tracking-[0.15em] uppercase disabled:opacity-50 disabled:pointer-events-none ${
-                      schemas[id]?.error
-                        ? "text-red hover:opacity-80"
-                        : "text-accent hover:text-accent-h"
-                    }`}
-                    title={
-                      schemas[id]?.error
-                        ? "click to retry"
-                        : schemas[id]?.fields.length
-                          ? `${schemas[id]!.fields.length} fields inferred`
-                          : "run schema inference for this source"
-                    }
-                  >
-                    {schemas[id]?.loading
-                      ? "Inferring…"
-                      : schemas[id]?.error
-                        ? "Retry infer"
-                        : schemas[id]?.fields.length
-                          ? `Infer schema · ${schemas[id]!.fields.length}`
-                          : "Infer schema"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openEdit(i)}
-                    className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
-                    title="shared with other pipelines"
-                  >
-                    Edit
-                  </button>
-                </>
-              )}
-              {!isTrailing && (
-                <button
-                  type="button"
-                  onClick={() => remove(i)}
-                  aria-label="Remove source"
-                  className="text-subtle hover:text-red text-[16px] leading-none px-1"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-            {isDuplicate && (
-              <div className="mt-2 font-mono text-[11.5px] text-red">
-                Already added to this pipeline.
-              </div>
-            )}
-            {id && info && schemas[id]?.error && (
-              <div className="mt-2 font-mono text-[11.5px] text-red break-all whitespace-pre-wrap">
-                {schemas[id]!.error}
-              </div>
-            )}
-          </div>
+          <SourceSlot
+            key={`${ref.source_id}-${ref.table ?? ""}-${i}`}
+            tableRef={ref}
+            info={info}
+            isDb={isDb}
+            opts={opts}
+            aliasDuplicate={!!ref.alias && aliasesExcept(i).has(ref.alias)}
+            schemaEntry={schemaKey ? schemas[schemaKey] : undefined}
+            onPickSource={(v) => pickSource(i, v)}
+            onPickTable={(t) => pickTable(i, t)}
+            onAliasChange={(a) => setAlias(i, a)}
+            onInfer={() =>
+              ref.source_id && ref.alias && refreshById(ref.source_id, ref.alias, ref.table)
+            }
+            onEdit={() => openEdit(i)}
+            onRemove={!isTrailing ? () => remove(i) : undefined}
+          />
         );
       })}
 
@@ -240,5 +220,169 @@ export function SourcesPanel({
         <div className="px-3 pb-2 font-mono text-[11.5px] text-red">{error}</div>
       )}
     </Panel>
+  );
+}
+
+function SourceSlot({
+  tableRef,
+  info,
+  isDb,
+  opts,
+  aliasDuplicate,
+  schemaEntry,
+  onPickSource,
+  onPickTable,
+  onAliasChange,
+  onInfer,
+  onEdit,
+  onRemove,
+}: {
+  tableRef: SourceTableRef;
+  info: Source | undefined;
+  isDb: boolean;
+  opts: DropdownOption<string>[];
+  aliasDuplicate: boolean;
+  schemaEntry: { fields: unknown[]; loading: boolean; error: string | null } | undefined;
+  onPickSource: (id: string) => void;
+  onPickTable: (table: string) => void;
+  onAliasChange: (alias: string) => void;
+  onInfer: () => void;
+  onEdit: () => void;
+  onRemove?: (() => void) | undefined;
+}) {
+  // Only fetch tables once a sql_database source is actually picked.
+  const { data: tablesData, isLoading: tablesLoading, error: tablesError } = useSWR<{
+    tables: string[];
+  }>(isDb && info ? `/api/sources/${encodeURIComponent(info.id)}/tables` : null, () =>
+    listSourceTables(info!.id),
+  );
+  const tableOpts: DropdownOption<string>[] = (tablesData?.tables ?? []).map((t) => ({
+    value: t,
+    label: t,
+  }));
+  const canInfer = Boolean(tableRef.source_id && tableRef.alias && (!isDb || tableRef.table));
+
+  return (
+    <div className="p-3 border-b border-border last:border-b-0">
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <Dropdown<string>
+            value={tableRef.source_id}
+            onChange={onPickSource}
+            options={opts}
+            placeholder="— pick a source —"
+          />
+        </div>
+        {tableRef.source_id && info && (
+          <>
+            <button
+              type="button"
+              onClick={onInfer}
+              disabled={!canInfer || schemaEntry?.loading}
+              className={`font-mono text-[10.5px] tracking-[0.15em] uppercase disabled:opacity-50 disabled:pointer-events-none ${
+                schemaEntry?.error
+                  ? "text-red hover:opacity-80"
+                  : "text-accent hover:text-accent-h"
+              }`}
+              title={
+                schemaEntry?.error
+                  ? "click to retry"
+                  : schemaEntry?.fields.length
+                    ? `${schemaEntry.fields.length} fields inferred`
+                    : "run schema inference for this source"
+              }
+            >
+              {schemaEntry?.loading
+                ? "Inferring…"
+                : schemaEntry?.error
+                  ? "Retry infer"
+                  : schemaEntry?.fields.length
+                    ? `Infer schema · ${schemaEntry.fields.length}`
+                    : "Infer schema"}
+            </button>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+              title="shared with other pipelines"
+            >
+              Edit
+            </button>
+          </>
+        )}
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label="Remove source"
+            className="text-subtle hover:text-red text-[16px] leading-none px-1"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {tableRef.source_id && info && isDb && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div>
+            <div className="font-mono text-[10px] tracking-[0.15em] uppercase text-subtle mb-1">
+              Table
+            </div>
+            <Dropdown<string>
+              value={tableRef.table ?? ""}
+              onChange={onPickTable}
+              options={tableOpts}
+              placeholder={tablesLoading ? "Loading tables…" : "— pick a table —"}
+            />
+            {tablesError && (
+              <div className="mt-1 font-mono text-[11px] text-red">
+                Couldn&apos;t list tables — {tablesError instanceof Error ? tablesError.message : String(tablesError)}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="font-mono text-[10px] tracking-[0.15em] uppercase text-subtle mb-1">
+              Alias
+            </div>
+            <input
+              value={tableRef.alias}
+              onChange={(e) => onAliasChange(e.target.value)}
+              placeholder="orders"
+              className="w-full bg-bg text-text border border-border rounded-[var(--radius)] px-2.5 py-1.5 text-[13.5px] font-mono focus:outline-none focus:border-accent"
+            />
+          </div>
+        </div>
+      )}
+
+      {tableRef.source_id && info && !isDb && (
+        <div className="mt-2">
+          <div className="font-mono text-[10px] tracking-[0.15em] uppercase text-subtle mb-1">
+            Alias
+          </div>
+          <input
+            value={tableRef.alias}
+            onChange={(e) => onAliasChange(e.target.value)}
+            placeholder="orders"
+            className="w-full bg-bg text-text border border-border rounded-[var(--radius)] px-2.5 py-1.5 text-[13.5px] font-mono focus:outline-none focus:border-accent"
+          />
+        </div>
+      )}
+
+      {aliasDuplicate && (
+        <div className="mt-2 font-mono text-[11.5px] text-red">
+          Alias already used by another source in this pipeline.
+        </div>
+      )}
+      {tableRef.source_id && isDb && !tableRef.table && (
+        <div className="mt-2 font-mono text-[11.5px] text-subtle">
+          Pick a table — required for a database source.
+        </div>
+      )}
+      {tableRef.source_id && info && schemaEntry?.error && (
+        <div className="mt-2 font-mono text-[11.5px] text-red break-all whitespace-pre-wrap">
+          {schemaEntry.error}
+        </div>
+      )}
+    </div>
   );
 }

@@ -24,6 +24,7 @@ from dte.models.pipeline import (
     RetypeStep,
     SelectStep,
     SortStep,
+    coerce_source_refs,
 )
 
 if TYPE_CHECKING:
@@ -156,7 +157,8 @@ def compile_pipeline(
     registry = dict(tables)
     _check_single_backend(registry)
     lookups = lookup_tables or {}
-    current_key = pipeline.sources[0]
+    source_refs = coerce_source_refs(pipeline.sources)
+    current_key = source_refs[0].alias
 
     def _emit(idx, op, status, msg=None):
         if on_step is not None:

@@ -213,3 +213,36 @@ def test_bulk_delete_sources_empty_422(client):
     c, *_ = client
     r = c.post("/api/sources/bulk-delete", json={"ids": []})
     assert r.status_code == 422
+
+
+def test_delete_source_referenced_by_ref_dict_409(client):
+    """The delete guard reads `SourceTableRef` dicts, not just the legacy
+    bare-id list — `sid in (p.sources or [])` would silently pass this
+    (always False against dicts), letting an in-use source delete clean."""
+    c, s_store, p_store = client
+    _run(s_store.save(_src("s1")))
+    _run(p_store.save(Pipeline(
+        id="p1", name="p",
+        sources=[{"source_id": "s1", "alias": "s1"}],
+        steps=[], output_id="d1",
+    )))
+    r = c.delete("/api/sources/s1")
+    assert r.status_code == 409
+    assert r.json()["detail"]["referenced_by"] == ["p1"]
+
+
+# ─── GET /sources/{id}/tables (plan 056) ───────────────────────────────────
+
+
+def test_source_tables_422_for_non_sql_database_source(client):
+    c, s_store, _ = client
+    _run(s_store.save(_src("s1")))  # filesystem
+    r = c.get("/api/sources/s1/tables")
+    assert r.status_code == 422, r.text
+    assert "sql_database" in r.json()["detail"]
+
+
+def test_source_tables_404_for_missing_source(client):
+    c, *_ = client
+    r = c.get("/api/sources/nope/tables")
+    assert r.status_code == 404
