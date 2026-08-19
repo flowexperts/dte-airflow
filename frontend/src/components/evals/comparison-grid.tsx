@@ -15,6 +15,9 @@ import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
 import { usePermissions } from "@/lib/use-permissions";
 import { cn } from "@/lib/cn";
+import { cellLabel } from "@/lib/comparison-cell";
+import { hasShippableCell } from "@/lib/comparison-shippable";
+import { PromoteFromComparison } from "./promote-from-comparison";
 
 /**
  * Several extraction configs, side by side, over the same documents.
@@ -35,12 +38,6 @@ import { cn } from "@/lib/cn";
  * label from. "Accept N agreed" turns the rest into ground truth in one
  * click, at which point the same page starts ranking.
  */
-
-const cellLabel = (cell: ComparisonCell): string => {
-  const c = cell.cell ?? {};
-  const parts = [c.provider, c.model].filter(Boolean) as string[];
-  return parts.length > 0 ? parts.join(" · ") : cell.pipeline_id;
-};
 
 const money = (v: number | null): string => (v == null ? "—" : `$${v.toFixed(4)}`);
 const ms = (v: number | null): string => (v == null ? "—" : `${v}ms`);
@@ -129,6 +126,7 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
   const scored = data.cells.some((c) => c.macro_f1 != null);
   const fieldNames = data.fields.map((f) => f.name);
   const disagreeing = data.documents.filter((d) => d.agrees === false).length;
+  const anyShippable = hasShippableCell(data.cells);
 
   const acceptAgreed = async () => {
     setAccepting(true);
@@ -158,37 +156,49 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
         ))}
       </div>
 
-      {!scored && (
+      {/* The "what now" bar. It used to render only while unscored, which
+          hid the page's exit the moment labels arrived — the state where the
+          user is *most* ready to ship. It now also renders whenever there is
+          something shippable. */}
+      {(!scored || anyShippable) && (
         <Panel>
           <div className="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-            <p className="text-[12.5px] text-muted max-w-[62ch]">
-              {disagreeing > 0 ? (
-                <>
-                  These configs disagree on{" "}
-                  <strong className="text-text">{disagreeing}</strong> of{" "}
-                  {data.documents.length} documents. Those are the ones worth
-                  reading — the rest they already settled between them.
-                </>
-              ) : (
-                <>
-                  Every config agreed on all {data.documents.length} documents.
-                  That usually means the task is easy enough for the cheapest
-                  option.
-                </>
-              )}
-            </p>
-            {can("eval:write") && data.labels.agreed_unlabeled > 0 && (
-              <Button
-                variant={data.labels.auto_accept ? "primary" : "default"}
-                size="sm"
-                disabled={accepting || !data.labels.auto_accept}
-                onClick={() => void acceptAgreed()}
-              >
-                {accepting
-                  ? "Labelling…"
-                  : `Accept ${data.labels.agreed_unlabeled} agreed as labels`}
-              </Button>
+            {!scored && (
+              <p className="text-[12.5px] text-muted max-w-[62ch]">
+                {disagreeing > 0 ? (
+                  <>
+                    These configs disagree on{" "}
+                    <strong className="text-text">{disagreeing}</strong> of{" "}
+                    {data.documents.length} documents. Those are the ones worth
+                    reading — the rest they already settled between them.
+                  </>
+                ) : (
+                  <>
+                    Every config agreed on all {data.documents.length}{" "}
+                    documents. That usually means the task is easy enough for
+                    the cheapest option.
+                  </>
+                )}
+              </p>
             )}
+            <div className="flex items-center gap-2 flex-wrap ml-auto">
+              {can("eval:write") && data.labels.agreed_unlabeled > 0 && (
+                <Button
+                  variant={data.labels.auto_accept ? "primary" : "default"}
+                  size="sm"
+                  disabled={accepting || !data.labels.auto_accept}
+                  onClick={() => void acceptAgreed()}
+                >
+                  {accepting
+                    ? "Labelling…"
+                    : `Accept ${data.labels.agreed_unlabeled} agreed as labels`}
+                </Button>
+              )}
+              <PromoteFromComparison
+                evalSetId={data.eval_set_id}
+                cells={data.cells}
+              />
+            </div>
           </div>
           {/* The write is refused when every config shares a provider, and
               that is the common case — sweeping models or prompts holds the

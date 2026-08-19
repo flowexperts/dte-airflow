@@ -124,6 +124,15 @@ export interface Pipeline {
   quality_contracts?: QualityContract[];
   /** Pipeline type: "transform" (default) writes output data; "quality" asserts conditions. */
   pipeline_type?: "transform" | "quality" | "eval";
+  /**
+   * The comparison this eval pipeline expands to: dotted axis path → values
+   * to vary (plan 055). Eval pipelines only — the API 422s a matrix on any
+   * other type rather than storing one that would silently do nothing.
+   *
+   * `null`/absent is N=1: the config as it stands, run once. That is the
+   * nightly regression check, not an empty comparison.
+   */
+  matrix?: Record<string, string[]> | null;
 }
 
 /** Structured 4xx payloads returned by pipeline save / trigger when the

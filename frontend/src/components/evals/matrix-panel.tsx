@@ -8,15 +8,18 @@ import {
   evalSetForPipeline,
   getStructureProviderStatus,
   launchSweep,
-  pipelineAsEval,
   previewSweep,
   type Pipeline,
   type SweepEstimate,
 } from "@/lib/api";
 import {
+  MODELS,
+  PROVIDERS,
   buildMatrix,
   cellCount,
+  draftFromMatrix,
   regexAvailability,
+  unknownAxes,
   type CompareDraft,
   type FieldPattern,
 } from "@/lib/compare-matrix";
@@ -25,46 +28,24 @@ import { humanizeError } from "@/lib/errors";
 import { cn } from "@/lib/cn";
 
 /**
- * Compare several extraction configs against the pipeline's own documents.
+ * The comparison an eval pipeline runs, edited where the pipeline is.
  *
- * This replaces a launcher that asked for a dotted axis path and a
- * comma-separated value list, reachable only from an eval set the user had
- * to define by hand first. Reaching a provider comparison took 28 steps and
- * could not actually be completed in the UI.
+ * This replaces the Compare wizard, whose matrix was transient: posted once
+ * to the sweep endpoint and never stored. You could not reopen a
+ * comparison, change one axis and re-run it — you started from an empty
+ * form and minted a fresh set of variant pipelines each time, which is how
+ * one demo pipeline accumulated twelve variants.
  *
- * Everything the old path made you declare is derived here: the eval twin,
- * the eval set, the field specs. The user picks what to vary and reads a
- * price. Four steps.
+ * An eval run *is* a comparison run. Making the matrix a property of the
+ * pipeline is what makes that true of the object model rather than only of
+ * the wizard, and it is what lets a scheduled eval run be a comparison at
+ * all.
  *
- * Two rules kept from the launcher because both were right:
- *
- * **Estimate before launch.** A cartesian product over a few hundred
- * documents is real money, and Launch stays unreachable until a cell count
- * and a price have been seen.
- *
- * **Calls are a ceiling, not a forecast.** Extraction is cached by document
- * content, so re-running a cell already evaluated costs nothing. Quoting
- * the worst case as if it were the bill would scare people off the cheap
- * operation the caching exists to create.
+ * Edits go through the pipeline's own `onChange`/save, so there is no
+ * second dirty state and no second Save button. Run always posts what is on
+ * screen — the API takes the body over the stored matrix — so an unsaved
+ * tweak can still be priced and run; saving is what keeps it for next time.
  */
-
-const PROVIDERS = [
-  { id: "claude", label: "Claude", hint: "strongest on messy layouts" },
-  { id: "openai", label: "OpenAI", hint: "" },
-  { id: "regex", label: "Regex", hint: "free, offline, exact provenance" },
-];
-
-const MODELS: Record<string, { id: string; label: string }[]> = {
-  claude: [
-    { id: "claude-opus-5", label: "Opus 5" },
-    { id: "claude-sonnet-5", label: "Sonnet 5" },
-    { id: "claude-haiku-4-5", label: "Haiku 4.5" },
-  ],
-  openai: [
-    { id: "gpt-5", label: "GPT-5" },
-    { id: "gpt-5-mini", label: "GPT-5 mini" },
-  ],
-};
 
 function structureFields(pipeline: Pipeline): FieldPattern[] {
   const step = (pipeline.steps ?? []).find(
@@ -105,41 +86,40 @@ function Chip({
   );
 }
 
-export function CompareWizard({
+export function MatrixPanel({
   pipeline,
-  onClose,
+  onChange,
+  readOnly,
 }: {
   pipeline: Pipeline;
-  onClose: () => void;
+  onChange: (matrix: Record<string, string[]> | null) => void;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
-  const [draft, setDraft] = useState<CompareDraft>({
-    providers: ["claude", "openai"],
-    models: [],
-    instructions: [],
-  });
   const [estimate, setEstimate] = useState<SweepEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showPrompts, setShowPrompts] = useState(false);
 
+  const stored = (pipeline.matrix ?? null) as Record<string, unknown[]> | null;
+  /* The pipeline is the single source of truth — no local draft mirroring
+     it. A second copy would need syncing back on every keystroke, which is
+     the bug class the step editors already document. */
+  const draft = useMemo(() => draftFromMatrix(stored), [stored]);
+  const foreign = useMemo(() => unknownAxes(stored), [stored]);
+
   const fields = useMemo(() => structureFields(pipeline), [pipeline]);
   const regex = useMemo(() => regexAvailability(fields), [fields]);
 
-  // A provider with no key configured cannot succeed. Offering it anyway
-  // costs an estimate, a launch, and a wait, and then reports the failure
-  // per-document — where it reads as "the model is bad at this" rather than
-  // "the model was never reachable".
   const { data: status } = useSWR("provider-status", getStructureProviderStatus);
   const providerStatus = useMemo(() => status?.providers ?? {}, [status]);
 
-  // The draft opens on claude+openai, which is right when both work and a
-  // dead end when neither does. Derived rather than synced through an
-  // effect: an effect that rewrites the draft fights the user's own clicks
-  // and re-runs on every readiness refetch. What the user ticked stays in
-  // `draft`; what can actually run is computed here and is what everything
-  // downstream — the matrix, the cell count, the chips — reads.
+  /* What can actually run, derived rather than synced. An effect that
+     rewrote the matrix when readiness arrived would fight the user's clicks
+     and re-fire on every refetch (and trips
+     `react-hooks/set-state-in-effect`). What was ticked stays stored; what
+     is runnable is computed. */
   const effective: CompareDraft = useMemo(
     () => ({
       ...draft,
@@ -150,13 +130,21 @@ export function CompareWizard({
     [draft, providerStatus],
   );
 
-  // Any edit invalidates the price that was approved. Keeping a stale
-  // estimate visible next to a changed matrix is how someone launches 12
-  // cells having agreed to 3.
+  /* No axes is N=1 — this pipeline's own config, run once. That is the
+     nightly regression check, not an empty comparison. */
+  const cells = cellCount(effective) || 1;
+
   const update = (patch: Partial<CompareDraft>) => {
-    setDraft((d) => ({ ...d, ...patch }));
+    const next = buildMatrix({ ...draft, ...patch });
+    // Any edit invalidates the price that was approved. A stale estimate
+    // beside a changed matrix is how someone runs 12 cells having agreed
+    // to 3.
     setEstimate(null);
     setErr(null);
+    // Preserve axes this panel has no controls for rather than deleting a
+    // user's configuration as a side effect of ticking a chip.
+    for (const key of foreign) next[key] = (stored?.[key] ?? []).map(String);
+    onChange(Object.keys(next).length > 0 ? next : null);
   };
 
   const toggle = (key: keyof CompareDraft, value: string) => {
@@ -168,27 +156,14 @@ export function CompareWizard({
     } as Partial<CompareDraft>);
   };
 
-  const cells = cellCount(effective);
-  const offeredModels = effective.providers.flatMap((p) => MODELS[p] ?? []);
-
-  /**
-   * Derive the twin and the set, then ask the API what this costs.
-   *
-   * Both derivations are idempotent, so running them on every estimate is
-   * safe and keeps the launch path a single call.
-   */
-  const prepare = async () => {
-    const { pipeline_id } = await pipelineAsEval(pipeline.id);
-    const { eval_set_id } = await evalSetForPipeline(pipeline_id);
-    return { pipelineId: pipeline_id, evalSetId: eval_set_id };
-  };
-
   const estimateRun = async () => {
     setBusy(true);
     setErr(null);
     try {
-      const { pipelineId, evalSetId } = await prepare();
-      setEstimate(await previewSweep(evalSetId, pipelineId, buildMatrix(effective)));
+      const { eval_set_id } = await evalSetForPipeline(pipeline.id);
+      setEstimate(
+        await previewSweep(eval_set_id, pipeline.id, buildMatrix(effective)),
+      );
     } catch (e) {
       setErr(humanizeError(e, { action: "estimate", entity: "comparison" }).message);
     } finally {
@@ -196,33 +171,45 @@ export function CompareWizard({
     }
   };
 
-  const launch = async () => {
+  const run = async () => {
     setBusy(true);
     try {
-      const { pipelineId, evalSetId } = await prepare();
-      const res = await launchSweep(evalSetId, pipelineId, buildMatrix(effective));
+      const { eval_set_id } = await evalSetForPipeline(pipeline.id);
+      const res = await launchSweep(eval_set_id, pipeline.id, buildMatrix(effective));
       toast.success({
-        title: `Comparing ${res.cells} config${res.cells === 1 ? "" : "s"}`,
+        title:
+          res.cells === 1
+            ? "Running this config"
+            : `Comparing ${res.cells} configs`,
         message: "Results fill in as each finishes.",
       });
-      onClose();
       router.push(
         `/pipelines/${encodeURIComponent(pipeline.id)}/compare?sweep=${encodeURIComponent(res.sweep_id ?? "")}`,
       );
     } catch (e) {
-      toast.error(humanizeError(e, { action: "launch", entity: "comparison" }));
+      toast.error(humanizeError(e, { action: "run", entity: "comparison" }));
       setBusy(false);
     }
   };
 
+  const offeredModels = effective.providers.flatMap((p) => MODELS[p] ?? []);
+
   return (
-    <Panel className="absolute right-0 top-9 z-20 w-[440px] shadow-lg">
-      <PanelHead label="Compare configs" />
+    <Panel>
+      <PanelHead
+        label="Comparison"
+        count={
+          <span className="font-mono text-[11px] text-subtle">
+            {cells} config{cells === 1 ? "" : "s"}
+          </span>
+        }
+      />
       <div className="px-4 py-3 flex flex-col gap-4">
-        <p className="text-[12.5px] text-muted">
+        <p className="text-[12.5px] text-muted max-w-[68ch]">
           Run this pipeline&apos;s extraction several ways over the same
           documents and see where they differ. No labels needed — PDFs are
-          parsed once and shared across every config.
+          parsed once and shared across every config. Leave everything
+          unticked to run the single config below as it stands.
         </p>
 
         <div className="flex flex-col gap-1.5">
@@ -232,7 +219,8 @@ export function CompareWizard({
           <div className="flex gap-1.5 flex-wrap">
             {PROVIDERS.map((p) => {
               const unconfigured = providerStatus[p.id]?.configured === false;
-              const blocked = (p.id === "regex" && !regex.available) || unconfigured;
+              const blocked =
+                readOnly || (p.id === "regex" && !regex.available) || unconfigured;
               return (
                 <Chip
                   key={p.id}
@@ -246,18 +234,18 @@ export function CompareWizard({
               );
             })}
           </div>
-          {/* Names the variable to set. "Claude is unavailable" would send
+          {/* Names the variable to set. "Claude is unavailable" sends
               someone to check their pipeline; this sends them to the right
-              place, and points at the option that needs no key. */}
+              place. */}
           {PROVIDERS.filter((p) => providerStatus[p.id]?.configured === false).map((p) => (
             <p key={p.id} className="text-[11.5px] text-subtle">
               {providerStatus[p.id]?.reason}
             </p>
           ))}
-          {/* Naming the fields matters. "Add patterns" is not actionable;
-              this tells them which ones and where to go. Offering regex
-              anyway would produce a cell that runs, returns nulls, and
-              scores near zero — a result that looks like a measurement. */}
+          {/* Naming the fields matters: "add patterns" is not actionable.
+              Offering regex anyway produces a cell that runs, returns
+              nulls and scores near zero — a result that looks like a
+              measurement and is not one. */}
           {!regex.available && (
             <p className="text-[11.5px] text-subtle">
               Regex needs a pattern on every field.{" "}
@@ -285,6 +273,9 @@ export function CompareWizard({
                 <Chip
                   key={m.id}
                   active={draft.models.includes(m.id)}
+                  // `exactOptionalPropertyTypes`: an optional prop rejects an
+                  // explicit `undefined`, so coerce rather than pass through.
+                  disabled={readOnly ?? false}
                   onClick={() => toggle("models", m.id)}
                 >
                   {m.label}
@@ -297,11 +288,12 @@ export function CompareWizard({
           </div>
         )}
 
-        {!showPrompts ? (
+        {!showPrompts && draft.instructions.length === 0 ? (
           <button
             type="button"
+            disabled={readOnly}
             onClick={() => setShowPrompts(true)}
-            className="text-[12px] text-muted hover:text-text text-left bg-transparent cursor-pointer"
+            className="text-[12px] text-muted hover:text-text text-left bg-transparent cursor-pointer disabled:opacity-40"
           >
             + Compare prompts too
           </button>
@@ -314,6 +306,7 @@ export function CompareWizard({
               <Textarea
                 key={i}
                 rows={2}
+                readOnly={readOnly}
                 value={draft.instructions[i] ?? ""}
                 placeholder={i === 0 ? "e.g. Ignore the remittance stub." : "another variant"}
                 onChange={(e) => {
@@ -327,6 +320,16 @@ export function CompareWizard({
               Blank boxes are skipped. Regex ignores instructions entirely.
             </p>
           </div>
+        )}
+
+        {/* A saved axis with no control here must not vanish on the next
+            edit, and pretending it isn't there would be worse. */}
+        {foreign.length > 0 && (
+          <p className="text-[11.5px] text-subtle">
+            Also varying{" "}
+            <span className="font-mono">{foreign.join(", ")}</span>, set
+            outside this panel and kept as-is.
+          </p>
         )}
 
         {err && <p className="text-[12.5px] text-red">{err}</p>}
@@ -352,14 +355,12 @@ export function CompareWizard({
             <span className="text-[11.5px] text-subtle">
               A ceiling assuming nothing is cached. Anything already run is free.
             </span>
-            {/* Extrapolated from a measured run, or absent. A confident
-                price nobody measured gets budgeted against. */}
             {estimate.cost_basis && (
               <span className="text-[11.5px] text-subtle">{estimate.cost_basis}</span>
             )}
             {/* Why the count is lower than providers × models. Silently
-                running fewer cells than someone built would leave them
-                looking for a column that never appears. */}
+                running fewer cells than someone built leaves them looking
+                for a column that never appears. */}
             {estimate.dropped && estimate.dropped.length > 0 && (
               <div className="flex flex-col gap-0.5 pt-1 border-t border-border">
                 <span className="text-[11.5px] text-subtle">
@@ -378,41 +379,38 @@ export function CompareWizard({
 
         <div className="flex items-center gap-2">
           <Button
-            /* Primary while it is the step to take. A cartesian product over
-               a few hundred documents is real money, so the price comes
-               before the spend — but that only works if the first button is
-               visibly the first button. */
             variant={estimate ? "default" : "primary"}
             size="sm"
-            disabled={busy || cells < 1}
+            disabled={busy}
             onClick={() => void estimateRun()}
           >
-            {busy ? "Working…" : cells > 0 ? `Estimate ${cells}` : "Estimate"}
+            {busy ? "Working…" : `Estimate ${cells}`}
           </Button>
-          {/* Unreachable until a price has been seen — and muted until then,
-              because primary styling on an inert control says "press this"
-              and is wrong. */}
+          {/* Unreachable until a price has been seen, and muted until then:
+              primary styling on an inert control says "press this". */}
           <Button
             variant={estimate ? "primary" : "default"}
             size="sm"
             disabled={busy || !estimate}
-            onClick={() => void launch()}
+            onClick={() => void run()}
           >
-            {estimate ? `Run ${estimate.cells}` : "Run"}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancel
+            {estimate
+              ? estimate.cells === 1
+                ? "Run eval"
+                : `Compare ${estimate.cells} configs`
+              : cells === 1
+                ? "Run eval"
+                : "Compare"}
           </Button>
         </div>
 
         {/* DESIGN.md: no disabled button whose enabling condition is not
-            stated on screen. Without this, Run looks broken rather than
-            gated, and the two-step guard reads as a bug. */}
+            stated on screen. Without this the guard reads as a broken
+            control rather than a deliberate one. */}
         {!estimate && (
           <p className="text-[11.5px] text-subtle">
-            {cells < 1
-              ? "Tick at least one provider to compare."
-              : "Estimate first — it shows the cost and runs nothing. Run unlocks once you've seen it."}
+            Estimate first — it shows the cost and runs nothing.{" "}
+            {cells === 1 ? "Run" : "Compare"} unlocks once you&apos;ve seen it.
           </p>
         )}
       </div>

@@ -275,6 +275,20 @@ re-pays for what Preview bought. Compose mounts a named volume; the Dockerfile
 creates the directory owned by `dte` so the fresh volume inherits that
 ownership (a root-owned volume fails silently for the non-root process).
 
+**Demo/test `documents` corpora live in `backend/sample_data/`, never
+`/tmp`.** `/tmp` gets swept — macOS, CI, a reboot — and a `documents` source
+pointed there finds zero files with no error (it just lists nothing). Worse,
+`eval_examples.doc_key` is `sha256(document bytes)`, so losing the files
+orphans every label with no way to reproduce the exact bytes they were keyed
+against. `backend/sample_data/eval-demo/invoices/` is committed to git,
+regenerated deterministically by `backend/scripts/generate_eval_demo_invoices.py`
+(built on the same `tests/fixtures/pdf_builder.build_pdf` the test suite
+uses), and bind-mounted read-only into `backend` and `worker` at
+`/app/sample_data`. If you add a new demo/test PDF corpus, put it here, not
+in a path under `/tmp` — `/tmp/dte-samples` stays reserved for data that is
+genuinely regenerated on every bring-up (e.g. `docs/user/scripts/seed.py`'s
+JSON fixtures), where losing it on a sweep is a non-event.
+
 **Document inspector** (`/documents/[key]`, and the Inspect action on run
 output / preview rows). An extracted row carries three distinct references and
 you need all three: `artifact_ref` is the *document* hash, `extract_meta.key`
@@ -492,6 +506,63 @@ never rendered as zero**.
   output. Affordable only because plan 050 caches by content hash; opening
   the page parses no PDF and calls no model.
 
+**Shipping the winner is on the comparison, not only the leaderboard**
+(plan 054). `promote` used to be rendered solely on the leaderboard, which
+ranks *scored* runs — so the page that works without labels had no exit,
+and the documented route out (accept labels → leaderboard → promote) is
+refused outright whenever every config shares a provider, which is what a
+model or prompt sweep produces. `PromoteFromComparison` puts one
+`Ship a config…` in the summary bar and chooses the config inside the form.
+
+- **One control, not one per cell.** The promote form does not fit a 220px
+  card, and Promote is the page's exit rather than a property of a cell —
+  by the time it is reached the decision is made.
+- **Nothing is preselected.** Unlabelled, the page computes no ranking;
+  labelled, it computes ties rather than winners. A default would assert
+  what neither state supports.
+- **Unshippable cells stay in the list with the reason attached**
+  (`lib/comparison-shippable.ts`). The one that matters: a run whose every
+  call failed is `completed` and green, because `on_error: null` fills
+  nulls rather than failing — shipping it ships empty columns. A missing
+  option reads as a bug; "every row errored" is the useful thing to say.
+- `PromoteForm` is shared with the leaderboard. Two implementations would
+  drift, and the drift is invisible until a promoted pipeline stops
+  matching the digest that was measured.
+
+**The matrix is a property of the eval pipeline** (plan 055, migration
+`036`). `Pipeline.matrix` is a nullable JSONB map of dotted axis path →
+values to vary; `MatrixPanel` edits it in the builder, above the steps it
+varies, and it saves with the pipeline. The Compare wizard is **deleted** —
+its matrix was transient, so a comparison could not be reopened, adjusted
+and re-run: you started from an empty form and minted a fresh set of
+variant pipelines each time.
+
+- **Absent means N=1**, not zero: the config as it stands, run once. That
+  is the nightly regression check, and `_expand_matrix` returning `[]` for
+  an empty product is turned into one cell *at the sweep route*, so its
+  other callers are unaffected.
+- **A matrix on a non-eval pipeline is a 422**, and so is an axis nothing
+  reads. `validate_matrix_axes` (`dte/evals/sweep.py`) is the same rule
+  `apply_cell` enforces, hoisted so it also fires at save — it used to fire
+  only at spend, after a typo had been estimated and priced.
+- **The sweep body still wins when present**; the stored matrix is the
+  fallback. Estimate and confirm must price exactly what is on screen,
+  including unsaved edits, while a caller with no body (the scheduler) gets
+  the pipeline's own comparison.
+- `draftFromMatrix` is the inverse of `buildMatrix` and is what makes the
+  matrix storable: without it the panel renders empty over a saved matrix
+  and the next save discards every axis. Axes the panel has no control for
+  (`params.max_tokens`) are reported and preserved, never silently dropped.
+- `CompareButton` on a *transform* pipeline now only derives the twin and
+  its eval set, then navigates there. On an eval pipeline it renders
+  nothing — the panel is already on the page.
+
+**Sweep cells are still real pipelines.** The variant machinery
+(`prune_cells`, `root_pipeline_id`, `variant_name`, `isSweepVariant`)
+survives; collapsing cells so they stop being pipelines is the follow-on
+plan, and the migration of existing variants and their runs is where its
+risk lives.
+
 **`regex` is gated on patterns** (`lib/compare-matrix.ts`). Without a
 `pattern` per field the provider returns nothing on every row and the cell
 scores ~0 — which reads as "regex is bad at this" rather than "regex was
@@ -658,6 +729,67 @@ git branch -d feature/<name>
 ```
 
 Every non-trivial change gets its own worktree. Do not develop directly on `main`.
+
+### Setting up a fresh worktree
+
+A new worktree is a checkout of tracked files only, so everything ignored or
+generated is missing. Four things, and each fails in a way that does not name
+the real cause:
+
+```bash
+cd worktrees/<name>
+cp ../../.env .                      # 1
+cd frontend && pnpm install          # 2
+pnpm exec next typegen               # 3
+cd ../backend && uv venv && uv pip install -e ".[dev]"   # 4
+```
+
+1. **`.env` is gitignored, so a new worktree has none.** Compose reads `.env`
+   from the directory you invoke it in — not from the repo root — so a stack
+   started in a fresh worktree comes up with nothing set and the backend dies
+   on `RuntimeError: DTE_JWT_SECRET must be set when DATABASE_URL is set
+   (production)`. The message describes the symptom, not the cause: the file
+   is simply absent. `.env.example` is committed; the real one is not.
+   Copy it, and never commit the copy — `.gitignore:13` covers `.env` but
+   **not** `.env.*`, so a `.env.bak` is a secrets file git can see.
+2. Missing `node_modules` surfaces as `Cannot find module 'pdfjs-dist'` from
+   `tsc` — which reads as a broken import, not a missing install. The same
+   applies to any checkout whose `node_modules` predates a new dependency,
+   `main` included.
+3. `PageProps` / `LayoutProps` are Next 16 **generated globals**. Without
+   `next typegen` (or a `dev`/`build` run) `tsc` reports
+   `Cannot find name 'LayoutProps'` in files nobody touched.
+4. No venv means `uv run pytest` fails with `Failed to spawn: pytest`. The
+   `[dev]` extra does **not** pull `trino`, so a fresh venv fails 6 tests in
+   `tests/unit/test_engine_seam.py` that read as a Trino regression and are
+   not one — `uv pip install "ibis-framework[trino]"` fixes them.
+
+### Docker from a worktree
+
+**Always run compose from the worktree you are working in**, and keep
+`-p dte` so the `dte_pgdata` and `dte_artifacts` volumes are reused:
+
+```bash
+cd worktrees/<name> && docker compose -p dte up -d
+```
+
+Compose bind-mounts `./backend/dte`, `./backend/alembic` and `./frontend`
+**relative to the invocation directory**, so the directory you type this in
+decides which code runs. Two ways that bites:
+
+- Starting the stack from a directory whose `alembic/versions` lags the
+  database fails with `Can't locate revision identified by '0NN'` and the
+  backend exits — alembic walks *forward* from the DB's current revision, and
+  a revision the script directory has never heard of is unreachable. Running
+  from `main` while the DB is at a feature branch's migration does this.
+- A stack left running from another directory silently serves *that* code.
+  The frontend is the confusing one: features vanish from the UI with no
+  error anywhere.
+
+`docker inspect <container> --format '{{index .Config.Labels
+"com.docker.compose.project.working_dir"}}'` says which directory a running
+container was started from — check it first when the UI and the code
+disagree.
 
 ## Store / database
 

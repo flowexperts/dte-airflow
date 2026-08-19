@@ -1,13 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import useSWR from "swr";
-import { Button, Dropdown, Input, Panel, PanelHead } from "@/components/ui";
-import {
-  listDestinations,
-  promoteEvalPipeline,
-  type Destination,
-} from "@/lib/api";
+import { Button, Input, Panel, PanelHead } from "@/components/ui";
+import { DestinationPicker } from "@/components/builder/DestinationPicker";
+import { promoteEvalPipeline } from "@/lib/api";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
 import { usePermissions } from "@/lib/use-permissions";
@@ -26,27 +22,34 @@ import { usePermissions } from "@/lib/use-permissions";
  * here rather than hidden, because "same digest" is the only real evidence
  * that what shipped is what was measured.
  */
-export function PromoteButton({
+/**
+ * The promote form itself, without the control that opens it.
+ *
+ * Shared by the leaderboard (where a ranked row is promoted) and the
+ * comparison (where the user picks the config first, because no rank
+ * exists). Both must produce the same request and the same digest echo —
+ * two implementations would drift, and the drift would be invisible until
+ * a promoted pipeline stopped matching what was measured.
+ *
+ * `pipelineId` may be empty: the comparison's chooser renders this before a
+ * config is picked, and the submit stays disabled until it is.
+ */
+export function PromoteForm({
   evalSetId,
   pipelineId,
+  onDone,
+  onCancel,
 }: {
   evalSetId: string;
   pipelineId: string;
+  onDone?: () => void;
+  onCancel?: () => void;
 }) {
-  const { can } = usePermissions();
-  const [open, setOpen] = useState(false);
   const [newId, setNewId] = useState("");
   const [name, setName] = useState("");
   const [outputId, setOutputId] = useState("");
   const [busy, setBusy] = useState(false);
   const toast = useToast();
-
-  const { data: destinations } = useSWR<Destination[]>(
-    open ? ["destinations", "promote"] : null,
-    () => listDestinations(),
-  );
-
-  if (!can("eval:write")) return null;
 
   const go = async () => {
     setBusy(true);
@@ -61,13 +64,76 @@ export function PromoteButton({
         title: `Promoted to ${res.pipeline_id}`,
         message: `Same config digest (${res.config_digest.slice(0, 12)}) — what ships is what was scored.`,
       });
-      setOpen(false);
+      onDone?.();
     } catch (e) {
       toast.error(humanizeError(e, { action: "promote", entity: "pipeline" }));
     } finally {
       setBusy(false);
     }
   };
+
+  return (
+    <>
+          <p className="text-[12.5px] text-muted">
+            Copies this exact extract + structure config into a transform
+            pipeline. The steps are copied verbatim, so the promoted pipeline
+            keeps the digest that earned the score.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              value={newId}
+              onChange={(e) => setNewId(e.target.value)}
+              placeholder="new pipeline id"
+            />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="display name"
+            />
+          </div>
+          {/* The builder's own picker, not a plain dropdown of what already
+              exists. Promote *creates a pipeline*, so the destination it
+              writes to very often does not exist yet — and a list with no way
+              to add to it reads as "you must have prepared one first", which
+              is not true. `DestinationPicker` carries "+ Create new
+              destination…" and Edit inline, and it is the same control the
+              builder uses for the same slot, so the two surfaces cannot
+              drift on what a valid destination looks like. */}
+          <DestinationPicker outputId={outputId} onChange={setOutputId} />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy || !pipelineId || !newId.trim() || !outputId}
+              onClick={() => void go()}
+            >
+              {busy ? "Promoting…" : "Promote"}
+            </Button>
+            {onCancel && (
+              <Button variant="ghost" size="sm" onClick={onCancel}>
+                Cancel
+              </Button>
+            )}
+          </div>
+    </>
+  );
+}
+
+/**
+ * The leaderboard's entry point: a ranked row is already the chosen config,
+ * so the control opens straight onto the form.
+ */
+export function PromoteButton({
+  evalSetId,
+  pipelineId,
+}: {
+  evalSetId: string;
+  pipelineId: string;
+}) {
+  const { can } = usePermissions();
+  const [open, setOpen] = useState(false);
+
+  if (!can("eval:write")) return null;
 
   if (!open) {
     return (
@@ -87,45 +153,12 @@ export function PromoteButton({
       <Panel>
         <PanelHead label={`Promote ${pipelineId}`} />
         <div className="px-4 py-3 flex flex-col gap-2">
-          <p className="text-[12.5px] text-muted">
-            Copies this exact extract + structure config into a transform
-            pipeline. The steps are copied verbatim, so the promoted pipeline
-            keeps the digest that earned the score.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              value={newId}
-              onChange={(e) => setNewId(e.target.value)}
-              placeholder="new pipeline id"
-            />
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="display name"
-            />
-          </div>
-          <Dropdown
-            value={outputId}
-            onChange={setOutputId}
-            placeholder="— where should it write? —"
-            options={(destinations ?? []).map((d) => ({
-              value: d.id,
-              label: d.name ?? d.id,
-            }))}
+          <PromoteForm
+            evalSetId={evalSetId}
+            pipelineId={pipelineId}
+            onDone={() => setOpen(false)}
+            onCancel={() => setOpen(false)}
           />
-          <div className="flex items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={busy || !newId.trim() || !outputId}
-              onClick={() => void go()}
-            >
-              {busy ? "Promoting…" : "Promote"}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-          </div>
         </div>
       </Panel>
     </div>

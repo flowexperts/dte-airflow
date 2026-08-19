@@ -23,6 +23,32 @@ const PROVIDER_AXIS = "provider";
 const MODEL_AXIS = "params.model";
 const INSTRUCTIONS_AXIS = "model.instructions";
 
+/**
+ * The providers and models offered as axes.
+ *
+ * Lifted out of the Compare wizard when the matrix moved onto the pipeline
+ * (plan 055) so the builder panel and the cost estimator name models
+ * identically — a model string that does not match `cost.PRICES` prices as
+ * `unknown`, and one unpriced row nulls a whole run's cost by design.
+ */
+export const PROVIDERS = [
+  { id: "claude", label: "Claude", hint: "strongest on messy layouts" },
+  { id: "openai", label: "OpenAI", hint: "" },
+  { id: "regex", label: "Regex", hint: "free, offline, exact provenance" },
+];
+
+export const MODELS: Record<string, { id: string; label: string }[]> = {
+  claude: [
+    { id: "claude-opus-5", label: "Opus 5" },
+    { id: "claude-sonnet-5", label: "Sonnet 5" },
+    { id: "claude-haiku-4-5", label: "Haiku 4.5" },
+  ],
+  openai: [
+    { id: "gpt-5", label: "GPT-5" },
+    { id: "gpt-5-mini", label: "GPT-5 mini" },
+  ],
+};
+
 export type CompareDraft = {
   providers: string[];
   models: string[];
@@ -65,6 +91,46 @@ export function buildMatrix(draft: CompareDraft): Record<string, string[]> {
     if (cleaned.length > 0) matrix[axis] = cleaned;
   }
   return matrix;
+}
+
+/** Every axis this module knows how to render as chips. */
+const OWNED_AXES = [PROVIDER_AXIS, MODEL_AXIS, INSTRUCTIONS_AXIS];
+
+/**
+ * The inverse of `buildMatrix` — a stored matrix back into chip state.
+ *
+ * This is what makes the matrix storable at all. Reopening a saved
+ * comparison must restore the controls that produced it; without the
+ * inverse the panel renders empty over a matrix that exists, and the next
+ * save quietly discards every axis the user configured.
+ *
+ * Values are coerced to strings because JSONB round-trips numbers as
+ * numbers (`params.max_tokens: [1000]`) while the chips are text.
+ */
+export function draftFromMatrix(
+  matrix: Record<string, unknown[]> | null | undefined,
+): CompareDraft {
+  const axis = (name: string): string[] =>
+    (matrix?.[name] ?? []).map((v) => String(v));
+  return {
+    providers: axis(PROVIDER_AXIS),
+    models: axis(MODEL_AXIS),
+    instructions: axis(INSTRUCTIONS_AXIS),
+  };
+}
+
+/**
+ * Axes present in a stored matrix that this module has no control for.
+ *
+ * `params.max_tokens` and `params.api_key` are legal sweep axes with no
+ * chips. Parsing them into the draft would misrepresent them, and dropping
+ * them silently would delete a user's configuration on the next save — so
+ * the panel reports them and leaves them untouched instead.
+ */
+export function unknownAxes(
+  matrix: Record<string, unknown[]> | null | undefined,
+): string[] {
+  return Object.keys(matrix ?? {}).filter((k) => !OWNED_AXES.includes(k));
 }
 
 /** How many runs this draft launches — the number being spent against. */

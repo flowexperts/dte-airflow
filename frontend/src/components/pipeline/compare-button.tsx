@@ -1,28 +1,32 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
-import { CompareWizard } from "@/components/evals/compare-wizard";
 import { usePermissions } from "@/lib/use-permissions";
 import { isSweepVariant, rootPipelineId } from "@/lib/pipeline-variant";
-import type { Pipeline } from "@/lib/api";
+import { evalSetForPipeline, pipelineAsEval, type Pipeline } from "@/lib/api";
+import { useToast } from "@/components/toaster";
+import { humanizeError } from "@/lib/errors";
 
 /**
- * The entry point to comparing extraction configs.
+ * Turn an extraction pipeline into one that can be compared.
  *
- * It sits on the pipeline, not on an eval set, because that is where the
- * user already is. Plan 051 put the entry on `/eval-sets` — an abstract
- * object you had to define from scratch, naming a source and retyping a
- * field list the pipeline already declared. Everything the eval set needs
- * is sitting in the pipeline; asking for it again is what made the flow
- * 28 steps long.
+ * This used to open a wizard that configured a matrix and launched it in one
+ * transient step. The matrix now lives on the eval pipeline (plan 055), so
+ * the button's job is only the part that had to happen first: derive the
+ * eval twin and its set, then hand the user to the pipeline where the
+ * comparison is configured and run.
  *
- * Shown for transform and eval pipelines alike: an eval pipeline is its
- * own twin, so the flow is identical from here on.
+ * Both derivations are idempotent — Compare is a button people press twice,
+ * and a second press must not accumulate `__eval__eval`, each with its own
+ * runs diluting one leaderboard.
  */
 export function CompareButton({ pipeline }: { pipeline: Pipeline }) {
   const { can } = usePermissions();
-  const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
 
   // Nothing to compare configs *of*. Hiding the button beats offering it
   // and rejecting the click with a message about structure steps.
@@ -55,12 +59,36 @@ export function CompareButton({ pipeline }: { pipeline: Pipeline }) {
     );
   }
 
+  /* An eval pipeline already *is* the thing that carries a matrix — the
+     panel is on this page. Sending someone away to configure what is in
+     front of them would be a detour through their own pipeline. */
+  if (pipeline.pipeline_type === "eval") return null;
+
+  const go = async () => {
+    setBusy(true);
+    try {
+      const { pipeline_id } = await pipelineAsEval(pipeline.id);
+      await evalSetForPipeline(pipeline_id);
+      toast.success({
+        title: "Eval twin ready",
+        message: "Configure the comparison here, then run it.",
+      });
+      router.push(`/pipelines/${encodeURIComponent(pipeline_id)}`);
+    } catch (e) {
+      toast.error(humanizeError(e, { action: "prepare", entity: "comparison" }));
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="relative">
-      <Button variant="default" size="sm" onClick={() => setOpen((v) => !v)}>
-        Compare…
-      </Button>
-      {open && <CompareWizard pipeline={pipeline} onClose={() => setOpen(false)} />}
-    </div>
+    <Button
+      variant="default"
+      size="sm"
+      disabled={busy}
+      onClick={() => void go()}
+      title="Create an eval copy of this pipeline and configure a comparison on it"
+    >
+      {busy ? "Preparing…" : "Compare…"}
+    </Button>
   );
 }
