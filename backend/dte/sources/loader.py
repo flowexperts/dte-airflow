@@ -256,9 +256,10 @@ def _load_sql_database(
             "is not stored on the source itself"
         )
     schema = config.get("schema")
-    # ibis backends accept `schema=` for postgres/mysql; sqlite ignores it.
+    # ibis's SQL backends (postgres/mysql/sqlite) all take `database=` for
+    # the schema/database qualifier — `table()` has no `schema=` kwarg.
     if schema:
-        return backend.table(table_name, schema=schema)
+        return backend.table(table_name, database=schema)
     return backend.table(table_name)
 
 
