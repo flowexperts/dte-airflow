@@ -275,6 +275,20 @@ re-pays for what Preview bought. Compose mounts a named volume; the Dockerfile
 creates the directory owned by `dte` so the fresh volume inherits that
 ownership (a root-owned volume fails silently for the non-root process).
 
+**Demo/test `documents` corpora live in `backend/sample_data/`, never
+`/tmp`.** `/tmp` gets swept — macOS, CI, a reboot — and a `documents` source
+pointed there finds zero files with no error (it just lists nothing). Worse,
+`eval_examples.doc_key` is `sha256(document bytes)`, so losing the files
+orphans every label with no way to reproduce the exact bytes they were keyed
+against. `backend/sample_data/eval-demo/invoices/` is committed to git,
+regenerated deterministically by `backend/scripts/generate_eval_demo_invoices.py`
+(built on the same `tests/fixtures/pdf_builder.build_pdf` the test suite
+uses), and bind-mounted read-only into `backend` and `worker` at
+`/app/sample_data`. If you add a new demo/test PDF corpus, put it here, not
+in a path under `/tmp` — `/tmp/dte-samples` stays reserved for data that is
+genuinely regenerated on every bring-up (e.g. `docs/user/scripts/seed.py`'s
+JSON fixtures), where losing it on a sweep is a non-event.
+
 **Document inspector** (`/documents/[key]`, and the Inspect action on run
 output / preview rows). An extracted row carries three distinct references and
 you need all three: `artifact_ref` is the *document* hash, `extract_meta.key`
