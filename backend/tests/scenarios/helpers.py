@@ -62,9 +62,13 @@ async def create_destination(
 
 async def create_pipeline(
     client, *, id: str, name: str | None = None,
-    sources: list[str], steps: list[dict], output_id: str | None = None,
+    sources: list[str | dict], steps: list[dict], output_id: str | None = None,
     pipeline_type: str = "transform", **extra,
 ) -> dict:
+    """`sources` accepts either bare source ids (back-compat shorthand —
+    alias defaults to the id) or explicit `{source_id, alias, table}`
+    refs — needed once a pipeline picks more than one table off the same
+    `sql_database` source."""
     payload: dict[str, Any] = {
         "id": id,
         "name": name or id,

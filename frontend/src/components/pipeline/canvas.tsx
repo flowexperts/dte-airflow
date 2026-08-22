@@ -28,6 +28,7 @@ import {
   type Pipeline,
   type PipelineRevision,
   type Source,
+  type SourceTableRef,
 } from "@/lib/api";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
@@ -56,36 +57,37 @@ type PipelineView = "spec" | "runs" | "history" | "comparisons";
 /** Read-only sources, for viewers without write permission. */
 function SourcesCard({
   sources,
-  ids,
+  refs,
 }: {
   sources: (Source | null)[];
-  ids: string[];
+  refs: SourceTableRef[];
 }) {
   return (
     <Panel>
-      <PanelHead label="Sources" count={ids.length} />
-      {ids.length === 0 && (
+      <PanelHead label="Sources" count={refs.length} />
+      {refs.length === 0 && (
         <div className="px-4 py-4 text-sm text-subtle">No sources.</div>
       )}
-      {sources.map((s, i) =>
-        s ? (
+      {sources.map((s, i) => {
+        const ref = refs[i];
+        return s ? (
           <Item
-            key={s.id}
+            key={`${s.id}-${i}`}
             glyph="§"
-            label={s.id}
-            path={sourcePathLabel(s)}
+            label={ref?.alias ?? s.id}
+            path={ref?.table ? `${ref.table} — ${sourcePathLabel(s)}` : sourcePathLabel(s)}
             tag={<Tag>{s.source_type}</Tag>}
           />
         ) : (
           <Item
-            key={ids[i] ?? i}
+            key={`${ref?.source_id ?? i}-${i}`}
             glyph="§"
-            label={ids[i] ?? "?"}
+            label={ref?.alias || ref?.source_id || "?"}
             path="(source not found)"
             tag={<Tag>missing</Tag>}
           />
-        ),
-      )}
+        );
+      })}
     </Panel>
   );
 }
@@ -237,7 +239,7 @@ export function PipelineCanvas({
       onChange={(next) => patch({ sources: next })}
     />
   ) : (
-    <SourcesCard sources={sources} ids={pipeline.sources ?? []} />
+    <SourcesCard sources={sources} refs={pipeline.sources ?? []} />
   );
 
   const outputBlock = quality ? (
@@ -259,6 +261,7 @@ export function PipelineCanvas({
       openIndex={openStep}
       onOpenChange={setOpenStep}
       readOnly={!canEdit}
+      sources={pipeline.sources ?? []}
     />
   );
 
@@ -367,7 +370,7 @@ export function PipelineCanvas({
   return (
     <SchemaProvider>
       <PipelineParamsProvider params={pipeline.params}>
-        <AutoInferSchemas sourceIds={pipeline.sources ?? []} />
+        <AutoInferSchemas sources={pipeline.sources ?? []} />
         <AutoStepSchemas pipeline={pipeline} />
 
         <Topbar

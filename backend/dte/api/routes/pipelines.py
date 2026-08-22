@@ -61,6 +61,8 @@ from dte.models.pipeline import (
     PipelineBase,
     PipelineRevisionBase,
     Source,
+    SourceTableRef,
+    coerce_source_refs,
 )
 from dte.models.user import User
 from dte.security.permissions import requires
@@ -171,11 +173,51 @@ async def _validate_pipeline_refs(
     s_store: SourceStore,
     d_store: DestinationStore,
 ):
-    """Raise 422 if any source id or the destination id doesn't exist."""
-    missing_sources = []
-    for sid in pipeline.sources:
-        if not await s_store.get(sid):
-            missing_sources.append(sid)
+    """Raise 422 if any source id or the destination id doesn't exist, if
+    an alias is duplicated/malformed, if `table` is missing for a
+    `sql_database` ref (or set for any other kind), or if a join step's
+    `left`/`right` doesn't resolve to a declared alias or an earlier
+    step's `output_id`."""
+    refs = coerce_source_refs(pipeline.sources)
+    missing_sources: list[str] = []
+    duplicate_aliases: set[str] = set()
+    table_errors: list[str] = []
+    seen_aliases: set[str] = set()
+    known_keys: set[str] = set()
+    for ref in refs:
+        if ref.alias in seen_aliases:
+            duplicate_aliases.add(ref.alias)
+        seen_aliases.add(ref.alias)
+        known_keys.add(ref.alias)
+        source = await s_store.get(ref.source_id)
+        if not source:
+            missing_sources.append(ref.source_id)
+            continue
+        if source.source_type == "sql_database" and not ref.table:
+            table_errors.append(
+                f"alias {ref.alias!r}: 'table' is required for sql_database source '{ref.source_id}'"
+            )
+        elif source.source_type != "sql_database" and ref.table:
+            table_errors.append(
+                f"alias {ref.alias!r}: 'table' is not allowed for "
+                f"{source.source_type!r} source '{ref.source_id}'"
+            )
+
+    join_errors: list[str] = []
+    for i, step in enumerate(pipeline.steps or []):
+        if not isinstance(step, dict) or step.get("op") != "join":
+            continue
+        for side in ("left", "right"):
+            operand = step.get(side)
+            if operand not in known_keys:
+                join_errors.append(
+                    f"steps[{i}].{side}: unknown operand {operand!r} — must be "
+                    f"a declared source alias or an earlier step's output_id"
+                )
+        output_id = step.get("output_id")
+        if isinstance(output_id, str):
+            known_keys.add(output_id)
+
     # Quality and eval pipelines both write nowhere, so neither requires a
     # destination. Without this an eval pipeline is rejected at save for a
     # missing `output_id` it is never supposed to have.
@@ -183,12 +225,18 @@ async def _validate_pipeline_refs(
     missing_dest = None
     if not is_quality:
         missing_dest = None if await d_store.get(pipeline.output_id) else pipeline.output_id
-    if missing_sources or missing_dest:
+    if missing_sources or missing_dest or duplicate_aliases or table_errors or join_errors:
         detail: dict = {}
         if missing_sources:
             detail["missing_sources"] = missing_sources
         if missing_dest:
             detail["missing_destination"] = missing_dest
+        if duplicate_aliases:
+            detail["duplicate_aliases"] = sorted(duplicate_aliases)
+        if table_errors:
+            detail["table_errors"] = table_errors
+        if join_errors:
+            detail["join_errors"] = join_errors
         raise HTTPException(status_code=422, detail=detail)
 
 
@@ -213,17 +261,17 @@ async def _validate_engine_compat(
     )
 
     src_types: list[tuple[str, str]] = []
-    for sid in pipeline.sources:
-        source = await s_store.get(sid)
+    for ref in coerce_source_refs(pipeline.sources):
+        source = await s_store.get(ref.source_id)
         if not source:
             continue  # already caught by _validate_pipeline_refs
         conn = await c_store.get(source.connection_id)
         if not conn:
             raise HTTPException(
                 status_code=422,
-                detail=f"Source '{sid}' references missing connection '{source.connection_id}'",
+                detail=f"Source '{ref.source_id}' references missing connection '{source.connection_id}'",
             )
-        src_types.append((sid, conn.connection_type))
+        src_types.append((ref.source_id, conn.connection_type))
 
     # Quality and eval pipelines both write nowhere, so neither requires a
     # destination. Without this an eval pipeline is rejected at save for a
@@ -286,13 +334,13 @@ async def _check_shared_fs_guard(
     re-raised (that 422 already fired).
     """
     offending: list[str] = []
-    for sid in pipeline.sources:
-        source = await s_store.get(sid)
+    for ref in coerce_source_refs(pipeline.sources):
+        source = await s_store.get(ref.source_id)
         if not source:
             continue
         conn = await c_store.get(source.connection_id)
         if conn and conn.connection_type == "local_fs":
-            offending.append(sid)
+            offending.append(ref.source_id)
 
     # Quality and eval pipelines both write nowhere, so neither requires a
     # destination. Without this an eval pipeline is rejected at save for a
@@ -495,10 +543,10 @@ async def pipeline_as_eval(
     # source produces. Refusing here names the real problem; allowing it
     # produces a twin whose every run scores a flat zero.
     kinds = {}
-    for sid in getattr(source, "sources", None) or []:
-        row = await s_store.get(sid)
+    for ref in coerce_source_refs(getattr(source, "sources", None) or []):
+        row = await s_store.get(ref.source_id)
         if row is not None:
-            kinds[sid] = row.source_type
+            kinds[ref.source_id] = row.source_type
     if "documents" not in kinds.values():
         raise HTTPException(
             status_code=422,
@@ -688,21 +736,22 @@ async def _resolve(
     s_store: SourceStore,
     d_store: DestinationStore,
     c_store: ConnectionStore,
-) -> tuple[list[tuple[Source, "Connection", dict]], tuple[Destination, dict]]:
-    """Resolve pipeline id refs to (Source, Connection, credentials) tuples
-    and (Destination, credentials). Missing anything → 422 naming what's gone."""
-    sources: list[tuple[Source, "Connection", dict]] = []
-    for sid in pipeline.sources:
-        source = await s_store.get(sid)
+) -> tuple[list[tuple[SourceTableRef, Source, "Connection", dict]], tuple[Destination, dict]]:
+    """Resolve pipeline id refs to (SourceTableRef, Source, Connection,
+    credentials) tuples and (Destination, credentials). Missing anything →
+    422 naming what's gone."""
+    sources: list[tuple[SourceTableRef, Source, "Connection", dict]] = []
+    for ref in coerce_source_refs(pipeline.sources):
+        source = await s_store.get(ref.source_id)
         if not source:
-            raise HTTPException(status_code=422, detail=f"Source not found: {sid}")
+            raise HTTPException(status_code=422, detail=f"Source not found: {ref.source_id}")
         conn = await c_store.get(source.connection_id)
         if not conn:
             raise HTTPException(
                 status_code=422,
-                detail=f"Source '{sid}' references missing connection '{source.connection_id}'",
+                detail=f"Source '{ref.source_id}' references missing connection '{source.connection_id}'",
             )
-        sources.append((source, conn, conn.credentials))
+        sources.append((ref, source, conn, conn.credentials))
 
     destination = await d_store.get(pipeline.output_id)
     if not destination:
@@ -720,20 +769,20 @@ async def _resolve_sources(
     pipeline: Pipeline,
     s_store: SourceStore,
     c_store: ConnectionStore,
-) -> list[tuple[Source, "Connection", dict]]:
+) -> list[tuple[SourceTableRef, Source, "Connection", dict]]:
     """Resolve only sources (no destination) — used for quality pipelines."""
-    sources: list[tuple[Source, "Connection", dict]] = []
-    for sid in pipeline.sources:
-        source = await s_store.get(sid)
+    sources: list[tuple[SourceTableRef, Source, "Connection", dict]] = []
+    for ref in coerce_source_refs(pipeline.sources):
+        source = await s_store.get(ref.source_id)
         if not source:
-            raise HTTPException(status_code=422, detail=f"Source not found: {sid}")
+            raise HTTPException(status_code=422, detail=f"Source not found: {ref.source_id}")
         conn = await c_store.get(source.connection_id)
         if not conn:
             raise HTTPException(
                 status_code=422,
-                detail=f"Source '{sid}' references missing connection '{source.connection_id}'",
+                detail=f"Source '{ref.source_id}' references missing connection '{source.connection_id}'",
             )
-        sources.append((source, conn, conn.credentials))
+        sources.append((ref, source, conn, conn.credentials))
     return sources
 
 
@@ -776,7 +825,10 @@ async def _compile_body_pipeline(
         lookups = await _resolve_lookups(pipeline, lt_store)
         engine = DuckDBEngine()
         registry = BackendRegistry(duckdb_con=engine.con)
-        tables = {s.id: load_source(s, registry, conn, creds) for s, conn, creds in sources}
+        tables = {
+            ref.alias: load_source(s, registry, conn, creds, table=ref.table)
+            for ref, s, conn, creds in sources
+        }
         compiled = compile_pipeline(
             pipeline, tables,
             output=destination.config if destination else None,
@@ -939,7 +991,10 @@ async def preview_pipeline(
         # execution locus is picked by BackendRegistry.
         engine = DuckDBEngine()
         registry = BackendRegistry(duckdb_con=engine.con)
-        tables = {s.id: load_source(s, registry, conn, creds) for s, conn, creds in sources}
+        tables = {
+            ref.alias: load_source(s, registry, conn, creds, table=ref.table)
+            for ref, s, conn, creds in sources
+        }
         compiled = compile_pipeline(
             pipeline, tables,
             output=destination.config if destination else None,
@@ -992,14 +1047,16 @@ async def validate_eval_corpus_match(pipeline, eval_set_id: str, es_store) -> No
     eval_set = await es_store.get(eval_set_id)
     if eval_set is None:
         raise HTTPException(status_code=422, detail=f"eval set not found: {eval_set_id}")
-    if eval_set.source_id not in (getattr(pipeline, "sources", None) or []):
+    refs = coerce_source_refs(getattr(pipeline, "sources", None) or [])
+    source_ids = [r.source_id for r in refs]
+    if eval_set.source_id not in source_ids:
         raise HTTPException(
             status_code=422,
             detail=(
                 f"eval set '{eval_set_id}' labels documents from source "
                 f"'{eval_set.source_id}', but pipeline '{pipeline.id}' reads "
-                f"{list(getattr(pipeline, 'sources', None) or [])}. Scoring "
-                f"these together would match no labels and report zero."
+                f"{source_ids}. Scoring these together would match no "
+                f"labels and report zero."
             ),
         )
 
@@ -1081,7 +1138,10 @@ async def materialise_pipeline_rows(
     lookups = await _resolve_lookups(pipeline, lt_store)
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
-    tables = {s.id: load_source(s, registry, conn, creds) for s, conn, creds in sources}
+    tables = {
+            ref.alias: load_source(s, registry, conn, creds, table=ref.table)
+            for ref, s, conn, creds in sources
+        }
     compiled = compile_pipeline(pipeline, tables, lookup_tables=lookups, engine=engine)
     df = compiled.limit(limit).execute()
     return json.loads(df.to_json(orient="records", date_format="iso"))
@@ -1310,13 +1370,13 @@ async def _run_body(
             # connection_type).
             from dte.models.pipeline import resolve_pipeline_engine
             _engine_choice = getattr(pipeline, "engine", None) or "auto"
-            _src_ctypes = [conn.connection_type for _, conn, _ in sources]
+            _src_ctypes = [conn.connection_type for _, _, conn, _ in sources]
             _engine_name = resolve_pipeline_engine(_engine_choice, _src_ctypes)
             engine = get_engine(_engine_name)
             registry = BackendRegistry(duckdb_con=engine.con)
             tables = {
-                s.id: load_source(s, registry, conn, creds)
-                for s, conn, creds in sources
+                ref.alias: load_source(s, registry, conn, creds, table=ref.table)
+                for ref, s, conn, creds in sources
             }
             span.set_attribute("source_count", len(tables))
             span.set_attribute("engine", _engine_name)

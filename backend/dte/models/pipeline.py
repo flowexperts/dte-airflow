@@ -343,9 +343,10 @@ class DocumentSourceConfig(_BucketSourceConfig):
 
 
 class SqlDatabaseSourceConfig(BaseModel):
-    """Points at a table via DuckDB scanner extension. Credentials live on
-    the linked Connection (`credentials.url`)."""
-    table: str
+    """Points at a database via DuckDB scanner extension. Credentials live
+    on the linked Connection (`credentials.url`). Which table is read is a
+    per-pipeline-per-use decision (`SourceTableRef.table`), not part of the
+    source's own config."""
     schema_: str | None = Field(default=None, alias="schema")
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
@@ -768,9 +769,20 @@ class JoinStep(BaseModel):
     op: Literal["join"]
     left: str
     right: str
-    on: str | list[str]
+    # str/list[str]: same column name on both sides (the common case).
+    # dict[str, str]: left column -> right column, for a key that isn't
+    # named the same on both sides (e.g. `orders.customer_id` vs
+    # `customers.id`) — one entry per join column for a composite key.
+    on: str | list[str] | dict[str, str]
     how: Literal["inner", "left", "right", "outer"] = "inner"
     output_id: str
+
+    @field_validator("on")
+    @classmethod
+    def _on_non_empty(cls, v: str | list[str] | dict[str, str]) -> str | list[str] | dict[str, str]:
+        if not v:
+            raise ValueError("join step needs at least one 'on' column")
+        return v
 
 
 class PivotStep(BaseModel):
@@ -1163,6 +1175,75 @@ ParamType = Literal["string", "int", "float", "date", "timestamp", "boolean"]
 _PARAM_NAME_RE = _re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
+_ALIAS_RE = _re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _sanitize_alias(source_id: str) -> str:
+    """Derive a valid alias from a bare source id for the back-compat
+    shorthand (`sources: ["id", ...]`). Source ids default to a UUID4
+    (`3fa85f64-5717-...`), which contains hyphens and can start with a
+    digit — neither is a valid alias. Non-identifier characters become
+    `_`; a leading digit gets a `_` prefix. Collisions between two
+    sanitized UUIDs are not a practical concern (they differ in their hex
+    digits, which sanitizing preserves)."""
+    sanitized = _re.sub(r"[^A-Za-z0-9_]", "_", source_id)
+    if not sanitized or sanitized[0].isdigit():
+        sanitized = f"_{sanitized}"
+    return sanitized
+
+
+class SourceTableRef(BaseModel):
+    """One use of a `Source` within a pipeline.
+
+    `alias` is how joins and the compiler's table registry refer to this
+    use — it replaces the bare source id as the registry key, which is what
+    lets the same `sql_database` Source be picked more than once (against
+    different tables) in one pipeline. `table` is required when the
+    resolved source is `sql_database` (there is no default table on the
+    source anymore) and forbidden for every other kind, where the source's
+    own config already names what it loads.
+    """
+    model_config = {"extra": "forbid"}
+
+    source_id: str
+    table: str | None = None
+    alias: str
+
+    @field_validator("alias")
+    @classmethod
+    def _valid_alias(cls, v: str) -> str:
+        if not v or not _ALIAS_RE.match(v):
+            raise ValueError(
+                f"alias {v!r} must be non-empty and match [A-Za-z_][A-Za-z0-9_]*"
+            )
+        return v
+
+
+def coerce_source_refs(sources: list) -> list["SourceTableRef"]:
+    """Normalise a pipeline's `sources` list to typed `SourceTableRef`s.
+
+    Three shapes reach this: a bare source id string (back-compat
+    shorthand, also what a `table=True` `Pipeline` built via direct
+    construction in tests still holds — SQLModel skips validators there),
+    a raw dict (what a store-hydrated `Pipeline` holds — ORM hydration
+    skips validators too), and an already-typed `SourceTableRef` (a
+    validated `PipelineBase` body). Call sites that need
+    `.source_id`/`.table`/`.alias` should route through this rather than
+    assume the type.
+    """
+    out: list[SourceTableRef] = []
+    for s in sources:
+        if isinstance(s, SourceTableRef):
+            out.append(s)
+        elif isinstance(s, dict):
+            out.append(SourceTableRef.model_validate(s))
+        elif isinstance(s, str):
+            out.append(SourceTableRef(source_id=s, alias=_sanitize_alias(s)))
+        else:
+            raise TypeError(f"unexpected source ref type: {type(s).__name__}")
+    return out
+
+
 class PipelineParam(BaseModel):
     """Declared trigger-time input on a pipeline.
 
@@ -1216,9 +1297,29 @@ class PipelineBase(SQLModel):
     """
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str
-    sources: list[str] = SMField(default_factory=list)
+    sources: list[SourceTableRef] = SMField(default_factory=list)
     steps: list[dict] = SMField(default_factory=list)
     output_id: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_bare_source_ids(cls, data):
+        """Back-compat shorthand: `sources: ["src_id", ...]` is accepted and
+        expanded to `[{"source_id": "src_id", "alias": "src_id"}, ...]` —
+        the alias defaults to the source id. A `sql_database` source used
+        this way has no `table`, which `_validate_pipeline_refs` (the
+        route layer, which can see the source's kind) then rejects — this
+        validator only reshapes, it never validates against source kind."""
+        if not isinstance(data, dict):
+            return data
+        sources = data.get("sources")
+        if not isinstance(sources, list):
+            return data
+        data["sources"] = [
+            {"source_id": s, "alias": _sanitize_alias(s)} if isinstance(s, str) else s
+            for s in sources
+        ]
+        return data
     # Engine dispatch.  Default "auto" derives the engine from the pipeline's
     # source composition: single-source postgres → runs in postgres,
     # filesystem-only → DuckDB, mixed → DuckDB (or 422 with hint to use
@@ -1381,7 +1482,12 @@ class Pipeline(PipelineBase, table=True):
         default_factory=lambda: str(_uuid.uuid4()), primary_key=True
     )
     # Override list fields with explicit JSONB sa_columns.
-    sources: list[str] = SMField(  # type: ignore[override]
+    # Untyped `list` (not `list[dict]`) — like `quality_contracts` below,
+    # this avoids a Pydantic serializer warning when a test (or the legacy
+    # bare-id shorthand pre-coercion) constructs a table=True `Pipeline`
+    # directly with plain source-id strings, which `table=True`
+    # construction doesn't run through `_coerce_bare_source_ids` to fix up.
+    sources: list = SMField(  # type: ignore[override]
         default_factory=list, sa_column=Column(JSONB, nullable=False)
     )
     steps: list[dict] = SMField(  # type: ignore[override]

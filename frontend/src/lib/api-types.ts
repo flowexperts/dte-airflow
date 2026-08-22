@@ -146,6 +146,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pipelines/{pipeline_id}/as-eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pipeline As Eval
+         * @description The eval twin of an extraction pipeline — same steps, no destination.
+         *
+         *     Until this existed, `pipeline_type` could only be chosen on create: the
+         *     builder's control is mounted by `/pipelines/new` and the edit route is
+         *     a redirect. Evaluating a pipeline you already had therefore meant
+         *     rebuilding it by hand in a second pipeline and retyping every field —
+         *     at which point the comparison is partly measuring your typing.
+         *
+         *     Idempotent, because Compare is a button people press twice. A second
+         *     press returns the existing twin rather than accumulating
+         *     `__eval__eval`, each with its own runs diluting one leaderboard.
+         */
+        post: operations["pipeline_as_eval_api_pipelines__pipeline_id__as_eval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pipelines/{pipeline_id}/comparisons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Pipeline Comparisons
+         * @description Comparisons already run for this pipeline, newest first.
+         *
+         *     The compare page shipped reachable only from the redirect fired once at
+         *     launch — navigate away and the comparison was gone unless you had kept
+         *     the URL. That is the same "reachable from nowhere" failure this plan was
+         *     written to fix elsewhere.
+         *
+         *     Two details, both consequences of the variant namespace:
+         *
+         *     A sweep's runs are filed under the *cells* it created, never under the
+         *     pipeline that was swept, so the obvious lookup by `pipeline_id` returns
+         *     nothing at all.
+         *
+         *     Asking from a cell answers for the root. Someone who followed a link to
+         *     a variant must see the same history, not an empty page implying nothing
+         *     was ever compared.
+         */
+        get: operations["list_pipeline_comparisons_api_pipelines__pipeline_id__comparisons_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pipelines/{pipeline_id}/revisions": {
         parameters: {
             query?: never;
@@ -435,8 +500,34 @@ export interface paths {
          * @description Infer schema for an in-flight (unsaved) source. Requires
          *     `source.connection_id` to reference an existing Connection so the
          *     loader can decrypt credentials.
+         *
+         *     `table` — required for `sql_database` sources (they no longer carry a
+         *     table in their own config; which table is read is a
+         *     per-pipeline-per-use decision, so the caller supplies it here for a
+         *     preview of a table not yet saved on any pipeline). Ignored for every
+         *     other kind.
          */
         post: operations["infer_schema_api_schema_infer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/providers/structure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Structure Provider Status
+         * @description Per-provider readiness for the `structure` step.
+         */
+        get: operations["structure_provider_status_api_providers_structure_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -504,8 +595,35 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Source Schema */
+        /**
+         * Source Schema
+         * @description `table` — required for `sql_database` sources (they no longer carry
+         *     a table in their own config; which table is read is a
+         *     per-pipeline-per-use decision). Ignored for every other kind.
+         */
         get: operations["source_schema_api_sources__source_id__schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sources/{source_id}/tables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Source Tables
+         * @description Table names visible through a `sql_database` source's connection,
+         *     respecting the source's configured `schema` if any. 422 (not 500) for
+         *     non-`sql_database` sources or a real driver failure.
+         */
+        get: operations["source_tables_api_sources__source_id__tables_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -621,6 +739,29 @@ export interface paths {
          *     failure — the UI shows detail either way.
          */
         post: operations["test_connection_api_connections__connection_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connections/{connection_id}/schemas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Connection Schemas
+         * @description Schema/database names visible through a connection's native ibis
+         *     backend — lets the UI offer a picker instead of a blind text field.
+         *     422 (not 500) for connection types with no native backend (e.g.
+         *     filesystem-family) or for a real driver failure.
+         */
+        get: operations["list_connection_schemas_api_connections__connection_id__schemas_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -752,6 +893,42 @@ export interface paths {
         put?: never;
         /** Create Eval Set */
         post: operations["create_eval_set_api_eval_sets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval-sets:for-pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Eval Set For Pipeline
+         * @description The eval set implied by a pipeline's structure step and corpus.
+         *
+         *     Plan 051 made the user type their field list twice — once in the
+         *     structure step, once in `field_specs` — under a builder warning that a
+         *     mismatch "won't error; it scores zero on every document." That warning
+         *     is the design confessing. The pipeline already declares the fields, so
+         *     the set is derived from it and the two cannot drift.
+         *
+         *     The id is `<source>__<fingerprint>` and the fingerprint covers exactly
+         *     what changes the meaning of a score: field names, comparator types, and
+         *     comparator options. Not order, not descriptions — those are edits people
+         *     make constantly while iterating on a prompt, and minting a fresh set for
+         *     them would silently discard every label collected so far.
+         *
+         *     Consequently two pipelines extracting the same fields from the same
+         *     corpus land on one set, which is the whole point: claude and openai
+         *     scored against different sets would never appear on one leaderboard.
+         */
+        post: operations["eval_set_for_pipeline_api_eval_sets_for_pipeline_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -914,6 +1091,39 @@ export interface paths {
         put?: never;
         /** Launch Sweep */
         post: operations["launch_sweep_api_eval_sets__eval_set_id__sweep_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sweeps/{sweep_id}/comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sweep Comparison
+         * @description Side-by-side outputs for one sweep, with or without labels.
+         *
+         *     This is the surface plan 053 exists to add. The leaderboard needs
+         *     ground truth before it will show anything, which is why the harness sat
+         *     empty — so this endpoint answers the parts of the question that need no
+         *     labels at all: where the configs disagree, what each cost, how slow
+         *     each was, how often each abstained. Scores appear alongside once labels
+         *     exist; their absence is the normal case, not an error.
+         *
+         *     Rows are re-materialised rather than read back from the run, because an
+         *     eval run writes no output. That is affordable precisely because plan
+         *     050 caches extraction by document content and structure by text hash:
+         *     re-reading a finished cell parses no PDF and calls no model, so opening
+         *     this page costs nothing beyond a compile.
+         */
+        get: operations["sweep_comparison_api_sweeps__sweep_id__comparison_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1197,6 +1407,14 @@ export interface components {
              */
             split: string;
         };
+        /**
+         * ForPipelineRequest
+         * @description Derive the eval set a pipeline implies, or find the one it already has.
+         */
+        ForPipelineRequest: {
+            /** Pipeline Id */
+            pipeline_id: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1277,7 +1495,7 @@ export interface components {
             /** Name */
             name: string;
             /** Sources */
-            sources?: string[];
+            sources?: unknown[];
             /** Steps */
             steps?: {
                 [key: string]: unknown;
@@ -1296,6 +1514,10 @@ export interface components {
             pipeline_type: string;
             /** Quality Contracts */
             quality_contracts?: unknown[];
+            /** Matrix */
+            matrix?: {
+                [key: string]: unknown[];
+            } | null;
             /** Params */
             params?: unknown[];
             /**
@@ -1321,7 +1543,7 @@ export interface components {
             /** Name */
             name: string;
             /** Sources */
-            sources?: string[];
+            sources?: components["schemas"]["SourceTableRef"][];
             /** Steps */
             steps?: {
                 [key: string]: unknown;
@@ -1342,6 +1564,10 @@ export interface components {
             pipeline_type: "transform" | "quality" | "eval";
             /** Quality Contracts */
             quality_contracts?: unknown[];
+            /** Matrix */
+            matrix?: {
+                [key: string]: unknown[];
+            } | null;
             /** Params */
             params?: components["schemas"]["PipelineParam"][];
             /**
@@ -1520,6 +1746,26 @@ export interface components {
              * @default default
              */
             tenant_id: string;
+        };
+        /**
+         * SourceTableRef
+         * @description One use of a `Source` within a pipeline.
+         *
+         *     `alias` is how joins and the compiler's table registry refer to this
+         *     use — it replaces the bare source id as the registry key, which is what
+         *     lets the same `sql_database` Source be picked more than once (against
+         *     different tables) in one pipeline. `table` is required when the
+         *     resolved source is `sql_database` (there is no default table on the
+         *     source anymore) and forbidden for every other kind, where the source's
+         *     own config already names what it loads.
+         */
+        SourceTableRef: {
+            /** Source Id */
+            source_id: string;
+            /** Table */
+            table?: string | null;
+            /** Alias */
+            alias: string;
         };
         /**
          * SweepRequest
@@ -1904,6 +2150,70 @@ export interface operations {
                 "application/json": components["schemas"]["BulkDeleteRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pipeline_as_eval_api_pipelines__pipeline_id__as_eval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pipeline_comparisons_api_pipelines__pipeline_id__comparisons_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -2387,7 +2697,9 @@ export interface operations {
     };
     infer_schema_api_schema_infer_post: {
         parameters: {
-            query?: never;
+            query?: {
+                table?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2414,6 +2726,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    structure_provider_status_api_providers_structure_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -2613,7 +2945,9 @@ export interface operations {
     };
     source_schema_api_sources__source_id__schema_get: {
         parameters: {
-            query?: never;
+            query?: {
+                table?: string | null;
+            };
             header?: never;
             path: {
                 source_id: string;
@@ -2629,6 +2963,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InferSchemaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_tables_api_sources__source_id__tables_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -2998,6 +3363,37 @@ export interface operations {
         };
     };
     test_connection_api_connections__connection_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_connection_schemas_api_connections__connection_id__schemas_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3480,6 +3876,39 @@ export interface operations {
             };
         };
     };
+    eval_set_for_pipeline_api_eval_sets_for_pipeline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForPipelineRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_eval_set_api_eval_sets__eval_set_id__get: {
         parameters: {
             query?: never;
@@ -3861,6 +4290,39 @@ export interface operations {
                 "application/json": components["schemas"]["SweepRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sweep_comparison_api_sweeps__sweep_id__comparison_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                sweep_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

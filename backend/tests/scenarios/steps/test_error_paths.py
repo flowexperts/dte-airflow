@@ -175,7 +175,7 @@ async def test_pipeline_with_bigquery_source_and_duckdb_engine_rejected_at_save(
     )
     await create_source(
         client, id=src_id, source_type="sql_database", connection_id=conn_id,
-        config={"table": "orders"}, table="bq_orders",
+        config={}, table="bq_orders",
     )
     await create_destination(
         client, id=dst_id, connection_id="local_fs",
@@ -186,7 +186,7 @@ async def test_pipeline_with_bigquery_source_and_duckdb_engine_rejected_at_save(
     r = await client.post("/api/pipelines", json={
         "id": pipe_id,
         "name": pipe_id,
-        "sources": [src_id],
+        "sources": [{"source_id": src_id, "alias": "bq_orders", "table": "orders"}],
         "output_id": dst_id,
         "steps": [],
         "engine": "duckdb",  # explicit override that can't handle bigquery
@@ -218,7 +218,7 @@ async def test_pipeline_with_trino_engine_when_disabled_returns_helpful_422(
     )
     await create_source(
         client, id=src_id, source_type="sql_database", connection_id=conn_id,
-        config={"table": "users"}, table="pg_users",
+        config={}, table="pg_users",
     )
     await create_destination(
         client, id=dst_id, connection_id="local_fs",
@@ -229,7 +229,7 @@ async def test_pipeline_with_trino_engine_when_disabled_returns_helpful_422(
     r = await client.post("/api/pipelines", json={
         "id": pipe_id,
         "name": pipe_id,
-        "sources": [src_id],
+        "sources": [{"source_id": src_id, "alias": "pg_users", "table": "users"}],
         "output_id": dst_id,
         "steps": [],
         "engine": "trino",

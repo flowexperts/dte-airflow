@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AddStep, Panel, PanelHead } from "@/components/ui";
 import { StepEditor } from "@/components/builder/steps/editors";
-import { StepIndexProvider } from "@/components/builder/schema-context";
+import { StepIndexProvider, JoinOperandsProvider } from "@/components/builder/schema-context";
 import { StepSummary, stepTitle } from "@/components/builder/steps/summary";
 import {
   STEP_OPS,
@@ -12,6 +12,7 @@ import {
   type StepShape,
 } from "@/components/builder/steps/types";
 import { cn } from "@/lib/cn";
+import type { SourceTableRef } from "@/lib/api";
 
 /**
  * The ordered steps.
@@ -32,6 +33,7 @@ export function StepsColumn({
   openIndex,
   onOpenChange,
   readOnly,
+  sources = [],
 }: {
   steps: StepShape[];
   onChange: (steps: StepShape[]) => void;
@@ -40,7 +42,18 @@ export function StepsColumn({
   openIndex: number | null;
   onOpenChange: (i: number | null) => void;
   readOnly: boolean;
+  /** Declared source aliases, offered as join operands alongside the
+   *  output_id of any earlier join step. */
+  sources?: SourceTableRef[];
 }) {
+  const aliases = sources.map((r) => r.alias).filter(Boolean);
+  const operandsAt = (i: number): string[] => {
+    const priorJoinOutputs = steps
+      .slice(0, i)
+      .filter((s) => s.op === "join" && typeof s.output_id === "string" && s.output_id)
+      .map((s) => s.output_id as string);
+    return [...aliases, ...priorJoinOutputs];
+  };
   const [addAt, setAddAt] = useState<number | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const targetRef = useRef<HTMLDivElement>(null);
@@ -237,10 +250,12 @@ export function StepsColumn({
                   <StepSummary step={step} />
                 ) : (
                   <StepIndexProvider index={i}>
-                    <StepEditor
-                      step={step}
-                      set={(patch) => update(i, patch as Partial<StepShape>)}
-                    />
+                    <JoinOperandsProvider operands={operandsAt(i)}>
+                      <StepEditor
+                        step={step}
+                        set={(patch) => update(i, patch as Partial<StepShape>)}
+                      />
+                    </JoinOperandsProvider>
                   </StepIndexProvider>
                 )}
               </div>

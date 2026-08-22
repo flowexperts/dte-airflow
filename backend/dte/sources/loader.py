@@ -231,6 +231,7 @@ def _load_sql_database(
     registry: "BackendRegistry",
     connection: "Connection",
     credentials: dict,
+    table: str | None = None,
 ) -> ibis.Table:
     """Open a native ibis backend for the linked Connection and return the
     referenced table.  Subsequent compilation pushes filters, projections,
@@ -239,15 +240,50 @@ def _load_sql_database(
     Two sources bound to the same Connection.id share one backend via the
     registry cache, so the compiler treats them as co-located and can join
     them without cross-backend federation.
+
+    Which table to open is a per-pipeline-per-use decision
+    (`SourceTableRef.table`) — it is no longer part of the source's own
+    `config`, which is why it must be passed in explicitly here rather than
+    read off `source.config["table"]`.
     """
     backend = registry.for_connection(connection, credentials)
     config = source.config
-    table_name = config["table"]
+    table_name = table
+    if not table_name:
+        raise ValueError(
+            f"source '{source.id}' is sql_database — a table name must be "
+            "supplied (SourceTableRef.table / the `table` query param), it "
+            "is not stored on the source itself"
+        )
     schema = config.get("schema")
-    # ibis backends accept `schema=` for postgres/mysql; sqlite ignores it.
+    # ibis's SQL backends (postgres/mysql/sqlite) all take `database=` for
+    # the schema/database qualifier — `table()` has no `schema=` kwarg.
     if schema:
-        return backend.table(table_name, schema=schema)
+        return backend.table(table_name, database=schema)
     return backend.table(table_name)
+
+
+def list_schemas(connection: "Connection", credentials: dict) -> list[str]:
+    """List schema/database names visible through a connection's native
+    ibis backend. Raises `NotImplementedError` for connection types with no
+    native backend (filesystem-family, mongodb, rest_api)."""
+    from dte.engine.backend_registry import _open_ibis_backend
+
+    backend = _open_ibis_backend(connection, credentials)
+    return list(backend.list_databases())
+
+
+def list_tables(
+    connection: "Connection", credentials: dict, schema: str | None = None
+) -> list[str]:
+    """List table names visible through a connection's native ibis backend,
+    optionally scoped to a schema/database."""
+    from dte.engine.backend_registry import _open_ibis_backend
+
+    backend = _open_ibis_backend(connection, credentials)
+    if schema:
+        return list(backend.list_tables(database=schema))
+    return list(backend.list_tables())
 
 
 def _mongo_client(connection_url: str):
@@ -430,6 +466,7 @@ def load_source(
     registry_or_con: "BackendRegistry | ibis.BaseBackend",
     connection_or_credentials: "Connection | dict | None" = None,
     credentials: dict | None = None,
+    table: str | None = None,
 ) -> ibis.Table:
     """Load a source into an ibis.Table via the appropriate backend.
 
@@ -438,6 +475,13 @@ def load_source(
       so subsequent compilation pushes down into the source engine.
 
     Signature: ``load_source(source, registry, connection, credentials)``.
+
+    ``table`` — the pipeline-level `SourceTableRef.table` (or an explicit
+    override, e.g. for schema introspection). Only meaningful for
+    ``sql_database`` sources, which no longer carry a table in their own
+    `config` — which table is read is a per-pipeline-per-use decision, not
+    part of the source. Every other loader ignores it — the source's own
+    config already names what it loads (bucket_url/glob, collection, etc).
 
     A legacy 3-arg call — ``load_source(source, con, credentials)`` where
     ``con`` is an ``ibis.BaseBackend`` — is still accepted for one release
@@ -460,6 +504,8 @@ def load_source(
         raise NotImplementedError(
             f"source_type '{source.source_type}' is not supported"
         )
+    if source.source_type == "sql_database":
+        return loader(source, registry, connection, creds, table=table)
     return loader(source, registry, connection, creds)
 
 

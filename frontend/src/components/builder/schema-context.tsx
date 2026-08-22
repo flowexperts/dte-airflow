@@ -23,9 +23,17 @@ interface SchemaEntry {
 }
 
 interface SchemaState {
+  /** Keyed by `alias` (a pipeline's `SourceTableRef.alias`), not by
+   *  `source_id` — the same `sql_database` Source can be picked more than
+   *  once under different aliases with different tables, so source_id
+   *  alone would collapse two distinct field sets into one. */
   schemas: Record<string, SchemaEntry>;
-  refresh: (source: Source) => Promise<void>;
-  refreshById: (id: string) => Promise<void>;
+  /** For an in-flight (unsaved) source draft. `key` is the alias to store
+   *  the result under; `table` is required for `sql_database` sources. */
+  refresh: (source: Source, key: string, table?: string | null) => Promise<void>;
+  /** For a saved source id. `key` is the alias to store the result under;
+   *  `table` is required for `sql_database` sources. */
+  refreshById: (id: string, key: string, table?: string | null) => Promise<void>;
   allFields: SchemaField[];
   /** Column names produced at each step index (plan 038 item 7).
    *  Keys are numeric step indexes; values are the columns *output* by
@@ -77,17 +85,17 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(
-    async (source: Source) => {
-      if (!source.id) return;
-      await _apply(source.id, () => inferSchema(source));
+    async (source: Source, key: string, table?: string | null) => {
+      if (!source.id || !key) return;
+      await _apply(key, () => inferSchema(source, table));
     },
     [_apply],
   );
 
   const refreshById = useCallback(
-    async (id: string) => {
-      if (!id) return;
-      await _apply(id, () => getSourceSchema(id));
+    async (id: string, key: string, table?: string | null) => {
+      if (!id || !key) return;
+      await _apply(key, () => getSourceSchema(id, table));
     },
     [_apply],
   );
@@ -182,6 +190,35 @@ export function useSchemas() {
   const ctx = useContext(SchemaContext);
   if (!ctx) throw new Error("useSchemas must be used inside <SchemaProvider>");
   return ctx;
+}
+
+/* ---------------- Join operand context (plan 056) ----------------
+ *
+ * A join step's `left`/`right` must resolve to a declared source alias or
+ * an earlier step's `output_id` (the compiler's registry key), not a bare
+ * source id — the same source can now be picked more than once under
+ * different aliases. `StepsPanel`/`StepsColumn` compute the operands valid
+ * at each index (all aliases + prior join output_ids) and provide them here
+ * so `JoinEditor` doesn't need the whole pipeline threaded through props.
+ */
+const JoinOperandsContext = createContext<string[]>([]);
+
+export function JoinOperandsProvider({
+  operands,
+  children,
+}: {
+  operands: string[];
+  children: ReactNode;
+}) {
+  return (
+    <JoinOperandsContext.Provider value={operands}>
+      {children}
+    </JoinOperandsContext.Provider>
+  );
+}
+
+export function useJoinOperands(): string[] {
+  return useContext(JoinOperandsContext);
 }
 
 /** Returns null when no <SchemaProvider> is above — useful for components

@@ -39,8 +39,8 @@ export default async function PipelineRevisionPage({
     // renders as "not found", which is the honest answer.
     const [sources, destination] = await Promise.all([
       Promise.all(
-        (pipeline.sources ?? []).map((sid) =>
-          getSource(sid).catch(orNull<Source>),
+        (pipeline.sources ?? []).map((ref) =>
+          getSource(ref.source_id).catch(orNull<Source>),
         ),
       ),
       pipeline.output_id

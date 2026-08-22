@@ -108,10 +108,24 @@ export interface PipelineParam {
   description?: string | null;
 }
 
+/**
+ * One use of a `Source` within a pipeline. `alias` is the compiler
+ * registry key — it replaces the bare source id, which is what lets the
+ * same `sql_database` Source be picked more than once (against different
+ * tables) in one pipeline. `table` is required when the resolved source
+ * is `sql_database` and forbidden for every other kind. `alias` is never
+ * defaulted server-side — the builder fills it in when a table is picked.
+ */
+export interface SourceTableRef {
+  source_id: string;
+  table?: string | null;
+  alias: string;
+}
+
 export interface Pipeline {
   id: string;
   name: string;
-  sources: string[];
+  sources: SourceTableRef[];
   steps: Array<Record<string, unknown>>;
   output_id: string;
   /** Engine dispatch. "auto" (default) resolves per source composition on
@@ -653,8 +667,15 @@ export const bulkDeleteSources = (ids: string[]) =>
     method: "POST",
     body: JSON.stringify({ ids }),
   });
-export const getSourceSchema = (id: string) =>
-  apiFetch<{ fields: SchemaField[] }>(`/api/sources/${encodeURIComponent(id)}/schema`);
+export const getSourceSchema = (id: string, table?: string | null) =>
+  apiFetch<{ fields: SchemaField[] }>(
+    `/api/sources/${encodeURIComponent(id)}/schema${table ? `?table=${encodeURIComponent(table)}` : ""}`,
+  );
+
+/** Tables visible through a `sql_database` source's connection, respecting
+ *  its configured schema if any. 422 for non-`sql_database` sources. */
+export const listSourceTables = (id: string) =>
+  apiFetch<{ tables: string[] }>(`/api/sources/${encodeURIComponent(id)}/tables`);
 
 // ---------- Destinations ----------
 
@@ -731,6 +752,12 @@ export const testConnection = (id: string) =>
     method: "POST",
   });
 
+/** Schema/database names visible through a connection's native ibis
+ *  backend. 422 for connection types with no native backend (e.g.
+ *  filesystem-family) or a real driver failure. */
+export const listConnectionSchemas = (id: string) =>
+  apiFetch<{ schemas: string[] }>(`/api/connections/${encodeURIComponent(id)}/schemas`);
+
 // ---------- Runs ----------
 
 // ---------- Runs ----------
@@ -762,11 +789,14 @@ export const getRunEvents = (id: string) =>
     `/api/runs/${encodeURIComponent(id)}/events`,
   );
 
-export const inferSchema = (source: Source) =>
-  apiFetch<{ fields: SchemaField[] }>(`/api/schema/infer`, {
-    method: "POST",
-    body: JSON.stringify(source),
-  });
+export const inferSchema = (source: Source, table?: string | null) =>
+  apiFetch<{ fields: SchemaField[] }>(
+    `/api/schema/infer${table ? `?table=${encodeURIComponent(table)}` : ""}`,
+    {
+      method: "POST",
+      body: JSON.stringify(source),
+    },
+  );
 
 // ---------- Schedules (plan 047) ----------
 

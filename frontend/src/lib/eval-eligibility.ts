@@ -30,6 +30,8 @@ export function eligibleEvalPipelines(
   return pipelines.filter(
     (p) =>
       (p as { pipeline_type?: string }).pipeline_type === "eval" &&
-      (p.sources ?? []).includes(sourceId),
+      // `.includes` on an array of objects never matches a bare string — the
+      // same fail-open bug as the pre-056 validation.ts guard.
+      (p.sources ?? []).some((r) => r.source_id === sourceId),
   );
 }

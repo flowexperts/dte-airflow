@@ -195,3 +195,114 @@ def test_bulk_delete_pipelines_empty_422(client):
     c, *_ = client
     r = c.post("/api/pipelines/bulk-delete", json={"ids": []})
     assert r.status_code == 422
+
+
+# ─── SourceTableRef validation (plan 056) ──────────────────────────────────
+
+
+def _seed_sql_source(s_store, sid="pgsrc"):
+    _run(s_store.save(SourceCreate(
+        id=sid, connection_id="local_fs", source_type="sql_database",
+        config={}, table=sid,
+    )))
+
+
+def test_create_pipeline_accepts_bare_source_ids_as_shorthand(client):
+    """`sources: ["s1"]` keeps working — the alias defaults to the id."""
+    c, p_store, _, _, _ = client
+    r = c.post("/api/pipelines", json=_pipeline())
+    assert r.status_code == 200, r.text
+    saved = _run(p_store.get("p1"))
+    assert saved.sources[0]["source_id"] == "s1"
+    assert saved.sources[0]["alias"] == "s1"
+
+
+def test_create_pipeline_duplicate_alias_returns_422(client):
+    c, _, _, s_store, _ = client
+    _seed_sql_source(s_store, "pgsrc")
+    body = _pipeline()
+    body["sources"] = [
+        {"source_id": "pgsrc", "alias": "t1", "table": "orders"},
+        {"source_id": "pgsrc", "alias": "t1", "table": "customers"},
+    ]
+    r = c.post("/api/pipelines", json=body)
+    assert r.status_code == 422, r.text
+    assert "t1" in r.json()["detail"]["duplicate_aliases"]
+
+
+def test_create_pipeline_sql_database_ref_without_table_returns_422(client):
+    c, _, _, s_store, _ = client
+    _seed_sql_source(s_store, "pgsrc")
+    body = _pipeline()
+    body["sources"] = [{"source_id": "pgsrc", "alias": "t1"}]
+    r = c.post("/api/pipelines", json=body)
+    assert r.status_code == 422, r.text
+    assert "table" in r.json()["detail"]["table_errors"][0]
+
+
+def test_create_pipeline_non_sql_database_ref_with_table_returns_422(client):
+    c, _, _, s_store, _ = client
+    # s1 is a filesystem source (seeded by the fixture).
+    body = _pipeline()
+    body["sources"] = [{"source_id": "s1", "alias": "s1", "table": "unexpected"}]
+    r = c.post("/api/pipelines", json=body)
+    assert r.status_code == 422, r.text
+    assert "table" in r.json()["detail"]["table_errors"][0]
+
+
+def test_create_pipeline_two_tables_from_one_source(client):
+    """The point of the feature: one sql_database source, two aliases,
+    two different tables."""
+    c, p_store, _, s_store, _ = client
+    _seed_sql_source(s_store, "pgsrc")
+    body = _pipeline()
+    body["sources"] = [
+        {"source_id": "pgsrc", "alias": "orders_t", "table": "orders"},
+        {"source_id": "pgsrc", "alias": "customers_t", "table": "customers"},
+    ]
+    r = c.post("/api/pipelines", json=body)
+    assert r.status_code == 200, r.text
+    saved = _run(p_store.get("p1"))
+    aliases = {s["alias"]: s["table"] for s in saved.sources}
+    assert aliases == {"orders_t": "orders", "customers_t": "customers"}
+
+
+def test_create_pipeline_join_operand_unknown_alias_returns_422(client):
+    c, _, _, s_store, _ = client
+    _seed_sql_source(s_store, "pgsrc")
+    body = _pipeline()
+    body["sources"] = [
+        {"source_id": "pgsrc", "alias": "orders_t", "table": "orders"},
+        {"source_id": "pgsrc", "alias": "customers_t", "table": "customers"},
+    ]
+    body["steps"] = [{
+        "op": "join",
+        "left": "orders_t",
+        "right": "does_not_exist",
+        "on": "id",
+        "how": "inner",
+        "output_id": "joined",
+    }]
+    r = c.post("/api/pipelines", json=body)
+    assert r.status_code == 422, r.text
+    join_errors = r.json()["detail"]["join_errors"]
+    assert any("does_not_exist" in e for e in join_errors)
+
+
+def test_create_pipeline_join_operand_resolves_to_earlier_step_output(client):
+    """A join's left/right may name an earlier step's output_id, not just
+    a declared source alias."""
+    c, p_store, _, s_store, _ = client
+    _seed_sql_source(s_store, "pgsrc")
+    body = _pipeline()
+    body["sources"] = [
+        {"source_id": "pgsrc", "alias": "a", "table": "orders"},
+        {"source_id": "pgsrc", "alias": "b", "table": "customers"},
+        {"source_id": "pgsrc", "alias": "c", "table": "products"},
+    ]
+    body["steps"] = [
+        {"op": "join", "left": "a", "right": "b", "on": "id", "how": "inner", "output_id": "ab"},
+        {"op": "join", "left": "ab", "right": "c", "on": "id", "how": "inner", "output_id": "abc"},
+    ]
+    r = c.post("/api/pipelines", json=body)
+    assert r.status_code == 200, r.text

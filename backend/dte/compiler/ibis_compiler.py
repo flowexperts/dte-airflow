@@ -24,6 +24,7 @@ from dte.models.pipeline import (
     RetypeStep,
     SelectStep,
     SortStep,
+    coerce_source_refs,
 )
 
 if TYPE_CHECKING:
@@ -156,7 +157,8 @@ def compile_pipeline(
     registry = dict(tables)
     _check_single_backend(registry)
     lookups = lookup_tables or {}
-    current_key = pipeline.sources[0]
+    source_refs = coerce_source_refs(pipeline.sources)
+    current_key = source_refs[0].alias
 
     def _emit(idx, op, status, msg=None):
         if on_step is not None:
@@ -532,26 +534,30 @@ def _row(step, text, index, page, ref, meta) -> dict:
 
 
 def _apply_join(left: ibis.Table, right: ibis.Table, step: JoinStep) -> ibis.Table:
-    on_cols = [step.on] if isinstance(step.on, str) else step.on
-    predicates = [left[c] == right[c] for c in on_cols]
+    if isinstance(step.on, dict):
+        # left column -> right column — the key isn't named the same on
+        # both sides (e.g. `orders.customer_id` vs `customers.id`).
+        predicates = [left[l] == right[r] for l, r in step.on.items()]
+    else:
+        on_cols = [step.on] if isinstance(step.on, str) else step.on
+        predicates = [left[c] == right[c] for c in on_cols]
     # ibis suffixes duplicate column names with _right when both tables share the same column name
     return left.join(right, predicates, how=step.how)
 
 
 def _apply_pivot(table: ibis.Table, step: PivotStep) -> ibis.Table:
-    con = table._find_backend()
-    con.create_view("_dte_pivot_input", table, overwrite=True)
-    index = ", ".join([step.index] if isinstance(step.index, str) else step.index)
-    # con.sql() fails (sqlglot can't subquery PIVOT); dynamic PIVOT can't be a view in DuckDB.
-    # Materialise into a temp table via the raw connection, then read back through ibis.
-    con.con.execute(f"""
-        CREATE OR REPLACE TEMP TABLE _dte_pivot_result AS
-        PIVOT _dte_pivot_input
-        ON {step.columns}
-        USING {step.agg}({step.values})
-        GROUP BY {index}
-    """)
-    return con.table("_dte_pivot_result")
+    # `Table.pivot_wider` compiles to a portable GROUP BY + FILTER(WHERE ...)
+    # aggregate, unlike DuckDB's PIVOT statement (raw dialect SQL — unusable
+    # against the native postgres/mysql/sqlite backends plan 056 loads
+    # sql_database sources through). Stays a lazy ibis expression; no
+    # raw-connection materialisation required.
+    index_cols = [step.index] if isinstance(step.index, str) else step.index
+    return table.pivot_wider(
+        id_cols=ibis.selectors.cols(*index_cols),
+        names_from=step.columns,
+        values_from=step.values,
+        values_agg=step.agg,
+    )
 
 
 def _apply_check_step(

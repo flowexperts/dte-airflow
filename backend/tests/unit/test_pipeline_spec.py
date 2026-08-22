@@ -5,10 +5,11 @@ from dte.models.pipeline import (
     FilterStep, RenameStep, RetypeStep,
     LookupMapStep, ExpressionMapStep,
     SortStep, AggSpec, AggregateStep,
-    OutputField, JsonFileOutput, Pipeline,
+    OutputField, JsonFileOutput, Pipeline, PipelineBase,
     JoinStep, PivotStep, SelectStep,
     CsvFileTarget, ExcelFileTarget, JsonFileTarget, ParquetS3Target,
     PostgresTarget, SqlDatabaseTarget,
+    SourceTableRef, SqlDatabaseSourceConfig, coerce_source_refs,
 )
 
 
@@ -356,3 +357,57 @@ def test_select_step_fields_and_drop_mutually_exclusive():
 def test_select_step_requires_one_of_fields_or_drop():
     with pytest.raises(ValidationError):
         SelectStep(op="select")
+
+
+# ─── SourceTableRef (plan 056) ─────────────────────────────────────────────
+
+
+def test_sql_database_source_config_rejects_table():
+    """Which table is read moved to the pipeline's ref — the source's own
+    config no longer accepts one."""
+    with pytest.raises(ValidationError):
+        SqlDatabaseSourceConfig(table="orders")
+
+
+def test_sql_database_source_config_accepts_schema_only():
+    cfg = SqlDatabaseSourceConfig(schema="analytics")
+    assert cfg.schema_ == "analytics"
+
+
+def test_source_table_ref_requires_alias():
+    with pytest.raises(ValidationError):
+        SourceTableRef(source_id="s1", alias="")
+
+
+def test_source_table_ref_alias_must_be_identifier_like():
+    with pytest.raises(ValidationError):
+        SourceTableRef(source_id="s1", alias="not-an-identifier")
+    SourceTableRef(source_id="s1", alias="an_identifier")
+
+
+def test_pipeline_sources_accepts_bare_ids_as_shorthand():
+    """`sources: ["s1"]` on a validated PipelineBase expands to refs with
+    alias defaulted to the id."""
+    p = PipelineBase(id="p1", name="test", sources=["s1"], output_id="out1")
+    assert p.sources == [SourceTableRef(source_id="s1", alias="s1")]
+
+
+def test_pipeline_sources_accepts_explicit_refs():
+    p = PipelineBase(
+        id="p1", name="test",
+        sources=[{"source_id": "pgsrc", "alias": "t1", "table": "orders"}],
+        output_id="out1",
+    )
+    assert p.sources == [SourceTableRef(source_id="pgsrc", alias="t1", table="orders")]
+
+
+def test_coerce_source_refs_handles_str_dict_and_typed():
+    refs = coerce_source_refs([
+        "bare-id",
+        {"source_id": "s2", "alias": "s2"},
+        SourceTableRef(source_id="s3", alias="s3"),
+    ])
+    assert [r.source_id for r in refs] == ["bare-id", "s2", "s3"]
+    # A hyphenated bare id (e.g. a UUID) gets a sanitized alias, not the
+    # hyphenated id itself — aliases must be identifier-like.
+    assert refs[0].alias == "bare_id"

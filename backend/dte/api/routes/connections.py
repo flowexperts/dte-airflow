@@ -161,6 +161,30 @@ async def test_connection(
     return probe_connection(c)
 
 
+@router.get("/connections/{connection_id}/schemas", dependencies=[Depends(requires("connection:read"))])
+async def list_connection_schemas(
+    connection_id: str,
+    store: ConnectionStore = Depends(get_connection_store),
+):
+    """Schema/database names visible through a connection's native ibis
+    backend — lets the UI offer a picker instead of a blind text field.
+    422 (not 500) for connection types with no native backend (e.g.
+    filesystem-family) or for a real driver failure."""
+    decrypt_context_var.set("connection_schemas")
+    c = await store.get(connection_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if _is_unreadable(c.credentials):
+        raise HTTPException(status_code=422, detail=UNREADABLE_CREDENTIALS_DETAIL)
+    from dte.sources.loader import list_schemas
+    try:
+        return {"schemas": list_schemas(c, c.credentials)}
+    except NotImplementedError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"{type(e).__name__}: {e}")
+
+
 @router.post("/connections/bulk-delete", dependencies=[Depends(requires("connection:delete"))])
 async def bulk_delete_connections(
     body: BulkDeleteRequest,

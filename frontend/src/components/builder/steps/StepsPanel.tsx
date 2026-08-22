@@ -4,17 +4,30 @@ import { useState } from "react";
 import { Panel, PanelHead } from "@/components/ui";
 import { STEP_OPS, emptyStep, labelFor, type StepShape } from "./types";
 import { StepEditor } from "./editors";
-import { StepIndexProvider } from "../schema-context";
+import { StepIndexProvider, JoinOperandsProvider } from "../schema-context";
+import type { SourceTableRef } from "@/lib/api";
 
 export function StepsPanel({
   steps,
   onChange,
   pipelineType = "transform",
+  sources = [],
 }: {
   steps: StepShape[];
   onChange: (next: StepShape[]) => void;
   pipelineType?: "transform" | "quality" | "eval";
+  /** Declared source aliases, offered as join operands alongside the
+   *  output_id of any earlier join step. */
+  sources?: SourceTableRef[];
 }) {
+  const aliases = sources.map((r) => r.alias).filter(Boolean);
+  const operandsAt = (i: number): string[] => {
+    const priorJoinOutputs = steps
+      .slice(0, i)
+      .filter((s) => s.op === "join" && typeof s.output_id === "string" && s.output_id)
+      .map((s) => s.output_id as string);
+    return [...aliases, ...priorJoinOutputs];
+  };
   const [addOpen, setAddOpen] = useState(false);
 
   const update = (i: number, patch: Partial<StepShape>) => {
@@ -100,7 +113,9 @@ export function StepsPanel({
                 </div>
               </div>
               <StepIndexProvider index={i}>
-                <StepEditor step={step} set={(patch) => update(i, patch)} />
+                <JoinOperandsProvider operands={operandsAt(i)}>
+                  <StepEditor step={step} set={(patch) => update(i, patch)} />
+                </JoinOperandsProvider>
               </StepIndexProvider>
             </div>
             <div />

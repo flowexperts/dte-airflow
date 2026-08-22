@@ -9,6 +9,7 @@ import {
   isPipelineGateError,
   pipelineStepSchemas,
   type Pipeline,
+  type SourceTableRef,
 } from "@/lib/api";
 import { SourcesPanel } from "./sources";
 import { StepsPanel } from "./steps/StepsPanel";
@@ -44,16 +45,18 @@ function formatSaveError(e: unknown): string {
 }
 
 
-function AutoInferSchemas({ sourceIds }: { sourceIds: string[] }) {
+function AutoInferSchemas({ sources }: { sources: SourceTableRef[] }) {
   const { schemas, refreshById } = useSchemas();
   const inflight = useRef<Set<string>>(new Set());
   useEffect(() => {
-    for (const id of sourceIds) {
-      if (!id || inflight.current.has(id) || schemas[id]) continue;
-      inflight.current.add(id);
-      refreshById(id);
+    for (const ref of sources) {
+      if (!ref.source_id || !ref.alias) continue;
+      const key = ref.alias;
+      if (inflight.current.has(key) || schemas[key]) continue;
+      inflight.current.add(key);
+      refreshById(ref.source_id, ref.alias, ref.table);
     }
-  }, [sourceIds, schemas, refreshById]);
+  }, [sources, schemas, refreshById]);
   return null;
 }
 
@@ -239,7 +242,7 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
   return (
     <SchemaProvider>
      <PipelineParamsProvider params={pipeline.params}>
-      <AutoInferSchemas sourceIds={pipeline.sources ?? []} />
+      <AutoInferSchemas sources={pipeline.sources ?? []} />
       <AutoStepSchemas pipeline={pipeline} />
       <Topbar
         crumbs={[
@@ -320,6 +323,7 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
                 steps={(pipeline.steps ?? []) as StepShape[]}
                 onChange={(steps) => setPipeline({ ...pipeline, steps })}
                 pipelineType={pipeline.pipeline_type ?? "transform"}
+                sources={pipeline.sources ?? []}
               />
             </div>
           </div>

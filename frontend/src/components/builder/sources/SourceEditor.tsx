@@ -16,7 +16,7 @@ const CONFIG_TEMPLATES: Record<SourceKind, Record<string, unknown>> = {
   s3:           { bucket_url: "", file_glob: "*.json" },
   gcs:          { bucket_url: "", file_glob: "*.json" },
   azure:        { bucket_url: "", file_glob: "*.json" },
-  sql_database: { table: "" },
+  sql_database: {},
   mongodb:      { database: "", collection: "" },
   rest_api:     { client: {}, resources: [] },
 };
@@ -115,7 +115,7 @@ export function SourceEditor({
         <DocumentsSourceEditor config={config} onChange={setConfig} />
       )}
       {kind === "sql_database" && (
-        <SqlSourceEditor config={config} onChange={setConfig} />
+        <SqlSourceEditor config={config} onChange={setConfig} connectionId={source.connection_id} />
       )}
       {kind === "mongodb" && (
         <MongoSourceEditor config={config} onChange={setConfig} />
@@ -135,7 +135,7 @@ export function SourceEditor({
           </span>
           <button
             type="button"
-            onClick={() => schemaCtx.refresh(source)}
+            onClick={() => schemaCtx.refresh(source, source.id)}
             disabled={!source.id || !source.connection_id || entry?.loading}
             className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h disabled:opacity-50 disabled:pointer-events-none"
           >

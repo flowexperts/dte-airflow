@@ -54,21 +54,42 @@ export const stepSchema = z
     }
   });
 
+/** Alias must match the backend's `^[A-Za-z_][A-Za-z0-9_]*$`. */
+const ALIAS_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** One use of a `Source` within a pipeline — mirrors `SourceTableRef`. */
+export const sourceTableRefSchema = z.object({
+  source_id: z.string(),
+  table: z.string().nullable().optional(),
+  alias: z.string(),
+});
+
 /** Top-level pipeline shape as validated by the builder form. */
 export const pipelineFormSchema = z.object({
   id: pipelineIdSchema,
   name: pipelineNameSchema,
   sources: z
-    .array(z.string())
+    .array(sourceTableRefSchema)
     .min(1, "Add at least one source.")
     .refine(
-      (sources) => sources.every((s) => Boolean(s)),
+      // `{}` is truthy, so checking the ref itself never catches an unpicked
+      // slot — the source_id inside it must be non-empty.
+      (refs) => refs.every((r) => Boolean(r.source_id)),
       "Every source slot needs a saved source picked.",
     )
     .refine(
-      (sources) => new Set(sources).size === sources.length,
-      "Each source can only be added to a pipeline once.",
-    ),
+      (refs) => refs.every((r) => r.alias.trim().length > 0),
+      "Every source needs an alias.",
+    )
+    .refine(
+      (refs) => refs.every((r) => !r.alias || ALIAS_RE.test(r.alias)),
+      "Alias must start with a letter or underscore and contain only letters, digits, or underscores.",
+    )
+    .refine((refs) => {
+      // Object identity never collides, so dedupe on the alias string.
+      const aliases = refs.map((r) => r.alias).filter(Boolean);
+      return new Set(aliases).size === aliases.length;
+    }, "Each alias must be unique within the pipeline."),
   output_id: z.string().min(1, "Pick or create a destination."),
   steps: z.array(stepSchema).optional(),
 });
@@ -102,7 +123,7 @@ export function validateField(
 export function validatePipelineForm(values: {
   id: string;
   name: string;
-  sources: string[];
+  sources: z.infer<typeof sourceTableRefSchema>[];
   output_id: string;
   steps?: unknown[];
 }): Record<string, string> {
