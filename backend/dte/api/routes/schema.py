@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from dte.api.deps import get_connection_store
+from dte.automap import Field as _AField, automap as _automap
 from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.models.pipeline import SourceBase as Source
@@ -70,3 +71,49 @@ async def infer_schema(
 
     fields = [_walk(name, dtype) for name, dtype in result_table.schema().items()]
     return InferSchemaResponse(fields=fields)
+
+
+class AutomapField(BaseModel):
+    name: str
+    type: str = ""
+
+
+class AutomapRequest(BaseModel):
+    source_fields: list[AutomapField]
+    dest_fields: list[AutomapField]
+    use_llm: bool = True
+
+
+class AutomapMatch(BaseModel):
+    dest: str
+    source: str | None = None
+    confidence: float = 0.0
+    via: str | None = None
+    warning: str | None = None
+
+
+class AutomapResponse(BaseModel):
+    matches: list[AutomapMatch]
+    unmatched_source: list[str]
+    llm_error: str | None = None
+
+
+@router.post("/schema/automap", response_model=AutomapResponse, dependencies=[Depends(requires("source:read"))])
+async def automap_fields(body: AutomapRequest):
+    """Propose a source→destination column mapping.
+
+    Pure computation over two field lists the caller already has — no
+    store access, no source loading. The optional LLM pass is the only
+    I/O, and its failure is reported in `llm_error` rather than failing
+    the request: the heuristic answer is still worth showing.
+    """
+    result = _automap(
+        [_AField(f.name, f.type) for f in body.source_fields],
+        [_AField(f.name, f.type) for f in body.dest_fields],
+        use_llm=body.use_llm,
+    )
+    return AutomapResponse(
+        matches=[AutomapMatch(**vars(m)) for m in result.matches],
+        unmatched_source=result.unmatched_source,
+        llm_error=result.llm_error,
+    )

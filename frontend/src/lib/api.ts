@@ -687,6 +687,11 @@ export const updateDestination = (id: string, destination: Destination) =>
   apiFetch<Destination>(`/api/destinations/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(destination) });
 export const deleteDestination = (id: string) =>
   apiFetch<void>(`/api/destinations/${encodeURIComponent(id)}`, { method: "DELETE" });
+/** Columns of a DB destination's target table. 422 for file targets —
+ *  their shape is whatever the pipeline writes, so there is nothing to read. */
+export const getDestinationSchema = (id: string) =>
+  apiFetch<{ fields: SchemaField[] }>(`/api/destinations/${encodeURIComponent(id)}/schema`);
+
 export const bulkDeleteDestinations = (ids: string[]) =>
   apiFetch<BulkDeleteResult>(`/api/destinations/bulk-delete`, {
     method: "POST",
@@ -1327,3 +1332,24 @@ export const intervalsOverlap = (
   if (!a || !b) return false;
   return a[0] <= b[1] && b[0] <= a[1];
 };
+
+export interface AutomapMatch {
+  dest: string;
+  source: string | null;
+  confidence: number;
+  via: "exact" | "fuzzy" | "llm" | null;
+  warning: string | null;
+}
+
+/** Propose a source→destination column mapping. `use_llm` adds a model pass
+ *  over whatever the name heuristics could not place; its failure comes back
+ *  as `llm_error`, never as a failed request. */
+export const automapFields = (body: {
+  source_fields: { name: string; type: string }[];
+  dest_fields: { name: string; type: string }[];
+  use_llm: boolean;
+}) =>
+  apiFetch<{ matches: AutomapMatch[]; unmatched_source: string[]; llm_error: string | null }>(
+    `/api/schema/automap`,
+    { method: "POST", body: JSON.stringify(body) },
+  );

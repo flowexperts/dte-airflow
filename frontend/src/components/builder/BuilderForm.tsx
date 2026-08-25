@@ -324,6 +324,7 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
                 onChange={(steps) => setPipeline({ ...pipeline, steps })}
                 pipelineType={pipeline.pipeline_type ?? "transform"}
                 sources={pipeline.sources ?? []}
+                outputId={pipeline.output_id ?? ""}
               />
             </div>
           </div>

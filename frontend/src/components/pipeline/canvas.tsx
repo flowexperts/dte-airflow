@@ -262,6 +262,7 @@ export function PipelineCanvas({
       onOpenChange={setOpenStep}
       readOnly={!canEdit}
       sources={pipeline.sources ?? []}
+      outputId={pipeline.output_id ?? ""}
     />
   );
 
