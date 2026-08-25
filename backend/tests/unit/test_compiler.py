@@ -2,7 +2,11 @@ import pytest
 import ibis
 import pandas as pd
 from dte.compiler.ibis_compiler import compile_pipeline
-from dte.models.pipeline import Pipeline, JoinStep, PivotStep, JsonFileTarget, LookupTable
+from pydantic import ValidationError
+
+from dte.models.pipeline import (
+    Pipeline, JoinStep, PivotStep, JsonFileTarget, LookupTable, CaseStep,
+)
 
 
 def _output(output_fields=None):
@@ -789,3 +793,167 @@ def test_select_step_resolves_struct_paths(struct_orders_table):
     df = result.execute()
     assert set(df.columns) == {"id", "cur"}
     assert sorted(df["cur"].tolist()) == ["EUR", "USD", "USD"]
+
+
+# ─── Case (if/else) ─────────────────────────────────────────────────────
+
+def test_case_step_with_otherwise(people_table):
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "band",
+        "branches": [
+            {"when": [{"field": "age", "op": ">=", "value": "30"}], "then": "senior"},
+            {"when": [{"field": "age", "op": ">=", "value": "18"}], "then": "adult"},
+        ],
+        "otherwise": "minor",
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert dict(zip(df["name"], df["band"])) == {
+        "alice": "senior", "bob": "minor", "carol": "adult",
+    }
+
+
+def test_case_step_without_otherwise_leaves_null(people_table):
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "band",
+        "branches": [{"when": [{"field": "age", "op": ">=", "value": "18"}],
+                      "then": "adult"}],
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert df.set_index("name")["band"].isna().to_dict() == {
+        "alice": False, "bob": True, "carol": False,
+    }
+
+
+def test_case_step_boolean_then(people_table):
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "minor",
+        "branches": [{"when": [{"field": "age", "op": "<", "value": "18"}],
+                      "then": True}],
+        "otherwise": False,
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert dict(zip(df["name"], df["minor"])) == {
+        "alice": False, "bob": True, "carol": False,
+    }
+
+
+def test_case_step_and_or_uses_sql_precedence(people_table):
+    # age >= 30 OR age >= 18 AND score > 8  →  AND binds tighter, so bob (17)
+    # must not match on the OR arm alone.
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "hit",
+        "branches": [{
+            "when": [
+                {"field": "age", "op": ">=", "value": "30"},
+                {"field": "age", "op": ">=", "value": "18", "join": "OR"},
+                {"field": "score", "op": ">", "value": "8", "join": "AND"},
+            ],
+            "then": True,
+        }],
+        "otherwise": False,
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert dict(zip(df["name"], df["hit"])) == {
+        "alice": True, "bob": False, "carol": True,
+    }
+
+
+def test_case_step_in_and_null_ops(people_table):
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "hit",
+        "branches": [{
+            "when": [{"field": "name", "op": "IN", "value": "alice, carol"}],
+            "then": "yes",
+        }],
+        "otherwise": "no",
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert dict(zip(df["name"], df["hit"])) == {
+        "alice": "yes", "bob": "no", "carol": "yes",
+    }
+
+
+def test_case_step_runs_on_a_non_duckdb_backend(people_table, monkeypatch):
+    """The whole point of compiling with ibis: no raw-SQL guard to trip."""
+    from dte.engine.duckdb_engine import DuckDBEngine
+
+    engine = DuckDBEngine()
+    pipeline, output = make_pipeline([{
+        "op": "case", "output_field": "minor",
+        "branches": [{"when": [{"field": "age", "op": "<", "value": "18"}],
+                      "then": True}],
+        "otherwise": False,
+    }])
+    # apply_expression_sql is the raw-SQL escape hatch that rejects non-DuckDB
+    # tables. A portable case step must never reach it.
+    def _boom(*a, **k):
+        raise AssertionError("case must not route through raw SQL")
+    monkeypatch.setattr(engine, "apply_expression_sql", _boom)
+    monkeypatch.setattr(engine, "apply_filter_sql", _boom)
+    df = compile_pipeline(
+        pipeline, {"src": people_table}, output=output, engine=engine,
+    ).execute()
+    assert df["minor"].tolist().count(True) == 1
+
+
+def test_case_step_rejects_empty_branches():
+    with pytest.raises(ValidationError):
+        CaseStep(op="case", output_field="band", branches=[])
+
+
+def test_case_step_rejects_branch_with_no_conditions():
+    with pytest.raises(ValidationError):
+        CaseStep(op="case", output_field="band",
+                 branches=[{"when": [], "then": "a"}])
+
+
+# ─── Raw SQL on a non-DuckDB backend ────────────────────────────────────
+
+@pytest.fixture
+def sqlite_people(tmp_path):
+    """A table bound to a *different* SQL backend than the engine's own."""
+    import sqlite3
+
+    db = tmp_path / "people.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE people (name TEXT, age INTEGER)")
+    conn.executemany("INSERT INTO people VALUES (?, ?)",
+                     [("alice", 30), ("bob", 17)])
+    conn.commit()
+    conn.close()
+    return ibis.sqlite.connect(str(db)).table("people")
+
+
+def test_filter_sql_runs_on_a_foreign_backend(sqlite_people):
+    """Raw SQL is transpiled to the table's own dialect, not refused.
+
+    This used to raise RawSqlNotSupportedOnBackend: the implementation
+    created a view inside the engine's DuckDB connection, so it only ever
+    worked for DuckDB-bound tables — which locked every raw-SQL step out of
+    `sql_database` sources.
+    """
+    from dte.engine.duckdb_engine import DuckDBEngine
+
+    pipeline, output = make_pipeline([{"op": "filter", "expr": "age >= 18"}])
+    df = compile_pipeline(
+        pipeline, {"src": sqlite_people}, output=output, engine=DuckDBEngine(),
+    ).execute()
+    assert df["name"].tolist() == ["alice"]
+
+
+def test_expression_sql_runs_on_a_foreign_backend(sqlite_people):
+    from dte.engine.duckdb_engine import DuckDBEngine
+
+    pipeline, output = make_pipeline([{
+        "op": "map", "mode": "expression",
+        "output_field": "next_age", "expr": "age + 1",
+    }])
+    df = compile_pipeline(
+        pipeline, {"src": sqlite_people}, output=output, engine=DuckDBEngine(),
+    ).execute()
+    assert sorted(df["next_age"].tolist()) == [18, 31]

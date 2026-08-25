@@ -720,6 +720,70 @@ class ExpressionMapStep(BaseModel):
         return v
 
 
+CaseOp = Literal[
+    "=", "!=", ">", "<", ">=", "<=", "LIKE", "IN", "IS NULL", "IS NOT NULL",
+    "BETWEEN",
+]
+
+
+class CaseCondition(BaseModel):
+    """One predicate row, mirroring the builder's condition UI.
+
+    Structured rather than a SQL string on purpose: the compiler turns these
+    into ibis expressions, so a `case` step runs on Postgres/MySQL/DuckDB
+    alike. A SQL string would force the raw-SQL escape hatch, which is
+    DuckDB-dialect only and is refused on every `sql_database` source.
+    """
+    model_config = {"extra": "forbid"}
+
+    field: str
+    op: CaseOp = "="
+    # Comma-separated for IN and BETWEEN; ignored for IS [NOT] NULL.
+    value: str = ""
+    # How this row joins to the previous one. AND binds tighter than OR, as
+    # in SQL — the compiler groups accordingly.
+    join: Literal["AND", "OR"] = "AND"
+
+    @field_validator("field")
+    @classmethod
+    def _field_non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("case condition needs a field")
+        return v
+
+
+# A branch result is a plain scalar, not SQL. `None` means the branch yields
+# NULL, which is a legitimate answer ("this row has no tier").
+CaseValue = bool | int | float | str | None
+
+
+class CaseBranch(BaseModel):
+    """One WHEN/THEN arm of a `case` step."""
+    model_config = {"extra": "forbid"}
+
+    when: list[CaseCondition] = Field(min_length=1)
+    then: CaseValue = None
+
+
+class CaseStep(BaseModel):
+    """Conditional column: if / else if / otherwise.
+
+    Compiles to `ibis.cases`, the same portable construct the lookup step
+    uses — no raw SQL, so it works on natively-bound DB sources.
+    """
+    op: Literal["case"]
+    output_field: str
+    branches: list[CaseBranch] = Field(min_length=1)
+    otherwise: CaseValue = None
+
+    @field_validator("output_field")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("case step needs an output field name")
+        return v
+
+
 class SortStep(BaseModel):
     op: Literal["sort"]
     by: list[str]
@@ -1153,6 +1217,7 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("select", None): SelectStep,
     ("join", None): JoinStep,
     ("pivot", None): PivotStep,
+    ("case", None): CaseStep,
     ("check", None): CheckStep,
     ("profile", None): ProfileStep,
     ("extract", None): ExtractStep,

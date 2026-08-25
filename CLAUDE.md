@@ -217,7 +217,17 @@ DuckDBEngine.execute_to_json() → output file + row count
 
 **`dte/compiler/ibis_compiler.py`** — `compile_pipeline(pipeline, tables)` maintains a **named registry** (`dict[str, ibis.Table]`) instead of a rolling variable. Each step reads from and writes back to the registry via `current_key`. Join steps write their result under `output_id` and update `current_key`. This allows multi-source pipelines.
 
-- Filter and expression-map steps escape to raw SQL via `con.create_view()` + `con.sql()` — Ibis has no SQL string parser. This is the seam for future distributed backends (Spark, Trino).
+- Filter and expression-map steps escape to raw SQL via
+  `table.alias(name).sql(fragment, dialect="duckdb")` — Ibis has no SQL string
+  parser. The alias form matters: it rides on **the table's own backend** and
+  sqlglot transpiles the DuckDB-dialect fragment to whatever that backend
+  speaks, so an Advanced filter or a map/expression works unchanged against a
+  `sql_database` source. It also writes nothing to the user's database.
+  It used to be `con.create_view()` + `con.sql()`, which needed a *writable
+  DuckDB* connection and so was refused outright on every natively-bound
+  table — the one restriction that made raw-SQL steps unusable on exactly the
+  sources plan 056 exists to serve. `RawSqlNotSupportedOnBackend` survives for
+  engines with no SQL-string seam at all (Trino).
 - Pivot uses `con.con.execute("CREATE OR REPLACE TEMP TABLE ... AS PIVOT ...")` — dynamic PIVOT cannot be a view in DuckDB, and `con.sql()` fails because sqlglot can't subquery a PIVOT node.
 
 **`dte/engine/duckdb_engine.py`** — wraps `ibis.duckdb.connect()`. Exposes `con` property (the ibis backend) for use by `dlt_loader`. Only responsible for execution and output — does not load sources.
@@ -229,10 +239,33 @@ DuckDBEngine.execute_to_json() → output file + row count
 ### Step dispatch
 
 ```python
-op = step["op"]    # "filter"|"rename"|"retype"|"map"|"sort"|"aggregate"|"join"|"pivot"|"select"
+op = step["op"]    # "filter"|"rename"|"retype"|"map"|"case"|"sort"|"aggregate"|"join"|"pivot"|"select"
                    # |"check"|"profile"|"extract"|"structure"
 mode = step.get("mode")   # "lookup"|"expression"|"calculation"  — map steps only
 ```
+
+`case` (if/else) compiles to `ibis.cases`, so `CaseCondition` carries
+`{field, op, value, join}` rather than a SQL fragment. Two properties follow
+that a SQL string would not have: the step dict *is* the editor state (no
+parser, nothing lost on reopen), and `then`/`otherwise` are plain scalars,
+so there is no quoting surface at all.
+
+- **AND binds tighter than OR**, matching SQL. `_case_predicate` groups runs
+  of AND before OR-ing them; a left-to-right fold would make the same rows
+  mean something different in a `case` branch than in the Filter tab.
+- `CaseCondition.value` is a string and `_case_value` types it — bare numbers
+  and true/false at face value, everything else a string cast to the column's
+  own type, so a date column compared against `"2008-01-01"` emits a real
+  DATE cast instead of a lexical string comparison.
+- Interpolation reaches `branches[].when[].value` explicitly; the flat
+  op → top-level-field map in `_STEP_STRING_FIELDS` cannot see two levels down.
+
+The builder's condition rows are one component, `ConditionRules` in
+`components/builder/steps/editors.tsx` — shared by Filter Basic, Check Basic
+and every `case` branch. Two implementations of "compose a predicate" drift,
+and the drift is a quoting bug. `showSql` is off for `case`: the branch
+compiles to ibis, so there is no generated SQL to preview.
+
 
 ### Unstructured: documents, extract, structure (plan 050)
 

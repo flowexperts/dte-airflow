@@ -65,6 +65,12 @@ export function stepTitle(step: StepShape): string {
       const by = groups.map(groupByLabel).join(", ");
       return by ? `by ${by}` : n(aggs.length, "aggregation");
     }
+    case "case": {
+      const branches = list(step.branches);
+      const out = str(step.output_field);
+      if (!out) return "unnamed field";
+      return `${out} · ${n(branches.length, "branch")}`;
+    }
     case "join":
       return `${str(step.left) ?? "?"} ${str(step.how) ?? "inner"} ${str(step.right) ?? "?"}`;
     case "pivot":
@@ -177,6 +183,30 @@ export function StepSummary({ step }: { step: StepShape }): ReactNode {
         <KV>
           {on && <KVItem label="on" value={on} />}
           {str(step.output_id) && <KVItem label="as" value={str(step.output_id)} />}
+        </KV>
+      );
+    }
+
+    case "case": {
+      type Cond = { field?: string; op?: string; value?: string; join?: string };
+      const branches = list(step.branches) as { when?: Cond[]; then?: unknown }[];
+      if (branches.length === 0) return null;
+      const condText = (c: Cond) =>
+        [c.field ?? "?", c.op ?? "=", c.value].filter(Boolean).join(" ");
+      return (
+        <KV>
+          {branches.map((b, i) => (
+            <KVItem
+              key={i}
+              label={i === 0 ? "if" : "else if"}
+              value={`${(b.when ?? []).map(condText).join(" · ") || "?"} → ${
+                b.then === null || b.then === undefined ? "null" : String(b.then)
+              }`}
+            />
+          ))}
+          {step.otherwise !== null && step.otherwise !== undefined && (
+            <KVItem label="else" value={String(step.otherwise)} />
+          )}
         </KV>
       );
     }

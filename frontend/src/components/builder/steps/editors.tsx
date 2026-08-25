@@ -559,13 +559,201 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
   return rules.length > 0 ? rules : null;
 }
 
-export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
+/**
+ * The structured, injection-safe condition builder: field picker + operator +
+ * value, AND/OR-joined, emitting SQL through quoteIdent/safeLiteral only.
+ *
+ * Extracted from FilterEditor so the `case` step's branches build their
+ * conditions with the identical UI — two implementations of "compose a
+ * predicate" would drift, and the drift is a quoting bug.
+ */
+function ConditionRules({
+  rules,
+  onChange,
+  showSql = true,
+}: {
+  rules: FilterRule[];
+  onChange: (next: FilterRule[]) => void;
+  /** Filter/Check hand their SQL to the engine, so they show it. A `case`
+   *  branch compiles to ibis and has no SQL string to preview. */
+  showSql?: boolean;
+}) {
   const allFields = useStepFields();
   const declaredParams = usePipelineParams();
-  // Native <datalist> id — one per FilterEditor instance is fine since we
-  // suggest the same declared inputs to every value cell in this step.
+  // Native <datalist> id — one per instance is fine since we suggest the same
+  // declared inputs to every value cell.
   const paramsListId = `filter-params-${useId()}`;
 
+  const addRule = () =>
+    onChange([...rules, { field: "", op: "=", value: "", join: "AND" }]);
+  const updateRule = (i: number, patch: Partial<FilterRule>) =>
+    onChange(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const removeRule = (i: number) => onChange(rules.filter((_, j) => j !== i));
+  const previewExpr = rulesToSql(rules);
+
+  return (
+      <div className="space-y-1.5">
+        {rules.length === 0 && (
+          <div className="font-mono text-[11.5px] text-subtle">
+            No conditions. Add one below.
+          </div>
+        )}
+        {rules.map((r, i) => {
+          const noValue = OPS_WITHOUT_VALUE.has(r.op);
+          // Look up the selected field's declared type so date/timestamp
+          // columns get a native picker instead of a plain text input.
+          const fieldMeta = allFields.find((f) => f.name === r.field);
+          const inputType = fieldInputType(fieldMeta?.type);
+          // Native date/datetime pickers can't hold a {{sentinel}}, so we
+          // surface a compact λ dropdown beside them. Filter the sysvars
+          // to the shapes that will coerce cleanly.
+          const dynVars =
+            inputType === "date"
+              ? SYSTEM_VARS.filter((v) => v !== "now")
+              : inputType === "datetime-local"
+                ? SYSTEM_VARS
+                : [];
+          return (
+            <div
+              key={i}
+              className="flex flex-wrap items-center gap-2"
+            >
+              {i === 0 ? (
+                <span className="w-[60px] shrink-0 font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
+                  where
+                </span>
+              ) : (
+                <select
+                  value={r.join}
+                  onChange={(e) => updateRule(i, { join: e.target.value as "AND" | "OR" })}
+                  className="w-[60px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
+                >
+                  <option value="AND">AND</option>
+                  <option value="OR">OR</option>
+                </select>
+              )}
+              <FieldPicker
+                value={r.field}
+                onChange={(v) => updateRule(i, { field: v })}
+                options={allFields}
+                placeholder="field"
+                variant="tree"
+                className="basis-[190px] grow"
+              />
+              <select
+                value={r.op}
+                onChange={(e) => updateRule(i, { op: e.target.value as FilterOp })}
+                className="w-[120px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
+              >
+                {FILTER_OPS.map((op) => (
+                  <option key={op} value={op}>
+                    {op}
+                  </option>
+                ))}
+              </select>
+              <div className="basis-[210px] grow min-w-0">
+              {r.op === "BETWEEN" ? (
+                (() => {
+                  const [lo = "", hi = ""] = (r.value ?? "")
+                    .split(",")
+                    .map((s) => s.trim());
+                  const commit = (nlo: string, nhi: string) => {
+                    const parts = [nlo.trim(), nhi.trim()];
+                    updateRule(i, {
+                      value: parts.every((s) => s === "") ? "" : parts.join(", "),
+                    });
+                  };
+                  return (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <DateValueField
+                        value={lo}
+                        onChange={(v) => commit(v, hi)}
+                        baseType={inputType}
+                        dynVars={dynVars}
+                        placeholder="min"
+                        list={paramsListId}
+                      />
+                      <span className="w-4 shrink-0 text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+                        and
+                      </span>
+                      <DateValueField
+                        value={hi}
+                        onChange={(v) => commit(lo, v)}
+                        baseType={inputType}
+                        dynVars={dynVars}
+                        placeholder="max"
+                        list={paramsListId}
+                      />
+                    </div>
+                  );
+                })()
+              ) : (
+                (() => {
+                  // IN / LIKE keep text semantics; disable pickers there.
+                  const suppressed = r.op === "IN" || r.op === "LIKE" || noValue;
+                  return (
+                    <DateValueField
+                      value={r.value}
+                      onChange={(v) => updateRule(i, { value: v })}
+                      baseType={suppressed ? "text" : inputType}
+                      dynVars={suppressed ? [] : dynVars}
+                      placeholder={r.op === "IN" ? "a, b, c" : "value"}
+                      disabled={noValue}
+                      list={paramsListId}
+                    />
+                  );
+                })()
+              )}
+              </div>
+              <button
+                type="button"
+                onClick={() => removeRule(i)}
+                className="w-[28px] shrink-0 text-subtle hover:text-red text-sm"
+                aria-label="Remove condition"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          onClick={addRule}
+          className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+        >
+          + Add condition
+        </button>
+        {showSql && previewExpr && (
+          <div className="mt-2">
+            <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
+              Generated SQL
+            </div>
+            <code className="block font-mono text-[12px] text-muted bg-code-bg border border-border rounded px-2.5 py-1.5 whitespace-pre-wrap break-words">
+              {previewExpr}
+            </code>
+          </div>
+        )}
+        <datalist id={paramsListId}>
+          {declaredParams.map((p) => (
+            <option
+              key={`p-${p.name}`}
+              value={`{{params.${p.name}}}`}
+              label={`${p.name} · ${p.type}`}
+            />
+          ))}
+          {SYSTEM_VARS.map((v) => (
+            <option
+              key={`s-${v}`}
+              value={`{{${v}}}`}
+              label={`${v} · dynamic`}
+            />
+          ))}
+        </datalist>
+      </div>
+  );
+}
+
+export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   // Mode is local UI state — not persisted on the step. Prefer Basic: it is
   // the structured, injection-safe editor and where most conditions belong.
   // We open in Advanced only when the saved SQL can't be represented as
@@ -598,16 +786,6 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
     // Advanced tab owns the wire value while it is displayed.
     if (mode === "basic") set({ expr: rulesToSql(next) });
   };
-
-  const addRule = () =>
-    commitRules([
-      ...rules,
-      { field: "", op: "=", value: "", join: "AND" },
-    ]);
-  const updateRule = (i: number, patch: Partial<FilterRule>) =>
-    commitRules(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const removeRule = (i: number) =>
-    commitRules(rules.filter((_, j) => j !== i));
 
   const handleAdvancedChange = (text: string) => {
     setAdvancedText(text);
@@ -643,8 +821,6 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
     setMode("advanced");
   };
 
-  const previewExpr = mode === "basic" ? rulesToSql(rules) : advancedText;
-
   return (
     <div className="grid gap-3">
       <div className="flex items-center justify-between">
@@ -674,164 +850,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
       </div>
 
       {mode === "basic" ? (
-        <div className="space-y-1.5">
-          {rules.length === 0 && (
-            <div className="font-mono text-[11.5px] text-subtle">
-              No conditions. Add one below.
-            </div>
-          )}
-          {rules.map((r, i) => {
-            const noValue = OPS_WITHOUT_VALUE.has(r.op);
-            // Look up the selected field's declared type so date/timestamp
-            // columns get a native picker instead of a plain text input.
-            const fieldMeta = allFields.find((f) => f.name === r.field);
-            const inputType = fieldInputType(fieldMeta?.type);
-            // Native date/datetime pickers can't hold a {{sentinel}}, so we
-            // surface a compact λ dropdown beside them. Filter the sysvars
-            // to the shapes that will coerce cleanly.
-            const dynVars =
-              inputType === "date"
-                ? SYSTEM_VARS.filter((v) => v !== "now")
-                : inputType === "datetime-local"
-                  ? SYSTEM_VARS
-                  : [];
-            return (
-              <div
-                key={i}
-                className="flex flex-wrap items-center gap-2"
-              >
-                {i === 0 ? (
-                  <span className="w-[60px] shrink-0 font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
-                    where
-                  </span>
-                ) : (
-                  <select
-                    value={r.join}
-                    onChange={(e) => updateRule(i, { join: e.target.value as "AND" | "OR" })}
-                    className="w-[60px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
-                  >
-                    <option value="AND">AND</option>
-                    <option value="OR">OR</option>
-                  </select>
-                )}
-                <FieldPicker
-                  value={r.field}
-                  onChange={(v) => updateRule(i, { field: v })}
-                  options={allFields}
-                  placeholder="field"
-                  variant="tree"
-                  className="basis-[190px] grow"
-                />
-                <select
-                  value={r.op}
-                  onChange={(e) => updateRule(i, { op: e.target.value as FilterOp })}
-                  className="w-[120px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
-                >
-                  {FILTER_OPS.map((op) => (
-                    <option key={op} value={op}>
-                      {op}
-                    </option>
-                  ))}
-                </select>
-                <div className="basis-[210px] grow min-w-0">
-                {r.op === "BETWEEN" ? (
-                  (() => {
-                    const [lo = "", hi = ""] = (r.value ?? "")
-                      .split(",")
-                      .map((s) => s.trim());
-                    const commit = (nlo: string, nhi: string) => {
-                      const parts = [nlo.trim(), nhi.trim()];
-                      updateRule(i, {
-                        value: parts.every((s) => s === "") ? "" : parts.join(", "),
-                      });
-                    };
-                    return (
-                      <div className="flex flex-wrap items-center gap-1">
-                        <DateValueField
-                          value={lo}
-                          onChange={(v) => commit(v, hi)}
-                          baseType={inputType}
-                          dynVars={dynVars}
-                          placeholder="min"
-                          list={paramsListId}
-                        />
-                        <span className="w-4 shrink-0 text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
-                          and
-                        </span>
-                        <DateValueField
-                          value={hi}
-                          onChange={(v) => commit(lo, v)}
-                          baseType={inputType}
-                          dynVars={dynVars}
-                          placeholder="max"
-                          list={paramsListId}
-                        />
-                      </div>
-                    );
-                  })()
-                ) : (
-                  (() => {
-                    // IN / LIKE keep text semantics; disable pickers there.
-                    const suppressed = r.op === "IN" || r.op === "LIKE" || noValue;
-                    return (
-                      <DateValueField
-                        value={r.value}
-                        onChange={(v) => updateRule(i, { value: v })}
-                        baseType={suppressed ? "text" : inputType}
-                        dynVars={suppressed ? [] : dynVars}
-                        placeholder={r.op === "IN" ? "a, b, c" : "value"}
-                        disabled={noValue}
-                        list={paramsListId}
-                      />
-                    );
-                  })()
-                )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeRule(i)}
-                  className="w-[28px] shrink-0 text-subtle hover:text-red text-sm"
-                  aria-label="Remove condition"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            onClick={addRule}
-            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
-          >
-            + Add condition
-          </button>
-          {previewExpr && (
-            <div className="mt-2">
-              <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
-                Generated SQL
-              </div>
-              <code className="block font-mono text-[12px] text-muted bg-code-bg border border-border rounded px-2.5 py-1.5 whitespace-pre-wrap break-words">
-                {previewExpr}
-              </code>
-            </div>
-          )}
-          <datalist id={paramsListId}>
-            {declaredParams.map((p) => (
-              <option
-                key={`p-${p.name}`}
-                value={`{{params.${p.name}}}`}
-                label={`${p.name} · ${p.type}`}
-              />
-            ))}
-            {SYSTEM_VARS.map((v) => (
-              <option
-                key={`s-${v}`}
-                value={`{{${v}}}`}
-                label={`${v} · dynamic`}
-              />
-            ))}
-          </datalist>
-        </div>
+        <ConditionRules rules={rules} onChange={commitRules} />
       ) : (
         <Field
           label="Expression"
@@ -1026,6 +1045,120 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
         />
         <VariablePickerHint
           onInsert={(token) => set({ expr: ((step.expr as string) ?? "") + token })}
+        />
+      </Field>
+    </div>
+  );
+}
+
+/** One WHEN/THEN arm on the wire. `when` is the same rule shape the Filter
+ *  tab builds — structured, not SQL, so the compiler can emit portable ibis
+ *  and the step runs against a natively-bound DB source. */
+type CaseBranch = { when: FilterRule[]; then: CaseValue };
+type CaseValue = string | number | boolean | null;
+
+/** Text input → wire scalar. Mirrors safeLiteral's dispatch, minus the
+ *  quoting: bare numbers and true/false are those types, blank is NULL. */
+function parseScalar(v: string): CaseValue {
+  const t = v.trim();
+  if (t === "") return null;
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+  if (/^(true|false)$/i.test(t)) return t.toLowerCase() === "true";
+  return v;
+}
+
+function scalarText(v: CaseValue): string {
+  return v === null || v === undefined ? "" : String(v);
+}
+
+/**
+ * Conditional column: if / else if / otherwise.
+ *
+ * The step dict IS the editor state — conditions are stored as rules, so
+ * reopening needs no SQL parsing and nothing can be lost in a round-trip.
+ */
+export function CaseEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const branches = (step.branches as CaseBranch[]) ?? [];
+
+  const setBranches = (next: CaseBranch[]) => set({ branches: next });
+  const updateBranch = (i: number, patch: Partial<CaseBranch>) =>
+    setBranches(branches.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+  const move = (i: number, delta: number) => {
+    const j = i + delta;
+    if (j < 0 || j >= branches.length) return;
+    const next = [...branches];
+    [next[i], next[j]] = [next[j]!, next[i]!];
+    setBranches(next);
+  };
+
+  return (
+    <div className="grid gap-3">
+      <Field label="Output field" hint="the new column this step adds">
+        <Input
+          value={(step.output_field as string) ?? ""}
+          onChange={(e) => set({ output_field: e.target.value })}
+          placeholder="tier"
+        />
+      </Field>
+
+      {branches.map((b, i) => (
+        <div
+          key={i}
+          className="border border-border rounded-[var(--radius)] p-3 grid gap-2"
+        >
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+              {i === 0 ? "if" : "else if"}
+            </span>
+            <div className="flex items-center gap-1.5 text-subtle">
+              <button type="button" onClick={() => move(i, -1)}
+                className="hover:text-text text-sm" aria-label="Move branch up">↑</button>
+              <button type="button" onClick={() => move(i, 1)}
+                className="hover:text-text text-sm" aria-label="Move branch down">↓</button>
+              <button
+                type="button"
+                onClick={() => setBranches(branches.filter((_, j) => j !== i))}
+                className="hover:text-red text-sm"
+                aria-label="Remove branch"
+                // The backend requires at least one branch; a step you can't
+                // save is worse than a delete button that stops at one.
+                disabled={branches.length === 1}
+              >×</button>
+            </div>
+          </div>
+          <ConditionRules
+            rules={b.when ?? []}
+            onChange={(rules) => updateBranch(i, { when: rules })}
+            showSql={false}
+          />
+          <Field label="Then">
+            <Input
+              value={scalarText(b.then)}
+              onChange={(e) => updateBranch(i, { then: parseScalar(e.target.value) })}
+              placeholder="gold"
+            />
+          </Field>
+        </div>
+      ))}
+
+      <button
+        type="button"
+        onClick={() =>
+          setBranches([
+            ...branches,
+            { when: [{ field: "", op: "=", value: "", join: "AND" }], then: null },
+          ])
+        }
+        className="justify-self-start font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+      >
+        + Add branch
+      </button>
+
+      <Field label="Otherwise" hint="left blank, unmatched rows get NULL">
+        <Input
+          value={scalarText((step.otherwise as CaseValue) ?? null)}
+          onChange={(e) => set({ otherwise: parseScalar(e.target.value) })}
+          placeholder="bronze"
         />
       </Field>
     </div>
@@ -1616,10 +1749,6 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
 type StepEditorProps = { step: StepShape; set: Setter };
 
 function CheckEditor({ step, set }: StepEditorProps) {
-  const allFields = useStepFields();
-  const declaredParams = usePipelineParams();
-  const paramsListId = `check-params-${useId()}`;
-
   // Basic unless the saved SQL can't round-trip — see FilterEditor.
   const parsedOnMount = useRef<FilterRule[] | null>(
     step.expr ? tryParseBasicSql(step.expr as string) : [],
@@ -1639,16 +1768,6 @@ function CheckEditor({ step, set }: StepEditorProps) {
     setRules(next);
     if (mode === "basic") set({ ...step, expr: rulesToSql(next) });
   };
-
-  const addRule = () =>
-    commitRules([
-      ...rules,
-      { field: "", op: "=", value: "", join: "AND" },
-    ]);
-  const updateRule = (i: number, patch: Partial<FilterRule>) =>
-    commitRules(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const removeRule = (i: number) =>
-    commitRules(rules.filter((_, j) => j !== i));
 
   const handleAdvancedChange = (text: string) => {
     setAdvancedText(text);
@@ -1674,8 +1793,6 @@ function CheckEditor({ step, set }: StepEditorProps) {
     }
     setMode("advanced");
   };
-
-  const previewExpr = mode === "basic" ? rulesToSql(rules) : advancedText;
 
   return (
     <div className="grid gap-3">
@@ -1723,158 +1840,7 @@ function CheckEditor({ step, set }: StepEditorProps) {
       </div>
 
       {mode === "basic" ? (
-        <div className="space-y-1.5">
-          {rules.length === 0 && (
-            <div className="font-mono text-[11.5px] text-subtle">
-              No conditions. Add one below.
-            </div>
-          )}
-          {rules.map((r, i) => {
-            const noValue = OPS_WITHOUT_VALUE.has(r.op);
-            const fieldMeta = allFields.find((f) => f.name === r.field);
-            const inputType = fieldInputType(fieldMeta?.type);
-            const dynVars =
-              inputType === "date"
-                ? SYSTEM_VARS.filter((v) => v !== "now")
-                : inputType === "datetime-local"
-                  ? SYSTEM_VARS
-                  : [];
-            return (
-              <div
-                key={i}
-                className="flex flex-wrap items-center gap-2"
-              >
-                {i === 0 ? (
-                  <span className="w-[60px] shrink-0 font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
-                    where
-                  </span>
-                ) : (
-                  <select
-                    value={r.join}
-                    onChange={(e) => updateRule(i, { join: e.target.value as "AND" | "OR" })}
-                    className="w-[60px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
-                  >
-                    <option value="AND">AND</option>
-                    <option value="OR">OR</option>
-                  </select>
-                )}
-                <FieldPicker
-                  value={r.field}
-                  onChange={(v) => updateRule(i, { field: v })}
-                  options={allFields}
-                  placeholder="field"
-                  variant="tree"
-                  className="basis-[190px] grow"
-                />
-                <select
-                  value={r.op}
-                  onChange={(e) => updateRule(i, { op: e.target.value as FilterOp })}
-                  className="w-[120px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
-                >
-                  {FILTER_OPS.map((op) => (
-                    <option key={op} value={op}>
-                      {op}
-                    </option>
-                  ))}
-                </select>
-                <div className="basis-[210px] grow min-w-0">
-                {r.op === "BETWEEN" ? (
-                  (() => {
-                    const [lo = "", hi = ""] = (r.value ?? "")
-                      .split(",")
-                      .map((s) => s.trim());
-                    const commit = (nlo: string, nhi: string) => {
-                      const parts = [nlo.trim(), nhi.trim()];
-                      updateRule(i, {
-                        value: parts.every((s) => s === "") ? "" : parts.join(", "),
-                      });
-                    };
-                    return (
-                      <div className="flex flex-wrap items-center gap-1">
-                        <DateValueField
-                          value={lo}
-                          onChange={(v) => commit(v, hi)}
-                          baseType={inputType}
-                          dynVars={dynVars}
-                          placeholder="min"
-                          list={paramsListId}
-                        />
-                        <span className="w-4 shrink-0 text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
-                          and
-                        </span>
-                        <DateValueField
-                          value={hi}
-                          onChange={(v) => commit(lo, v)}
-                          baseType={inputType}
-                          dynVars={dynVars}
-                          placeholder="max"
-                          list={paramsListId}
-                        />
-                      </div>
-                    );
-                  })()
-                ) : (
-                  (() => {
-                    const suppressed = r.op === "IN" || r.op === "LIKE" || noValue;
-                    return (
-                      <DateValueField
-                        value={r.value}
-                        onChange={(v) => updateRule(i, { value: v })}
-                        baseType={suppressed ? "text" : inputType}
-                        dynVars={suppressed ? [] : dynVars}
-                        placeholder={r.op === "IN" ? "a, b, c" : "value"}
-                        disabled={noValue}
-                        list={paramsListId}
-                      />
-                    );
-                  })()
-                )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeRule(i)}
-                  className="w-[28px] shrink-0 text-subtle hover:text-red text-sm"
-                  aria-label="Remove condition"
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            onClick={addRule}
-            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
-          >
-            + Add condition
-          </button>
-          {previewExpr && (
-            <div className="mt-2">
-              <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
-                Generated SQL
-              </div>
-              <code className="block font-mono text-[12px] text-muted bg-code-bg border border-border rounded px-2.5 py-1.5 whitespace-pre-wrap break-words">
-                {previewExpr}
-              </code>
-            </div>
-          )}
-          <datalist id={paramsListId}>
-            {declaredParams.map((p) => (
-              <option
-                key={`p-${p.name}`}
-                value={`{{params.${p.name}}}`}
-                label={`${p.name} · ${p.type}`}
-              />
-            ))}
-            {SYSTEM_VARS.map((v) => (
-              <option
-                key={`s-${v}`}
-                value={`{{${v}}}`}
-                label={`${v} · dynamic`}
-              />
-            ))}
-          </datalist>
-        </div>
+        <ConditionRules rules={rules} onChange={commitRules} />
       ) : (
         <Field
           label="Expression"
@@ -2177,6 +2143,7 @@ export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
     case "map":       return step.mode === "lookup"
       ? <MapLookupEditor step={step} set={set} />
       : <MapExpressionEditor step={step} set={set} />;
+    case "case":      return <CaseEditor step={step} set={set} />;
     case "sort":      return <SortEditor step={step} set={set} />;
     case "aggregate": return <AggregateEditor step={step} set={set} />;
     case "join":      return <JoinEditor step={step} set={set} />;

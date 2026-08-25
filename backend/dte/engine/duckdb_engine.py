@@ -10,17 +10,13 @@ from dte.engine.writers import write as _write
 
 
 class RawSqlNotSupportedOnBackend(RuntimeError):
-    """Raised when a raw-SQL escape hatch (advanced filter / expression map)
-    is used on a table whose native backend isn't DuckDB.
+    """Raised by a backend that cannot take a raw-SQL fragment at all.
 
-    Raw SQL fragments are DuckDB-dialect and don't translate to
-    postgres/bigquery/etc.  Fix: switch that filter to Basic mode, or
-    change the pipeline so this step runs on a DuckDB-backed table.
+    Kept for engines with no SQL-string seam (see TrinoEngine). The SQL
+    backends do not raise it: `Table.alias(...).sql(..., dialect="duckdb")`
+    transpiles the fragment through sqlglot to whatever dialect the table's
+    own backend speaks.
     """
-
-
-def _is_duckdb_backend(backend: ibis.BaseBackend) -> bool:
-    return type(backend).__module__.startswith("ibis.backends.duckdb")
 
 
 class DuckDBEngine(BaseEngine):
@@ -37,17 +33,22 @@ class DuckDBEngine(BaseEngine):
     def execute(self, table: ibis.Table, target, credentials: dict | None = None, run_id: str | None = None) -> WriteResult:
         return _write(table, target, self._con, credentials=credentials, run_id=run_id)
 
+    # Raw SQL rides on the table's OWN backend via a CTE alias, not on a view
+    # created in self._con. Two things follow, and both were bugs before:
+    # the fragment is transpiled from DuckDB dialect by sqlglot, so a filter
+    # or map/expression step runs unchanged against Postgres/MySQL/etc; and
+    # nothing is written to the user's database to make it work.
     def apply_filter_sql(self, table: ibis.Table, expr: str) -> ibis.Table:
-        _require_duckdb_backend(table, op="filter (Advanced tab)")
-        view_name = f"_filter_input_{next(self._view_seq)}"
-        self._con.create_view(view_name, table, overwrite=True)
-        return self._con.sql(f"SELECT * FROM {view_name} WHERE {expr}")
+        name = f"_filter_input_{next(self._view_seq)}"
+        return table.alias(name).sql(
+            f"SELECT * FROM {name} WHERE {expr}", dialect=self.dialect,
+        )
 
     def apply_expression_sql(self, table: ibis.Table, output_field: str, expr: str) -> ibis.Table:
-        _require_duckdb_backend(table, op="map/expression")
-        view_name = f"_expr_input_{next(self._view_seq)}"
-        self._con.create_view(view_name, table, overwrite=True)
-        return self._con.sql(f"SELECT *, ({expr}) AS {output_field} FROM {view_name}")
+        name = f"_expr_input_{next(self._view_seq)}"
+        return table.alias(name).sql(
+            f'SELECT *, ({expr}) AS "{output_field}" FROM {name}', dialect=self.dialect,
+        )
 
     def apply_enrichment(
         self, table: ibis.Table, spec: EnrichmentSpec
@@ -84,15 +85,3 @@ class DuckDBEngine(BaseEngine):
 
         self._con.con.register(name, arrow)
         return self._con.table(name)
-
-
-def _require_duckdb_backend(table: ibis.Table, op: str) -> None:
-    backend = table._find_backend()
-    if _is_duckdb_backend(backend):
-        return
-    dialect = type(backend).__name__
-    raise RawSqlNotSupportedOnBackend(
-        f"Raw SQL {op} step ran against a {dialect} table, but raw SQL is "
-        "DuckDB-dialect only. Switch this step to the Basic tab, or run this "
-        "pipeline on a DuckDB-backed source (e.g. export to filesystem first)."
-    )

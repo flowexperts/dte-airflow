@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import functools
 import json
+import operator
+import re
 from typing import TYPE_CHECKING
 
 import ibis
@@ -11,6 +14,8 @@ from dte.models.pipeline import (
     ExtractStep,
     StructureStep,
     AggregateStep,
+    CaseStep,
+    CaseCondition,
     DatePartGroupBy,
     ExpressionMapStep,
     FilterStep,
@@ -239,6 +244,8 @@ def _dispatch_single_table_step(
         return _apply_sort(table, SortStep(**step))
     elif op == "aggregate":
         return _apply_aggregate(table, AggregateStep(**step))
+    elif op == "case":
+        return _apply_case(table, CaseStep(**step))
     elif op == "pivot":
         return _apply_pivot(table, PivotStep(**step))
     elif op == "select":
@@ -765,6 +772,82 @@ def _apply_expression(
     return con.sql(
         f'SELECT *, ({step.expr}) AS "{step.output_field}" FROM {view_name}'
     )
+
+
+def _case_value(col: ibis.Column, raw: str):
+    """Turn a builder-supplied string into a literal comparable to *col*.
+
+    Bare numbers and true/false are taken at face value; everything else is a
+    string, cast to the column's own type so a date column compared against
+    "2008-01-01" emits CAST('2008-01-01' AS DATE) on any backend instead of a
+    string comparison that silently sorts lexically.
+    """
+    v = raw.strip()
+    if re.fullmatch(r"-?\d+", v):
+        return ibis.literal(int(v))
+    if re.fullmatch(r"-?\d+\.\d+", v):
+        return ibis.literal(float(v))
+    if v.lower() in ("true", "false"):
+        return ibis.literal(v.lower() == "true")
+    lit = ibis.literal(v)
+    return lit if col.type().is_string() else lit.cast(col.type())
+
+
+def _condition_expr(table: ibis.Table, cond: CaseCondition):
+    col = _resolve_field(table, cond.field)
+    op = cond.op
+    if op == "IS NULL":
+        return col.isnull()
+    if op == "IS NOT NULL":
+        return col.notnull()
+    if op == "IN":
+        items = [p.strip() for p in cond.value.split(",") if p.strip()]
+        if not items:
+            raise CompilerError(f"case: IN condition on {cond.field!r} has no values")
+        return col.isin([_case_value(col, i) for i in items])
+    if op == "BETWEEN":
+        items = [p.strip() for p in cond.value.split(",") if p.strip()]
+        if len(items) != 2:
+            raise CompilerError(
+                f"case: BETWEEN condition on {cond.field!r} needs exactly two values"
+            )
+        return col.between(_case_value(col, items[0]), _case_value(col, items[1]))
+    if op == "LIKE":
+        return col.like(cond.value)
+    value = _case_value(col, cond.value)
+    return {
+        "=": lambda: col == value,
+        "!=": lambda: col != value,
+        ">": lambda: col > value,
+        "<": lambda: col < value,
+        ">=": lambda: col >= value,
+        "<=": lambda: col <= value,
+    }[op]()
+
+
+def _case_predicate(table: ibis.Table, conditions: list[CaseCondition]):
+    """Combine condition rows with SQL's precedence: AND binds tighter than OR.
+
+    Folding strictly left-to-right would make `a OR b AND c` mean `(a OR b)
+    AND c` — the opposite of what the same rows mean in the Filter tab, which
+    hands its string to SQL.
+    """
+    groups: list[list] = [[]]
+    for i, cond in enumerate(conditions):
+        if i > 0 and cond.join == "OR":
+            groups.append([])
+        groups[-1].append(_condition_expr(table, cond))
+    ands = [functools.reduce(operator.and_, g) for g in groups]
+    return functools.reduce(operator.or_, ands)
+
+
+def _apply_case(table: ibis.Table, step: CaseStep) -> ibis.Table:
+    branches = [
+        (_case_predicate(table, b.when), ibis.literal(b.then) if b.then is not None else ibis.null())
+        for b in step.branches
+    ]
+    else_ = ibis.literal(step.otherwise) if step.otherwise is not None else None
+    return table.mutate(**{step.output_field: ibis.cases(*branches, else_=else_)})
 
 
 def _apply_sort(table: ibis.Table, step: SortStep) -> ibis.Table:
