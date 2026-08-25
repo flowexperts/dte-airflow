@@ -688,10 +688,31 @@ mode in this codebase and it is invisible from every surface.
   actual remedy.
 - `tests/unit/test_writer_naming_convention.py` intercepts the destination
   factory instead of connecting, which is what lets it cover snowflake and
-  bigquery. It also carries a **strict xfail for `dialect="mysql"`**:
-  `dlt.destinations.mysql` does not exist in dlt 1.30 (mysql goes through
-  the `sqlalchemy` destination), so that branch has never worked. Unrelated
-  to naming; delete the xfail when it is fixed.
+  bigquery.
+
+**The mysql dialect routes through dlt's `sqlalchemy` destination.** dlt
+ships no mysql destination — `dlt.destinations.mysql` has never existed on
+any dlt this project pins, so `dialect="mysql"` raised `AttributeError` at
+write time, after the destination had saved and previewed cleanly. And the
+`mysql-writer` extra said `dlt[mysql]`, which is not a real dlt extra:
+`uv pip install "dlt[mysql]"` reports *"Would make no changes"*, so
+installing the documented fix for MySQL support installed nothing.
+
+`sqlalchemy` is dlt's driver layer, not a target anyone picks — the dialect
+users choose stays `mysql`, and `destination_factory` is the only place the
+mapping exists. Two consequences worth keeping:
+
+- **The writer rewrites `mysql://` → `mysql+pymysql://`.** SQLAlchemy reads
+  the scheme as dialect+driver and defaults bare `mysql://` to mysqldb
+  (mysqlclient), which needs a C toolchain to build. Which driver we use is
+  ours to pick; the URL users saved says `mysql://` because that is what the
+  source side takes, and the same connection has to keep working here.
+- **The image installs `[mysql-writer]`** (`dlt[sqlalchemy]` + `pymysql`,
+  both pure Python). `SqlDatabaseTarget.dialect` offers mysql, so without
+  them the destination saves and previews and only the write fails — the
+  exact failure the `[unstructured,models]` comment above it describes.
+  snowflake and bigquery stay opt-in: large SDKs, neither reachable from a
+  self-hosted default.
 
 ### Field references and nested columns
 

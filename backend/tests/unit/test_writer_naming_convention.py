@@ -52,8 +52,9 @@ def captured(monkeypatch):
         seen["pipelines_dir"] = kw.get("pipelines_dir")
         return type("P", (), {"run": lambda self, r: None})()
 
-    # `mysql` is deliberately absent — see test_mysql_dialect_is_broken.
-    for name in ("postgres", "snowflake", "bigquery"):
+    # `sqlalchemy`, not `mysql`: dlt ships no mysql destination, so the
+    # writer routes the mysql dialect through the sqlalchemy one.
+    for name in ("postgres", "snowflake", "bigquery", "sqlalchemy"):
         monkeypatch.setattr(dlt.destinations, name, _spy(name))
     monkeypatch.setattr(dlt, "pipeline", _pipeline)
     return seen
@@ -85,16 +86,11 @@ def test_sql_database_writer_passes_identifiers_through(table, captured, dialect
     assert captured["pipelines_dir"] is not None
 
 
-@pytest.mark.xfail(
-    reason="pre-existing, unrelated to naming: `dlt.destinations.mysql` does not "
-    "exist in dlt 1.30 (mysql goes through the `sqlalchemy` destination), so a "
-    "sql_database destination with dialect='mysql' AttributeErrors at write time. "
-    "Fixing it means switching destination impl on a path with no CI coverage — "
-    "left for its own change. Delete this xfail when that lands.",
-    raises=AttributeError,
-    strict=True,
-)
-def test_mysql_dialect_is_broken(table):
+def test_mysql_routes_through_the_sqlalchemy_destination(table, captured):
+    """dlt has no mysql destination — `dlt.destinations.mysql` raised
+    AttributeError at write time, after the destination had saved and
+    previewed cleanly. sqlalchemy is dlt's driver layer, not a target
+    anyone picks: the dialect stays `mysql` and this mapping is internal."""
     write(
         table,
         SqlDatabaseTarget(
@@ -102,3 +98,30 @@ def test_mysql_dialect_is_broken(table):
         ),
         credentials={"url": "mysql://u:p@h/db"},
     )
+    assert captured["dialect"] == "sqlalchemy"
+    assert captured["naming_convention"] == "direct"
+    assert captured["pipelines_dir"] is not None
+
+
+def test_mysql_url_keeps_the_scheme_the_user_saved(table, captured, monkeypatch):
+    """A bare `mysql://` is SQLAlchemy-speak for the mysqldb driver, which
+    needs a C toolchain. Which driver we use is ours to pick, so the writer
+    rewrites the scheme rather than making users type `mysql+pymysql://` in
+    a connection the source side reads as plain `mysql://`."""
+    import dlt
+
+    seen_url = {}
+    real = dlt.destinations.sqlalchemy
+    monkeypatch.setattr(
+        dlt.destinations,
+        "sqlalchemy",
+        lambda **kw: (seen_url.update(url=kw["credentials"]), real(**kw))[1],
+    )
+    write(
+        table,
+        SqlDatabaseTarget(
+            type="sql_database", dialect="mysql", schema="analytics", table="orders"
+        ),
+        credentials={"url": "mysql://u:p@h/db"},
+    )
+    assert seen_url["url"] == "mysql+pymysql://u:p@h/db"

@@ -136,8 +136,15 @@ Two things that run found, both worth knowing:
   now fails its next run with `TableIdentifiersFrozen` until those tables
   are dropped. That is a loud failure replacing a silent wrong write, but
   it is a breaking change and needs calling out in release notes.
-- **Found, not fixed:** `dlt.destinations.mysql` does not exist in dlt
-  1.30, so a `sql_database` destination with `dialect="mysql"` has always
-  raised `AttributeError` at write time. Unrelated to naming, no CI
-  coverage for that path, so it carries a strict xfail rather than a
-  speculative swap to the `sqlalchemy` destination.
+- **Also fixed: the mysql dialect had never worked.**
+  `dlt.destinations.mysql` does not exist on any dlt this project pins, so
+  `dialect="mysql"` raised `AttributeError` at write time — after the
+  destination saved and previewed cleanly. The `mysql-writer` extra was
+  wrong too (`dlt[mysql]` is not a real extra; it silently resolves to
+  plain dlt). Now routed through dlt's `sqlalchemy` destination, which is
+  its driver layer and stays internal: the dialect users pick is still
+  `mysql`, the writer rewrites the scheme to `mysql+pymysql://` so saved
+  `mysql://` connections keep working, and the image installs the extra so
+  the offered dialect is not one that only fails on write. Verified
+  end-to-end from a clean image build against a real MySQL 8, writing into
+  a table with a `CustomerID` column.
