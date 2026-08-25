@@ -27,7 +27,8 @@ _STEP_STRING_FIELDS: dict[str, tuple[str, ...]] = {
     "filter": ("expr",),
     "map": ("expr",),  # ExpressionMapStep — LookupMapStep has no expr field
     "check": ("expr",),
-    "case": ("otherwise",),   # branches[] handled separately below
+    "case": (),          # branches[] handled separately below
+    "date_diff": ("to",),
 }
 
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
@@ -264,7 +265,7 @@ def interpolate_pipeline(pipeline: "Pipeline", context: dict[str, Any]) -> "Pipe
     for step in pipeline.steps or []:
         op = step.get("op")
         fields = _STEP_STRING_FIELDS.get(op, ())
-        if not fields:
+        if not fields and op != "case":
             resolved_steps.append(step)
             continue
         new_step = copy.deepcopy(step)
@@ -272,12 +273,13 @@ def interpolate_pipeline(pipeline: "Pipeline", context: dict[str, Any]) -> "Pipe
             val = new_step.get(f)
             if isinstance(val, str):
                 new_step[f] = interpolate_text(val, context)
-        # `case` keeps its SQL one level down, in branches[].
+        # `case` keeps its user-authored strings two levels down, in
+        # branches[].when[].value — a flat op → field map cannot reach them.
         if op == "case":
             for branch in new_step.get("branches") or []:
-                for f in ("when", "then"):
-                    if isinstance(branch.get(f), str):
-                        branch[f] = interpolate_text(branch[f], context)
+                for cond in branch.get("when") or []:
+                    if isinstance(cond.get("value"), str):
+                        cond["value"] = interpolate_text(cond["value"], context)
         resolved_steps.append(new_step)
 
     data = pipeline.model_dump()

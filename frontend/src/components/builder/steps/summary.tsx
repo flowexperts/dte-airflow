@@ -71,6 +71,10 @@ export function stepTitle(step: StepShape): string {
       if (!out) return "unnamed field";
       return `${out} · ${n(branches.length, "branch")}`;
     }
+    case "date_diff": {
+      const out = str(step.output_field);
+      return out ? `${out} · ${str(step.unit) ?? "year"}s` : "not configured";
+    }
     case "join":
       return `${str(step.left) ?? "?"} ${str(step.how) ?? "inner"} ${str(step.right) ?? "?"}`;
     case "pivot":
@@ -188,23 +192,36 @@ export function StepSummary({ step }: { step: StepShape }): ReactNode {
     }
 
     case "case": {
-      const branches = list(step.branches) as { when?: string; then?: string }[];
+      type Cond = { field?: string; op?: string; value?: string; join?: string };
+      const branches = list(step.branches) as { when?: Cond[]; then?: unknown }[];
       if (branches.length === 0) return null;
+      const condText = (c: Cond) =>
+        [c.field ?? "?", c.op ?? "=", c.value].filter(Boolean).join(" ");
       return (
         <KV>
           {branches.map((b, i) => (
             <KVItem
               key={i}
               label={i === 0 ? "if" : "else if"}
-              value={`${b.when ?? "?"} → ${b.then ?? "?"}`}
+              value={`${(b.when ?? []).map(condText).join(" · ") || "?"} → ${
+                b.then === null || b.then === undefined ? "null" : String(b.then)
+              }`}
             />
           ))}
-          {str(step.otherwise) && (
-            <KVItem label="else" value={str(step.otherwise)!} />
+          {step.otherwise !== null && step.otherwise !== undefined && (
+            <KVItem label="else" value={String(step.otherwise)} />
           )}
         </KV>
       );
     }
+
+    case "date_diff":
+      return (
+        <KV>
+          <KVItem label="up to" value={str(step.to) ?? "—"} />
+          <KVItem label="unit" value={str(step.unit) ?? "year"} />
+        </KV>
+      );
 
     case "pivot":
       return (

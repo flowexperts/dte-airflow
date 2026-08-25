@@ -128,3 +128,27 @@ cd frontend && pnpm exec tsc --noEmit
   Add when someone asks; raw `map`/`expression` covers it meanwhile.
 - No migration: `Pipeline.steps` is `list[dict]` JSONB, existing steps untouched.
 - No nested/`case`-inside-`case` UI. YAGNI.
+
+
+---
+
+## Revision — portable compilation (after first review on a DB source)
+
+The first cut compiled `case` to a `CASE WHEN` **string** and reused
+`_apply_expression`. That inherits the raw-SQL escape hatch, and
+`_require_duckdb_backend` refuses it on any natively-bound table — so the step
+was unusable on exactly the pipelines plan 056 exists to serve. Caught by
+running it against a real `sql_database` source.
+
+Changed:
+
+- `CaseCondition {field, op, value, join}` replaces the SQL-string `when`.
+  `_apply_case` emits `ibis.cases` (as `_apply_lookup` already did), so the
+  step runs on Postgres/MySQL/DuckDB alike. `_case_predicate` reproduces SQL's
+  AND-over-OR precedence.
+- `then`/`otherwise` are plain scalars, not SQL literals — no quoting surface
+  at all, and the editor drops `rulesToSql`/`tryParseBasicSql` entirely.
+- Added `date_diff` (`field`, `to`, `unit`, `output_field`), also pure ibis.
+  `unit="year"` is birthday-aware, unlike SQL's calendar-boundary DATEDIFF.
+  Without it there is no portable way to derive the `age` a `case` compares
+  against — the raw-SQL map step it replaced fails on the same backends.

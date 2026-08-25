@@ -328,15 +328,6 @@ function safeLiteral(v: string): string {
   return quoteString(trimmed);
 }
 
-/** Inverse of safeLiteral for display in an input: unwrap a quoted string
- *  literal, leave bare numbers/booleans as typed. */
-function displayLiteral(v: string): string {
-  const t = v.trim();
-  if (t.startsWith("'") && t.endsWith("'") && t.length >= 2)
-    return t.slice(1, -1).replace(/''/g, "'");
-  return t;
-}
-
 /** Map a schema-reported column type (ibis/DuckDB) to a native <input>
  *  type so date/timestamp filter cells get a picker. Types we don't
  *  recognise fall back to "text" — safe for numerics + strings, which the
@@ -579,9 +570,13 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
 function ConditionRules({
   rules,
   onChange,
+  showSql = true,
 }: {
   rules: FilterRule[];
   onChange: (next: FilterRule[]) => void;
+  /** Filter/Check hand their SQL to the engine, so they show it. A `case`
+   *  branch compiles to ibis and has no SQL string to preview. */
+  showSql?: boolean;
 }) {
   const allFields = useStepFields();
   const declaredParams = usePipelineParams();
@@ -728,7 +723,7 @@ function ConditionRules({
         >
           + Add condition
         </button>
-        {previewExpr && (
+        {showSql && previewExpr && (
           <div className="mt-2">
             <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
               Generated SQL
@@ -1056,17 +1051,31 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
   );
 }
 
-/** One WHEN/THEN arm on the wire. */
-type CaseBranch = { when: string; then: string };
+/** One WHEN/THEN arm on the wire. `when` is the same rule shape the Filter
+ *  tab builds — structured, not SQL, so the compiler can emit portable ibis
+ *  and the step runs against a natively-bound DB source. */
+type CaseBranch = { when: FilterRule[]; then: CaseValue };
+type CaseValue = string | number | boolean | null;
+
+/** Text input → wire scalar. Mirrors safeLiteral's dispatch, minus the
+ *  quoting: bare numbers and true/false are those types, blank is NULL. */
+function parseScalar(v: string): CaseValue {
+  const t = v.trim();
+  if (t === "") return null;
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+  if (/^(true|false)$/i.test(t)) return t.toLowerCase() === "true";
+  return v;
+}
+
+function scalarText(v: CaseValue): string {
+  return v === null || v === undefined ? "" : String(v);
+}
 
 /**
- * Conditional column: CASE WHEN … THEN … ELSE … END.
+ * Conditional column: if / else if / otherwise.
  *
- * The step dict IS the editor state — `when` is the SQL the rule builder
- * emits, so reopening a saved step just parses each branch back with the same
- * `tryParseBasicSql` the Filter tab uses. THEN values go through safeLiteral;
- * an expression (`THEN other_column`) is not offered here — the raw
- * map/expression step covers that.
+ * The step dict IS the editor state — conditions are stored as rules, so
+ * reopening needs no SQL parsing and nothing can be lost in a round-trip.
  */
 export function CaseEditor({ step, set }: { step: StepShape; set: Setter }) {
   const branches = (step.branches as CaseBranch[]) ?? [];
@@ -1117,14 +1126,15 @@ export function CaseEditor({ step, set }: { step: StepShape; set: Setter }) {
               >×</button>
             </div>
           </div>
-          <CaseBranchRules
-            when={b.when}
-            onWhenChange={(sql) => updateBranch(i, { when: sql })}
+          <ConditionRules
+            rules={b.when ?? []}
+            onChange={(rules) => updateBranch(i, { when: rules })}
+            showSql={false}
           />
           <Field label="Then">
             <Input
-              value={displayLiteral(b.then)}
-              onChange={(e) => updateBranch(i, { then: safeLiteral(e.target.value) })}
+              value={scalarText(b.then)}
+              onChange={(e) => updateBranch(i, { then: parseScalar(e.target.value) })}
               placeholder="gold"
             />
           </Field>
@@ -1133,7 +1143,12 @@ export function CaseEditor({ step, set }: { step: StepShape; set: Setter }) {
 
       <button
         type="button"
-        onClick={() => setBranches([...branches, { when: "", then: "" }])}
+        onClick={() =>
+          setBranches([
+            ...branches,
+            { when: [{ field: "", op: "=", value: "", join: "AND" }], then: null },
+          ])
+        }
         className="justify-self-start font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
       >
         + Add branch
@@ -1141,10 +1156,8 @@ export function CaseEditor({ step, set }: { step: StepShape; set: Setter }) {
 
       <Field label="Otherwise" hint="left blank, unmatched rows get NULL">
         <Input
-          value={displayLiteral((step.otherwise as string | null) ?? "")}
-          onChange={(e) =>
-            set({ otherwise: e.target.value === "" ? null : safeLiteral(e.target.value) })
-          }
+          value={scalarText((step.otherwise as CaseValue) ?? null)}
+          onChange={(e) => set({ otherwise: parseScalar(e.target.value) })}
           placeholder="bronze"
         />
       </Field>
@@ -1152,47 +1165,48 @@ export function CaseEditor({ step, set }: { step: StepShape; set: Setter }) {
   );
 }
 
-/** Rule state for one branch, seeded from the saved SQL on mount. */
-function CaseBranchRules({
-  when,
-  onWhenChange,
-}: {
-  when: string;
-  onWhenChange: (sql: string) => void;
-}) {
-  const [rules, setRules] = useState<FilterRule[]>(
-    () => (when ? tryParseBasicSql(when) : []) ?? [],
-  );
-  // Branches are keyed by index, so reordering hands this instance a
-  // different branch's SQL while its local rules stay put. Re-seed whenever
-  // the incoming SQL isn't what we last emitted — the same guarded-effect
-  // sync RenameEditor and MapLookup use. An in-progress blank row emits ""
-  // and so never trips this.
-  useEffect(() => {
-    if (rulesToSql(rules) === when) return;
-    const parsed = tryParseBasicSql(when);
-    if (parsed !== null) setRules(parsed);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [when]);
-
-  // SQL too complex to round-trip (hand-written, or edited via the API) —
-  // show it rather than silently replacing it with an empty rule list.
-  const unparsed = when !== "" && tryParseBasicSql(when) === null;
-  if (unparsed) {
-    return (
-      <Field label="When" hint="hand-written SQL — edit as raw text">
-        <Textarea value={when} onChange={(e) => onWhenChange(e.target.value)} />
-      </Field>
-    );
-  }
+export function DateDiffEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const allFields = useStepFields();
   return (
-    <ConditionRules
-      rules={rules}
-      onChange={(next) => {
-        setRules(next);
-        onWhenChange(rulesToSql(next));
-      }}
-    />
+    <div className="grid gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date field">
+          <FieldPicker
+            value={(step.field as string) ?? ""}
+            onChange={(v) => set({ field: v })}
+            options={allFields}
+            variant="tree"
+          />
+        </Field>
+        <Field label="Output field">
+          <Input
+            value={(step.output_field as string) ?? ""}
+            onChange={(e) => set({ output_field: e.target.value })}
+            placeholder="age"
+          />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Up to" hint="a date, or {{today}} to resolve at run time">
+          <Input
+            value={(step.to as string) ?? ""}
+            onChange={(e) => set({ to: e.target.value })}
+            placeholder="{{today}}"
+          />
+        </Field>
+        <Field label="Unit" hint="whole units elapsed — years are birthday-aware">
+          <Segmented<"year" | "month" | "day">
+            options={[
+              { value: "year", label: "Years" },
+              { value: "month", label: "Months" },
+              { value: "day", label: "Days" },
+            ]}
+            value={(step.unit as "year" | "month" | "day") ?? "year"}
+            onChange={(v) => set({ unit: v })}
+          />
+        </Field>
+      </div>
+    </div>
   );
 }
 
@@ -2175,6 +2189,7 @@ export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
       ? <MapLookupEditor step={step} set={set} />
       : <MapExpressionEditor step={step} set={set} />;
     case "case":      return <CaseEditor step={step} set={set} />;
+    case "date_diff": return <DateDiffEditor step={step} set={set} />;
     case "sort":      return <SortEditor step={step} set={set} />;
     case "aggregate": return <AggregateEditor step={step} set={set} />;
     case "join":      return <JoinEditor step={step} set={set} />;

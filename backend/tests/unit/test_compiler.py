@@ -802,10 +802,10 @@ def test_case_step_with_otherwise(people_table):
         "op": "case",
         "output_field": "band",
         "branches": [
-            {"when": '"age" >= 30', "then": "'senior'"},
-            {"when": '"age" >= 18', "then": "'adult'"},
+            {"when": [{"field": "age", "op": ">=", "value": "30"}], "then": "senior"},
+            {"when": [{"field": "age", "op": ">=", "value": "18"}], "then": "adult"},
         ],
-        "otherwise": "'minor'",
+        "otherwise": "minor",
     }])
     df = _run(pipeline, {"src": people_table}).execute()
     assert dict(zip(df["name"], df["band"])) == {
@@ -817,7 +817,8 @@ def test_case_step_without_otherwise_leaves_null(people_table):
     pipeline = make_pipeline([{
         "op": "case",
         "output_field": "band",
-        "branches": [{"when": '"age" >= 18', "then": "'adult'"}],
+        "branches": [{"when": [{"field": "age", "op": ">=", "value": "18"}],
+                      "then": "adult"}],
     }])
     df = _run(pipeline, {"src": people_table}).execute()
     assert df.set_index("name")["band"].isna().to_dict() == {
@@ -825,14 +826,150 @@ def test_case_step_without_otherwise_leaves_null(people_table):
     }
 
 
+def test_case_step_boolean_then(people_table):
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "minor",
+        "branches": [{"when": [{"field": "age", "op": "<", "value": "18"}],
+                      "then": True}],
+        "otherwise": False,
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert dict(zip(df["name"], df["minor"])) == {
+        "alice": False, "bob": True, "carol": False,
+    }
+
+
+def test_case_step_and_or_uses_sql_precedence(people_table):
+    # age >= 30 OR age >= 18 AND score > 8  →  AND binds tighter, so bob (17)
+    # must not match on the OR arm alone.
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "hit",
+        "branches": [{
+            "when": [
+                {"field": "age", "op": ">=", "value": "30"},
+                {"field": "age", "op": ">=", "value": "18", "join": "OR"},
+                {"field": "score", "op": ">", "value": "8", "join": "AND"},
+            ],
+            "then": True,
+        }],
+        "otherwise": False,
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert dict(zip(df["name"], df["hit"])) == {
+        "alice": True, "bob": False, "carol": True,
+    }
+
+
+def test_case_step_in_and_null_ops(people_table):
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "hit",
+        "branches": [{
+            "when": [{"field": "name", "op": "IN", "value": "alice, carol"}],
+            "then": "yes",
+        }],
+        "otherwise": "no",
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert dict(zip(df["name"], df["hit"])) == {
+        "alice": "yes", "bob": "no", "carol": "yes",
+    }
+
+
+def test_case_step_runs_on_a_non_duckdb_backend(people_table, monkeypatch):
+    """The whole point of compiling with ibis: no raw-SQL guard to trip."""
+    from dte.engine.duckdb_engine import DuckDBEngine
+
+    engine = DuckDBEngine()
+    pipeline, output = make_pipeline([{
+        "op": "case", "output_field": "minor",
+        "branches": [{"when": [{"field": "age", "op": "<", "value": "18"}],
+                      "then": True}],
+        "otherwise": False,
+    }])
+    # apply_expression_sql is the raw-SQL escape hatch that rejects non-DuckDB
+    # tables. A portable case step must never reach it.
+    def _boom(*a, **k):
+        raise AssertionError("case must not route through raw SQL")
+    monkeypatch.setattr(engine, "apply_expression_sql", _boom)
+    monkeypatch.setattr(engine, "apply_filter_sql", _boom)
+    df = compile_pipeline(
+        pipeline, {"src": people_table}, output=output, engine=engine,
+    ).execute()
+    assert df["minor"].tolist().count(True) == 1
+
+
 def test_case_step_rejects_empty_branches():
     with pytest.raises(ValidationError):
         CaseStep(op="case", output_field="band", branches=[])
 
 
-def test_case_step_rejects_blank_when():
+def test_case_step_rejects_branch_with_no_conditions():
     with pytest.raises(ValidationError):
-        CaseStep(
-            op="case", output_field="band",
-            branches=[{"when": "  ", "then": "'a'"}],
-        )
+        CaseStep(op="case", output_field="band",
+                 branches=[{"when": [], "then": "a"}])
+
+
+# ─── date_diff (age) ────────────────────────────────────────────────────
+
+@pytest.fixture
+def dob_table(con):
+    import datetime
+    df = pd.DataFrame([
+        # birthday already passed in 2026 → 18
+        {"name": "just_18", "dob": datetime.date(2008, 1, 1)},
+        # birthday later in 2026 → still 17
+        {"name": "still_17", "dob": datetime.date(2008, 12, 31)},
+        {"name": "grown", "dob": datetime.date(1990, 6, 15)},
+    ])
+    return con.create_table("dobs", df, overwrite=True)
+
+
+def test_date_diff_years_is_birthday_aware(dob_table):
+    pipeline = make_pipeline([{
+        "op": "date_diff", "field": "dob", "to": "2026-08-25",
+        "unit": "year", "output_field": "age",
+    }])
+    df = _run(pipeline, {"src": dob_table}).execute()
+    assert dict(zip(df["name"], df["age"])) == {
+        "just_18": 18, "still_17": 17, "grown": 36,
+    }
+
+
+def test_date_diff_days(dob_table):
+    pipeline = make_pipeline([{
+        "op": "date_diff", "field": "dob", "to": "2008-01-31",
+        "unit": "day", "output_field": "d",
+    }])
+    df = _run(pipeline, {"src": dob_table}).execute()
+    assert dict(zip(df["name"], df["d"]))["just_18"] == 30
+
+
+def test_date_diff_runs_on_a_non_duckdb_backend(dob_table, monkeypatch):
+    from dte.engine.duckdb_engine import DuckDBEngine
+
+    engine = DuckDBEngine()
+    pipeline, output = make_pipeline([{
+        "op": "date_diff", "field": "dob", "to": "2026-08-25",
+        "unit": "year", "output_field": "age",
+    }])
+    def _boom(*a, **k):
+        raise AssertionError("date_diff must not route through raw SQL")
+    monkeypatch.setattr(engine, "apply_expression_sql", _boom)
+    df = compile_pipeline(
+        pipeline, {"src": dob_table}, output=output, engine=engine,
+    ).execute()
+    assert df["age"].tolist() == [18, 17, 36]
+
+
+def test_date_diff_rejects_unknown_field(dob_table):
+    from dte.compiler.ibis_compiler import CompilerError
+
+    pipeline = make_pipeline([{
+        "op": "date_diff", "field": "nope", "to": "2026-08-25",
+        "unit": "year", "output_field": "age",
+    }])
+    with pytest.raises(CompilerError):
+        _run(pipeline, {"src": dob_table})

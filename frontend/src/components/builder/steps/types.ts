@@ -4,6 +4,7 @@ export type StepOp =
   | "retype"
   | "map"
   | "case"
+  | "date_diff"
   | "sort"
   | "aggregate"
   | "join"
@@ -64,6 +65,7 @@ export const STEP_OPS: { op: StepOp; label: string; mode?: MapMode; category: "t
   { op: "map",       label: "Map · lookup",        mode: "lookup",     category: "transform" },
   { op: "map",       label: "Map · expression",    mode: "expression", category: "transform" },
   { op: "case",      label: "Case · if/else",       category: "transform" },
+  { op: "date_diff", label: "Date difference",     category: "transform" },
   { op: "sort",      label: "Sort",                category: "transform" },
   { op: "aggregate", label: "Aggregate",           category: "transform" },
   { op: "join",      label: "Join",                category: "transform" },
@@ -85,7 +87,13 @@ export function emptyStep(op: StepOp, mode?: MapMode): StepShape {
                         : { op, mode: mode ?? "expression", output_field: "", expr: "" };
     // One starter branch: the backend requires min_length=1, and a step you
     // can't save is a worse first impression than a placeholder.
-    case "case":      return { op, output_field: "", branches: [{ when: "", then: "" }], otherwise: null };
+    case "case":      return {
+      op,
+      output_field: "",
+      branches: [{ when: [{ field: "", op: "=", value: "", join: "AND" }], then: null }],
+      otherwise: null,
+    };
+    case "date_diff": return { op, field: "", to: "{{today}}", unit: "year", output_field: "" };
     case "sort":      return { op, by: [], ascending: true };
     case "aggregate": return { op, group_by: [], aggregations: [] };
     case "join":      return { op, left: "", right: "", on: "", how: "inner", output_id: "" };

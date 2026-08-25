@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import functools
 import json
+import operator
+import re
 from typing import TYPE_CHECKING
 
 import ibis
@@ -12,6 +15,8 @@ from dte.models.pipeline import (
     StructureStep,
     AggregateStep,
     CaseStep,
+    CaseCondition,
+    DateDiffStep,
     DatePartGroupBy,
     ExpressionMapStep,
     FilterStep,
@@ -241,7 +246,9 @@ def _dispatch_single_table_step(
     elif op == "aggregate":
         return _apply_aggregate(table, AggregateStep(**step))
     elif op == "case":
-        return _apply_case(table, CaseStep(**step), engine=engine)
+        return _apply_case(table, CaseStep(**step))
+    elif op == "date_diff":
+        return _apply_date_diff(table, DateDiffStep(**step))
     elif op == "pivot":
         return _apply_pivot(table, PivotStep(**step))
     elif op == "select":
@@ -770,26 +777,104 @@ def _apply_expression(
     )
 
 
-def _apply_case(
-    table: ibis.Table,
-    step: CaseStep,
-    engine: BaseEngine | None = None,
-) -> ibis.Table:
-    """Add a conditional column by composing CASE WHEN and reusing the
-    expression-map path — so the backend seam (Trino refuses raw SQL) and
-    the view plumbing are shared, not duplicated."""
-    whens = " ".join(f"WHEN {b.when} THEN {b.then}" for b in step.branches)
-    otherwise = f" ELSE {step.otherwise}" if step.otherwise is not None else ""
-    return _apply_expression(
-        table,
-        ExpressionMapStep(
-            op="map",
-            mode="expression",
-            output_field=step.output_field,
-            expr=f"CASE {whens}{otherwise} END",
-        ),
-        engine=engine,
-    )
+def _case_value(col: ibis.Column, raw: str):
+    """Turn a builder-supplied string into a literal comparable to *col*.
+
+    Bare numbers and true/false are taken at face value; everything else is a
+    string, cast to the column's own type so a date column compared against
+    "2008-01-01" emits CAST('2008-01-01' AS DATE) on any backend instead of a
+    string comparison that silently sorts lexically.
+    """
+    v = raw.strip()
+    if re.fullmatch(r"-?\d+", v):
+        return ibis.literal(int(v))
+    if re.fullmatch(r"-?\d+\.\d+", v):
+        return ibis.literal(float(v))
+    if v.lower() in ("true", "false"):
+        return ibis.literal(v.lower() == "true")
+    lit = ibis.literal(v)
+    return lit if col.type().is_string() else lit.cast(col.type())
+
+
+def _condition_expr(table: ibis.Table, cond: CaseCondition):
+    col = _resolve_field(table, cond.field)
+    op = cond.op
+    if op == "IS NULL":
+        return col.isnull()
+    if op == "IS NOT NULL":
+        return col.notnull()
+    if op == "IN":
+        items = [p.strip() for p in cond.value.split(",") if p.strip()]
+        if not items:
+            raise CompilerError(f"case: IN condition on {cond.field!r} has no values")
+        return col.isin([_case_value(col, i) for i in items])
+    if op == "BETWEEN":
+        items = [p.strip() for p in cond.value.split(",") if p.strip()]
+        if len(items) != 2:
+            raise CompilerError(
+                f"case: BETWEEN condition on {cond.field!r} needs exactly two values"
+            )
+        return col.between(_case_value(col, items[0]), _case_value(col, items[1]))
+    if op == "LIKE":
+        return col.like(cond.value)
+    value = _case_value(col, cond.value)
+    return {
+        "=": lambda: col == value,
+        "!=": lambda: col != value,
+        ">": lambda: col > value,
+        "<": lambda: col < value,
+        ">=": lambda: col >= value,
+        "<=": lambda: col <= value,
+    }[op]()
+
+
+def _case_predicate(table: ibis.Table, conditions: list[CaseCondition]):
+    """Combine condition rows with SQL's precedence: AND binds tighter than OR.
+
+    Folding strictly left-to-right would make `a OR b AND c` mean `(a OR b)
+    AND c` — the opposite of what the same rows mean in the Filter tab, which
+    hands its string to SQL.
+    """
+    groups: list[list] = [[]]
+    for i, cond in enumerate(conditions):
+        if i > 0 and cond.join == "OR":
+            groups.append([])
+        groups[-1].append(_condition_expr(table, cond))
+    ands = [functools.reduce(operator.and_, g) for g in groups]
+    return functools.reduce(operator.or_, ands)
+
+
+def _apply_case(table: ibis.Table, step: CaseStep) -> ibis.Table:
+    branches = [
+        (_case_predicate(table, b.when), ibis.literal(b.then) if b.then is not None else ibis.null())
+        for b in step.branches
+    ]
+    else_ = ibis.literal(step.otherwise) if step.otherwise is not None else None
+    return table.mutate(**{step.output_field: ibis.cases(*branches, else_=else_)})
+
+
+def _apply_date_diff(table: ibis.Table, step: DateDiffStep) -> ibis.Table:
+    col = _resolve_field(table, step.field)
+    # `to` is a date literal, not SQL — but interpolation quotes a bare
+    # {{today}} for the SQL surfaces that need it, so strip that back off.
+    to_raw = step.to.strip()
+    if len(to_raw) >= 2 and to_raw.startswith("'") and to_raw.endswith("'"):
+        to_raw = to_raw[1:-1]
+    to = ibis.literal(to_raw).cast("date")
+    start = col.cast("date")
+    if step.unit == "day":
+        expr = to.delta(start, unit="day")
+    elif step.unit == "month":
+        months = (to.year() - start.year()) * 12 + (to.month() - start.month())
+        expr = months - ibis.ifelse(to.day() < start.day(), 1, 0)
+    else:
+        # Whole years: only count the year once the anniversary has passed.
+        years = to.year() - start.year()
+        before_anniversary = (to.month() < start.month()) | (
+            (to.month() == start.month()) & (to.day() < start.day())
+        )
+        expr = years - ibis.ifelse(before_anniversary, 1, 0)
+    return table.mutate(**{step.output_field: expr})
 
 
 def _apply_sort(table: ibis.Table, step: SortStep) -> ibis.Table:

@@ -229,22 +229,42 @@ DuckDBEngine.execute_to_json() → output file + row count
 ### Step dispatch
 
 ```python
-op = step["op"]    # "filter"|"rename"|"retype"|"map"|"case"|"sort"|"aggregate"|"join"|"pivot"|"select"
+op = step["op"]    # "filter"|"rename"|"retype"|"map"|"case"|"date_diff"|"sort"|"aggregate"
+                   # |"join"|"pivot"|"select"
                    # |"check"|"profile"|"extract"|"structure"
 mode = step.get("mode")   # "lookup"|"expression"|"calculation"  — map steps only
 ```
 
-`case` (if/else) compiles to `CASE WHEN … THEN … ELSE … END` and is handed
-to `_apply_expression`, so it inherits the expression-map backend seam rather
-than opening a second raw-SQL path. Its `when`/`then` live one level down in
-`branches[]`, which is why `interpolate.py` special-cases it — the flat
-op → top-level-field map in `_STEP_STRING_FIELDS` cannot reach them, and an
-unresolved `{{params.x}}` would reach DuckDB as a parse error.
+`case` (if/else) and `date_diff` compile to **ibis, never raw SQL**. That is
+the whole point of their shape: `filter`'s Advanced tab and `map`/`expression`
+escape to a SQL string, and `_require_duckdb_backend` refuses those on any
+natively-bound table — so on a `sql_database` source (plan 056) every raw-SQL
+step is unavailable. A conditional built from a structured rule list has no
+such limit, so `CaseCondition` carries `{field, op, value, join}` rather than
+a SQL fragment and `_apply_case` emits `ibis.cases`, exactly as `_apply_lookup`
+already does.
+
+- **AND binds tighter than OR**, matching SQL. `_case_predicate` groups runs
+  of AND before OR-ing them; a left-to-right fold would make the same rows
+  mean something different in a `case` branch than in the Filter tab.
+- `CaseCondition.value` is a string and `_case_value` types it — bare numbers
+  and true/false at face value, everything else a string cast to the column's
+  own type, so a date column compared against `"2008-01-01"` emits a real
+  DATE cast instead of a lexical string comparison.
+- `date_diff` with `unit="year"` is **birthday-aware**: it increments only
+  once the anniversary passes. SQL's `DATEDIFF('year', …)` counts calendar
+  boundaries and reports 18 for a December-born minor in January — for an
+  age check driving eligibility that is the wrong answer for up to a year.
+- Interpolation reaches `branches[].when[].value` explicitly; the flat
+  op → top-level-field map in `_STEP_STRING_FIELDS` cannot see two levels
+  down. `date_diff.to` is a plain date literal, so the compiler strips the
+  quotes `interpolate_text` adds for the SQL surfaces.
 
 The builder's condition rows are one component, `ConditionRules` in
 `components/builder/steps/editors.tsx` — shared by Filter Basic, Check Basic
 and every `case` branch. Two implementations of "compose a predicate" drift,
-and the drift is a quoting bug.
+and the drift is a quoting bug. `showSql` is off for `case`: the branch
+compiles to ibis, so there is no generated SQL to preview.
 
 
 ### Unstructured: documents, extract, structure (plan 050)

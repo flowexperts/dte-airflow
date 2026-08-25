@@ -720,45 +720,91 @@ class ExpressionMapStep(BaseModel):
         return v
 
 
-class CaseBranch(BaseModel):
-    """One WHEN/THEN arm of a `case` step.
+CaseOp = Literal[
+    "=", "!=", ">", "<", ">=", "<=", "LIKE", "IN", "IS NULL", "IS NOT NULL",
+    "BETWEEN",
+]
 
-    `when` and `then` are SQL fragments — same trust model as
-    `FilterStep.expr`: the builder composes them through quoteIdent /
-    safeLiteral, and a hand-written pipeline is a trusted author.
+
+class CaseCondition(BaseModel):
+    """One predicate row, mirroring the builder's condition UI.
+
+    Structured rather than a SQL string on purpose: the compiler turns these
+    into ibis expressions, so a `case` step runs on Postgres/MySQL/DuckDB
+    alike. A SQL string would force the raw-SQL escape hatch, which is
+    DuckDB-dialect only and is refused on every `sql_database` source.
     """
     model_config = {"extra": "forbid"}
 
-    when: str
-    then: str
+    field: str
+    op: CaseOp = "="
+    # Comma-separated for IN and BETWEEN; ignored for IS [NOT] NULL.
+    value: str = ""
+    # How this row joins to the previous one. AND binds tighter than OR, as
+    # in SQL — the compiler groups accordingly.
+    join: Literal["AND", "OR"] = "AND"
 
-    @field_validator("when", "then")
+    @field_validator("field")
     @classmethod
-    def _non_empty(cls, v: str) -> str:
+    def _field_non_empty(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError(
-                "case branch needs a non-empty condition and result — "
-                "fill it in or remove the branch"
-            )
+            raise ValueError("case condition needs a field")
         return v
 
 
-class CaseStep(BaseModel):
-    """Conditional column: CASE WHEN ... THEN ... [ELSE ...] END.
+# A branch result is a plain scalar, not SQL. `None` means the branch yields
+# NULL, which is a legitimate answer ("this row has no tier").
+CaseValue = bool | int | float | str | None
 
-    Compiles down to the expression-map path rather than adding a second
-    raw-SQL seam, so the per-backend portability guard is inherited.
+
+class CaseBranch(BaseModel):
+    """One WHEN/THEN arm of a `case` step."""
+    model_config = {"extra": "forbid"}
+
+    when: list[CaseCondition] = Field(min_length=1)
+    then: CaseValue = None
+
+
+class CaseStep(BaseModel):
+    """Conditional column: if / else if / otherwise.
+
+    Compiles to `ibis.cases`, the same portable construct the lookup step
+    uses — no raw SQL, so it works on natively-bound DB sources.
     """
     op: Literal["case"]
     output_field: str
     branches: list[CaseBranch] = Field(min_length=1)
-    otherwise: str | None = None
+    otherwise: CaseValue = None
 
     @field_validator("output_field")
     @classmethod
     def _non_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("case step needs an output field name")
+        return v
+
+
+class DateDiffStep(BaseModel):
+    """Whole units elapsed between a date column and a fixed date.
+
+    `unit="year"` is birthday-aware — the count only increments once the
+    day-of-year is reached. SQL's DATEDIFF('year', ...) counts calendar
+    boundaries instead, which reports 18 for someone whose birthday is in
+    December. For an age check driving eligibility that is not a rounding
+    quibble, it is the wrong answer for up to a year.
+    """
+    op: Literal["date_diff"]
+    field: str
+    # A date literal, or `{{today}}` — resolved before the compiler runs.
+    to: str = "{{today}}"
+    unit: Literal["year", "month", "day"] = "year"
+    output_field: str
+
+    @field_validator("field", "to", "output_field")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("date_diff step needs field, to and output_field")
         return v
 
 
@@ -1196,6 +1242,7 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("join", None): JoinStep,
     ("pivot", None): PivotStep,
     ("case", None): CaseStep,
+    ("date_diff", None): DateDiffStep,
     ("check", None): CheckStep,
     ("profile", None): ProfileStep,
     ("extract", None): ExtractStep,
