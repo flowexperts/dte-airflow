@@ -13,6 +13,7 @@ import {
 } from "@/components/builder/steps/types";
 import { cn } from "@/lib/cn";
 import type { SourceTableRef } from "@/lib/api";
+import { AutoMapButton } from "@/components/builder/AutoMap";
 
 /**
  * The ordered steps.
@@ -34,6 +35,7 @@ export function StepsColumn({
   onOpenChange,
   readOnly,
   sources = [],
+  outputId = "",
 }: {
   steps: StepShape[];
   onChange: (steps: StepShape[]) => void;
@@ -45,6 +47,8 @@ export function StepsColumn({
   /** Declared source aliases, offered as join operands alongside the
    *  output_id of any earlier join step. */
   sources?: SourceTableRef[];
+  /** Destination whose table Auto-map matches against. */
+  outputId?: string;
 }) {
   const aliases = sources.map((r) => r.alias).filter(Boolean);
   const operandsAt = (i: number): string[] => {
@@ -173,7 +177,14 @@ export function StepsColumn({
     <Panel>
       <PanelHead
         label={label}
-        count={steps.length === 0 ? <span className="text-subtle">none</span> : steps.length}
+        count={
+          <span className="flex items-center gap-2">
+            {steps.length === 0 ? <span className="text-subtle">none</span> : steps.length}
+            {!readOnly && (
+              <AutoMapButton outputId={outputId} steps={steps} onChange={onChange} />
+            )}
+          </span>
+        }
       />
 
       {steps.length === 0 && (

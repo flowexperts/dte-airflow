@@ -6,16 +6,20 @@ import { STEP_OPS, emptyStep, labelFor, type StepShape } from "./types";
 import { StepEditor } from "./editors";
 import { StepIndexProvider, JoinOperandsProvider } from "../schema-context";
 import type { SourceTableRef } from "@/lib/api";
+import { AutoMapButton } from "../AutoMap";
 
 export function StepsPanel({
   steps,
   onChange,
   pipelineType = "transform",
   sources = [],
+  outputId = "",
 }: {
   steps: StepShape[];
   onChange: (next: StepShape[]) => void;
   pipelineType?: "transform" | "quality" | "eval";
+  /** Destination whose table Auto-map matches against. */
+  outputId?: string;
   /** Declared source aliases, offered as join operands alongside the
    *  output_id of any earlier join step. */
   sources?: SourceTableRef[];
@@ -74,7 +78,15 @@ export function StepsPanel({
 
   return (
     <Panel>
-      <PanelHead label="Ordered steps" count={steps.length} />
+      <PanelHead
+        label="Ordered steps"
+        count={
+          <span className="flex items-center gap-2">
+            {steps.length}
+            <AutoMapButton outputId={outputId} steps={steps} onChange={onChange} />
+          </span>
+        }
+      />
       {steps.length === 0 && (
         <div className="p-6 text-center text-sm text-subtle">
           No steps yet. Add one below.

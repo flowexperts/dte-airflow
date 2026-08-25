@@ -593,6 +593,69 @@ unpriced (and one unpriced row nulls a whole run's cost by design);
 corpus-match check `trigger` enforces — now `validate_eval_corpus_match`,
 called by both, before the estimate rather than at confirm.
 
+### Automap: source schema → destination schema (plan 057)
+
+Mapping a DB→DB pipeline column by column meant guessing the destination's
+column names, because nothing in the app knew them. Two additions fix that,
+and neither is a new step op.
+
+- **`GET /api/destinations/{id}/schema`** opens the destination's connection
+  with `_open_ibis_backend` and returns the target table's columns in the
+  *same* `InferSchemaResponse` field-tree shape sources return — one schema
+  type on the frontend, not two. File targets 422: their shape is whatever
+  the pipeline writes, so there is nothing to introspect.
+- **`dte/automap.py`** is a pure matcher over two field lists, exposed at
+  `POST /api/schema/automap`. It takes *field lists, not ids* — the builder
+  already holds the source fields — so the route does no store access and no
+  source loading.
+
+Three passes, and the order is the point:
+
+1. **exact** on the normalised name (`_norm` strips everything but
+   `[a-z0-9]`, so `customer_id` == `CustomerID`).
+2. **fuzzy** via `difflib.SequenceMatcher`, cutoff `0.8`, greedy best-first
+   so the strongest pair claims a column before a weaker one takes it.
+   stdlib — deterministic, free, and the only pass CI can run.
+3. **llm** over the leftovers only, one Claude call gated on
+   `ANTHROPIC_API_KEY` (`DTE_AUTOMAP_MODEL` overrides the model). Semantic
+   renames (`dob` → `birth_date`) are the only reason it exists.
+
+- **A failed model pass is `llm_error`, never a failed request.** The
+  heuristic answer is still the bulk of the mapping and still worth showing.
+- **The model cannot invent or steal a column**: a returned name absent from
+  either input list is discarded, and a dest the heuristic already claimed
+  is not overwritten. Without that guard a hallucinated column name lands as
+  a `rename` that fails at write time, not at map time.
+- **A type-family mismatch never rejects a match** — it attaches a warning
+  (`int64 → string`) and caps confidence at `0.5`. Rejecting would hide the
+  exact-name pairs people most want to review; the cap is what keeps such a
+  row from being pre-ticked in the UI.
+
+**Frontend** — `components/builder/AutoMap.tsx`, one `AutoMapButton` that
+renders both the button and its portaled dialog, mounted in the *Ordered
+steps* panel head on **both** step surfaces: `steps/StepsPanel.tsx` (the
+new-pipeline builder) and `pipeline/steps-column.tsx` (the detail page).
+Both already own `steps`/`onChange`; each gained an `outputId` prop.
+
+- Source fields come from **`fieldsAtStep(steps.length)`**, not `allFields`.
+  The generated steps append at the end, so the columns that exist *there*
+  are what to map — after any earlier rename, which `allFields` would miss.
+- **The proposal fires from the click that opens the dialog**, not a mount
+  effect. A paid model call must not be reachable by a render.
+- **Nothing is applied on arrival.** Every row is a checkbox, only
+  `confidence >= 0.9` starts ticked (so a type-mismatch row never does), and
+  a guessed source is editable in place. Accepting appends **one ordinary
+  `select` step** — readable and editable afterwards, which is why there is
+  no `automap` op and no persisted mapping. Schema drift does not
+  auto-follow.
+- **One `select`, never `rename` + `select`.** An `OutputField` carries an
+  `alias`, so projecting and renaming are already the same step. Emitting
+  both was redundant, and the rename op cannot express half of what automap
+  offers anyway: `_apply_rename` validates against `table.columns`, so a
+  dotted struct path (`order.amount` — what every filesystem source
+  produces) raises `CompilerError`, while `_apply_output_fields` routes
+  through `_resolve_field` and resolves it.
+
 ### Field references and nested columns
 
 Dot syntax is the wire form: `order.amount`, `user.address.city`. `_resolve_field()` splits on `.` and traverses struct members; if the head isn't a top-level column it falls back to the joined `__` name (so `mongodb` / `rest_api` sources — which still flatten via dlt — keep working). `_apply_output_fields` / `_apply_lookup` route through `_resolve_field` so Select and Lookup steps handle struct paths. Struct-path outputs are named after the leaf segment when no alias is given.
@@ -762,6 +825,8 @@ PUT    /api/connections/{id}              update (empty credentials keeps existi
 DELETE /api/connections/{id}              409 with {referenced_by: {sources, destinations}} if in use
 POST   /api/connections/{id}/test         connectivity probe → {ok, elapsed_ms, detail}
 GET    /api/connections/{id}/schemas      schemas/databases visible to a DB connection (422 if no native backend)
+GET    /api/destinations/{id}/schema      columns of a DB destination's target table (422 for file targets)
+POST   /api/schema/automap                propose a source→destination column mapping
 
 POST   /api/eval-sets                     create eval set
 GET    /api/eval-sets                     list (+ best_macro_f1, last_run_at)
