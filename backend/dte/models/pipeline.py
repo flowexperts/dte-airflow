@@ -720,6 +720,48 @@ class ExpressionMapStep(BaseModel):
         return v
 
 
+class CaseBranch(BaseModel):
+    """One WHEN/THEN arm of a `case` step.
+
+    `when` and `then` are SQL fragments — same trust model as
+    `FilterStep.expr`: the builder composes them through quoteIdent /
+    safeLiteral, and a hand-written pipeline is a trusted author.
+    """
+    model_config = {"extra": "forbid"}
+
+    when: str
+    then: str
+
+    @field_validator("when", "then")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError(
+                "case branch needs a non-empty condition and result — "
+                "fill it in or remove the branch"
+            )
+        return v
+
+
+class CaseStep(BaseModel):
+    """Conditional column: CASE WHEN ... THEN ... [ELSE ...] END.
+
+    Compiles down to the expression-map path rather than adding a second
+    raw-SQL seam, so the per-backend portability guard is inherited.
+    """
+    op: Literal["case"]
+    output_field: str
+    branches: list[CaseBranch] = Field(min_length=1)
+    otherwise: str | None = None
+
+    @field_validator("output_field")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("case step needs an output field name")
+        return v
+
+
 class SortStep(BaseModel):
     op: Literal["sort"]
     by: list[str]
@@ -1153,6 +1195,7 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("select", None): SelectStep,
     ("join", None): JoinStep,
     ("pivot", None): PivotStep,
+    ("case", None): CaseStep,
     ("check", None): CheckStep,
     ("profile", None): ProfileStep,
     ("extract", None): ExtractStep,

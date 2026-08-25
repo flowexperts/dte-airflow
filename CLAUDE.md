@@ -229,10 +229,23 @@ DuckDBEngine.execute_to_json() → output file + row count
 ### Step dispatch
 
 ```python
-op = step["op"]    # "filter"|"rename"|"retype"|"map"|"sort"|"aggregate"|"join"|"pivot"|"select"
+op = step["op"]    # "filter"|"rename"|"retype"|"map"|"case"|"sort"|"aggregate"|"join"|"pivot"|"select"
                    # |"check"|"profile"|"extract"|"structure"
 mode = step.get("mode")   # "lookup"|"expression"|"calculation"  — map steps only
 ```
+
+`case` (if/else) compiles to `CASE WHEN … THEN … ELSE … END` and is handed
+to `_apply_expression`, so it inherits the expression-map backend seam rather
+than opening a second raw-SQL path. Its `when`/`then` live one level down in
+`branches[]`, which is why `interpolate.py` special-cases it — the flat
+op → top-level-field map in `_STEP_STRING_FIELDS` cannot reach them, and an
+unresolved `{{params.x}}` would reach DuckDB as a parse error.
+
+The builder's condition rows are one component, `ConditionRules` in
+`components/builder/steps/editors.tsx` — shared by Filter Basic, Check Basic
+and every `case` branch. Two implementations of "compose a predicate" drift,
+and the drift is a quoting bug.
+
 
 ### Unstructured: documents, extract, structure (plan 050)
 

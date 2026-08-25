@@ -227,3 +227,20 @@ def test_interpolate_pipeline_leaves_lookup_map_untouched():
     ])
     out = interpolate_pipeline(p, resolve_context(p))
     assert out.steps[0]["lookup_id"] == "lt1"
+
+
+def test_interpolate_pipeline_rewrites_case_branches():
+    p = _pipeline(
+        steps=[{
+            "op": "case", "output_field": "band",
+            "branches": [{"when": "amount > {{params.min}}", "then": "'{{today}}'"}],
+            "otherwise": "'{{today}}'",
+        }],
+        params=[{"name": "min", "type": "int", "required": True}],
+    )
+    ctx = resolve_context(p, {"min": "10"})
+    out = interpolate_pipeline(p, ctx)
+    branch = out.steps[0]["branches"][0]
+    assert branch["when"] == "amount > 10"
+    assert branch["then"] == f"'{ctx['today']}'"
+    assert out.steps[0]["otherwise"] == f"'{ctx['today']}'"

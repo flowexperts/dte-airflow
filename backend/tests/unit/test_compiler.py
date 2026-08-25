@@ -2,7 +2,11 @@ import pytest
 import ibis
 import pandas as pd
 from dte.compiler.ibis_compiler import compile_pipeline
-from dte.models.pipeline import Pipeline, JoinStep, PivotStep, JsonFileTarget, LookupTable
+from pydantic import ValidationError
+
+from dte.models.pipeline import (
+    Pipeline, JoinStep, PivotStep, JsonFileTarget, LookupTable, CaseStep,
+)
 
 
 def _output(output_fields=None):
@@ -789,3 +793,46 @@ def test_select_step_resolves_struct_paths(struct_orders_table):
     df = result.execute()
     assert set(df.columns) == {"id", "cur"}
     assert sorted(df["cur"].tolist()) == ["EUR", "USD", "USD"]
+
+
+# ─── Case (if/else) ─────────────────────────────────────────────────────
+
+def test_case_step_with_otherwise(people_table):
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "band",
+        "branches": [
+            {"when": '"age" >= 30', "then": "'senior'"},
+            {"when": '"age" >= 18', "then": "'adult'"},
+        ],
+        "otherwise": "'minor'",
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert dict(zip(df["name"], df["band"])) == {
+        "alice": "senior", "bob": "minor", "carol": "adult",
+    }
+
+
+def test_case_step_without_otherwise_leaves_null(people_table):
+    pipeline = make_pipeline([{
+        "op": "case",
+        "output_field": "band",
+        "branches": [{"when": '"age" >= 18', "then": "'adult'"}],
+    }])
+    df = _run(pipeline, {"src": people_table}).execute()
+    assert df.set_index("name")["band"].isna().to_dict() == {
+        "alice": False, "bob": True, "carol": False,
+    }
+
+
+def test_case_step_rejects_empty_branches():
+    with pytest.raises(ValidationError):
+        CaseStep(op="case", output_field="band", branches=[])
+
+
+def test_case_step_rejects_blank_when():
+    with pytest.raises(ValidationError):
+        CaseStep(
+            op="case", output_field="band",
+            branches=[{"when": "  ", "then": "'a'"}],
+        )

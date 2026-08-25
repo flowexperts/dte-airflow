@@ -11,6 +11,7 @@ from dte.models.pipeline import (
     ExtractStep,
     StructureStep,
     AggregateStep,
+    CaseStep,
     DatePartGroupBy,
     ExpressionMapStep,
     FilterStep,
@@ -239,6 +240,8 @@ def _dispatch_single_table_step(
         return _apply_sort(table, SortStep(**step))
     elif op == "aggregate":
         return _apply_aggregate(table, AggregateStep(**step))
+    elif op == "case":
+        return _apply_case(table, CaseStep(**step), engine=engine)
     elif op == "pivot":
         return _apply_pivot(table, PivotStep(**step))
     elif op == "select":
@@ -764,6 +767,28 @@ def _apply_expression(
     con.create_view(view_name, table, overwrite=True)
     return con.sql(
         f'SELECT *, ({step.expr}) AS "{step.output_field}" FROM {view_name}'
+    )
+
+
+def _apply_case(
+    table: ibis.Table,
+    step: CaseStep,
+    engine: BaseEngine | None = None,
+) -> ibis.Table:
+    """Add a conditional column by composing CASE WHEN and reusing the
+    expression-map path — so the backend seam (Trino refuses raw SQL) and
+    the view plumbing are shared, not duplicated."""
+    whens = " ".join(f"WHEN {b.when} THEN {b.then}" for b in step.branches)
+    otherwise = f" ELSE {step.otherwise}" if step.otherwise is not None else ""
+    return _apply_expression(
+        table,
+        ExpressionMapStep(
+            op="map",
+            mode="expression",
+            output_field=step.output_field,
+            expr=f"CASE {whens}{otherwise} END",
+        ),
+        engine=engine,
     )
 
 
