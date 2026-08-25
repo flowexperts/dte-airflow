@@ -689,6 +689,64 @@ Both already own `steps`/`onChange`; each gained an `outputId` prop.
   produces) raises `CompilerError`, while `_apply_output_fields` routes
   through `_resolve_field` and resolves it.
 
+### dlt-backed writers must not normalise identifiers
+
+`writers/postgres.py` and `writers/sql_database.py` both pass
+**`naming_convention="direct"`** and a **throwaway `pipelines_dir`**. They
+are a pair; neither works alone, and without them the writer silently puts
+data in the wrong column.
+
+dlt's default `snake_case` convention exists to *infer* a schema from messy
+source data. Here the target table already exists with declared column
+names, so the identifiers handed to dlt are the ones to write to. Under
+`snake_case` a `CustomerID` column is lowercased, matches nothing, and is
+**added** — the run completes, reports rows written, and leaves the column
+the user actually mapped to NULL. Nothing raises. It is the worst failure
+mode in this codebase and it is invisible from every surface.
+
+- **`pipelines_dir` is why the convention alone was a no-op.** dlt persists
+  a normalised schema per `pipeline_name` and the stored copy wins. These
+  writers materialise the whole table each run and use no incremental
+  source, so that state buys nothing — and living inside each container it
+  also split between `backend` and `worker`, the same trap
+  `DTE_ARTIFACT_DIR` documents. A fresh directory per write removes both.
+- **dlt also persists the convention at the destination**, in the dataset's
+  `_dlt_version` / `_dlt_loads` / `_dlt_pipeline_state` tables. So a
+  destination already written to under `snake_case` refuses the switch with
+  `TableIdentifiersFrozen` — loud and safe, but it means **an existing
+  destination fails on its next run until its `_dlt_*` tables are dropped**
+  (which restarts dlt's lineage; the data tables are untouched). Its error
+  text points at `schema.allow_identifier_change_on_table_with_data`, a dlt
+  config key DTE exposes nowhere — dropping the `_dlt_*` tables is the
+  actual remedy.
+- `tests/unit/test_writer_naming_convention.py` intercepts the destination
+  factory instead of connecting, which is what lets it cover snowflake and
+  bigquery.
+
+**The mysql dialect routes through dlt's `sqlalchemy` destination.** dlt
+ships no mysql destination — `dlt.destinations.mysql` has never existed on
+any dlt this project pins, so `dialect="mysql"` raised `AttributeError` at
+write time, after the destination had saved and previewed cleanly. And the
+`mysql-writer` extra said `dlt[mysql]`, which is not a real dlt extra:
+`uv pip install "dlt[mysql]"` reports *"Would make no changes"*, so
+installing the documented fix for MySQL support installed nothing.
+
+`sqlalchemy` is dlt's driver layer, not a target anyone picks — the dialect
+users choose stays `mysql`, and `destination_factory` is the only place the
+mapping exists. Two consequences worth keeping:
+
+- **The writer rewrites `mysql://` → `mysql+pymysql://`.** SQLAlchemy reads
+  the scheme as dialect+driver and defaults bare `mysql://` to mysqldb
+  (mysqlclient), which needs a C toolchain to build. Which driver we use is
+  ours to pick; the URL users saved says `mysql://` because that is what the
+  source side takes, and the same connection has to keep working here.
+- **The image installs `[mysql-writer]`** (`dlt[sqlalchemy]` + `pymysql`,
+  both pure Python). `SqlDatabaseTarget.dialect` offers mysql, so without
+  them the destination saves and previews and only the write fails — the
+  exact failure the `[unstructured,models]` comment above it describes.
+  snowflake and bigquery stay opt-in: large SDKs, neither reachable from a
+  self-hosted default.
+
 ### Field references and nested columns
 
 Dot syntax is the wire form: `order.amount`, `user.address.city`. `_resolve_field()` splits on `.` and traverses struct members; if the head isn't a top-level column it falls back to the joined `__` name (so `mongodb` / `rest_api` sources — which still flatten via dlt — keep working). `_apply_output_fields` / `_apply_lookup` route through `_resolve_field` so Select and Lookup steps handle struct paths. Struct-path outputs are named after the leaf segment when no alias is given.

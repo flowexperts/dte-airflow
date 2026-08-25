@@ -15,7 +15,14 @@ COPY alembic.ini ./
 # openai SDKs. Without them the image builds and starts fine, and then every
 # extract / structure step fails at runtime with "install the optional extra"
 # — a failure that only shows up on a real document run.
-RUN pip install --no-cache-dir -e ".[unstructured,models]" && pip install --no-cache-dir "psycopg2-binary>=2.9"
+#
+# `[mysql-writer]` is here for the same reason: `SqlDatabaseTarget.dialect`
+# offers mysql, so the destination saves and previews fine, and the only
+# thing that fails is the write. Both deps are pure Python (sqlalchemy +
+# pymysql), so the runtime stage still needs no toolchain. snowflake and
+# bigquery stay opt-in — their SDKs are large and neither is reachable from
+# a self-hosted default.
+RUN pip install --no-cache-dir -e ".[unstructured,models,mysql-writer]" && pip install --no-cache-dir "psycopg2-binary>=2.9"
 
 # Dev-only tooling, off by default so the production image is unchanged.
 # Compose sets INSTALL_DEV=1 to get `watchmedo`, which restarts the worker on
