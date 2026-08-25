@@ -120,11 +120,24 @@ Two things that run found, both worth knowing:
   open showed every row unmapped against a destination whose columns had
   loaded fine. It is a plain function now — it is only ever called from the
   click handler, so there was never a reason to memoize it.
-- **Not fixed, pre-existing.** The Postgres writer goes through dlt, which
-  normalises identifiers to snake_case: `shipping_date` and `birth_date`
-  landed, `CustomerID` did not — dlt created a `customer_id` column beside
-  it and left `CustomerID` null. So automap will propose a mapping to any
-  non-snake_case destination column that the writer then cannot target.
-  Fixing it means setting dlt's naming convention in
-  `engine/writers/postgres.py`, which touches every existing postgres
-  destination.
+- **Fixed here too, and it is the more serious of the two.** Both
+  dlt-backed writers normalised identifiers to snake_case, so
+  `shipping_date` and `birth_date` landed but `CustomerID` did not — dlt
+  added a `customer_id` column and left `CustomerID` NULL, while the run
+  reported success. Not an automap bug: any hand-written `select` with a
+  non-snake_case alias failed the same silent way. `naming_convention=
+  "direct"` plus a throwaway `pipelines_dir` in `writers/postgres.py` and
+  `writers/sql_database.py`; see the CLAUDE.md section for why neither
+  works alone. Re-verified through the real trigger path — `CustomerID`
+  populated, no phantom column, the target's five columns unchanged.
+
+  **Upgrade note:** dlt records the convention at the destination in its
+  `_dlt_*` tables, so a destination already written to under `snake_case`
+  now fails its next run with `TableIdentifiersFrozen` until those tables
+  are dropped. That is a loud failure replacing a silent wrong write, but
+  it is a breaking change and needs calling out in release notes.
+- **Found, not fixed:** `dlt.destinations.mysql` does not exist in dlt
+  1.30, so a `sql_database` destination with `dialect="mysql"` has always
+  raised `AttributeError` at write time. Unrelated to naming, no CI
+  coverage for that path, so it carries a strict xfail rather than a
+  speculative swap to the `sqlalchemy` destination.
