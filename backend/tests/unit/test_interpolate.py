@@ -243,15 +243,3 @@ def test_interpolate_pipeline_rewrites_case_condition_values():
     ctx = resolve_context(p, {"min": "10"})
     out = interpolate_pipeline(p, ctx)
     assert out.steps[0]["branches"][0]["when"][0]["value"] == "10"
-
-
-def test_interpolate_pipeline_rewrites_date_diff_to():
-    p = _pipeline(steps=[{
-        "op": "date_diff", "field": "dob", "to": "{{today}}",
-        "unit": "year", "output_field": "age",
-    }])
-    ctx = resolve_context(p)
-    out = interpolate_pipeline(p, ctx)
-    # interpolate_text quotes a bare sentinel for the SQL surfaces; the
-    # compiler strips it back off since `to` is a plain date literal.
-    assert out.steps[0]["to"].strip("'") == ctx["today"]

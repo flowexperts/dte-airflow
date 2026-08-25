@@ -28,7 +28,6 @@ _STEP_STRING_FIELDS: dict[str, tuple[str, ...]] = {
     "map": ("expr",),  # ExpressionMapStep — LookupMapStep has no expr field
     "check": ("expr",),
     "case": (),          # branches[] handled separately below
-    "date_diff": ("to",),
 }
 
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")

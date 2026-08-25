@@ -1165,51 +1165,6 @@ export function CaseEditor({ step, set }: { step: StepShape; set: Setter }) {
   );
 }
 
-export function DateDiffEditor({ step, set }: { step: StepShape; set: Setter }) {
-  const allFields = useStepFields();
-  return (
-    <div className="grid gap-3">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Date field">
-          <FieldPicker
-            value={(step.field as string) ?? ""}
-            onChange={(v) => set({ field: v })}
-            options={allFields}
-            variant="tree"
-          />
-        </Field>
-        <Field label="Output field">
-          <Input
-            value={(step.output_field as string) ?? ""}
-            onChange={(e) => set({ output_field: e.target.value })}
-            placeholder="age"
-          />
-        </Field>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Up to" hint="a date, or {{today}} to resolve at run time">
-          <Input
-            value={(step.to as string) ?? ""}
-            onChange={(e) => set({ to: e.target.value })}
-            placeholder="{{today}}"
-          />
-        </Field>
-        <Field label="Unit" hint="whole units elapsed — years are birthday-aware">
-          <Segmented<"year" | "month" | "day">
-            options={[
-              { value: "year", label: "Years" },
-              { value: "month", label: "Months" },
-              { value: "day", label: "Days" },
-            ]}
-            value={(step.unit as "year" | "month" | "day") ?? "year"}
-            onChange={(v) => set({ unit: v })}
-          />
-        </Field>
-      </div>
-    </div>
-  );
-}
-
 export function SortEditor({ step, set }: { step: StepShape; set: Setter }) {
   const allFields = useStepFields();
   const by = (step.by as string[]) ?? [];
@@ -2189,7 +2144,6 @@ export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
       ? <MapLookupEditor step={step} set={set} />
       : <MapExpressionEditor step={step} set={set} />;
     case "case":      return <CaseEditor step={step} set={set} />;
-    case "date_diff": return <DateDiffEditor step={step} set={set} />;
     case "sort":      return <SortEditor step={step} set={set} />;
     case "aggregate": return <AggregateEditor step={step} set={set} />;
     case "join":      return <JoinEditor step={step} set={set} />;

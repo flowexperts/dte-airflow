@@ -16,7 +16,6 @@ from dte.models.pipeline import (
     AggregateStep,
     CaseStep,
     CaseCondition,
-    DateDiffStep,
     DatePartGroupBy,
     ExpressionMapStep,
     FilterStep,
@@ -247,8 +246,6 @@ def _dispatch_single_table_step(
         return _apply_aggregate(table, AggregateStep(**step))
     elif op == "case":
         return _apply_case(table, CaseStep(**step))
-    elif op == "date_diff":
-        return _apply_date_diff(table, DateDiffStep(**step))
     elif op == "pivot":
         return _apply_pivot(table, PivotStep(**step))
     elif op == "select":
@@ -851,30 +848,6 @@ def _apply_case(table: ibis.Table, step: CaseStep) -> ibis.Table:
     ]
     else_ = ibis.literal(step.otherwise) if step.otherwise is not None else None
     return table.mutate(**{step.output_field: ibis.cases(*branches, else_=else_)})
-
-
-def _apply_date_diff(table: ibis.Table, step: DateDiffStep) -> ibis.Table:
-    col = _resolve_field(table, step.field)
-    # `to` is a date literal, not SQL — but interpolation quotes a bare
-    # {{today}} for the SQL surfaces that need it, so strip that back off.
-    to_raw = step.to.strip()
-    if len(to_raw) >= 2 and to_raw.startswith("'") and to_raw.endswith("'"):
-        to_raw = to_raw[1:-1]
-    to = ibis.literal(to_raw).cast("date")
-    start = col.cast("date")
-    if step.unit == "day":
-        expr = to.delta(start, unit="day")
-    elif step.unit == "month":
-        months = (to.year() - start.year()) * 12 + (to.month() - start.month())
-        expr = months - ibis.ifelse(to.day() < start.day(), 1, 0)
-    else:
-        # Whole years: only count the year once the anniversary has passed.
-        years = to.year() - start.year()
-        before_anniversary = (to.month() < start.month()) | (
-            (to.month() == start.month()) & (to.day() < start.day())
-        )
-        expr = years - ibis.ifelse(before_anniversary, 1, 0)
-    return table.mutate(**{step.output_field: expr})
 
 
 def _apply_sort(table: ibis.Table, step: SortStep) -> ibis.Table:

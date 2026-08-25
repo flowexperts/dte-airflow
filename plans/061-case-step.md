@@ -148,7 +148,25 @@ Changed:
   AND-over-OR precedence.
 - `then`/`otherwise` are plain scalars, not SQL literals — no quoting surface
   at all, and the editor drops `rulesToSql`/`tryParseBasicSql` entirely.
-- Added `date_diff` (`field`, `to`, `unit`, `output_field`), also pure ibis.
-  `unit="year"` is birthday-aware, unlike SQL's calendar-boundary DATEDIFF.
-  Without it there is no portable way to derive the `age` a `case` compares
-  against — the raw-SQL map step it replaced fails on the same backends.
+
+## Revision 2 — the guard was the bug
+
+Revision 1 added a `date_diff` step because "there is no portable way to
+derive age". That was wrong, and adding an op per SQL function is the wrong
+shape regardless: `map`/`expression` already computes columns. The real
+defect was one level down.
+
+`DuckDBEngine.apply_filter_sql` / `apply_expression_sql` built their SQL by
+creating a **view inside the engine's own DuckDB connection**, which only
+works for DuckDB-bound tables — hence `_require_duckdb_backend`, hence raw
+SQL being refused on every `sql_database` source.
+
+`table.alias(name).sql(fragment, dialect="duckdb")` has neither problem: it
+rides on the table's own backend, sqlglot transpiles the fragment to that
+backend's dialect, and nothing is written to the user's database. The guard
+and `date_diff` are both deleted; `map`/`expression` and Advanced filter now
+work on DB sources, which is what they were always supposed to do.
+
+`case` stays structured — not because raw SQL is unavailable, but because
+the rule list is the shape the builder already produces and it round-trips
+without a parser.

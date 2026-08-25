@@ -784,30 +784,6 @@ class CaseStep(BaseModel):
         return v
 
 
-class DateDiffStep(BaseModel):
-    """Whole units elapsed between a date column and a fixed date.
-
-    `unit="year"` is birthday-aware — the count only increments once the
-    day-of-year is reached. SQL's DATEDIFF('year', ...) counts calendar
-    boundaries instead, which reports 18 for someone whose birthday is in
-    December. For an age check driving eligibility that is not a rounding
-    quibble, it is the wrong answer for up to a year.
-    """
-    op: Literal["date_diff"]
-    field: str
-    # A date literal, or `{{today}}` — resolved before the compiler runs.
-    to: str = "{{today}}"
-    unit: Literal["year", "month", "day"] = "year"
-    output_field: str
-
-    @field_validator("field", "to", "output_field")
-    @classmethod
-    def _non_empty(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("date_diff step needs field, to and output_field")
-        return v
-
-
 class SortStep(BaseModel):
     op: Literal["sort"]
     by: list[str]
@@ -1242,7 +1218,6 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("join", None): JoinStep,
     ("pivot", None): PivotStep,
     ("case", None): CaseStep,
-    ("date_diff", None): DateDiffStep,
     ("check", None): CheckStep,
     ("profile", None): ProfileStep,
     ("extract", None): ExtractStep,

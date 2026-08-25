@@ -50,10 +50,13 @@ async def test_dry_run_happy_path(client, scenario_ids, fixtures_dir, out_dir):
     # plan-039: SQL panel — per-step SQL + final compiled SELECT.
     assert "step_sqls" in payload
     assert set(payload["step_sqls"].keys()) == {"0", "1"}
+    # A raw-SQL step compiles to a CTE (`WITH … AS (…) SELECT …`) since it
+    # rides on the source table's own backend rather than a created view.
     for sql in payload["step_sqls"].values():
-        assert isinstance(sql, str) and sql.strip().upper().startswith("SELECT")
+        assert isinstance(sql, str)
+        assert sql.strip().upper().startswith(("SELECT", "WITH"))
     assert payload.get("final_sql")
-    assert payload["final_sql"].strip().upper().startswith("SELECT")
+    assert payload["final_sql"].strip().upper().startswith(("SELECT", "WITH"))
     assert payload.get("error") is None
 
 
@@ -80,7 +83,7 @@ async def test_dry_run_compile_error_returns_partial_sqls(
     assert payload.get("error")
     # step 0 succeeded → its SQL should have been captured.
     assert "0" in payload["step_sqls"]
-    assert payload["step_sqls"]["0"].strip().upper().startswith("SELECT")
+    assert payload["step_sqls"]["0"].strip().upper().startswith(("SELECT", "WITH"))
     # step 1 failed → no SQL for it, and no final SQL.
     assert "1" not in payload["step_sqls"]
     assert payload.get("final_sql") is None

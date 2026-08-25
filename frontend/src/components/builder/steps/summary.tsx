@@ -71,10 +71,6 @@ export function stepTitle(step: StepShape): string {
       if (!out) return "unnamed field";
       return `${out} · ${n(branches.length, "branch")}`;
     }
-    case "date_diff": {
-      const out = str(step.output_field);
-      return out ? `${out} · ${str(step.unit) ?? "year"}s` : "not configured";
-    }
     case "join":
       return `${str(step.left) ?? "?"} ${str(step.how) ?? "inner"} ${str(step.right) ?? "?"}`;
     case "pivot":
@@ -214,14 +210,6 @@ export function StepSummary({ step }: { step: StepShape }): ReactNode {
         </KV>
       );
     }
-
-    case "date_diff":
-      return (
-        <KV>
-          <KVItem label="up to" value={str(step.to) ?? "—"} />
-          <KVItem label="unit" value={str(step.unit) ?? "year"} />
-        </KV>
-      );
 
     case "pivot":
       return (

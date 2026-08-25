@@ -912,64 +912,48 @@ def test_case_step_rejects_branch_with_no_conditions():
                  branches=[{"when": [], "then": "a"}])
 
 
-# ─── date_diff (age) ────────────────────────────────────────────────────
+# ─── Raw SQL on a non-DuckDB backend ────────────────────────────────────
 
 @pytest.fixture
-def dob_table(con):
-    import datetime
-    df = pd.DataFrame([
-        # birthday already passed in 2026 → 18
-        {"name": "just_18", "dob": datetime.date(2008, 1, 1)},
-        # birthday later in 2026 → still 17
-        {"name": "still_17", "dob": datetime.date(2008, 12, 31)},
-        {"name": "grown", "dob": datetime.date(1990, 6, 15)},
-    ])
-    return con.create_table("dobs", df, overwrite=True)
+def sqlite_people(tmp_path):
+    """A table bound to a *different* SQL backend than the engine's own."""
+    import sqlite3
+
+    db = tmp_path / "people.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE people (name TEXT, age INTEGER)")
+    conn.executemany("INSERT INTO people VALUES (?, ?)",
+                     [("alice", 30), ("bob", 17)])
+    conn.commit()
+    conn.close()
+    return ibis.sqlite.connect(str(db)).table("people")
 
 
-def test_date_diff_years_is_birthday_aware(dob_table):
-    pipeline = make_pipeline([{
-        "op": "date_diff", "field": "dob", "to": "2026-08-25",
-        "unit": "year", "output_field": "age",
-    }])
-    df = _run(pipeline, {"src": dob_table}).execute()
-    assert dict(zip(df["name"], df["age"])) == {
-        "just_18": 18, "still_17": 17, "grown": 36,
-    }
+def test_filter_sql_runs_on_a_foreign_backend(sqlite_people):
+    """Raw SQL is transpiled to the table's own dialect, not refused.
 
-
-def test_date_diff_days(dob_table):
-    pipeline = make_pipeline([{
-        "op": "date_diff", "field": "dob", "to": "2008-01-31",
-        "unit": "day", "output_field": "d",
-    }])
-    df = _run(pipeline, {"src": dob_table}).execute()
-    assert dict(zip(df["name"], df["d"]))["just_18"] == 30
-
-
-def test_date_diff_runs_on_a_non_duckdb_backend(dob_table, monkeypatch):
+    This used to raise RawSqlNotSupportedOnBackend: the implementation
+    created a view inside the engine's DuckDB connection, so it only ever
+    worked for DuckDB-bound tables — which locked every raw-SQL step out of
+    `sql_database` sources.
+    """
     from dte.engine.duckdb_engine import DuckDBEngine
 
-    engine = DuckDBEngine()
-    pipeline, output = make_pipeline([{
-        "op": "date_diff", "field": "dob", "to": "2026-08-25",
-        "unit": "year", "output_field": "age",
-    }])
-    def _boom(*a, **k):
-        raise AssertionError("date_diff must not route through raw SQL")
-    monkeypatch.setattr(engine, "apply_expression_sql", _boom)
+    pipeline, output = make_pipeline([{"op": "filter", "expr": "age >= 18"}])
     df = compile_pipeline(
-        pipeline, {"src": dob_table}, output=output, engine=engine,
+        pipeline, {"src": sqlite_people}, output=output, engine=DuckDBEngine(),
     ).execute()
-    assert df["age"].tolist() == [18, 17, 36]
+    assert df["name"].tolist() == ["alice"]
 
 
-def test_date_diff_rejects_unknown_field(dob_table):
-    from dte.compiler.ibis_compiler import CompilerError
+def test_expression_sql_runs_on_a_foreign_backend(sqlite_people):
+    from dte.engine.duckdb_engine import DuckDBEngine
 
-    pipeline = make_pipeline([{
-        "op": "date_diff", "field": "nope", "to": "2026-08-25",
-        "unit": "year", "output_field": "age",
+    pipeline, output = make_pipeline([{
+        "op": "map", "mode": "expression",
+        "output_field": "next_age", "expr": "age + 1",
     }])
-    with pytest.raises(CompilerError):
-        _run(pipeline, {"src": dob_table})
+    df = compile_pipeline(
+        pipeline, {"src": sqlite_people}, output=output, engine=DuckDBEngine(),
+    ).execute()
+    assert sorted(df["next_age"].tolist()) == [18, 31]

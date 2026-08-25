@@ -38,9 +38,9 @@ def get_engine(name: str) -> BaseEngine:
       instance today; the actual pushdown happens because the source
       tables are bound to their native ibis backend by
       :class:`~dte.engine.backend_registry.BackendRegistry` before the
-      compiler runs.  DuckDBEngine is retained only for writer glue and
-      the raw-SQL escape hatches (which reject non-DuckDB tables at
-      call time via :func:`_require_duckdb_backend`).
+      compiler runs.  DuckDBEngine is retained for writer glue and for the
+      raw-SQL escape hatches, which ride on each table's own backend via a
+      CTE alias and are transpiled from DuckDB dialect by sqlglot.
     - ``"trino"`` — TrinoEngine, gated behind ``DTE_TRINO_ENABLED``.
 
     Raises
