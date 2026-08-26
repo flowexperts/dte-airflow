@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import ibis
 import ibis.expr.datatypes as dt
 
+from dte.compiler.dialect_notes import execution_dialect_of
 from dte.errors import CompilerError
 from dte.models.pipeline import (
     ExtractStep,
@@ -204,8 +205,14 @@ def compile_pipeline(
         # for all other ops capture the resulting table expression.
         if on_step_sql is not None and op not in ("check", "profile"):
             try:
-                dialect = getattr(engine, "dialect", "duckdb")
-                sql = str(ibis.to_sql(registry[current_key], dialect=dialect))
+                # The TABLE's dialect, not the engine's. DuckDBEngine always
+                # reports "duckdb", so a pipeline reading Postgres used to
+                # render Postgres-bound SQL as DuckDB — a panel showing a
+                # query that never runs.
+                sql = str(ibis.to_sql(
+                    registry[current_key],
+                    dialect=execution_dialect_of(registry[current_key]),
+                ))
                 on_step_sql(idx, sql)
             except Exception:  # never let telemetry crash a run
                 pass

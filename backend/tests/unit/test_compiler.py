@@ -957,3 +957,37 @@ def test_expression_sql_runs_on_a_foreign_backend(sqlite_people):
         pipeline, {"src": sqlite_people}, output=output, engine=DuckDBEngine(),
     ).execute()
     assert sorted(df["next_age"].tolist()) == [18, 31]
+
+
+def _capture_step_sql(table, steps):
+    from dte.engine.duckdb_engine import DuckDBEngine
+
+    captured: dict[int, str] = {}
+    pipeline, output = make_pipeline(steps)
+    compile_pipeline(
+        pipeline, {"src": table}, output=output, engine=DuckDBEngine(),
+        on_step_sql=lambda i, sql: captured.__setitem__(i, sql),
+    )
+    return captured
+
+
+def test_step_sql_uses_the_tables_own_dialect(sqlite_people):
+    """The SQL panel must show what actually runs.
+
+    It rendered `engine.dialect` — always "duckdb" for DuckDBEngine — so a
+    pipeline reading a non-DuckDB source displayed SQL that never executes.
+    A float cast is the cheapest discriminator: DuckDB spells it DOUBLE,
+    SQLite spells it REAL.
+    """
+    sql = _capture_step_sql(
+        sqlite_people, [{"op": "retype", "field": "age", "to_type": "float"}],
+    )[0]
+    assert "REAL" in sql
+    assert "DOUBLE" not in sql
+
+
+def test_step_sql_still_duckdb_for_duckdb_tables(people_table):
+    sql = _capture_step_sql(
+        people_table, [{"op": "retype", "field": "age", "to_type": "float"}],
+    )[0]
+    assert "DOUBLE" in sql

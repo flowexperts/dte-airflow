@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useSchemas } from "@/components/builder/schema-context";
+import {
+  EMPTY_DIALECT_FEEDBACK,
+  useSchemas,
+} from "@/components/builder/schema-context";
 import { pipelineStepSchemas, type Pipeline, type SourceTableRef } from "@/lib/api";
 
 /* Field autocomplete needs the same two background syncs BuilderForm runs.
@@ -32,7 +35,7 @@ export function AutoInferSchemas({ sources }: { sources: SourceTableRef[] }) {
  * autocomplete keeps its last-known good answer while you type.
  */
 export function AutoStepSchemas({ pipeline }: { pipeline: Pipeline }) {
-  const { setPerStepSchemas } = useSchemas();
+  const { setPerStepSchemas, setDialectFeedback } = useSchemas();
   const seq = useRef(0);
   const key = JSON.stringify(pipeline);
 
@@ -40,9 +43,17 @@ export function AutoStepSchemas({ pipeline }: { pipeline: Pipeline }) {
     if (
       !pipeline.sources ||
       pipeline.sources.length === 0 ||
+      // Quality and eval pipelines have no destination by design. Requiring
+      // one here would leave them with no per-step schema inference, so
+      // every field reference in an eval pipeline would have to be typed
+      // from memory.
+      (!pipeline.output_id &&
+        pipeline.pipeline_type !== "quality" &&
+        pipeline.pipeline_type !== "eval") ||
       (pipeline.steps ?? []).length === 0
     ) {
       setPerStepSchemas({});
+      setDialectFeedback(EMPTY_DIALECT_FEEDBACK);
       return;
     }
     const my = ++seq.current;
@@ -55,13 +66,26 @@ export function AutoStepSchemas({ pipeline }: { pipeline: Pipeline }) {
           numeric[Number(k)] = v;
         }
         setPerStepSchemas(numeric);
+        // Dialect feedback rides the same response — the readback beside
+        // each expression costs no extra request (plan 062).
+        const exprSql: Record<number, string> = {};
+        for (const [k, v] of Object.entries(res.step_expr_sql ?? {})) {
+          exprSql[Number(k)] = v;
+        }
+        setDialectFeedback({
+          dialect: res.dialect ?? "duckdb",
+          exprSql,
+          errorStep: res.error_step ?? null,
+          error: res.error ?? null,
+          warnings: res.warnings ?? [],
+        });
       } catch {
         // Partially-typed pipelines don't compile; keep the last good schemas.
       }
     }, 500);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` captures pipeline
-  }, [key, setPerStepSchemas]);
+  }, [key, setPerStepSchemas, setDialectFeedback]);
 
   return null;
 }

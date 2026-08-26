@@ -41,6 +41,13 @@ from dte.api.deps import (
     get_source_store,
 )
 from dte.compiler.ibis_compiler import compile_pipeline
+from dte.compiler.dialect_notes import (
+    SOURCE_DIALECT,
+    execution_dialect_of,
+    notes_for,
+    raw_sql_fragment,
+    transpile_fragment,
+)
 from dte.compiler.interpolate import (
     InterpolationError,
     ParamValidationError,
@@ -795,6 +802,8 @@ async def _compile_body_pipeline(
     *,
     on_step_schema=None,
     on_step_sql=None,
+    on_step=None,
+    on_tables=None,
     params: dict[str, str] | None = None,
 ):
     """Shared plumbing for endpoints that compile an unsaved pipeline body.
@@ -829,11 +838,16 @@ async def _compile_body_pipeline(
             ref.alias: load_source(s, registry, conn, creds, table=ref.table)
             for ref, s, conn, creds in sources
         }
+        # Fired before compilation, so a caller still learns which backend
+        # the pipeline runs on when a later step fails to compile — that is
+        # exactly when the editor most needs to explain itself.
+        if on_tables is not None:
+            on_tables(tables)
         compiled = compile_pipeline(
             pipeline, tables,
             output=destination.config if destination else None,
             lookup_tables=lookups, on_step_schema=on_step_schema,
-            on_step_sql=on_step_sql,
+            on_step_sql=on_step_sql, on_step=on_step,
             engine=engine,
         )
     except HTTPException:
@@ -861,6 +875,22 @@ async def step_schemas_pipeline(
     def _capture(idx: int, cols: list[str]):
         schemas[idx] = cols
 
+    # The step being applied when compilation blew up. Without it a bad
+    # expression in step 2 renders as one unattributed error at the bottom
+    # of the preview pane, reading as "the pipeline is broken".
+    failed_step: list[int | None] = [None]
+
+    def _capture_step(idx: int, op: str, status: str, msg=None):
+        if status == "failed":
+            failed_step[0] = idx
+
+    dialect: list[str] = [SOURCE_DIALECT]
+
+    def _capture_dialect(tables: dict):
+        first = next(iter(tables.values()), None)
+        if first is not None:
+            dialect[0] = execution_dialect_of(first)
+
     # A partially-configured pipeline (e.g. aggregate with no aggregations yet)
     # will 422 mid-compile. We still want to return the schemas captured up to
     # the failing step so downstream editors see fresh columns from earlier
@@ -870,13 +900,34 @@ async def step_schemas_pipeline(
     try:
         await _compile_body_pipeline(
             body, s_store, d_store, c_store, lt_store, on_step_schema=_capture,
+            on_step=_capture_step, on_tables=_capture_dialect,
         )
     except HTTPException as e:
         error = str(e.detail)
+
+    # Dialect feedback (plan 062). Pure functions of (step, dialect), so they
+    # are computed for every raw-SQL step whether or not the pipeline
+    # compiled — the readback must survive the error it is explaining.
+    expr_sql: dict[int, str] = {}
+    warnings: list[dict] = []
+    for idx, step in enumerate(body.steps or []):
+        fragment = raw_sql_fragment(step)
+        if fragment is None:
+            continue
+        transpiled = transpile_fragment(fragment, dialect[0])
+        if transpiled is not None:
+            expr_sql[idx] = transpiled
+        for note in notes_for(fragment, dialect[0]):
+            warnings.append({"step": idx, "code": note.code, "message": note.message})
+
     # JSON keys are strings; matches how the frontend will look them up.
     return {
         "step_schemas": {str(k): v for k, v in schemas.items()},
         "error": error,
+        "error_step": failed_step[0],
+        "dialect": dialect[0],
+        "step_expr_sql": {str(k): v for k, v in expr_sql.items()},
+        "warnings": warnings,
     }
 
 

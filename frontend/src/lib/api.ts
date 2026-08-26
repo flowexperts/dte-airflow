@@ -558,10 +558,24 @@ export const dryRunPipeline = (
   );
 };
 
-/** Per-step schema map for an unsaved pipeline body (plan 038 item 7).
- *  Keys are string-indexed step numbers to match JSON transport. */
+/** Per-step schema map for an unsaved pipeline body (plan 038 item 7),
+ *  plus dialect feedback for raw-SQL steps (plan 062). Keys are
+ *  string-indexed step numbers to match JSON transport. */
+export interface StepSchemasResponse {
+  step_schemas: Record<string, string[]>;
+  error: string | null;
+  /** Index of the step that failed to compile, if any. */
+  error_step: number | null;
+  /** The dialect the pipeline's tables execute on ("duckdb", "postgres", …). */
+  dialect: string;
+  /** Per step: the raw-SQL fragment as the target dialect receives it.
+   *  Absent when the target gets exactly what the user typed. */
+  step_expr_sql: Record<string, string>;
+  warnings: { step: number; code: string; message: string }[];
+}
+
 export const pipelineStepSchemas = (pipeline: Pipeline) =>
-  apiFetch<{ step_schemas: Record<string, string[]>; error: string | null }>(
+  apiFetch<StepSchemasResponse>(
     `/api/pipelines/step-schemas`,
     { method: "POST", body: JSON.stringify(pipeline) },
   );

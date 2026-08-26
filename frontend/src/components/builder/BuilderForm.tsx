@@ -7,7 +7,6 @@ import {
   ApiError,
   createPipeline,
   isPipelineGateError,
-  pipelineStepSchemas,
   type Pipeline,
   type SourceTableRef,
 } from "@/lib/api";
@@ -15,6 +14,7 @@ import { SourcesPanel } from "./sources";
 import { StepsPanel } from "./steps/StepsPanel";
 import { InputsPanel } from "./InputsPanel";
 import { PipelineParamsProvider } from "./params-context";
+import { AutoStepSchemas } from "@/components/pipeline/schema-sync";
 import type { StepShape } from "./steps/types";
 import { DestinationPicker } from "./DestinationPicker";
 import { SchemaProvider, useSchemas } from "./schema-context";
@@ -57,51 +57,6 @@ function AutoInferSchemas({ sources }: { sources: SourceTableRef[] }) {
       refreshById(ref.source_id, ref.alias, ref.table);
     }
   }, [sources, schemas, refreshById]);
-  return null;
-}
-
-/** Debounced /step-schemas fetch so downstream editors see the columns
- *  produced by earlier steps (plan 038 item 7). Runs whenever the pipeline
- *  spec changes; silently drops results on compile errors so the builder
- *  stays responsive. */
-function AutoStepSchemas({ pipeline }: { pipeline: Pipeline }) {
-  const { setPerStepSchemas } = useSchemas();
-  const seq = useRef(0);
-  const key = JSON.stringify(pipeline);
-  useEffect(() => {
-    if (
-      !pipeline.sources ||
-      pipeline.sources.length === 0 ||
-      // Quality and eval pipelines have no destination by design. Requiring
-      // one here would leave them with no per-step schema inference, so
-      // every field reference in an eval pipeline would have to be typed
-      // from memory.
-      (!pipeline.output_id &&
-        pipeline.pipeline_type !== "quality" &&
-        pipeline.pipeline_type !== "eval") ||
-      (pipeline.steps ?? []).length === 0
-    ) {
-      setPerStepSchemas({});
-      return;
-    }
-    const my = ++seq.current;
-    const t = window.setTimeout(async () => {
-      try {
-        const res = await pipelineStepSchemas(pipeline);
-        if (seq.current !== my) return;
-        const numeric: Record<number, string[]> = {};
-        for (const [k, v] of Object.entries(res.step_schemas)) {
-          numeric[Number(k)] = v;
-        }
-        setPerStepSchemas(numeric);
-      } catch {
-        // A partially-typed pipeline compile-errors; keep the last-known
-        // step schemas so autocomplete doesn't flicker.
-      }
-    }, 500);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` captures pipeline
-  }, [key, setPerStepSchemas]);
   return null;
 }
 

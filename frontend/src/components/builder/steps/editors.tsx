@@ -8,12 +8,13 @@ import {
   FieldPicker,
   FieldMultiSelect,
   Input,
+  Pill,
   Segmented,
   Textarea,
   type DropdownOption,
 } from "@/components/ui";
 import { usePopoverPosition } from "@/components/ui/use-popover-position";
-import { useStepFields, useJoinOperands } from "../schema-context";
+import { useStepFields, useJoinOperands, useStepFeedback } from "../schema-context";
 import type { SchemaField } from "@/lib/api";
 import { usePipelineParams } from "../params-context";
 import { toDisplay } from "@/components/ui";
@@ -753,6 +754,55 @@ function ConditionRules({
   );
 }
 
+/**
+ * What the target database actually receives for this step's raw SQL.
+ *
+ * Fragments are authored in DuckDB dialect and transpiled by sqlglot to the
+ * dialect the source's own backend speaks, so an expression can compile
+ * everywhere and still mean something different. DESIGN.md "Feedback beats
+ * validation": render the meaning next to the input, as it is typed.
+ *
+ * Silent unless it has something to say — a DuckDB pipeline gets nothing,
+ * and neither does an expression the target receives verbatim. There is
+ * deliberately **no affirmative all-clear**: the divergence list is
+ * measured, not exhaustive, so a green tick would promise a guarantee that
+ * cannot be made.
+ */
+function DialectReadback() {
+  const { dialect, exprSql, error, warnings } = useStepFeedback();
+  if (!exprSql && !error && warnings.length === 0) return null;
+  return (
+    <div className="mt-2 grid gap-2">
+      {exprSql && (
+        <div>
+          <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
+            As {dialect}
+          </div>
+          <code className="block font-mono text-[12px] text-muted bg-code-bg border border-border rounded px-2.5 py-1.5 whitespace-pre-wrap break-words">
+            {exprSql}
+          </code>
+        </div>
+      )}
+      {warnings.map((w) => (
+        <div key={w.code} className="flex items-start gap-2">
+          <Pill status="warn">Differs</Pill>
+          <span className="text-[12.5px] text-muted leading-snug">{w.message}</span>
+        </div>
+      ))}
+      {error && (
+        <div className="flex items-start gap-2">
+          <Pill status="failed">{dialect}</Pill>
+          {/* The engine's own words. Anything paraphrased here would be a
+              second, worse description of a problem it already named. */}
+          <span className="text-[12.5px] text-muted leading-snug break-words">
+            {error}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   // Mode is local UI state — not persisted on the step. Prefer Basic: it is
   // the structured, injection-safe editor and where most conditions belong.
@@ -864,6 +914,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
           <VariablePickerHint
             onInsert={(token) => handleAdvancedChange(advancedText + token)}
           />
+          <DialectReadback />
         </Field>
       )}
     </div>
@@ -1046,6 +1097,7 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
         <VariablePickerHint
           onInsert={(token) => set({ expr: ((step.expr as string) ?? "") + token })}
         />
+        <DialectReadback />
       </Field>
     </div>
   );
@@ -1854,6 +1906,7 @@ function CheckEditor({ step, set }: StepEditorProps) {
           <VariablePickerHint
             onInsert={(token) => handleAdvancedChange(advancedText + token)}
           />
+          <DialectReadback />
         </Field>
       )}
     </div>

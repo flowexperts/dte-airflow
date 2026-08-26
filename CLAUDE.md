@@ -260,6 +260,39 @@ so there is no quoting surface at all.
 - Interpolation reaches `branches[].when[].value` explicitly; the flat
   op → top-level-field map in `_STEP_STRING_FIELDS` cannot see two levels down.
 
+**Raw SQL reaches every backend, but does not always mean the same thing**
+(plan 062). `dte/compiler/dialect_notes.py` holds what the editors render
+beside each raw-SQL input. Measured by transpiling 55 DuckDB expressions to
+Postgres and running them: 51 rewrite correctly, 4 are rejected outright
+(`datepart`, `contains`, `string_split`, `len(array)`), and 2 run while
+meaning something else —
+
+```
+date_diff('year', dob, current_date)   dob=1990-12-31, as of 2026-08-25
+    duckdb   → 36   sqlite → 36 (JULIANDAY/365.0)   postgres → 35 (AGE)
+```
+
+— plus `try_cast`, which degrades to a plain `CAST` and so raises where
+DuckDB returns NULL.
+
+- **Only that third class is curated.** The rejected ones are reported by the
+  database itself, in better words than any table here would use, and
+  `_DIVERGENCES` is explicitly a **measured list, not an exhaustive one** —
+  which is why the UI has no affirmative "validated" state to contradict.
+- **Do not build this on sqlglot's static signals.** Of the four expressions
+  Postgres rejects, `exp.Anonymous` catches one and
+  `Generator.unsupported_messages` catches none.
+- ibis transpiles a fragment **once, at `.sql()` call time**, into the table's
+  own dialect and bakes it in; `ibis.to_sql(expr, dialect=…)` afterwards only
+  re-renders that tree. Step SQL is therefore rendered with
+  `execution_dialect_of(table)` (the ibis backend's `.name`, which doubles as
+  a sqlglot dialect) — it used to use `engine.dialect`, always `"duckdb"`, so
+  the SQL panel showed a query that never ran.
+- The feedback rides `POST /pipelines/step-schemas`, which the builder already
+  debounce-fetches on every edit — no new endpoint and no extra request.
+  `AutoStepSchemas` lives once in `components/pipeline/schema-sync.tsx` and is
+  used by both hosts; `useStepFeedback()` reads it per step index.
+
 The builder's condition rows are one component, `ConditionRules` in
 `components/builder/steps/editors.tsx` — shared by Filter Basic, Check Basic
 and every `case` branch. Two implementations of "compose a predicate" drift,
