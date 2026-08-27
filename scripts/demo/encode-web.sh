@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# encode-web.sh <webm-glob> <out-basename> [poster-timestamp]
+# encode-web.sh <webm-glob> <out-basename> [poster-timestamp] [speed]
 #   e.g. ./encode-web.sh 'out/webm/core-join/*.webm' out/web/dte-demo 112
+#        ./encode-web.sh 'out/webm/build/*.webm' out/web/dte-demo 8 1.5
 #
 # Produces the three files the marketing site's <video> needs:
 #   <out>.mp4          H.264, +faststart   (Safari, and every crawler)
@@ -17,7 +18,7 @@ if [[ $# -lt 2 ]]; then
   exit 2
 fi
 
-GLOB="$1"; OUT="$2"; POSTER_AT="${3:-3}"
+GLOB="$1"; OUT="$2"; POSTER_AT="${3:-3}"; SPEED="${4:-1}"
 # shellcheck disable=SC2206
 FILES=( $GLOB )
 if [[ ${#FILES[@]} -eq 0 || ! -f "${FILES[0]}" ]]; then
@@ -30,6 +31,14 @@ mkdir -p "$(dirname "$OUT")"
 # -2 rather than -1 on the height: H.264 needs even dimensions, and a source
 # height of 862 scales to an odd number often enough to matter.
 SCALE="scale=1440:-2:flags=lanczos"
+# Speed-up is applied here rather than by re-recording faster: the recording
+# is paced so a person can follow each click, and setpts keeps that motion
+# smooth while shortening the whole thing uniformly. The raw webm under
+# out/webm/ is never touched, so a different pass can start from the original.
+if [[ "$SPEED" != "1" ]]; then
+  SCALE="setpts=PTS/${SPEED},${SCALE}"
+  POSTER_AT=$(python3 -c "print(${POSTER_AT}/${SPEED})")
+fi
 
 ffmpeg -y -v error -i "$SRC" -vf "$SCALE" \
   -c:v libx264 -crf 26 -preset slow -pix_fmt yuv420p -an \

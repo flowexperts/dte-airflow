@@ -4,6 +4,7 @@ Playwright-driven browser recordings of the DTE product for marketing use.
 
 | script | asset | length | what it shows |
 |---|---|---|---|
+| `record-build.mjs` | `out/web/dte-demo.*` | ~2:00 @1.5x | **The site hero.** A pipeline built from an empty form: name, two sources, three tables, two joins, a derived column, Auto-map, run. |
 | `record-core-join.mjs` | `out/demo-core-join.mp4` | ~3:00 | The flagship. Two sources, five tables, four joins, derived columns, Auto-map onto a drifted mart schema, a 27,691-row run. |
 | `record-unstructured.mjs` | `out/demo-unstructured.mp4` | ~1:40 | PDF invoices → extract → structure → **Postgres**, then joined against the order system to surface two that disagree. |
 | `record-cold-email.mjs` | `out/demo-cold-email-90s.mp4` | ~1:12 | The paste-into-a-cold-email cut. Same world, no build, hard 95s budget. |
@@ -73,6 +74,30 @@ directory. To pick up a change to that file:
 docker compose rm -sfv postgres-demo && docker volume rm dte_demo_pgdata
 docker compose up -d postgres-demo
 ```
+
+## Pacing and the cursor
+
+`lib.mjs` installs a synthetic cursor overlay, because Playwright's video
+capture does not record the OS pointer — without it every recording is a
+series of things changing with no visible cause. It is driven by real
+`mousemove` events, so it follows `page.mouse.move()` with no extra
+bookkeeping, and flashes a ripple on mousedown.
+
+Interactions go through `humanClick` and `openAndPick` rather than
+`locator.click()`. Those glide to the target, rest there so a viewer's eye
+arrives before anything changes, and hold dropdowns open long enough to read
+the options. A menu that opens and closes in 200ms tells nobody what the
+choices were, and in a builder demo the choices are half the point.
+
+This costs time on purpose. `record-build.mjs` runs ~3:00 and is published
+at 1.5x via the encoder's speed argument:
+
+```bash
+./encode-web.sh 'out/webm/build/*.webm' out/web/dte-demo 12 1.5
+```
+
+Speeding up at encode time rather than recording faster keeps the motion
+smooth and leaves the original take in `out/webm/` for a different pass.
 
 ## Knobs
 

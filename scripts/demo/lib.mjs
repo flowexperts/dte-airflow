@@ -77,49 +77,165 @@ export const TIMING = { typeDelay: 55, clickPause: 350, slowMo: 60 };
 export const dwell = (ms) => new Promise((r) => setTimeout(r, ms));
 export const log = (msg) => console.log(`\x1b[36m[demo]\x1b[0m ${msg}`);
 
-export async function typeInto(loc, text) {
-  await loc.click();
+export async function typeInto(loc, text, page = null) {
+  if (page) await humanClick(page, loc, { settle: DWELL.xs });
+  else await loc.click();
   await loc.fill("");
+  await dwell(TIMING.clickPause);
   await loc.type(text, { delay: TIMING.typeDelay });
+  await dwell(DWELL.sm);
 }
 
 /**
  * The app's Field component renders <label>…</label> without an htmlFor, so
  * Playwright's getByLabel doesn't associate. Navigate by DOM proximity.
  */
-export function fieldWrap(page, labelText) {
-  return page.locator(`label:text-is("${labelText}")`).first().locator("xpath=..");
+export function fieldWrap(page, labelText, which = "first") {
+  const labels = page.locator(`label:text-is("${labelText}")`);
+  return (which === "last" ? labels.last() : labels.first()).locator("xpath=..");
 }
 
-export function inputByLabel(page, labelText) {
-  return fieldWrap(page, labelText).locator("input, textarea").first();
+export function inputByLabel(page, labelText, which = "first") {
+  return fieldWrap(page, labelText, which).locator("input, textarea").first();
 }
 
-export async function pickDropdown(page, labelText, optionMatcher) {
-  const trigger = fieldWrap(page, labelText)
+/**
+ * `which` matters once a pipeline has more than one step: every join editor
+ * renders its own Left / Right / How / On / Output id labels, so "first"
+ * silently edits the join you added three steps ago. Anything building steps
+ * incrementally wants "last".
+ */
+export async function pickDropdown(page, labelText, optionMatcher, which = "first") {
+  const trigger = fieldWrap(page, labelText, which)
     .locator('button[aria-haspopup="listbox"]')
     .first();
-  await trigger.click();
-  await dwell(TIMING.clickPause);
+  await openAndPick(page, trigger, optionMatcher);
+}
+
+/**
+ * Open a listbox, hold it open long enough to read, then pick.
+ *
+ * The hold is the point. A dropdown that opens and closes inside 200ms tells
+ * a viewer nothing about what the choices were — and the choices are half of
+ * what a builder demo is showing.
+ */
+export async function openAndPick(page, trigger, optionMatcher, { browse = DWELL.lg } = {}) {
+  await humanClick(page, trigger);
   const option = page.getByRole("option", { name: optionMatcher }).first();
-  await option.waitFor({ state: "visible", timeout: 8_000 });
-  await option.click();
-  await dwell(TIMING.clickPause);
+  await option.waitFor({ state: "visible", timeout: 10_000 });
+  await dwell(browse);
+  await humanClick(page, option, { settle: DWELL.sm });
+  await dwell(DWELL.sm);
 }
 
 /** Pick a value in a tree FieldPicker by typing and choosing the option. */
 export async function pickFieldTree(scope, page, placeholder, optionName) {
   const input = scope.locator(`input[placeholder="${placeholder}"]`).first();
-  await input.click();
+  await humanClick(page, input, { settle: DWELL.xs });
   await input.fill("");
-  await input.type(optionName, { delay: TIMING.typeDelay });
   await dwell(TIMING.clickPause);
+  await input.type(optionName, { delay: TIMING.typeDelay });
   const opt = page
     .getByRole("option", { name: new RegExp(`^${optionName}\\b`, "i") })
     .first();
-  await opt.waitFor({ state: "visible", timeout: 6_000 });
-  await opt.click();
+  await opt.waitFor({ state: "visible", timeout: 8_000 });
+  await dwell(DWELL.md);
+  await humanClick(page, opt, { settle: DWELL.xs });
+  await dwell(DWELL.sm);
+}
+
+
+// ── synthetic cursor ───────────────────────────────────────────────────────
+/**
+ * Playwright's video capture does not record the OS pointer, so without this
+ * every recording is a series of things changing with no visible cause —
+ * menus opening by themselves, fields filling from nowhere. The overlay is
+ * driven by real `mousemove` events, so it follows `page.mouse.move()`
+ * exactly and needs no separate bookkeeping.
+ */
+export const CURSOR_INIT = `
+  (() => {
+    if (window.__demoCursorInstalled) return;
+    window.__demoCursorInstalled = true;
+    const install = () => {
+      if (document.getElementById("__demo-cursor")) return;
+      const c = document.createElement("div");
+      c.id = "__demo-cursor";
+      c.style.cssText = [
+        "position:fixed","top:0","left:0","width:22px","height:22px",
+        "margin:-2px 0 0 -2px","z-index:2147483646","pointer-events:none",
+        "transition:transform 40ms linear","will-change:transform",
+      ].join(";");
+      c.innerHTML =
+        '<svg width="22" height="22" viewBox="0 0 22 22">' +
+        '<path d="M3 2l6.5 15.5 2.2-6.1 6.1-2.2z" fill="#fff" ' +
+        'stroke="rgba(0,0,0,0.55)" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+      const r = document.createElement("div");
+      r.id = "__demo-ripple";
+      r.style.cssText = [
+        "position:fixed","top:0","left:0","width:34px","height:34px",
+        "margin:-17px 0 0 -17px","border-radius:50%","pointer-events:none",
+        "z-index:2147483645","opacity:0","background:rgba(255,110,60,0.45)",
+        "transform:scale(0.3)",
+      ].join(";");
+      document.body.appendChild(c);
+      document.body.appendChild(r);
+
+      const move = (e) => {
+        c.style.transform = "translate(" + e.clientX + "px," + e.clientY + "px)";
+        r.style.transform = "translate(" + e.clientX + "px," + e.clientY + "px) scale(0.3)";
+        r.dataset.x = e.clientX; r.dataset.y = e.clientY;
+      };
+      document.addEventListener("mousemove", move, true);
+      document.addEventListener("mousedown", () => {
+        const x = r.dataset.x || 0, y = r.dataset.y || 0;
+        r.style.transition = "none";
+        r.style.opacity = "0.9";
+        r.style.transform = "translate(" + x + "px," + y + "px) scale(0.3)";
+        requestAnimationFrame(() => {
+          r.style.transition = "transform 380ms ease-out, opacity 380ms ease-out";
+          r.style.opacity = "0";
+          r.style.transform = "translate(" + x + "px," + y + "px) scale(1.5)";
+        });
+      }, true);
+    };
+    if (document.body) install();
+    else document.addEventListener("DOMContentLoaded", install);
+  })();
+`;
+
+/**
+ * Move to an element and click it the way a person would: glide there, let
+ * the pointer settle so a viewer's eye can arrive before anything changes,
+ * then press.
+ *
+ * `settle` is the pause between arriving and pressing — the single biggest
+ * difference between footage that reads as a recording of someone working
+ * and footage that reads as a script.
+ */
+export async function humanClick(page, locator, { settle = DWELL.sm } = {}) {
+  const target = locator.first();
+  await target.scrollIntoViewIfNeeded().catch(() => {});
+  await dwell(DWELL.xs);
+  const box = await target.boundingBox().catch(() => null);
+  if (!box) { await target.click(); await dwell(settle); return; }
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 26 });
+  await dwell(settle);
+  await page.mouse.down();
+  await dwell(90);
+  await page.mouse.up();
   await dwell(TIMING.clickPause);
+}
+
+/** Rest the pointer on something without clicking — for reading, not acting. */
+export async function look(page, locator, ms = DWELL.md) {
+  const target = locator.first();
+  await target.scrollIntoViewIfNeeded().catch(() => {});
+  const box = await target.boundingBox().catch(() => null);
+  if (box) {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 22 });
+  }
+  await dwell(ms);
 }
 
 // ── caption overlay ────────────────────────────────────────────────────────
@@ -212,6 +328,7 @@ export async function startRecording(outDir, token) {
     deviceScaleFactor: 1,
   });
   await context.addInitScript(CAPTION_INIT);
+  await context.addInitScript(CURSOR_INIT);
   const page = await context.newPage();
   page.setDefaultTimeout(30_000);
 
@@ -335,24 +452,38 @@ export async function runAutoMap(page, { acceptLowConfidence = true } = {}) {
   await page.getByText(/of \d+ accepted/i).first().waitFor({ timeout: 90_000 });
   await dwell(DWELL.read);
 
+  const accept = page.getByRole("button", { name: /^Add \d+ mappings?$/i });
+
   if (acceptLowConfidence) {
-    const boxes = page.locator('input[type=checkbox]');
-    const n = await boxes.count();
-    for (let i = 0; i < n; i++) {
-      const box = boxes.nth(i);
-      if (await box.isChecked().catch(() => true)) continue;
-      // Leave the genuinely unmapped rows alone — ticking a row with no
-      // source is how you write NULLs into a mart on camera.
-      const row = box.locator("xpath=ancestor::tr[1]");
+    // Row checkboxes only. The header carries a select-all checkbox, and
+    // clicking that toggles every row at once — including the unmapped ones,
+    // which is how you write a column of NULLs into a mart on camera.
+    const rows = page.locator("tr").filter({ has: page.locator("input[type=checkbox]") });
+    const total = await rows.count();
+
+    for (let i = 0; i < total; i++) {
+      // Re-resolve every iteration and bail if the dialog has gone. A stale
+      // handle from before the dialog closed just times out for 30s and
+      // fails a take that had otherwise already succeeded.
+      if (!(await accept.isVisible().catch(() => false))) break;
+
+      const row = rows.nth(i);
       const text = await row.innerText().catch(() => "");
+      // Nothing to map: leave it unticked. "no match" is the honest answer
+      // and the dialog is right to show it.
       if (/no match/i.test(text)) continue;
-      await box.click();
+
+      const box = row.locator("input[type=checkbox]").first();
+      if (await box.isChecked().catch(() => true)) continue;
+      await box.click({ timeout: 5_000 }).catch(() => {});
       await dwell(TIMING.clickPause);
     }
     await dwell(DWELL.md);
   }
 
-  await page.getByRole("button", { name: /^Add \d+ mappings?$/i }).click();
+  if (await accept.isVisible().catch(() => false)) {
+    await accept.click();
+  }
   await dwell(DWELL.md);
 }
 

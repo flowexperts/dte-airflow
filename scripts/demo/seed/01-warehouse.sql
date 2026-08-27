@@ -221,6 +221,28 @@ CREATE TABLE analytics.order_facts (
     loaded_at         timestamp
 );
 
+-- Target for the "build a pipeline from scratch" recording
+-- (scripts/demo/record-build.mjs). Deliberately small: that video builds a
+-- three-table join on camera, and mapping its output onto the 13-column
+-- order_facts mart would leave most rows unmapped, which reads as failure
+-- rather than as honesty.
+--
+-- Same drift trick as order_facts, scaled down — 3 exact, 2 the model has to
+-- reason out, 1 with nothing behind it:
+--   order_id / ordered_at / line_total  exact
+--   customer_name <- full_name          llm
+--   quantity      <- qty                llm
+--   loaded_at                           unmapped
+CREATE TABLE analytics.customer_orders (
+    order_id       integer,
+    ordered_at     timestamp,
+    status         text,
+    customer_name  text,
+    quantity       integer,
+    line_total     numeric(12, 2),
+    loaded_at      timestamp
+);
+
 CREATE TABLE analytics.invoice_reconciliation (
     invoice_number  text,
     vendor          text,
