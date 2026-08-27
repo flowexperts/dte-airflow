@@ -1354,6 +1354,28 @@ class PipelineParam(BaseModel):
         return self
 
 
+# The pipeline types that write nowhere. `quality` reports contract results,
+# `eval` scores against labels, `viz` feeds a dashboard tile off `preview` —
+# none of the three reaches a writer, so none needs an `output_id`.
+#
+# This is one function because it used to be five copies of the same tuple
+# in `dte/api/routes/pipelines.py` (validate, engine-compat, trigger,
+# dry-run, preview). A type added to four of the five saves cleanly and then
+# 422s on the fifth, which is the endpoint nobody tests by hand.
+_OUTPUTLESS_PIPELINE_TYPES = ("quality", "eval", "viz")
+
+
+def pipeline_requires_output(pipeline) -> bool:
+    """True when this pipeline must name a destination that exists.
+
+    Takes anything with a `pipeline_type` — `PipelineBase`, `Pipeline`, or a
+    revision snapshot — and treats a missing attribute as `transform`, which
+    is the historical shape of rows written before the field existed.
+    """
+    ptype = getattr(pipeline, "pipeline_type", "transform") or "transform"
+    return ptype not in _OUTPUTLESS_PIPELINE_TYPES
+
+
 class PipelineBase(SQLModel):
     """API/domain fields.
 
@@ -1391,7 +1413,10 @@ class PipelineBase(SQLModel):
     # trino when DuckDB can't federate).  Legacy values "duckdb"/"trino"
     # remain accepted as explicit overrides.
     engine: EngineChoice = "auto"
-    pipeline_type: Literal["transform", "quality", "eval"] = "transform"
+    # "viz" feeds a dashboard tile: it is compiled and previewed, never
+    # written. See `pipeline_requires_output` for the three types that
+    # share that property and the one place they are named.
+    pipeline_type: Literal["transform", "quality", "eval", "viz"] = "transform"
     quality_contracts: list = SMField(default_factory=list)  # list[Contract] — typed by validator
     # The comparison this eval pipeline expands to: dotted axis path → values
     # to vary, e.g. {"provider": ["claude", "regex"]}. Absent means N=1 — an

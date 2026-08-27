@@ -70,6 +70,7 @@ from dte.models.pipeline import (
     Source,
     SourceTableRef,
     coerce_source_refs,
+    pipeline_requires_output,
 )
 from dte.models.user import User
 from dte.security.permissions import requires
@@ -225,12 +226,12 @@ async def _validate_pipeline_refs(
         if isinstance(output_id, str):
             known_keys.add(output_id)
 
-    # Quality and eval pipelines both write nowhere, so neither requires a
+    # Quality, eval and viz pipelines all write nowhere, so none requires a
     # destination. Without this an eval pipeline is rejected at save for a
     # missing `output_id` it is never supposed to have.
-    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
+    needs_output = pipeline_requires_output(pipeline)
     missing_dest = None
-    if not is_quality:
+    if needs_output:
         missing_dest = None if await d_store.get(pipeline.output_id) else pipeline.output_id
     if missing_sources or missing_dest or duplicate_aliases or table_errors or join_errors:
         detail: dict = {}
@@ -280,12 +281,12 @@ async def _validate_engine_compat(
             )
         src_types.append((ref.source_id, conn.connection_type))
 
-    # Quality and eval pipelines both write nowhere, so neither requires a
+    # Quality, eval and viz pipelines all write nowhere, so none requires a
     # destination. Without this an eval pipeline is rejected at save for a
     # missing `output_id` it is never supposed to have.
-    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
+    needs_output = pipeline_requires_output(pipeline)
     dest_tuple: tuple[str, str] | None = None
-    if not is_quality:
+    if needs_output:
         destination = await d_store.get(pipeline.output_id)
         if not destination:
             raise HTTPException(status_code=422, detail=f"Destination not found: {pipeline.output_id}")
@@ -349,11 +350,11 @@ async def _check_shared_fs_guard(
         if conn and conn.connection_type == "local_fs":
             offending.append(ref.source_id)
 
-    # Quality and eval pipelines both write nowhere, so neither requires a
+    # Quality, eval and viz pipelines all write nowhere, so none requires a
     # destination. Without this an eval pipeline is rejected at save for a
     # missing `output_id` it is never supposed to have.
-    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
-    if not is_quality:
+    needs_output = pipeline_requires_output(pipeline)
+    if needs_output:
         destination = await d_store.get(pipeline.output_id)
         if destination:
             dest_conn = await c_store.get(destination.connection_id)
@@ -820,13 +821,13 @@ async def _compile_body_pipeline(
     # `.sources`, `.output_id`, `.steps` all works — validators already fired.
     pipeline = Pipeline(**body.model_dump())
     decrypt_context_var.set("pipeline_dry_run")
-    # Quality and eval pipelines both write nowhere, so neither requires a
+    # Quality, eval and viz pipelines all write nowhere, so none requires a
     # destination. Without this an eval pipeline is rejected at save for a
     # missing `output_id` it is never supposed to have.
-    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
+    needs_output = pipeline_requires_output(pipeline)
     try:
         pipeline = interpolate_pipeline(pipeline, resolve_context(pipeline, params))
-        if is_quality:
+        if not needs_output:
             sources = await _resolve_sources(pipeline, s_store, c_store)
             destination = None
         else:
@@ -1020,17 +1021,17 @@ async def preview_pipeline(
     def _capture_sql(idx: int, sql: str):
         step_sqls[idx] = sql
 
-    # Quality and eval pipelines both write nowhere, so neither requires a
+    # Quality, eval and viz pipelines all write nowhere, so none requires a
     # destination. Without this an eval pipeline is rejected at save for a
     # missing `output_id` it is never supposed to have.
-    is_quality = getattr(pipeline, "pipeline_type", "transform") in ("quality", "eval")
+    needs_output = pipeline_requires_output(pipeline)
     error: str | None = None
     compiled = None
     engine = None
     try:
         parsed_params = _parse_params_query(params)
         pipeline = interpolate_pipeline(pipeline, resolve_context(pipeline, parsed_params))
-        if is_quality:
+        if not needs_output:
             sources = await _resolve_sources(pipeline, s_store, c_store)
             destination = None
         else:

@@ -193,3 +193,27 @@ async def test_postgres_destination_delete(session_factory):
     deleted = await store.delete("pg-dest-del")
     assert deleted is True
     assert await store.get("pg-dest-del") is None
+
+
+async def test_postgres_pipeline_update_preserves_pipeline_type(session_factory):
+    """Re-saving must carry `pipeline_type` and `matrix` through.
+
+    The upsert's ON CONFLICT set was hand-written and omitted both, so a
+    pipeline converted to another type reverted to whatever it was inserted
+    as. The fake store is a dict and could never show this — it only
+    reproduces against a real ON CONFLICT (plan 064).
+    """
+    store = PostgresPipelineStore(session_factory)
+    p = _pipeline("pg-ptype", "typed", output_id="out")
+    await store.save(p)
+
+    p.pipeline_type = "viz"
+    p.output_id = None
+    p.matrix = {"provider": ["claude", "regex"]}
+    await store.save(p)
+
+    reloaded = await store.get("pg-ptype")
+    assert reloaded.pipeline_type == "viz"
+    assert reloaded.matrix == {"provider": ["claude", "regex"]}
+    assert reloaded.output_id is None
+    await store.delete("pg-ptype")

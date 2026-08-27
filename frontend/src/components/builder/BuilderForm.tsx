@@ -117,12 +117,14 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
     });
   };
 
-  // Neither quality nor eval pipelines write anywhere: a quality run
-  // produces a report, an eval run produces a score. Both must skip the
-  // destination requirement or they cannot be saved at all.
+  // None of quality, eval or viz writes anywhere: a quality run produces a
+  // report, an eval run a score, a viz pipeline feeds a dashboard tile off
+  // preview. All three must skip the destination requirement or they cannot
+  // be saved at all. Mirrors `pipeline_requires_output` on the backend.
   const isQuality = pipeline.pipeline_type === "quality";
   const isEval = pipeline.pipeline_type === "eval";
-  const writesNowhere = isQuality || isEval;
+  const isViz = pipeline.pipeline_type === "viz";
+  const writesNowhere = isQuality || isEval || isViz;
 
   const save = async () => {
     const errors = validatePipelineForm({
@@ -177,13 +179,14 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
       </div>
       <Field
         label="Pipeline type"
-        hint="Transform writes output data; Quality asserts conditions on it; Eval scores extraction against a labeled corpus."
+        hint="Transform writes output data; Quality asserts conditions on it; Eval scores extraction against a labeled corpus; Visualize feeds a dashboard tile and writes nothing."
       >
-        <Segmented<"transform" | "quality" | "eval">
+        <Segmented<"transform" | "quality" | "eval" | "viz">
           options={[
             { value: "transform", label: "Transform" },
             { value: "quality", label: "Quality" },
             { value: "eval", label: "Eval" },
+            { value: "viz", label: "Visualize" },
           ]}
           value={pipeline.pipeline_type ?? "transform"}
           onChange={(v) =>
