@@ -831,9 +831,17 @@
   margin-left: auto;
   margin-right: auto;
 }
+/* In #unstructured the player is followed by the capability tiles rather
+   than by the end of the section, so it needs a bottom gap the hero player
+   never did — without it the frame's shadow bleeds straight into the grid. */
+.mkt-root .demo-frame + .steps-grid {
+  margin-top: 36px;
+}
+
 @media (max-width: 620px) {
   .mkt-root .demo { padding: 8px 0 36px; }
   .mkt-root .demo-frame { border-radius: 10px; padding: 3px; margin-top: 20px; }
+  .mkt-root .demo-frame + .steps-grid { margin-top: 20px; }
 }
 
 /* Custom video player */

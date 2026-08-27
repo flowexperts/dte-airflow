@@ -8,7 +8,19 @@ function fmt(s: number) {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-export function DemoPlayer() {
+type DemoPlayerProps = {
+  /** Basename under /marketing, without extension. `.mp4`, `.webm` and
+   *  `-poster.jpg` are derived from it. */
+  src?: string;
+  /** Accessible label — there are two players on the page now, and
+   *  "video" twice tells a screen-reader user nothing. */
+  label?: string;
+};
+
+export function DemoPlayer({
+  src = "dte-demo",
+  label = "Product demo",
+}: DemoPlayerProps = {}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(true);
@@ -100,11 +112,14 @@ export function DemoPlayer() {
         loop
         playsInline
         preload="metadata"
-        poster="/marketing/dte-demo-poster.png"
+        poster={`/marketing/${src}-poster.jpg`}
+        aria-label={label}
         onClick={togglePlay}
       >
-        <source src="/marketing/dte-demo.mp4" type="video/mp4" />
-        <source src="/marketing/dte-demo.webm" type="video/webm" />
+        {/* webm first: a browser takes the first source it can play, and VP9
+            is smaller than the H.264 fallback. Safari skips to the mp4. */}
+        <source src={`/marketing/${src}.webm`} type="video/webm" />
+        <source src={`/marketing/${src}.mp4`} type="video/mp4" />
       </video>
 
       <div className={`dplayer-controls ${showControls ? "visible" : ""}`}>
