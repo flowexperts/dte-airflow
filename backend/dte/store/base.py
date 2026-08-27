@@ -8,6 +8,7 @@ if TYPE_CHECKING:
         EvalSet,
         EvalSetBase,
     )
+    from dte.models.dashboard import Dashboard, DashboardBase
     from dte.models.pipeline import (
         Connection,
         ConnectionBase,
@@ -111,6 +112,20 @@ class LookupTableStore(Protocol):
     async def get(self, id: str) -> "LookupTable | None": ...
     async def save(self, lookup: "LookupTableBase | LookupTable") -> None: ...
     async def list(self, limit: int = 50, offset: int = 0) -> "list[LookupTable]": ...
+    async def delete(self, id: str) -> bool: ...
+
+
+@runtime_checkable
+class DashboardStore(Protocol):
+    """Dashboards are layout only — no run, no trigger, no execute.
+
+    A tile's rows come from the pipeline preview endpoint, so this store
+    never touches the engine. Same four verbs as every other entity store.
+    """
+
+    async def get(self, id: str) -> "Dashboard | None": ...
+    async def save(self, dashboard: "DashboardBase | Dashboard") -> None: ...
+    async def list(self, limit: int = 50, offset: int = 0) -> "list[Dashboard]": ...
     async def delete(self, id: str) -> bool: ...
 
 

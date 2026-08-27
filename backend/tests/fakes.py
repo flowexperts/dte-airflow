@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from dte.models.dashboard import Dashboard, DashboardBase
 from dte.models.eval import (
     EvalExample, EvalExampleBase,
     EvalSet, EvalSetBase,
@@ -438,6 +439,49 @@ class FakeDestinationStore:
             del self._data[id]
             return True
         return False
+
+
+class FakeDashboardStore:
+    """In-memory dashboard store for tests. Stores typed `Dashboard` rows."""
+
+    def __init__(self):
+        self._data: dict[str, Dashboard] = {}
+
+    async def get(self, id: str) -> Dashboard | None:
+        return self._data.get(id)
+
+    async def save(self, dashboard: "DashboardBase | Dashboard") -> None:
+        row = Dashboard(
+            id=dashboard.id,
+            name=dashboard.name,
+            description=dashboard.description,
+            tiles=[
+                t if isinstance(t, dict) else t.model_dump(mode="json")
+                for t in (dashboard.tiles or [])
+            ],
+            tenant_id=getattr(dashboard, "tenant_id", "default"),
+        )
+        # UNIQUE(tenant_id, name) — mirrors the DB constraint in migration 038.
+        for other in self._data.values():
+            if other.id == row.id:
+                continue
+            if other.tenant_id == row.tenant_id and other.name == row.name:
+                raise ValueError(
+                    f"Dashboard name '{row.name}' already exists for tenant '{row.tenant_id}'"
+                )
+        existing = self._data.get(row.id)
+        row.created_at = existing.created_at if existing else _utcnow()
+        row.updated_at = _utcnow()
+        self._data[row.id] = row
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Dashboard]:
+        items = sorted(
+            self._data.values(), key=lambda d: d.created_at or _utcnow(), reverse=True
+        )
+        return items[offset : offset + limit]
+
+    async def delete(self, id: str) -> bool:
+        return self._data.pop(id, None) is not None
 
 
 class FakeLookupTableStore:

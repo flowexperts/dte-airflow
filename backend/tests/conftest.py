@@ -28,6 +28,7 @@ from dte.api.deps import (
     get_role_store,
     get_current_user,
     get_current_tenant_id,
+    get_dashboard_store,
     get_lookup_table_store,
     get_eval_example_store,
     get_eval_set_store,
@@ -47,6 +48,7 @@ from tests.fakes import (
     FakeConnectionStore,
     FakeRoleStore,
     FakeUserStore,
+    FakeDashboardStore,
     FakeLookupTableStore,
     FakeEvalExampleStore,
     FakeEvalSetStore,
@@ -132,6 +134,7 @@ def fake_stores():
         FakeScheduleStore(),
     )
     es, ee = FakeEvalSetStore(), FakeEvalExampleStore()
+    dash = FakeDashboardStore()
     # Every test gets a `local_fs` connection pre-seeded — most sources /
     # destinations use it, tests don't have to re-declare it every time.
     c._data["local_fs"] = _make_local_fs_connection()
@@ -144,6 +147,7 @@ def fake_stores():
     app.dependency_overrides[get_user_store] = lambda: u
     app.dependency_overrides[get_role_store] = lambda: role_store
     app.dependency_overrides[get_lookup_table_store] = lambda: lt
+    app.dependency_overrides[get_dashboard_store] = lambda: dash
     app.dependency_overrides[get_pipeline_revision_store] = lambda: pr
     app.dependency_overrides[get_schedule_store] = lambda: sch
     app.dependency_overrides[get_eval_set_store] = lambda: es
@@ -162,6 +166,7 @@ def fake_stores():
         "user": u,
         "role": role_store,
         "lookup_table": lt,
+        "dashboard": dash,
         "pipeline_revision": pr,
         "schedule": sch,
         "eval_set": es,
