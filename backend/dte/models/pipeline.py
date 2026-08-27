@@ -1382,6 +1382,16 @@ class PipelineBase(SQLModel):
     Identity: `id` is server-generated (UUID4 by default). `name` is the
     editable, unique-per-tenant label — required from day one.
     """
+
+    # Same guard every other named entity carries. Pipelines were the one
+    # holdout, so `{"id": ""}` wrote an empty-string primary key: the row
+    # listed fine and was then unreachable, because `/api/pipelines/` is not
+    # a route and `DELETE` on it 307s. Only SQL could remove it. It stayed
+    # hidden because the builder strips `id` before posting, so it
+    # reproduced only from the API.
+    _generate_blank_id = model_validator(mode="before")(
+        classmethod(lambda cls, data: _blank_id_means_generate(data))
+    )
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str
     sources: list[SourceTableRef] = SMField(default_factory=list)

@@ -97,3 +97,32 @@ class TestVizRoundTrips:
         ))
         assert r.status_code == 200, r.text
         assert _run(fake_stores["pipeline"].get("convert-me")).pipeline_type == "viz"
+
+
+class TestBlankIdMeansGenerate:
+    """`{"id": ""}` must mean "server, name it" — as it already does for
+    Source, Destination, LookupTable and Dashboard.
+
+    Without the validator the empty string is written as the primary key.
+    The row then exists and is listed, but is unreachable: `/api/pipelines/`
+    is not a route, so `DELETE /api/pipelines/` 307s and the only way to
+    remove it is SQL. Nothing in the UI shows it, because the builder strips
+    `id` before posting — so this only reproduces from the API.
+    """
+
+    def test_blank_id_gets_a_generated_one(self, client, fake_stores):
+        r = client.post("/api/pipelines", json=_body(id=""))
+        assert r.status_code == 200, r.text
+        new_id = r.json()["id"]
+        assert new_id, "server must generate an id, not accept the blank"
+        assert _run(fake_stores["pipeline"].get(new_id)) is not None
+
+    def test_whitespace_id_gets_a_generated_one(self, client):
+        r = client.post("/api/pipelines", json=_body(id="   "))
+        assert r.status_code == 200, r.text
+        assert r.json()["id"].strip()
+
+    def test_an_explicit_id_is_still_honoured(self, client, fake_stores):
+        r = client.post("/api/pipelines", json=_body(id="my-own-id"))
+        assert r.status_code == 200, r.text
+        assert r.json()["id"] == "my-own-id"
