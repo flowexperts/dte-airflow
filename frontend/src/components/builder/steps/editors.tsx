@@ -1113,14 +1113,17 @@ function RecipeSlot({
  * refuse. Pick a shape, fill it, insert, keep editing by hand.
  */
 function ExpressionRecipes({
+  open,
+  onClose,
   onInsert,
   hasText,
 }: {
+  open: boolean;
+  onClose: () => void;
   onInsert: (sql: string) => void;
   hasText: boolean;
 }) {
   const fields = useStepFields();
-  const [open, setOpen] = useState(false);
   const [id, setId] = useState<string>("");
   const [args, setArgs] = useState<Record<string, string>>({});
 
@@ -1143,32 +1146,13 @@ function ExpressionRecipes({
     ];
   });
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="self-start font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-accent transition-colors"
-      >
-        + build one
-      </button>
-    );
-  }
+  if (!open) return null;
 
   return (
     <div className="grid gap-2 border border-border rounded-[var(--radius)] bg-surface p-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
-          common expressions
-        </span>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="text-[11.5px] text-subtle hover:text-text transition-colors"
-        >
-          close
-        </button>
-      </div>
+      <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+        common expressions
+      </span>
 
       <Dropdown value={id} onChange={pick} options={options} placeholder="— pick a shape —" />
 
@@ -1200,7 +1184,7 @@ function ExpressionRecipes({
                 type="button"
                 onClick={() => {
                   onInsert(sql);
-                  setOpen(false);
+                  onClose();
                 }}
                 className="shrink-0 px-2.5 py-1.5 text-[12.5px] font-medium rounded-[var(--radius)] bg-[color:var(--accent-tint)] text-accent hover:brightness-110 transition"
               >
@@ -1215,6 +1199,7 @@ function ExpressionRecipes({
 }
 
 export function MapExpressionEditor({ step, set }: { step: StepShape; set: Setter }) {
+  const [recipesOpen, setRecipesOpen] = useState(false);
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-2 gap-3">
@@ -1236,21 +1221,40 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
           </select>
         </Field>
       </div>
-      <Field label="Expression" hint="SQL expression">
+      <Field
+        label={
+          <span className="flex items-center gap-3">
+            Expression
+            {/* On the label row, not under the box: this is how you start an
+                expression, so it has to be visible before you have typed
+                one — below the textarea it sat past the fold. */}
+            <button
+              type="button"
+              onClick={() => setRecipesOpen((o) => !o)}
+              className="text-accent hover:brightness-125 transition"
+            >
+              {recipesOpen ? "− close builder" : "+ build one"}
+            </button>
+          </span>
+        }
+        hint="SQL expression"
+      >
         <Textarea
           value={(step.expr as string) ?? ""}
           onChange={(e) => set({ expr: e.target.value })}
           placeholder="date_trunc('week', created_at)"
         />
-        <VariablePickerHint
-          onInsert={(token) => set({ expr: ((step.expr as string) ?? "") + token })}
-        />
         <ExpressionRecipes
+          open={recipesOpen}
+          onClose={() => setRecipesOpen(false)}
           hasText={!!(step.expr as string)?.trim()}
           onInsert={(sql) => {
             const cur = ((step.expr as string) ?? "").trim();
             set({ expr: cur ? `${cur} ${sql}` : sql });
           }}
+        />
+        <VariablePickerHint
+          onInsert={(token) => set({ expr: ((step.expr as string) ?? "") + token })}
         />
         <DialectReadback />
       </Field>
