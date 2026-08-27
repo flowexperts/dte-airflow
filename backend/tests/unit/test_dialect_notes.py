@@ -12,7 +12,7 @@ from dte.compiler.dialect_notes import execution_dialect_of, notes_for, transpil
 
 def test_date_diff_years_is_flagged_on_postgres():
     notes = notes_for("date_diff('year', dob, current_date)", "postgres")
-    assert [n.code for n in notes] == ["date_diff_calendar_vs_anniversary"]
+    assert [n.code for n in notes] == ["date_diff_unit_semantics"]
     assert "duckdb" in notes[0].message.lower()
 
 
@@ -85,3 +85,33 @@ def test_blank_expression_is_inert(expr):
 def test_raw_sql_fragment(step, expected):
     from dte.compiler.dialect_notes import raw_sql_fragment
     assert raw_sql_fragment(step) == expected
+
+
+# --- date_diff unit semantics, measured per dialect (plan 063) -------------
+# The recipe picker offers every unit, so every unit's transpilation was
+# measured. Two dialects drop the unit on the floor and return days.
+
+
+def test_date_diff_weeks_returns_days_on_sqlite():
+    notes = notes_for("date_diff('week', a, b)", "sqlite")
+    assert [n.code for n in notes] == ["date_diff_unit_semantics"]
+    assert "days" in notes[0].message
+
+
+def test_date_diff_every_unit_returns_days_on_mysql():
+    for unit in ("week", "month", "quarter", "year"):
+        assert notes_for(f"date_diff('{unit}', a, b)", "mysql"), unit
+
+
+def test_date_diff_days_is_exact_on_mysql():
+    """MySQL's DATEDIFF is days, so a day-unit call is the one honest case."""
+    assert notes_for("date_diff('day', a, b)", "mysql") == []
+
+
+def test_date_diff_months_is_approximate_on_sqlite():
+    notes = notes_for("date_diff('month', a, b)", "sqlite")
+    assert "30" in notes[0].message
+
+
+def test_date_diff_quarters_flagged_on_postgres():
+    assert notes_for("date_diff('quarter', a, b)", "postgres")

@@ -45,25 +45,51 @@ class DialectNote:
     message: str
 
 
-def _date_diff_note(node: exp.Expression, dialect: str) -> DialectNote | None:
-    """`date_diff('year', ...)`: calendar boundaries vs whole elapsed years.
+# (dialect, unit) → what that engine actually computes, measured by
+# transpiling every unit the recipe picker offers. Two engines drop the unit
+# entirely and hand back days, which is a wrong number rather than a
+# different convention. "*" applies to every unit except day.
+_DATE_DIFF_MEASURED = {
+    ("mysql", "*"): "ignores the unit and returns whole days",
+    ("sqlite", "week"): "returns whole days, not weeks",
+    ("sqlite", "quarter"): "returns whole days, not quarters",
+    ("sqlite", "month"): "divides elapsed days by 30, so long months drift",
+    ("sqlite", "year"): "divides elapsed days by 365, so leap years drift",
+}
 
-    Measured, dob=1990-12-31 as of 2026-08-25: DuckDB 36, Postgres 35.
+# Units where an engine that does respect the unit still disagrees with
+# DuckDB: DuckDB counts boundaries crossed, AGE()-style arithmetic counts
+# whole elapsed periods. Days and weeks are unambiguous.
+_ANNIVERSARY_UNITS = ("year", "month", "quarter")
+
+
+def _date_diff_note(node: exp.Expression, dialect: str) -> DialectNote | None:
+    """What `date_diff(unit, …)` means on *dialect*, where that differs.
+
+    Measured, dob=1990-12-31 as of 2026-08-25: DuckDB 36 years, Postgres 35.
     DuckDB counts year boundaries crossed; sqlglot renders Postgres as
     `EXTRACT(year FROM AGE(...))`, which only counts the year once the
-    anniversary passes. Days and weeks are unambiguous, so only year and
-    month are flagged.
+    anniversary passes. SQLite and MySQL are worse — see the table above.
     """
     unit = node.args.get("unit")
-    name = (unit.name if unit is not None else "").strip("'\"").lower()
-    if name not in ("year", "month"):
+    name = (unit.name if unit is not None else "").strip("\'\"").lower()
+    if not name:
         return None
+    detail = _DATE_DIFF_MEASURED.get((dialect, name))
+    if detail is None and name != "day":
+        detail = _DATE_DIFF_MEASURED.get((dialect, "*"))
+    if detail is None:
+        if name not in _ANNIVERSARY_UNITS:
+            return None
+        detail = (
+            f"counts calendar {name} boundaries on duckdb but whole elapsed "
+            f"{name}s"
+        )
     return DialectNote(
-        code="date_diff_calendar_vs_anniversary",
+        code="date_diff_unit_semantics",
         message=(
-            f"date_diff('{name}', …) counts calendar {name} boundaries on "
-            f"duckdb but whole elapsed {name}s on {dialect} — the same row "
-            "can produce a different number. For an age or eligibility "
+            f"date_diff('{name}', …) {detail} on {dialect} — the same two "
+            "dates can produce a different number. For an age or eligibility "
             "check, decide which one you mean."
         ),
     )

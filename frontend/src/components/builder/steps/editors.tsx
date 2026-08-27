@@ -22,6 +22,14 @@ import { cn } from "@/lib/cn";
 import type { StepShape, GroupByEntry, DatePart, DataModelField } from "./types";
 import { LookupTablePicker } from "../LookupTablePicker";
 import { SYSTEM_VARS, type SystemVar } from "@/lib/system-vars";
+import { quoteIdent, quoteString, safeLiteral } from "@/lib/sql-literal";
+import {
+  RECIPES,
+  buildRecipe,
+  recipeById,
+  recipeDefaults,
+  type Recipe,
+} from "@/lib/expression-recipes";
 
 /** Compact λ-labelled dropdown that writes a `{{sysvar}}` sentinel into a
  *  filter value cell. Rendered alongside date/timestamp inputs where the
@@ -299,36 +307,6 @@ const OPS_WITHOUT_VALUE = new Set<FilterOp>(["IS NULL", "IS NOT NULL"]);
  *  individually: `order.amount` → `"order"."amount"`.  A single quoted
  *  `"order.amount"` would ask DuckDB for a top-level column literally
  *  named `order.amount`, which is not what struct paths mean. */
-function quoteIdent(name: string): string {
-  return name
-    .split(".")
-    .map((seg) => `"${seg.replace(/"/g, '""')}"`)
-    .join(".");
-}
-
-/** DuckDB string literal quote — wraps in '' and escapes internal ' as ''. */
-function quoteString(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
-/**
- * Turn a value into a safe SQL literal.
- * Bare numbers (int or float) pass through as-is; everything else is quoted as string.
- * Never concatenates raw user input into the SQL string without going through here.
- */
-function safeLiteral(v: string): string {
-  const trimmed = v.trim();
-  if (trimmed === "") return "''";
-  // {{params.X}} / {{today}} placeholders: quote so the resolved value
-  // (ISO date/timestamp string) lands as a valid SQL literal. DuckDB
-  // implicitly casts against the column type. Numeric comparisons still
-  // work because DuckDB coerces string → number.
-  if (/^\{\{[\w.]+\}\}$/.test(trimmed)) return `'${trimmed}'`;
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
-  if (/^(true|false)$/i.test(trimmed)) return trimmed.toUpperCase();
-  return quoteString(trimmed);
-}
-
 /** Map a schema-reported column type (ibis/DuckDB) to a native <input>
  *  type so date/timestamp filter cells get a picker. Types we don't
  *  recognise fall back to "text" — safe for numerics + strings, which the
@@ -1066,6 +1044,176 @@ export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter })
   );
 }
 
+/** Live SQL preview shared by the recipe picker and the Filter Basic tab —
+ *  same block, same tone, so "what this will become" reads the same
+ *  everywhere it appears. */
+function RecipeSlot({
+  arg,
+  value,
+  onChange,
+  fields,
+}: {
+  arg: Recipe["args"][number];
+  value: string;
+  onChange: (v: string) => void;
+  fields: SchemaField[];
+}) {
+  if (arg.kind === "choice") {
+    return (
+      <Dropdown
+        value={value}
+        onChange={onChange}
+        options={arg.options.map((o) => ({ value: o.value, label: o.label }))}
+      />
+    );
+  }
+  if (arg.kind === "field" || arg.kind === "valueref") {
+    return (
+      <FieldPicker
+        value={value}
+        onChange={onChange}
+        options={fields}
+        variant="tree"
+        placeholder={arg.kind === "valueref" ? (arg.placeholder ?? "field or value") : "field"}
+      />
+    );
+  }
+  if (arg.kind === "dateref") {
+    // A field, plus the run date — the second date is a column about as
+    // often as it is "now", and {{today}} is not something to expect
+    // anyone to type into a field picker.
+    return (
+      <Dropdown
+        value={value}
+        onChange={onChange}
+        options={[
+          { value: "@today", label: "today (run date)" },
+          { kind: "divider" as const },
+          ...fields.map((f) => ({ value: f.name, label: f.name, meta: f.type })),
+        ]}
+      />
+    );
+  }
+  return (
+    <Input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={arg.kind === "number" ? arg.fallback : (arg.placeholder ?? "")}
+      inputMode={arg.kind === "number" ? "decimal" : undefined}
+    />
+  );
+}
+
+/**
+ * Fill-in-the-slots builder for the expression box.
+ *
+ * Generates text into the same `expr` the textarea owns — nothing here is
+ * persisted and nothing round-trips back, which is deliberate: the fragment
+ * is the artifact, and a mode that had to re-parse it would either lie or
+ * refuse. Pick a shape, fill it, insert, keep editing by hand.
+ */
+function ExpressionRecipes({
+  onInsert,
+  hasText,
+}: {
+  onInsert: (sql: string) => void;
+  hasText: boolean;
+}) {
+  const fields = useStepFields();
+  const [open, setOpen] = useState(false);
+  const [id, setId] = useState<string>("");
+  const [args, setArgs] = useState<Record<string, string>>({});
+
+  const recipe = id ? recipeById(id) : undefined;
+  const sql = recipe ? buildRecipe(recipe, args) : "";
+
+  const pick = (next: string) => {
+    setId(next);
+    const r = recipeById(next);
+    setArgs(r ? recipeDefaults(r) : {});
+  };
+
+  // Grouped, with the group name as the right-hand meta on its first row —
+  // enough to scan by category without a nested menu.
+  const options = RECIPES.flatMap((r, i) => {
+    const first = i === 0 || RECIPES[i - 1]!.group !== r.group;
+    return [
+      ...(first && i > 0 ? [{ kind: "divider" as const }] : []),
+      { value: r.id, label: r.label, meta: first ? r.group : undefined },
+    ];
+  });
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="self-start font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-accent transition-colors"
+      >
+        + build one
+      </button>
+    );
+  }
+
+  return (
+    <div className="grid gap-2 border border-border rounded-[var(--radius)] bg-surface p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+          common expressions
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-[11.5px] text-subtle hover:text-text transition-colors"
+        >
+          close
+        </button>
+      </div>
+
+      <Dropdown value={id} onChange={pick} options={options} placeholder="— pick a shape —" />
+
+      {recipe && (
+        <>
+          <div className="flex flex-wrap items-end gap-2">
+            {recipe.args.map((arg) => (
+              <Field
+                key={arg.key}
+                label={arg.label}
+                className="basis-[150px] grow min-w-0"
+              >
+                <RecipeSlot
+                  arg={arg}
+                  value={args[arg.key] ?? ""}
+                  onChange={(v) => setArgs((prev) => ({ ...prev, [arg.key]: v }))}
+                  fields={fields}
+                />
+              </Field>
+            ))}
+          </div>
+          <p className="text-[11.5px] text-subtle">{recipe.note}</p>
+          {sql && (
+            <div className="flex items-center gap-2">
+              <code className="flex-1 min-w-0 font-mono text-[12px] text-text bg-bg border border-border rounded px-2 py-1.5 overflow-x-auto whitespace-pre">
+                {sql}
+              </code>
+              <button
+                type="button"
+                onClick={() => {
+                  onInsert(sql);
+                  setOpen(false);
+                }}
+                className="shrink-0 px-2.5 py-1.5 text-[12.5px] font-medium rounded-[var(--radius)] bg-[color:var(--accent-tint)] text-accent hover:brightness-110 transition"
+              >
+                {hasText ? "Append" : "Insert"}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function MapExpressionEditor({ step, set }: { step: StepShape; set: Setter }) {
   return (
     <div className="grid gap-3">
@@ -1096,6 +1244,13 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
         />
         <VariablePickerHint
           onInsert={(token) => set({ expr: ((step.expr as string) ?? "") + token })}
+        />
+        <ExpressionRecipes
+          hasText={!!(step.expr as string)?.trim()}
+          onInsert={(sql) => {
+            const cur = ((step.expr as string) ?? "").trim();
+            set({ expr: cur ? `${cur} ${sql}` : sql });
+          }}
         />
         <DialectReadback />
       </Field>
