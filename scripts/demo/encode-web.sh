@@ -1,20 +1,46 @@
 #!/usr/bin/env bash
 # encode-web.sh <webm-glob> <out-basename> [poster-timestamp] [speed]
-#   e.g. ./encode-web.sh 'out/webm/core-join/*.webm' out/web/dte-demo 112
-#        ./encode-web.sh 'out/webm/build/*.webm' out/web/dte-demo 8 1.5
+#   e.g. ./encode-web.sh 'out/webm/build/*.webm' out/web/dte-demo 12 2
 #
 # Produces the three files the marketing site's <video> needs:
-#   <out>.mp4          H.264, +faststart   (Safari, and every crawler)
-#   <out>.webm         VP9                 (smaller where it is supported)
-#   <out>-poster.jpg   first painted frame (what shows before autoplay starts)
+#   <out>.mp4          H.264 CRF 20, +faststart — the one nearly everyone gets
+#   <out>.webm         VP9 fallback for builds without H.264
+#   <out>-poster.jpg   a frame from `speed`-adjusted time
+#
+# The mp4 is listed FIRST in the player, which is the opposite of the usual
+# advice and is deliberate. "webm first because VP9 is smaller" does not hold
+# on this content: at quality matching the CRF-20 mp4, VP9 came out LARGER on
+# the unstructured clip (3.3M vs 3.0M), and the CRF that made it smaller (32)
+# is visibly softer. Since <source> order decides, webm-first shipped the
+# worse file to every Chrome user while Safari got the better one.
+#
+# The webm still earns its place as a fallback: Chromium builds without
+# proprietary codecs cannot play H.264 at all — Playwright's bundled Chromium
+# is one, which is also why nothing can verify mp4 playback locally. Browsers
+# only fetch the first source they can play, so the fallback costs repo bytes
+# and no user bytes.
 #
 # Different job from encode.sh, which makes an mp4 + a fat GIF for reviewing
-# a take. These are downscaled to 1440 wide to match the assets already in
-# site/public/marketing/ and tuned for a page that autoplays them on loop.
+# a take.
+#
+# Quality notes — the source is what limits this. Playwright captures VP8 at
+# roughly 470kbps, so re-encoding can only avoid ADDING loss, never recover
+# detail. Three things follow from that:
+#
+#   * No scaling. This used to resample 1512 -> 1440 for no reason at all;
+#     both dimensions are already even, so H.264 is happy with the native
+#     size and the resampler never runs. Biggest single win here.
+#   * Low CRF. 20/28 rather than 26/34 — near-transparent against a source
+#     this soft, and the halved duration at 2x pays for the bitrate.
+#   * Slow presets. This runs a handful of times, not in CI.
+#
+# Speed is applied with setpts. At 2x a 25fps source yields 25 *distinct*
+# frames per output second (every second source frame), so playback stays as
+# smooth as the original — no interpolation needed.
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
-  echo "usage: $0 <webm-glob> <out-basename> [poster-timestamp]" >&2
+  echo "usage: $0 <webm-glob> <out-basename> [poster-timestamp] [speed]" >&2
   exit 2
 fi
 
@@ -28,31 +54,31 @@ fi
 SRC="${FILES[0]}"
 mkdir -p "$(dirname "$OUT")"
 
-# -2 rather than -1 on the height: H.264 needs even dimensions, and a source
-# height of 862 scales to an odd number often enough to matter.
-SCALE="scale=1440:-2:flags=lanczos"
-# Speed-up is applied here rather than by re-recording faster: the recording
-# is paced so a person can follow each click, and setpts keeps that motion
-# smooth while shortening the whole thing uniformly. The raw webm under
-# out/webm/ is never touched, so a different pass can start from the original.
+VF=""
 if [[ "$SPEED" != "1" ]]; then
-  SCALE="setpts=PTS/${SPEED},${SCALE}"
+  VF="-vf setpts=PTS/${SPEED}"
   POSTER_AT=$(python3 -c "print(${POSTER_AT}/${SPEED})")
 fi
 
-ffmpeg -y -v error -i "$SRC" -vf "$SCALE" \
-  -c:v libx264 -crf 26 -preset slow -pix_fmt yuv420p -an \
+# shellcheck disable=SC2086
+ffmpeg -y -v error -i "$SRC" $VF \
+  -c:v libx264 -crf 20 -preset veryslow -pix_fmt yuv420p -an \
   -movflags +faststart "${OUT}.mp4"
 
-ffmpeg -y -v error -i "$SRC" -vf "$SCALE" \
-  -c:v libvpx-vp9 -crf 34 -b:v 0 -row-mt 1 -an "${OUT}.webm"
+# CRF 32, not 20: this is the fallback path, and 32 is where VP9 finally
+# beats the mp4 on size (28 and 30 both came out larger).
+# shellcheck disable=SC2086
+ffmpeg -y -v error -i "$SRC" $VF \
+  -c:v libvpx-vp9 -crf 32 -b:v 0 -deadline good -cpu-used 1 \
+  -row-mt 1 -tile-columns 2 -an "${OUT}.webm"
 
-# JPEG, not PNG: the poster is the landing page's LCP element, and a
-# screenshot-like frame encodes to ~70KB as JPEG versus ~400KB as PNG. There
-# is no alpha here to preserve.
-ffmpeg -y -v error -ss "$POSTER_AT" -i "$SRC" -vf "$SCALE" \
-  -frames:v 1 -q:v 3 "${OUT}-poster.jpg"
+ffmpeg -y -v error -ss "$POSTER_AT" -i "$SRC" \
+  -frames:v 1 -q:v 2 "${OUT}-poster.jpg"
 
-echo "MP4:    ${OUT}.mp4          ($(du -h "${OUT}.mp4" | cut -f1))"
-echo "WEBM:   ${OUT}.webm         ($(du -h "${OUT}.webm" | cut -f1))"
+probe() { ffprobe -v error -select_streams v:0 \
+  -show_entries stream=width,height -show_entries format=duration \
+  -of csv=p=0:nk=1 "$1" | tr '\n' ' '; }
+
+echo "MP4:    ${OUT}.mp4          ($(du -h "${OUT}.mp4" | cut -f1))  $(probe "${OUT}.mp4")"
+echo "WEBM:   ${OUT}.webm         ($(du -h "${OUT}.webm" | cut -f1))  fallback only"
 echo "POSTER: ${OUT}-poster.jpg   ($(du -h "${OUT}-poster.jpg" | cut -f1))"

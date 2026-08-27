@@ -116,10 +116,13 @@ export function DemoPlayer({
         aria-label={label}
         onClick={togglePlay}
       >
-        {/* webm first: a browser takes the first source it can play, and VP9
-            is smaller than the H.264 fallback. Safari skips to the mp4. */}
-        <source src={`/marketing/${src}.webm`} type="video/webm" />
+        {/* mp4 FIRST, which is the opposite of the usual advice — see
+            scripts/demo/encode-web.sh. Webm-first shipped a softer VP9 file
+            to Chrome while Safari got the good H.264 one. The webm stays as
+            a fallback for Chromium builds without proprietary codecs; a
+            browser only fetches the first source it can play. */}
         <source src={`/marketing/${src}.mp4`} type="video/mp4" />
+        <source src={`/marketing/${src}.webm`} type="video/webm" />
       </video>
 
       <div className={`dplayer-controls ${showControls ? "visible" : ""}`}>

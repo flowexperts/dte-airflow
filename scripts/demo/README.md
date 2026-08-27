@@ -4,7 +4,7 @@ Playwright-driven browser recordings of the DTE product for marketing use.
 
 | script | asset | length | what it shows |
 |---|---|---|---|
-| `record-build.mjs` | `out/web/dte-demo.*` | ~2:00 @1.5x | **The site hero.** A pipeline built from an empty form: name, two sources, three tables, two joins, a derived column, Auto-map, run. |
+| `record-build.mjs` | `out/web/dte-demo.*` | 1:28 @2x | **The site hero.** A pipeline built from an empty form: name, two sources, three tables, two joins, a derived column, Auto-map, run. |
 | `record-core-join.mjs` | `out/demo-core-join.mp4` | ~3:00 | The flagship. Two sources, five tables, four joins, derived columns, Auto-map onto a drifted mart schema, a 27,691-row run. |
 | `record-unstructured.mjs` | `out/demo-unstructured.mp4` | ~1:40 | PDF invoices → extract → structure → **Postgres**, then joined against the order system to surface two that disagree. |
 | `record-cold-email.mjs` | `out/demo-cold-email-90s.mp4` | ~1:12 | The paste-into-a-cold-email cut. Same world, no build, hard 95s budget. |
@@ -90,14 +90,35 @@ the options. A menu that opens and closes in 200ms tells nobody what the
 choices were, and in a builder demo the choices are half the point.
 
 This costs time on purpose. `record-build.mjs` runs ~3:00 and is published
-at 1.5x via the encoder's speed argument:
+at 2x via the encoder's speed argument:
 
 ```bash
-./encode-web.sh 'out/webm/build/*.webm' out/web/dte-demo 12 1.5
+./encode-web.sh 'out/webm/build/*.webm' out/web/dte-demo 12 2
 ```
 
 Speeding up at encode time rather than recording faster keeps the motion
-smooth and leaves the original take in `out/webm/` for a different pass.
+smooth and leaves the original take in `out/webm/` for a different pass. At
+2x a 25fps source still yields 25 *distinct* frames per output second, so
+nothing stutters — no interpolation involved.
+
+## Video quality
+
+The ceiling is the source: Playwright captures VP8 at ~470kbps, so encoding
+can only avoid adding loss, never recover detail. What that buys:
+
+- **No scaling.** `encode-web.sh` used to resample 1512 -> 1440 for no reason.
+  Both dimensions are already even, so H.264 takes the native size and the
+  resampler never runs. Biggest single win.
+- **CRF 20**, `-preset veryslow`. Near-transparent against a source this soft.
+- **mp4 listed first**, webm second — the opposite of the usual advice, for
+  reasons documented at the top of `encode-web.sh`. Short version: VP9 at
+  matching quality was *larger* here, and the CRF that made it smaller was
+  visibly softer, so webm-first served the worse file to Chrome.
+
+Note that **Playwright's bundled Chromium cannot decode H.264 at all** — it
+is the open-source build. Local verification therefore always exercises the
+webm fallback, never the mp4 that real browsers will actually play. Check the
+mp4 in a real browser before publishing.
 
 ## Knobs
 
