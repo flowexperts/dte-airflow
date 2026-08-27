@@ -21,20 +21,17 @@
  *   ./encode.sh 'out/webm/user-flow/*.webm' out/demo-user-flow
  */
 
-import { chromium, request as pwRequest } from "@playwright/test";
-import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import {
+  BASE_URL, API_URL, DWELL, TIMING,
+  dwell, log, typeInto, inputByLabel, caption, say, apiLogin,
+  startRecording, finishRecording, gotoEdit, addStep, savePipeline,
+  removeStep, hoverPreview, pickFieldTree, fieldWrap,
+} from "./lib.mjs";
 
-// ── knobs ──────────────────────────────────────────────────────────────────
-const BASE_URL = process.env.DEMO_BASE_URL ?? "http://localhost:3000";
-const API_URL = process.env.DEMO_API_URL ?? "http://localhost:8001";
 const FIXTURE_DIR = "/tmp/dte-samples";
 const OUT_DIR = "out/webm/user-flow";
-// Deliberately slow — this is a demo, not a test.
-const DWELL = { xs: 700, sm: 1200, md: 2000, lg: 3000, xl: 4500, read: 5500 };
-const TYPE_DELAY = 55;
-const CLICK_PAUSE = 350;
-const SLOWMO = 60;
 
 const EMAIL = "admin@admin.com";
 const PASSWORD = "admin";
@@ -66,126 +63,6 @@ const ORDERS = [
   { order_id: "o13", customer_id: "c6", region: "eu", amount: 130, status: "paid" },
   { order_id: "o14", customer_id: "c7", region: "us-east", amount: 780, status: "paid" },
 ];
-
-// ── tiny helpers ───────────────────────────────────────────────────────────
-const dwell = (ms) => new Promise((r) => setTimeout(r, ms));
-const log = (msg) => console.log(`\x1b[36m[demo]\x1b[0m ${msg}`);
-
-async function typeInto(loc, text) {
-  await loc.click();
-  await loc.fill("");
-  await loc.type(text, { delay: TYPE_DELAY });
-}
-
-/**
- * The app's Field component renders <label>…</label> without an htmlFor,
- * so Playwright's getByLabel doesn't associate. Navigate by DOM proximity.
- */
-function fieldWrap(page, labelText) {
-  return page
-    .locator(`label:text-is("${labelText}")`)
-    .first()
-    .locator("xpath=..");
-}
-
-function inputByLabel(page, labelText) {
-  return fieldWrap(page, labelText).locator("input, textarea").first();
-}
-
-async function pickDropdown(page, labelText, optionMatcher) {
-  const trigger = fieldWrap(page, labelText)
-    .locator('button[aria-haspopup="listbox"]')
-    .first();
-  await trigger.click();
-  await dwell(CLICK_PAUSE);
-  const option = page.getByRole("option", { name: optionMatcher }).first();
-  await option.waitFor({ state: "visible", timeout: 8_000 });
-  await option.click();
-  await dwell(CLICK_PAUSE);
-}
-
-async function pickFieldTree(scope, page, placeholder, optionName) {
-  const input = scope.locator(`input[placeholder="${placeholder}"]`).first();
-  await input.click();
-  await input.fill("");
-  await input.type(optionName, { delay: TYPE_DELAY });
-  await dwell(CLICK_PAUSE);
-  const opt = page
-    .getByRole("option", { name: new RegExp(`^${optionName}\\b`, "i") })
-    .first();
-  await opt.waitFor({ state: "visible", timeout: 6_000 });
-  await opt.click();
-  await dwell(CLICK_PAUSE);
-}
-
-// ── caption overlay ────────────────────────────────────────────────────────
-// Injected as an init script so it survives navigations.
-const CAPTION_INIT = `
-  (() => {
-    if (window.__demoCaptionInstalled) return;
-    window.__demoCaptionInstalled = true;
-    const install = () => {
-      if (document.getElementById("__demo-caption")) return;
-      const el = document.createElement("div");
-      el.id = "__demo-caption";
-      el.style.cssText = [
-        "position:fixed",
-        "left:50%",
-        "bottom:32px",
-        "transform:translateX(-50%)",
-        "max-width:900px",
-        "padding:14px 22px",
-        "background:rgba(15,15,20,0.88)",
-        "color:#fff",
-        "font:500 17px/1.35 system-ui,-apple-system,sans-serif",
-        "letter-spacing:0.01em",
-        "border-radius:10px",
-        "box-shadow:0 8px 32px rgba(0,0,0,0.35)",
-        "z-index:2147483647",
-        "opacity:0",
-        "transition:opacity 200ms ease",
-        "pointer-events:none",
-        "text-align:center",
-      ].join(";");
-      document.body.appendChild(el);
-    };
-    if (document.body) install();
-    else document.addEventListener("DOMContentLoaded", install);
-    window.__demoSetCaption = (text) => {
-      install();
-      const el = document.getElementById("__demo-caption");
-      if (!el) return;
-      if (!text) {
-        el.style.opacity = "0";
-        return;
-      }
-      el.textContent = text;
-      el.style.opacity = "1";
-    };
-  })();
-`;
-
-async function caption(page, text) {
-  await page.evaluate((t) => window.__demoSetCaption(t), text ?? "");
-}
-async function say(page, text, ms = DWELL.read) {
-  await caption(page, text);
-  await dwell(ms);
-}
-
-// ── auth ───────────────────────────────────────────────────────────────────
-async function apiLogin(email, password) {
-  const req = await pwRequest.newContext();
-  const r = await req.post(`${API_URL}/api/auth/login`, {
-    data: { email, password },
-  });
-  if (r.status() !== 200) {
-    await req.dispose();
-    throw new Error(`login ${r.status()}: ${await r.text()}`);
-  }
-  const { access_token } = await r.json();
-  return { req, token: access_token };
-}
 
 // ── setup (off-camera) ─────────────────────────────────────────────────────
 /** Ensure the connection, source, destination and fixture file exist. */
@@ -280,21 +157,10 @@ async function main() {
   const { req, token } = await apiLogin(EMAIL, PASSWORD);
   await ensureSetup(req, token);
 
-  try { rmSync(OUT_DIR, { recursive: true, force: true }); } catch {}
-  mkdirSync(OUT_DIR, { recursive: true });
-
-  const browser = await chromium.launch({ headless: false, slowMo: SLOWMO });
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-    recordVideo: { dir: OUT_DIR, size: { width: 1280, height: 800 } },
-    deviceScaleFactor: 2,
-  });
-  await context.addInitScript(CAPTION_INIT);
-  const page = await context.newPage();
-  page.setDefaultTimeout(30_000);
+  const rec = await startRecording(OUT_DIR, token);
+  const { page } = rec;
 
   try {
-    // Log in the browser via the same token (no UI login recorded).
     await page.goto(`${BASE_URL}/`);
     await page.evaluate((tok) => {
       window.localStorage.setItem("dte_token", tok);
@@ -349,12 +215,12 @@ async function main() {
     await addStep(page, "Filter", async () => {
       await caption(page, "Filter — keep only rows where amount > 100.");
       await page.getByRole("button", { name: /add condition/i }).first().click();
-      await dwell(CLICK_PAUSE);
+      await dwell(TIMING.clickPause);
       const valueInput = page.locator('input[placeholder="value"]').first();
       const row = valueInput.locator("xpath=..");
       await pickFieldTree(row, page, "field", "amount");
       await row.locator("select").first().selectOption(">");
-      await dwell(CLICK_PAUSE);
+      await dwell(TIMING.clickPause);
       await typeInto(valueInput, "100");
     });
     await hoverPreview(page);
@@ -367,13 +233,13 @@ async function main() {
     await addStep(page, "Aggregate", async () => {
       await caption(page, "Aggregate — group by region, sum the amount.");
       await page.getByRole("button", { name: /\+ add group_by field/i }).first().click();
-      await dwell(CLICK_PAUSE);
+      await dwell(TIMING.clickPause);
       const groupInput = page.locator('input[placeholder="field"]').first();
       const groupRow = groupInput.locator("xpath=..");
       await pickFieldTree(groupRow, page, "field", "region");
 
       await page.getByRole("button", { name: /\+ add aggregation/i }).first().click();
-      await dwell(CLICK_PAUSE);
+      await dwell(TIMING.clickPause);
       const aliasInput = page.locator('input[placeholder="gmv"]').first();
       const aggRow = aliasInput.locator("xpath=..");
       await pickFieldTree(aggRow, page, "amount", "amount");
@@ -392,13 +258,13 @@ async function main() {
       await caption(page, "Sort — largest total_amount first.");
       const sortInput = page.locator('input[placeholder="add field to sort by…"]').first();
       await sortInput.click();
-      await sortInput.type("total", { delay: TYPE_DELAY });
+      await sortInput.type("total", { delay: TIMING.typeDelay });
       await dwell(DWELL.sm);
       await page
         .getByRole("option", { name: /total_amount/i })
         .first()
         .click();
-      await dwell(CLICK_PAUSE);
+      await dwell(TIMING.clickPause);
       const dir = fieldWrap(page, "Direction").locator("select").first();
       await dir.selectOption("false");
     });
@@ -502,84 +368,8 @@ async function main() {
     throw err;
   } finally {
     await req.dispose();
-    await context.close();
-    await browser.close();
-    const files = readdirSync(OUT_DIR).filter((f) => f.endsWith(".webm"));
-    if (files.length) log(`recorded: ${join(OUT_DIR, files[0])}`);
+    await finishRecording(rec, OUT_DIR);
   }
-}
-
-/** Navigate from the detail page to the builder for the current pipeline. */
-async function gotoEdit(page) {
-  if (/\/edit$/.test(page.url())) return;
-  const editBtn = page
-    .getByRole("link", { name: /^edit$/i })
-    .or(page.getByRole("button", { name: /^edit$/i }))
-    .first();
-  await editBtn.click();
-  await page.waitForURL(/\/pipelines\/.+\/edit$/, { timeout: 10_000 });
-  await dwell(DWELL.sm);
-}
-
-/** Open the "+ Add step" menu, pick `op`, run the editor — no save. */
-async function addStep(page, op, editorFn) {
-  log(`add step: ${op}`);
-  const addBtn = page.getByRole("button", { name: /add step/i }).first();
-  await addBtn.click();
-  await dwell(CLICK_PAUSE);
-  const opBtn = page
-    .getByRole("menuitem", { name: new RegExp(`^${op}$`, "i") })
-    .or(page.getByRole("option", { name: new RegExp(`^${op}$`, "i") }))
-    .or(page.getByRole("button", { name: new RegExp(`^${op}$`, "i") }))
-    .first();
-  await opBtn.click();
-  await dwell(DWELL.sm);
-  await editorFn();
-  await dwell(DWELL.md);
-}
-
-/** Click Save on the builder and wait for redirect to the detail page. */
-async function savePipeline(page) {
-  await page.getByRole("button", { name: /save pipeline/i }).click();
-  await page.waitForURL(/\/pipelines\/[^/]+$/, { timeout: 15_000 });
-  await dwell(DWELL.sm);
-}
-
-/**
- * Remove a step whose op label (case-insensitive) matches `opLabel` — clicks
- * the `×` button on the first row whose header shows that op.
- */
-async function removeStep(page, opLabel) {
-  const row = page
-    .locator("div")
-    .filter({ hasText: new RegExp(`^\\s*${opLabel}\\b`, "i") })
-    .first();
-  const removeBtn = row.locator('button[title="Remove"]').first();
-  if (!(await removeBtn.isVisible().catch(() => false))) {
-    // Fallback: any Remove button — scoped by op label proximity.
-    const anyRemove = page.locator('button[title="Remove"]').last();
-    await anyRemove.click();
-  } else {
-    await removeBtn.click();
-  }
-  await dwell(CLICK_PAUSE);
-}
-
-/** Hover the live preview panel so the cursor rests on the data. */
-async function hoverPreview(page) {
-  const head = page
-    .getByText(/^(live preview|dry run)$/i)
-    .first();
-  if (await head.isVisible().catch(() => false)) {
-    const panel = head.locator("xpath=ancestor::*[contains(@class,'rounded')][1]");
-    await panel.hover({ position: { x: 200, y: 100 } }).catch(async () => {
-      await head.hover();
-    });
-  } else {
-    // Fallback: hover the right half of the viewport.
-    await page.mouse.move(940, 400);
-  }
-  await dwell(DWELL.xs);
 }
 
 main().catch((err) => {
