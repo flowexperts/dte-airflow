@@ -3,26 +3,50 @@
 /**
  * The dashboards list, with an inline creator (plan 064).
  *
- * Creation lives on the list page beside the thing being added, not in the
- * nav — the same rule `app-sidebar.tsx` states for pipelines. A new
- * dashboard is name-only: tiles are added on its own page, where the charts
- * they describe are visible while you configure them.
+ * Page chrome follows the same three-part shape as every other list surface
+ * (`sources/page.tsx`, `lookup-tables-table.tsx`): a sticky `Topbar` of
+ * crumbs, a full-bleed `PageHeader`, then the body inside `px-14 py-8`.
+ * `Topbar` and `PageHeader` carry their own `px-14`; only the body needs it
+ * — without that box the table sits flush against the sidebar while every
+ * neighbouring page is inset.
+ *
+ * Creation lives here beside the thing being added, not in the nav — the
+ * same rule `app-sidebar.tsx` states for pipelines. A new dashboard is
+ * name-only: tiles are added on its own page, where the charts they
+ * describe are visible while you configure them.
  */
 import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
-import { Button, DataTable, Field, Input, PageHeader, Panel, type Column } from "@/components/ui";
+import {
+  Button,
+  DataTable,
+  Field,
+  InlineError,
+  Input,
+  PageHeader,
+  Panel,
+  Topbar,
+  type Column,
+} from "@/components/ui";
 import { createDashboard, deleteDashboard, type Dashboard } from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
-import { humanizeError } from "@/lib/errors";
+import { humanizeError, type HumanError } from "@/lib/errors";
 
 export function DashboardsList() {
   const { data, isLoading, mutate } = useSWR<Dashboard[]>("/api/dashboards");
-  const { can } = usePermissions();
+  const { can, isLoading: permsLoading } = usePermissions();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<HumanError | null>(null);
+
+  // Show while permissions are in flight: `can()` reads an empty list until
+  // /api/auth/me resolves, so gating on it alone hides the primary action on
+  // first paint — and permanently if that request fails. Mirrors
+  // `NewResourceButton`. The server still authorises the actual write.
+  const mayWrite = permsLoading || can("dashboard:write");
+  const mayDelete = permsLoading || can("dashboard:delete");
 
   const save = async () => {
     setBusy(true);
@@ -33,7 +57,7 @@ export function DashboardsList() {
       setCreating(false);
       await mutate();
     } catch (e) {
-      setErr(humanizeError(e, { entity: "dashboard", action: "save" }).message);
+      setErr(humanizeError(e, { entity: "dashboard", action: "save" }));
     } finally {
       setBusy(false);
     }
@@ -54,12 +78,24 @@ export function DashboardsList() {
         </Link>
       ),
     },
-    { key: "tiles", header: "Tiles", render: (d) => String(d.tiles?.length ?? 0) },
+    {
+      key: "tiles",
+      header: "Tiles",
+      width: "100px",
+      render: (d) => <span className="tabular-nums">{d.tiles?.length ?? 0}</span>,
+    },
+    {
+      key: "description",
+      header: "Description",
+      render: (d) => <span className="text-muted">{d.description ?? "—"}</span>,
+    },
     {
       key: "actions",
       header: "",
+      width: "90px",
+      align: "right",
       render: (d) =>
-        can("dashboard:delete") ? (
+        mayDelete ? (
           <Button variant="ghost" size="sm" onClick={() => remove(d.id)}>
             Delete
           </Button>
@@ -68,47 +104,65 @@ export function DashboardsList() {
   ];
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Dashboards"
-        lede="Charts drawn from pipeline output. A tile reads its pipeline's rows directly — nothing is written anywhere."
+    <>
+      <Topbar
+        crumbs={[{ label: "Workspace", href: "/" }, { label: "Dashboards" }]}
         actions={
-          can("dashboard:write") && !creating ? (
+          mayWrite && !creating ? (
             <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-              + New dashboard
+              New dashboard
             </Button>
           ) : null
         }
       />
-
-      {creating && (
-        <Panel>
-          <div className="p-4 space-y-3">
-            {err && <div className="font-mono text-[11.5px] text-red">{err}</div>}
-            <Field label="Name" hint="unique per workspace">
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Orders overview"
-              />
-            </Field>
-            <div className="flex items-center gap-2">
-              <Button variant="primary" size="sm" onClick={save} disabled={busy || !name.trim()}>
-                {busy ? "Saving…" : "Create"}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setCreating(false)} disabled={busy}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </Panel>
-      )}
-
-      <DataTable<Dashboard>
-        rows={data ?? []}
-        columns={columns}
-        emptyText={isLoading ? "Loading…" : "No dashboards yet."}
+      <PageHeader
+        title="Dashboards"
+        {...(data ? { sub: `${data.length} total` } : {})}
+        lede="Charts drawn from pipeline output. A tile reads its pipeline's rows directly — nothing is written anywhere."
       />
-    </div>
+
+      <div className="px-14 py-8 space-y-6">
+        {creating && (
+          <Panel>
+            <div className="p-4 space-y-3">
+              {err && (
+                <InlineError title={err.title} message={err.message} detail={err.detail} />
+              )}
+              <Field label="Name" hint="editable; unique per workspace">
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Sales overview"
+                />
+              </Field>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={save}
+                  disabled={busy || !name.trim()}
+                >
+                  {busy ? "Saving…" : "Create dashboard"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCreating(false)}
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </Panel>
+        )}
+
+        <DataTable<Dashboard>
+          rows={data ?? []}
+          columns={columns}
+          emptyText={isLoading ? "Loading…" : "No dashboards yet."}
+        />
+      </div>
+    </>
   );
 }
