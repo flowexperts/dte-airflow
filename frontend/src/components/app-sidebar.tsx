@@ -76,6 +76,9 @@ export function AppSidebar() {
         {can("lookup_table:read") && (
           <NavItem href="/lookup-tables" label="Lookup tables" active={on("/lookup-tables")} />
         )}
+        {can("dashboard:read") && (
+          <NavItem href="/dashboards" label="Dashboards" active={on("/dashboards")} />
+        )}
         {can("eval:read") && (
           <NavItem href="/eval-sets" label="Eval sets" active={on("/eval-sets")} />
         )}
