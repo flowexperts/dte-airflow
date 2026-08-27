@@ -13,6 +13,7 @@ import {
 } from "@/components/builder/steps/types";
 import { cn } from "@/lib/cn";
 import type { SourceTableRef } from "@/lib/api";
+import type { PipelineTypeFilter } from "@/lib/pipeline-type";
 import { AutoMapButton } from "@/components/builder/AutoMap";
 
 /**
@@ -39,7 +40,7 @@ export function StepsColumn({
 }: {
   steps: StepShape[];
   onChange: (steps: StepShape[]) => void;
-  pipelineType: "transform" | "quality" | "eval";
+  pipelineType: PipelineTypeFilter;
   /** Deep-linked step, highlighted and scrolled to. */
   openIndex: number | null;
   onOpenChange: (i: number | null) => void;

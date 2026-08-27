@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Panel, PanelHead } from "@/components/ui";
+import type { PipelineTypeFilter } from "@/lib/pipeline-type";
 import { STEP_OPS, emptyStep, labelFor, type StepShape } from "./types";
 import { StepEditor } from "./editors";
 import { StepIndexProvider, JoinOperandsProvider } from "../schema-context";
@@ -17,7 +18,7 @@ export function StepsPanel({
 }: {
   steps: StepShape[];
   onChange: (next: StepShape[]) => void;
-  pipelineType?: "transform" | "quality" | "eval";
+  pipelineType?: PipelineTypeFilter;
   /** Destination whose table Auto-map matches against. */
   outputId?: string;
   /** Declared source aliases, offered as join operands alongside the

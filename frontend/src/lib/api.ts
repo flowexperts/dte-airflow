@@ -136,8 +136,10 @@ export interface Pipeline {
   params?: PipelineParam[];
   /** Quality contracts evaluated after each run (plan 044). */
   quality_contracts?: QualityContract[];
-  /** Pipeline type: "transform" (default) writes output data; "quality" asserts conditions. */
-  pipeline_type?: "transform" | "quality" | "eval";
+  /** Pipeline type: "transform" (default) writes output data; "quality"
+   *  asserts conditions; "eval" scores extraction against labels; "viz"
+   *  feeds a dashboard tile and writes nowhere (plan 064). */
+  pipeline_type?: "transform" | "quality" | "eval" | "viz";
   /**
    * The comparison this eval pipeline expands to: dotted axis path → values
    * to vary (plan 055). Eval pipelines only — the API 422s a matrix on any
