@@ -81,6 +81,48 @@ and the drift is a quoting bug. `showSql` is off for `case`: the branch
 compiles to ibis, so there is no generated SQL to preview.
 
 
+### Raw SQL reaches every backend, but does not always mean the same thing
+
+`apply_filter_sql` / `apply_expression_sql` wrap the fragment with
+`table.alias(n).sql(fragment, dialect=...)`, so raw SQL runs against a
+natively-bound DB source — it does not need the engine's own DuckDB
+connection, which is what the old `_require_duckdb_backend` guard was really
+enforcing. Reach is solved; meaning is not.
+
+`dte/compiler/dialect_notes.py` holds what the editors render beside each
+raw-SQL input (plan 062). Measured by transpiling 55 DuckDB expressions to
+Postgres and running them: 51 rewrite correctly, 4 are rejected outright
+(`datepart`, `contains`, `string_split`, `len(array)`), and 2 run while
+meaning something else —
+
+```
+date_diff('year', dob, current_date)   dob=1990-12-31, as of 2026-08-25
+    duckdb   → 36   sqlite → 36 (JULIANDAY/365.0)   postgres → 35 (AGE)
+```
+
+— plus `try_cast`, which degrades to a plain `CAST` and so raises where
+DuckDB returns NULL.
+
+- **Only that third class is curated.** The rejected ones are reported by the
+  database itself, in better words than any table here would use, and
+  `_DIVERGENCES` is explicitly a **measured list, not an exhaustive one** —
+  which is why the UI has no affirmative "validated" state to contradict.
+- **`date_diff` is worse than one unit.** `_DATE_DIFF_MEASURED` is keyed by
+  `(dialect, unit)`: MySQL ignores the unit and returns whole days for all of
+  them, SQLite returns days for week and quarter and divides by 30 / 365 for
+  month and year. Only Postgres actually respects the unit, and disagrees with
+  DuckDB about anniversaries. Any new unit offered anywhere in the UI gets
+  measured before it ships.
+- **Do not build this on sqlglot's static signals.** Of the four expressions
+  Postgres rejects, `exp.Anonymous` catches one and
+  `Generator.unsupported_messages` catches none.
+- ibis transpiles a fragment **once, at `.sql()` call time**, into the table's
+  own dialect and bakes it in; `ibis.to_sql(expr, dialect=…)` afterwards only
+  re-renders that tree. Step SQL is therefore rendered with
+  `execution_dialect_of(table)` (the ibis backend's `.name`, which doubles as
+  a sqlglot dialect) — it used to use `engine.dialect`, always `"duckdb"`, so
+  the SQL panel showed a query that never ran.
+
 ### Unstructured: documents, extract, structure (plan 050)
 
 A `documents` source lists files — path, size, modified time — and **parses

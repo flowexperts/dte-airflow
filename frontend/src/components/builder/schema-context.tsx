@@ -41,6 +41,13 @@ interface SchemaState {
    *  from `POST /api/pipelines/step-schemas`. */
   perStepSchemas: Record<number, string[]>;
   setPerStepSchemas: (next: Record<number, string[]>) => void;
+  /** Dialect feedback (plan 062), from the same `/step-schemas` response.
+   *  Raw SQL is written in DuckDB dialect and transpiled to whatever the
+   *  source's backend speaks, so an expression can compile everywhere and
+   *  still mean something different — the editors render this beside the
+   *  input that produced it. */
+  dialectFeedback: DialectFeedback;
+  setDialectFeedback: (next: DialectFeedback) => void;
   /** Fields visible to the editor at step index N.
    *
    *  - N === 0: only source fields (allFields).
@@ -52,10 +59,39 @@ interface SchemaState {
   fieldsAtStep: (index: number) => SchemaField[];
 }
 
+export interface DialectWarning {
+  step: number;
+  code: string;
+  message: string;
+}
+
+export interface DialectFeedback {
+  /** The dialect the pipeline's tables actually execute on. */
+  dialect: string;
+  /** Per step index: the fragment as the target receives it. Absent when
+   *  the target gets exactly what was typed — there is nothing to say. */
+  exprSql: Record<number, string>;
+  /** Index of the step that failed to compile, with the engine's message. */
+  errorStep: number | null;
+  error: string | null;
+  warnings: DialectWarning[];
+}
+
+export const EMPTY_DIALECT_FEEDBACK: DialectFeedback = {
+  dialect: "duckdb",
+  exprSql: {},
+  errorStep: null,
+  error: null,
+  warnings: [],
+};
+
 const SchemaContext = createContext<SchemaState | null>(null);
 
 export function SchemaProvider({ children }: { children: ReactNode }) {
   const [schemas, setSchemas] = useState<Record<string, SchemaEntry>>({});
+  const [dialectFeedback, setDialectFeedback] = useState<DialectFeedback>(
+    EMPTY_DIALECT_FEEDBACK,
+  );
   const [perStepSchemas, setPerStepSchemas] = useState<
     Record<number, string[]>
   >({});
@@ -149,6 +185,8 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
         allFields,
         perStepSchemas,
         setPerStepSchemas,
+        dialectFeedback,
+        setDialectFeedback,
         fieldsAtStep,
       }}
     >
@@ -184,6 +222,31 @@ export function useStepFields(): SchemaField[] {
   const idx = useContext(StepIndexContext);
   const { fieldsAtStep } = useSchemas();
   return fieldsAtStep(idx);
+}
+
+/** This editor's own step index. Provided by StepsPanel / StepsColumn. */
+export function useStepIndex(): number {
+  return useContext(StepIndexContext);
+}
+
+/** Dialect feedback for the current step: what the target database
+ *  receives, what it said if it refused, and any known meaning-change. */
+export function useStepFeedback(): {
+  dialect: string;
+  exprSql: string | null;
+  error: string | null;
+  warnings: DialectWarning[];
+} {
+  const idx = useContext(StepIndexContext);
+  const { dialectFeedback: f } = useSchemas();
+  return {
+    dialect: f.dialect,
+    exprSql: f.exprSql[idx] ?? null,
+    // Only the step that actually failed claims the error. Every other
+    // editor stays quiet rather than all of them blaming themselves.
+    error: f.errorStep === idx ? f.error : null,
+    warnings: f.warnings.filter((w) => w.step === idx),
+  };
 }
 
 export function useSchemas() {

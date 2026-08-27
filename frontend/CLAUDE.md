@@ -107,6 +107,28 @@ Client-only page (`use(params)` + `useSWR`). Polls `/api/runs/{id}` every 2s unt
 
 `PipelinePreview` (client) hits `GET /api/pipelines/{id}/preview?limit=20` and renders sample rows in a themed table. Wired on the pipeline detail page above Recent runs. Errors (compile-time, e.g. `retype` on `"0.1.0"` → float) surface in a red panel — this is the fastest debugging path.
 
+### Dialect feedback + expression recipes
+
+Both live on the raw-SQL inputs (`MapExpressionEditor`, and the Advanced tab
+of Filter and Check). Neither is a step, and neither persists anything of its
+own.
+
+- **Feedback** rides `POST /pipelines/step-schemas`, which the builder already
+  debounce-fetches on every edit — no new endpoint and no extra request.
+  `AutoStepSchemas` lives once in `components/pipeline/schema-sync.tsx` and is
+  used by both hosts; `useStepFeedback()` reads it per step index and renders
+  `DialectReadback`: what the target database receives, its own error attached
+  to the step that caused it, and any known meaning-change. Silent for DuckDB.
+- **Recipes** (`lib/expression-recipes.ts`) are fill-in-the-slots shapes that
+  *generate* a fragment into the existing `expr`. One direction only — no
+  parse-back and no Basic/Advanced mode, because here the fragment is the
+  artifact and a mode that had to re-parse arbitrary SQL would either lie or
+  refuse to open. The list only offers expressions measured to survive
+  transpilation (see `backend/CLAUDE.md`); a test asserts the known hard
+  failures cannot appear in it.
+- SQL composed from user input goes through `lib/sql-literal.ts`
+  (`quoteIdent` / `quoteString` / `safeLiteral`) — never string concatenation.
+
 ### When adding a new step op
 
 1. Backend: add `Xxx` Pydantic model in `dte/models/pipeline.py`, dispatch in `dte/compiler/ibis_compiler.py`, add compiler tests first.

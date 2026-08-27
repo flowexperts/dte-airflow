@@ -1589,6 +1589,36 @@ class Pipeline(PipelineBase, table=True):
         sa_column=Column(server_default=func.now(), onupdate=func.now()),
     )
 
+    # Strict in, lenient out.
+    #
+    # `PipelineBase` — what POST/PUT bind — parses every step through its
+    # op-specific model, so bad input is still rejected at save. This class
+    # is the *response* model, and FastAPI re-validates it on every read.
+    # Running the same strict check there means a row written by a newer
+    # build (or by a branch since rolled back) raises inside response
+    # validation and takes down `GET /api/pipelines` **for every pipeline in
+    # the list**, not just that one. Version skew is normal; losing the whole
+    # collection to one row from the future is not.
+    #
+    # Still enforced: a step is a dict and names an op. A step that isn't
+    # shaped like a step is corruption, not skew. An unknown op — or known
+    # params this build dislikes — is reported by the compiler against the
+    # individual step, which is where it can be acted on.
+    #
+    # `mode="before"`, not "after": an after-validator on a table=True class
+    # touches instrumented attributes, and under `model_validate` the
+    # instance has no `_sa_instance_state` yet. Reading the raw payload
+    # sidesteps that entirely.
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_steps(cls, data):
+        if not isinstance(data, dict):
+            return data
+        for i, step in enumerate(data.get("steps") or []):
+            if not isinstance(step, dict) or "op" not in step:
+                raise ValueError(f"steps[{i}]: missing 'op' key")
+        return data
+
 
 # Back-compat alias — PipelineCreate was the old 3-class name.
 PipelineCreate = PipelineBase

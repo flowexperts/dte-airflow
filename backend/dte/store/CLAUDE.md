@@ -34,3 +34,21 @@ Back-compat aliases `XxxCreate = XxxBase` are kept for one release so existing m
 
 Fakes (`tests/fakes.py`) store typed `Xxx` instances and accept `XxxBase | Xxx | dict` at `save()` (dict for legacy migration-script compat). New tests should always pass typed `XxxBase` instances.
 
+### Step validation is strict on write, lenient on read
+
+`PipelineBase` — what POST/PUT bind — parses every step through
+`_STEP_MODELS`, so an unknown op or a bad config is rejected at save.
+`Pipeline` (the table class, and the **response** model FastAPI re-validates
+on every read) only checks that a step is a dict naming an op.
+
+The asymmetry is the point. A row written by a newer build — or by a branch
+since rolled back, or by another worktree sharing the `dte_pgdata` volume —
+raised inside response validation and returned a 500 for **`GET
+/api/pipelines` as a whole**: every other pipeline in the list vanished, and
+the only clue was `('response', 1)` naming a step index. Version skew is
+normal; losing the collection to one row from the future is not. An unknown
+op still fails, per step, at compile — which is where it is actionable.
+
+The override is `mode="before"`. An after-validator on a `table=True` class
+touches instrumented attributes, and under `model_validate` the instance has
+no `_sa_instance_state` yet.
