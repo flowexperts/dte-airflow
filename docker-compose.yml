@@ -23,6 +23,45 @@ services:
           cpus: "0.25"
           memory: 256M
 
+  # Demo warehouse — the database the recorded demos read from and write to.
+  # Deliberately NOT a schema inside the `postgres` service above: that one
+  # holds the control plane (pipelines, runs, alembic_version), and those
+  # tables must never show up in the schema picker on camera.
+  #
+  # One service, four schemas (crm, sales, staging, analytics). That is what
+  # makes the multi-join demo possible at all: `_check_single_backend` in
+  # dte/compiler/ibis_compiler.py rejects a pipeline whose sources land on
+  # different ibis backends, and BackendRegistry keys backends by
+  # Connection.id — so two Postgres *connections* can never be joined. Two
+  # schemas behind ONE connection can, and the join pushes down.
+  postgres-demo:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: warehouse
+    volumes:
+      - demo_pgdata:/var/lib/postgresql/data
+      # Runs ONLY on an empty data directory. To reseed:
+      #   docker compose rm -sfv postgres-demo && docker volume rm dte_demo_pgdata
+      - ./scripts/demo/seed:/docker-entrypoint-initdb.d:ro
+    ports:
+      # 5433 on the host — 5432 is the control-plane DB.
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d warehouse"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
   backend:
     build:
       context: ./backend
@@ -97,6 +136,8 @@ services:
       - "8001:8001"
     depends_on:
       postgres:
+        condition: service_healthy
+      postgres-demo:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/healthz', timeout=2).status==200 else 1)\""]
@@ -231,6 +272,9 @@ services:
 
 volumes:
   pgdata:
+  # Demo warehouse data. Dropping it is how you reseed — see the
+  # postgres-demo service comment.
+  demo_pgdata:
   # Content-addressed extract/structure cache, shared by backend and worker.
   # Survives `up --build`; deleting it only costs a re-parse and re-call.
   artifacts:

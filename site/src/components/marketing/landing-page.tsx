@@ -65,11 +65,17 @@ const ALL_STEPS = [
   { label: "Profile",       hint: "null % · distinct count · min/max stats",   cat: "quality"   },
 ] as const;
 
+// `live: true` means it works in the product today. PDF does: the `extract`
+// step ships pypdf and pdfplumber providers, and `structure` turns the text
+// into typed columns via Claude, OpenAI or regex. The other three do not —
+// there is no OCR provider, no transcription provider and no embedding step,
+// so they keep their SOON badge. Do not promote a tile here without a
+// provider behind it.
 const UNSTRUCTURED_TILES = [
-  { mono: "PDF", name: "PDF documents", sub: "text extraction" },
-  { mono: "IMG", name: "Images", sub: "OCR · vision" },
-  { mono: "DOC", name: "Docs & free text", sub: "chunking · embeddings" },
-  { mono: "A/V", name: "Audio & video", sub: "transcripts" },
+  { mono: "PDF", name: "PDF documents", sub: "text → typed columns", live: true },
+  { mono: "IMG", name: "Images", sub: "OCR · vision", live: false },
+  { mono: "DOC", name: "Docs & free text", sub: "chunking · embeddings", live: false },
+  { mono: "A/V", name: "Audio & video", sub: "transcripts", live: false },
 ] as const;
 
 const QUALITY_ROWS = [
@@ -402,17 +408,27 @@ export function LandingPage() {
         <div className="wrap">
           <div className="section-head">
             <div className="section-head-copy">
-              <span className="section-eyebrow eyebrow-blink">Coming soon</span>
+              <span className="section-eyebrow">Now shipping</span>
               <h2>
-                Unstructured data? <span className="h2-accent">Soon.</span>
+                PDFs in. <span className="h2-accent">Typed columns out.</span>
               </h2>
-              <p>PDFs, images, audio, and free text — same pipeline model, once it lands.</p>
+              <p>
+                Extract the text, declare the columns you want in plain language, and
+                the rows join against your database like any other table. Images, audio
+                and free text use the same model — they land next.
+              </p>
             </div>
+          </div>
+          <div className="demo-frame">
+            <DemoPlayer src="dte-unstructured" label="Extracting invoices from PDFs" />
           </div>
           <div className="steps-grid">
             {UNSTRUCTURED_TILES.map((t) => (
-              <div key={t.mono} className="steps-card steps-card--soon">
-                <span className="steps-soon-badge">SOON</span>
+              <div
+                key={t.mono}
+                className={`steps-card${t.live ? "" : " steps-card--soon"}`}
+              >
+                {!t.live && <span className="steps-soon-badge">SOON</span>}
                 <span className="steps-card-label">{t.name}</span>
                 <span className="steps-card-hint">{t.sub}</span>
               </div>

@@ -8,7 +8,19 @@ function fmt(s: number) {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-export function DemoPlayer() {
+type DemoPlayerProps = {
+  /** Basename under /marketing, without extension. `.mp4`, `.webm` and
+   *  `-poster.jpg` are derived from it. */
+  src?: string;
+  /** Accessible label — there are two players on the page now, and
+   *  "video" twice tells a screen-reader user nothing. */
+  label?: string;
+};
+
+export function DemoPlayer({
+  src = "dte-demo",
+  label = "Product demo",
+}: DemoPlayerProps = {}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(true);
@@ -100,11 +112,17 @@ export function DemoPlayer() {
         loop
         playsInline
         preload="metadata"
-        poster="/marketing/dte-demo-poster.png"
+        poster={`/marketing/${src}-poster.jpg`}
+        aria-label={label}
         onClick={togglePlay}
       >
-        <source src="/marketing/dte-demo.mp4" type="video/mp4" />
-        <source src="/marketing/dte-demo.webm" type="video/webm" />
+        {/* mp4 FIRST, which is the opposite of the usual advice — see
+            scripts/demo/encode-web.sh. Webm-first shipped a softer VP9 file
+            to Chrome while Safari got the good H.264 one. The webm stays as
+            a fallback for Chromium builds without proprietary codecs; a
+            browser only fetches the first source it can play. */}
+        <source src={`/marketing/${src}.mp4`} type="video/mp4" />
+        <source src={`/marketing/${src}.webm`} type="video/webm" />
       </video>
 
       <div className={`dplayer-controls ${showControls ? "visible" : ""}`}>
