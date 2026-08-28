@@ -76,16 +76,45 @@ async function main() {
 
     // The inspect gutter only renders for document-backed rows.
     const inspect = page.locator('button[aria-label*="nspect"], button[title*="nspect"]').first();
-    if (await inspect.isVisible().catch(() => false)) {
-      await caption(page, "Every one of them can point at where it came from.");
-      await inspect.click();
-      await dwell(DWELL.xl);
-      await say(page, "The source page, with the exact words the value was read from.", DWELL.read);
-      await page.keyboard.press("Escape").catch(() => {});
-      await dwell(DWELL.sm);
-    } else {
-      log("no inspect affordance visible — skipping provenance beat");
+    if (!(await inspect.isVisible().catch(() => false))) {
+      throw new Error(
+        "no inspect affordance on any row — the provenance cold-open is the " +
+        "point of this recording, so this is a hard failure, not a skip",
+      );
     }
+
+    await caption(page, "Every one of them can point at where it came from.");
+    await inspect.click();
+
+    // Wait for the page to actually paint, and refuse to film the error
+    // panel. pdf.js renders into a <canvas>; a dwell alone would happily
+    // record "Could not open the document" under a caption claiming the
+    // opposite, which is exactly what shipped once already.
+    const failed = page.getByText(/could not open the document/i).first();
+    const canvas = page.locator("canvas").first();
+    await Promise.race([
+      canvas.waitFor({ state: "visible", timeout: 30_000 }),
+      failed.waitFor({ state: "visible", timeout: 30_000 }),
+    ]);
+    if (await failed.isVisible().catch(() => false)) {
+      const detail = await page.locator("text=/is not a function|ERROR/i").first()
+        .innerText().catch(() => "");
+      throw new Error(
+        `document inspector failed to render (${detail.trim()}). If this is ` +
+        "\"n.toHex is not a function\", the recording browser is Playwright's " +
+        "bundled Chromium 130 rather than real Chrome — see launchBrowser() " +
+        "in lib.mjs.",
+      );
+    }
+    // Painted, not merely present: a blank canvas is still a bad shot.
+    await page.waitForFunction(() => {
+      const c = document.querySelector("canvas");
+      return c && c.width > 50 && c.height > 50;
+    }, { timeout: 20_000 }).catch(() => {});
+    await dwell(DWELL.xl);
+    await say(page, "The source page, with the exact words the value was read from.", DWELL.read);
+    await page.keyboard.press("Escape").catch(() => {});
+    await dwell(DWELL.sm);
 
     // ── 2. How it was built ───────────────────────────────────────────────
     await say(page, "Two steps built that. Extract the text, then declare the shape.", DWELL.read);

@@ -67,9 +67,14 @@ ffmpeg -y -v error -i "$SRC" $VF \
 
 # CRF 32, not 20: this is the fallback path, and 32 is where VP9 finally
 # beats the mp4 on size (28 and 30 both came out larger).
+#
+# cpu-used 4, not 1. At cpu-used 1 a 99s 1600x900 clip took over 40 minutes
+# and had to be killed — an absurd price for a file that only Chromium builds
+# without proprietary codecs ever fetch. 4 encodes in a couple of minutes and
+# the difference is invisible on a fallback nobody is grading.
 # shellcheck disable=SC2086
 ffmpeg -y -v error -i "$SRC" $VF \
-  -c:v libvpx-vp9 -crf 32 -b:v 0 -deadline good -cpu-used 1 \
+  -c:v libvpx-vp9 -crf 32 -b:v 0 -deadline good -cpu-used 4 \
   -row-mt 1 -tile-columns 2 -an "${OUT}.webm"
 
 ffmpeg -y -v error -ss "$POSTER_AT" -i "$SRC" \

@@ -23,52 +23,98 @@ export const API_URL = process.env.DEMO_API_URL ?? "http://localhost:8001";
 
 // Deliberately slow — this is a demo, not a test.
 /**
- * Recording size. `null` (the default) means "measure the real maximized
- * window and match it exactly" — see measureWindow().
+ * Recording size — fixed 16:9, not "whatever this window happens to be".
  *
- * This started at a fixed 1280x800 and everything was illegible: the builder
- * is a split pane inside a 220px sidebar shell, so the spec column, the step
- * editor and the preview rail were sharing ~1000px.
+ * Two demos play on the same landing page, so they must share an aspect
+ * ratio or the frame visibly changes shape between sections. Measuring the
+ * window gave 1512x862 under Playwright's Chromium and 2560x962 under real
+ * Chrome on an external display: 1.75:1 and 2.66:1, from the same script.
  *
- * Do not just raise the numbers. recordVideo captures at exactly the size it
- * is given, and if the browser window is smaller than that the frames get
- * letterboxed with a grey band that cannot be cropped out afterwards. A
- * hardcoded 1512x982 (this display's logical resolution) did exactly that:
- * Chrome's tab strip and address bar take ~87px and the dock takes the rest,
- * leaving 862px of page in a 982px frame.
+ * 1600x900 is the target. `fitViewport` shrinks it to the largest 16:9 rect
+ * that fits when the window is smaller, because recordVideo captures at
+ * exactly the size it is given and a viewport larger than the window comes
+ * back letterboxed with a grey band that cannot be cropped out.
  *
- * Override for a fixed size (skips the measuring launch):
- *     DEMO_WIDTH=1512 DEMO_HEIGHT=862 node record-core-join.mjs
+ * Override with DEMO_WIDTH / DEMO_HEIGHT (skips measuring entirely).
  */
+const TARGET = { width: 1600, height: 900 };
+
 export const VIEWPORT =
   process.env.DEMO_WIDTH && process.env.DEMO_HEIGHT
     ? { width: Number(process.env.DEMO_WIDTH), height: Number(process.env.DEMO_HEIGHT) }
     : null;
 
+function fitViewport(win) {
+  let { width, height } = TARGET;
+  if (win.width < width || win.height < height) {
+    const scale = Math.min(win.width / width, win.height / height);
+    // Even dimensions: H.264 rejects odd ones.
+    width = Math.floor((width * scale) / 2) * 2;
+    height = Math.floor((height * scale) / 2) * 2;
+    console.warn(
+      `\x1b[33m[demo]\x1b[0m window is ${win.width}x${win.height}, smaller ` +
+      `than the ${TARGET.width}x${TARGET.height} target — recording at ` +
+      `${width}x${height} to keep 16:9 without letterboxing.`,
+    );
+  }
+  return { width, height };
+}
+
 /**
- * Launch a maximized window, ask the page how big it actually is, close it.
- *
- * Costs ~2s and one window flash. The alternative is guessing at Chrome's
- * chrome height, which differs across machines and OS versions and silently
- * letterboxes the asset when it is wrong.
- *
- * `--kiosk` looks like the obvious answer here and is not: it reported
- * 1200x818 on the same display where `--start-maximized` reported 1512x862.
+ * Measure the real maximized window, then fit the 16:9 target inside it.
+ * Costs ~2s and one window flash; the alternative is guessing at Chrome's
+ * chrome height, which differs across machines and silently letterboxes.
  */
 export async function measureWindow() {
   if (VIEWPORT) return VIEWPORT;
-  const b = await chromium.launch({ headless: false, args: ["--start-maximized"] });
+  const b = await launchBrowser();
   const c = await b.newContext({ viewport: null });
   const p = await c.newPage();
   await p.goto("about:blank");
   await dwell(800);
-  const size = await p.evaluate(() => ({
+  const win = await p.evaluate(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
   }));
   await b.close();
+  const size = fitViewport(win);
   log(`recording at ${size.width}x${size.height}`);
   return size;
+}
+
+/**
+ * Launch options shared by the measuring pass and the real recording.
+ *
+ * `channel: "chrome"` uses the locally installed Google Chrome instead of
+ * Playwright's bundled Chromium, and it is not cosmetic. The bundled build
+ * is Chromium 130 (2024) and it broke two things:
+ *
+ *  - **The PDF inspector.** pdf.js 6.2 computes document fingerprints with
+ *    `Uint8Array.prototype.toHex()`, which Chromium 130 does not have. Every
+ *    document failed with "Could not open the document — n.toHex is not a
+ *    function", so the provenance shot — the strongest fifteen seconds in
+ *    the product — recorded an error panel instead.
+ *  - **H.264.** The bundled build ships without proprietary codecs, so
+ *    nothing could verify the mp4s the site actually serves.
+ *
+ * Real Chrome fixes both. Falls back to the bundled browser if Chrome is not
+ * installed, with a loud warning, because a silent fallback would quietly
+ * reintroduce the error panel.
+ */
+async function launchBrowser(extraArgs = []) {
+  const args = ["--start-maximized", ...extraArgs];
+  try {
+    return await chromium.launch({ headless: false, channel: "chrome", args,
+                                   slowMo: TIMING.slowMo });
+  } catch {
+    console.warn(
+      "\x1b[33m[demo]\x1b[0m Google Chrome not found — falling back to " +
+      "Playwright's Chromium. The PDF inspector will render an error panel " +
+      "(Chromium 130 lacks Uint8Array.prototype.toHex). Install Chrome " +
+      "before recording anything that opens a document.",
+    );
+    return await chromium.launch({ headless: false, args, slowMo: TIMING.slowMo });
+  }
 }
 
 export const DWELL = { xs: 700, sm: 1200, md: 2000, lg: 3000, xl: 4500, read: 5500 };
@@ -315,11 +361,7 @@ export async function startRecording(outDir, token) {
   mkdirSync(outDir, { recursive: true });
 
   const size = await measureWindow();
-  const browser = await chromium.launch({
-    headless: false,
-    slowMo: TIMING.slowMo,
-    args: ["--start-maximized", "--window-position=0,0", "--hide-scrollbars"],
-  });
+  const browser = await launchBrowser(["--window-position=0,0", "--hide-scrollbars"]);
   const context = await browser.newContext({
     viewport: size,
     recordVideo: { dir: outDir, size },
