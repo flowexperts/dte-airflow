@@ -8,9 +8,9 @@
  * neither link produced.
  */
 
-export type PipelineTypeFilter = "transform" | "quality" | "eval";
+export type PipelineTypeFilter = "transform" | "quality" | "eval" | "viz";
 
-const KNOWN: readonly PipelineTypeFilter[] = ["transform", "quality", "eval"];
+const KNOWN: readonly PipelineTypeFilter[] = ["transform", "quality", "eval", "viz"];
 
 /**
  * Every type a pipeline can be, in nav order. Adding a `pipeline_type` to
@@ -23,6 +23,7 @@ export const PIPELINE_TYPE_TABS: ReadonlyArray<{
   { type: "transform", label: "Transform" },
   { type: "quality", label: "Quality Check" },
   { type: "eval", label: "Eval" },
+  { type: "viz", label: "Visualize" },
 ];
 
 /**
@@ -58,6 +59,11 @@ export function pipelineListCopy(type: PipelineTypeFilter | null): {
       return {
         title: "Eval pipelines",
         lede: "Extraction configs scored against a labeled corpus. They write no output — a run produces a score. Compare them on an eval set's leaderboard.",
+      };
+    case "viz":
+      return {
+        title: "Visualize pipelines",
+        lede: "Pipelines that feed dashboard tiles. They write no output — a chart reads their rows directly. Add one to a dashboard to see it drawn.",
       };
     case "transform":
       return {

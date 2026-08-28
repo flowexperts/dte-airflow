@@ -202,6 +202,27 @@ def test_aggregate_count(sales_table):
     assert x_row["cnt"].iloc[0] == 2
 
 
+def test_aggregate_with_no_group_by_is_a_grand_total(sales_table):
+    """`group_by: []` means one row for the whole table.
+
+    It used to reach `table.group_by([]).aggregate(...)`, and ibis requires
+    at least one grouping — so the pipeline saved cleanly and then failed at
+    preview with a raw `GroupedTable(...) has failed` dump naming an
+    internal signature. A grand total is the ordinary shape behind any
+    single-figure readout (plan 064's `number` tile), not an edge case.
+    """
+    pipeline = make_pipeline([{
+        "op": "aggregate",
+        "group_by": [],
+        "aggregations": [{"field": "price", "func": "sum", "alias": "total_price"}]
+    }])
+    df = _run(pipeline, {"src": sales_table}).execute()
+    assert len(df) == 1
+    assert df["total_price"].iloc[0] == pytest.approx(
+        sales_table.price.sum().to_pandas()
+    )
+
+
 def test_aggregate_by_date_part_year(dated_sales_table):
     pipeline = make_pipeline([{
         "op": "aggregate",

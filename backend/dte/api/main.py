@@ -16,6 +16,7 @@ from dte.api.middleware import RequestContextMiddleware, TenantContextMiddleware
 from dte.api.routes.artifacts import router as artifacts_router
 from dte.api.routes.auth import router as auth_router
 from dte.api.routes.connections import router as connections_router
+from dte.api.routes.dashboards import router as dashboards_router
 from dte.api.routes.destinations import router as destinations_router
 from dte.api.routes.health import router as health_router
 from dte.api.routes.lookup_tables import router as lookup_tables_router
@@ -119,6 +120,7 @@ app.include_router(sources_router, prefix="/api", dependencies=_auth)
 app.include_router(destinations_router, prefix="/api", dependencies=_auth)
 app.include_router(connections_router, prefix="/api", dependencies=_auth)
 app.include_router(lookup_tables_router, prefix="/api", dependencies=_auth)
+app.include_router(dashboards_router, prefix="/api", dependencies=_auth)
 app.include_router(schedules_router, prefix="/api", dependencies=_auth)
 app.include_router(evals_router, prefix="/api", dependencies=_auth)
 app.include_router(users_router, prefix="/api", dependencies=_auth)

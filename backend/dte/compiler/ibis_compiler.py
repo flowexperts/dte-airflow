@@ -889,6 +889,12 @@ def _apply_aggregate(table: ibis.Table, step: AggregateStep) -> ibis.Table:
         agg_exprs.append(expr.name(agg.alias))
 
     group_by_exprs = [_resolve_group_by(table, g) for g in step.group_by]
+    if not group_by_exprs:
+        # No grouping means one row for the whole table — a grand total.
+        # `group_by([])` is not that: ibis requires at least one grouping and
+        # raises a `GroupedTable(...) has failed` dump naming its own
+        # signature, so the pipeline saved cleanly and only broke at preview.
+        return table.aggregate(agg_exprs)
     return table.group_by(group_by_exprs).aggregate(agg_exprs)
 
 

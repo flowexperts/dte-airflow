@@ -514,6 +514,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/schema/automap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Automap Fields
+         * @description Propose a source→destination column mapping.
+         *
+         *     Pure computation over two field lists the caller already has — no
+         *     store access, no source loading. The optional LLM pass is the only
+         *     I/O, and its failure is reported in `llm_error` rather than failing
+         *     the request: the heuristic answer is still worth showing.
+         */
+        post: operations["automap_fields_api_schema_automap_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/structure": {
         parameters: {
             query?: never;
@@ -686,6 +711,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/destinations/{destination_id}/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Destination Schema
+         * @description Columns of the destination's target table.
+         *
+         *     Only DB targets have one — a file target's shape is whatever the
+         *     pipeline writes, so there is nothing to introspect and asking is a
+         *     422, not an empty list.
+         */
+        get: operations["destination_schema_api_destinations__destination_id__schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/connections": {
         parameters: {
             query?: never;
@@ -839,6 +888,43 @@ export interface paths {
         /** Bulk Delete Lookup Tables */
         post: operations["bulk_delete_lookup_tables_api_lookup_tables_bulk_delete_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Dashboards */
+        get: operations["list_dashboards_api_dashboards_get"];
+        put?: never;
+        /** Create Dashboard */
+        post: operations["create_dashboard_api_dashboards_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboards/{dashboard_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dashboard */
+        get: operations["get_dashboard_api_dashboards__dashboard_id__get"];
+        /** Update Dashboard */
+        put: operations["update_dashboard_api_dashboards__dashboard_id__put"];
+        post?: never;
+        /** Delete Dashboard */
+        delete: operations["delete_dashboard_api_dashboards__dashboard_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1255,6 +1341,53 @@ export interface components {
             /** Role Id */
             role_id: string;
         };
+        /** AutomapField */
+        AutomapField: {
+            /** Name */
+            name: string;
+            /**
+             * Type
+             * @default
+             */
+            type: string;
+        };
+        /** AutomapMatch */
+        AutomapMatch: {
+            /** Dest */
+            dest: string;
+            /** Source */
+            source?: string | null;
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
+            /** Via */
+            via?: string | null;
+            /** Warning */
+            warning?: string | null;
+        };
+        /** AutomapRequest */
+        AutomapRequest: {
+            /** Source Fields */
+            source_fields: components["schemas"]["AutomapField"][];
+            /** Dest Fields */
+            dest_fields: components["schemas"]["AutomapField"][];
+            /**
+             * Use Llm
+             * @default true
+             */
+            use_llm: boolean;
+        };
+        /** AutomapResponse */
+        AutomapResponse: {
+            /** Matches */
+            matches: components["schemas"]["AutomapMatch"][];
+            /** Unmatched Source */
+            unmatched_source: string[];
+            /** Llm Error */
+            llm_error?: string | null;
+        };
         /**
          * BootstrapRequest
          * @description Run several variants over the corpus and keep what they all agree on.
@@ -1283,6 +1416,37 @@ export interface components {
         BulkDeleteRequest: {
             /** Ids */
             ids: string[];
+        };
+        /**
+         * ChartSpec
+         * @description How to draw a tile's rows. Presentational only — never aggregates.
+         *
+         *     Grouping and summing belong to the `aggregate` step, which the compiler
+         *     already implements and the SQL panel already previews. A second
+         *     aggregation living here would mean the Sample rows table and the tile
+         *     could disagree about the same pipeline, with no way to tell which was
+         *     right.
+         */
+        ChartSpec: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bar" | "line" | "area" | "pie" | "number" | "table";
+            /** X */
+            x?: string | null;
+            /**
+             * Y
+             * @default []
+             */
+            y: string[];
+            /** Series */
+            series?: string | null;
+            /**
+             * Stacked
+             * @default false
+             */
+            stacked: boolean;
         };
         /**
          * ConnectionBase
@@ -1327,6 +1491,60 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * DashboardBase
+         * @description API/domain fields. Routes bind POST/PUT bodies to this class.
+         */
+        DashboardBase: {
+            /** Id */
+            id?: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Tiles */
+            tiles?: components["schemas"]["DashboardTile"][];
+            /**
+             * Tenant Id
+             * @default default
+             */
+            tenant_id: string;
+        };
+        /**
+         * DashboardTile
+         * @description One chart in the grid.
+         *
+         *     `width` and `height` are enums, not pixels. Tiles flow in array order
+         *     through a 12-column grid, so the only widths that tile cleanly are
+         *     thirds, halves and full — a free integer would leave gaps no layout code
+         *     can close, and free x/y would need collision handling to be usable.
+         */
+        DashboardTile: {
+            /** Id */
+            id?: string;
+            /** Title */
+            title: string;
+            /** Pipeline Id */
+            pipeline_id: string;
+            chart: components["schemas"]["ChartSpec"];
+            /**
+             * Width
+             * @default 6
+             * @enum {integer}
+             */
+            width: 4 | 6 | 12;
+            /**
+             * Height
+             * @default m
+             * @enum {string}
+             */
+            height: "s" | "m" | "l";
+            /**
+             * Limit
+             * @default 1000
+             */
+            limit: number;
         };
         /**
          * DestinationBase
@@ -1561,7 +1779,7 @@ export interface components {
              * @default transform
              * @enum {string}
              */
-            pipeline_type: "transform" | "quality" | "eval";
+            pipeline_type: "transform" | "quality" | "eval" | "viz";
             /** Quality Contracts */
             quality_contracts?: unknown[];
             /** Matrix */
@@ -2730,6 +2948,39 @@ export interface operations {
             };
         };
     };
+    automap_fields_api_schema_automap_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomapResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     structure_provider_status_api_providers_structure_get: {
         parameters: {
             query?: never;
@@ -3200,6 +3451,37 @@ export interface operations {
             };
         };
     };
+    destination_schema_api_destinations__destination_id__schema_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destination_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_connections_api_connections_get: {
         parameters: {
             query?: {
@@ -3638,6 +3920,166 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_dashboards_api_dashboards_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_dashboard_api_dashboards_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardBase"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_api_dashboards__dashboard_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dashboard_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_dashboard_api_dashboards__dashboard_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dashboard_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DashboardBase"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_dashboard_api_dashboards__dashboard_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dashboard_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

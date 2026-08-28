@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import select
 
+from dte.models.dashboard import Dashboard, DashboardBase
 from dte.models.eval import (
     EvalExample,
     EvalExampleBase,
@@ -117,16 +118,21 @@ class PostgresPipelineStore:
         # (session.merge would leave the column's `onupdate` unfired).
         values = pipeline.model_dump(exclude={"created_at", "updated_at"})
         stmt = pg_insert(Pipeline).values(**values)
+        # The update set is derived from the values, not hand-listed. It used
+        # to be a literal dict of seven columns, and `pipeline_type` and
+        # `matrix` were not among them: both were written on INSERT and
+        # silently dropped on UPDATE. Converting a pipeline's type returned
+        # 200 and changed nothing — no error anywhere, and the fake store
+        # (a plain dict) could not reproduce it.
+        #
+        # `id` is the conflict target. `tenant_id` is held out on purpose: a
+        # re-save must never be able to move a row into another tenant.
         stmt = stmt.on_conflict_do_update(
             index_elements=[Pipeline.id],
             set_={
-                "name": stmt.excluded.name,
-                "sources": stmt.excluded.sources,
-                "steps": stmt.excluded.steps,
-                "output_id": stmt.excluded.output_id,
-                "engine": stmt.excluded.engine,
-                "quality_contracts": stmt.excluded.quality_contracts,
-                "params": stmt.excluded.params,
+                k: stmt.excluded[k]
+                for k in values
+                if k not in ("id", "tenant_id")
             },
         )
         async with _open_tenant_session(self._factory) as s:
@@ -146,6 +152,63 @@ class PostgresPipelineStore:
     async def delete(self, id: str) -> bool:
         async with _open_tenant_session(self._factory) as s:
             row = await s.get(Pipeline, id)
+            if row is None:
+                return False
+            await s.delete(row)
+            await s.commit()
+            return True
+
+
+class PostgresDashboardStore:
+    """Dashboards. Layout only — see `DashboardStore` in store/base.py.
+
+    The ON CONFLICT set is derived from the values rather than hand-listed,
+    for the reason spelled out on `PostgresPipelineStore.save`: that store's
+    literal column list silently dropped `pipeline_type` on every UPDATE.
+    """
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+        self._factory = session_factory
+
+    async def get(self, id: str) -> Dashboard | None:
+        async with _open_tenant_session(self._factory) as s:
+            return await s.get(Dashboard, id)
+
+    async def save(self, dashboard: "DashboardBase | Dashboard") -> None:
+        values = {
+            "id": dashboard.id,
+            "name": dashboard.name,
+            "description": dashboard.description,
+            # Tiles are Pydantic models on the Base class and plain dicts on
+            # the table class. `mode="json"` normalises both, and is what
+            # asyncpg needs for a JSONB bind.
+            "tiles": [
+                t if isinstance(t, dict) else t.model_dump(mode="json")
+                for t in (dashboard.tiles or [])
+            ],
+        }
+        stmt = pg_insert(Dashboard).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Dashboard.id],
+            set_={k: stmt.excluded[k] for k in values if k != "id"},
+        )
+        async with _open_tenant_session(self._factory) as s:
+            await s.execute(stmt)
+            await s.commit()
+
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Dashboard]:
+        stmt = (
+            select(Dashboard)
+            .order_by(Dashboard.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        async with _open_tenant_session(self._factory) as s:
+            return list((await s.execute(stmt)).scalars().all())
+
+    async def delete(self, id: str) -> bool:
+        async with _open_tenant_session(self._factory) as s:
+            row = await s.get(Dashboard, id)
             if row is None:
                 return False
             await s.delete(row)

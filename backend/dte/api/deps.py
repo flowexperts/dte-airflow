@@ -20,6 +20,7 @@ from dte.security.jwt import decode_access_token
 from dte.store.base import UserStore
 from dte.store.postgres import (
     PostgresConnectionStore,
+    PostgresDashboardStore,
     PostgresDestinationStore,
     PostgresEvalExampleStore,
     PostgresEvalSetStore,
@@ -61,6 +62,10 @@ def get_run_store():
 
 def get_run_event_store():
     return PostgresRunEventStore(_session_factory())
+
+
+def get_dashboard_store():
+    return PostgresDashboardStore(_session_factory())
 
 
 def get_source_store():

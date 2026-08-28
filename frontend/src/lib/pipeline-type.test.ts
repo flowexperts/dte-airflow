@@ -21,6 +21,7 @@ describe("parsePipelineType", () => {
     expect(parsePipelineType("transform")).toBe("transform");
     expect(parsePipelineType("quality")).toBe("quality");
     expect(parsePipelineType("eval")).toBe("eval");
+    expect(parsePipelineType("viz")).toBe("viz");
   });
 
   it("treats a missing type as the unfiltered list", () => {
@@ -43,6 +44,7 @@ describe("PIPELINE_TYPE_TABS", () => {
       "transform",
       "quality",
       "eval",
+      "viz",
     ]);
   });
 });

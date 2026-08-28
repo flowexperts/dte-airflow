@@ -136,8 +136,10 @@ export interface Pipeline {
   params?: PipelineParam[];
   /** Quality contracts evaluated after each run (plan 044). */
   quality_contracts?: QualityContract[];
-  /** Pipeline type: "transform" (default) writes output data; "quality" asserts conditions. */
-  pipeline_type?: "transform" | "quality" | "eval";
+  /** Pipeline type: "transform" (default) writes output data; "quality"
+   *  asserts conditions; "eval" scores extraction against labels; "viz"
+   *  feeds a dashboard tile and writes nowhere (plan 064). */
+  pipeline_type?: "transform" | "quality" | "eval" | "viz";
   /**
    * The comparison this eval pipeline expands to: dotted axis path → values
    * to vary (plan 055). Eval pipelines only — the API 422s a matrix on any
@@ -1367,3 +1369,65 @@ export const automapFields = (body: {
     `/api/schema/automap`,
     { method: "POST", body: JSON.stringify(body) },
   );
+
+/* ── Dashboards (plan 064) ─────────────────────────────────────────────── */
+
+export type ChartKind = "bar" | "line" | "area" | "pie" | "number" | "table";
+
+/**
+ * How a tile draws its rows. Presentational only — it never aggregates.
+ * Grouping and summing are the `aggregate` step's job, so the Sample rows
+ * table and the tile cannot disagree about the same pipeline.
+ */
+export interface ChartSpec {
+  kind: ChartKind;
+  /** Category / time axis column. Null for `number` and `table`. */
+  x: string | null;
+  /** Value columns. Exactly one for `number`; empty only for `table`. */
+  y: string[];
+  /** Group-by column: one series per distinct value, pivoted client-side. */
+  series: string | null;
+  stacked: boolean;
+}
+
+/** Widths are 12-grid spans, not pixels — a free integer leaves gaps no
+ *  layout code can close. */
+export type TileWidth = 4 | 6 | 12;
+export type TileHeight = "s" | "m" | "l";
+
+export interface DashboardTile {
+  id: string;
+  title: string;
+  pipeline_id: string;
+  chart: ChartSpec;
+  width: TileWidth;
+  height: TileHeight;
+  /** Rows this tile pulls through the preview endpoint. Capped at 10k
+   *  server-side: preview itself has no upper bound. */
+  limit: number;
+}
+
+export interface Dashboard {
+  id: string;
+  name: string;
+  description: string | null;
+  tiles: DashboardTile[];
+}
+
+export const listDashboards = (limit = 50, offset = 0) =>
+  apiFetch<Dashboard[]>(`/api/dashboards?limit=${limit}&offset=${offset}`);
+
+export const getDashboard = (id: string) =>
+  apiFetch<Dashboard>(`/api/dashboards/${encodeURIComponent(id)}`);
+
+export const createDashboard = (body: Omit<Dashboard, "id"> & { id?: string }) =>
+  apiFetch<Dashboard>(`/api/dashboards`, { method: "POST", body: JSON.stringify(body) });
+
+export const updateDashboard = (id: string, body: Dashboard) =>
+  apiFetch<Dashboard>(`/api/dashboards/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteDashboard = (id: string) =>
+  apiFetch<void>(`/api/dashboards/${encodeURIComponent(id)}`, { method: "DELETE" });
