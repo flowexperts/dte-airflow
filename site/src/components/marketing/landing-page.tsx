@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CalEmbed } from "./cal-embed";
 import { DemoPlayer } from "./demo-player";
+import { SiteFooter, TopNav } from "./site-chrome";
+import { UseCaseCards, UseCasePicker } from "./use-case-picker";
 import "./landing.css";
 
 type PillState = "pending" | "running" | "ok";
@@ -131,20 +133,10 @@ export function LandingPage() {
     rail.scrollLeft += logicBox.left - railBox.left - (railBox.width - logicBox.width) / 2;
   }, [isWide]);
 
-  const currentYear = new Date().getFullYear();
-
   return (
     <div className="mkt-root" data-theme="dark">
-      <nav className="top">
-        <div className="wrap">
-          <a href="/" className="brand" aria-label="dte">
-            dt<span className="e">e</span>
-          </a>
-          <div className="nav-right">
-            <a href="#book" className="btn primary">Request access</a>
-          </div>
-        </div>
-      </nav>
+      <UseCasePicker />
+      <TopNav />
 
       <main>
       <section className="hero">
@@ -162,7 +154,7 @@ export function LandingPage() {
               <a href="#book" className="btn primary">
                 Request access <span className="kbd">↵</span>
               </a>
-              <a href="#demo" className="btn ghost">See the flow</a>
+              <a href="#use-cases" className="btn ghost">Use Cases</a>
             </div>
           </div>
 
@@ -437,6 +429,19 @@ export function LandingPage() {
         </div>
       </section>
 
+      <section id="use-cases" className="steps-section">
+        <div className="wrap">
+          <div className="section-head">
+            <div className="section-head-copy">
+              <span className="section-eyebrow">Use cases</span>
+              <h2>Where will you use DTE?</h2>
+              <p>One pipeline per department. Pick the closest — the shape transfers.</p>
+            </div>
+          </div>
+          <UseCaseCards />
+        </div>
+      </section>
+
       <section id="book" className="book">
         <div className="wrap">
           <div className="book-grid">
@@ -478,20 +483,7 @@ export function LandingPage() {
       </section>
       </main>
 
-      <footer>
-        <div className="wrap">
-          <div className="foot-left">
-            <a href="/" className="brand brand-sm">
-              dt<span className="e">e</span>
-            </a>
-            <span className="copy">data transformation engine · map once, run anytime</span>
-          </div>
-          <div className="right">
-            <a href="#book">Request access</a>
-            <span className="copy">© {currentYear}</span>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

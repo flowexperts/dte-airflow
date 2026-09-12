@@ -1,3 +1,4 @@
+import Script from "next/script";
 import type { Metadata } from "next";
 import { Outfit, Space_Mono, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
@@ -81,6 +82,8 @@ const jsonLd = {
   ],
 };
 
+const GA_ID = "G-VM70DMGFX7";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
@@ -89,6 +92,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${outfit.variable} ${spaceMono.variable} ${cormorant.variable}`}
     >
       <body>
+        {/* Google Analytics — afterInteractive so it never blocks first paint. */}
+        <Script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} />
+        <Script id="gtag-init" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GA_ID}');`}
+        </Script>
         <script
           type="application/ld+json"
           // eslint-disable-next-line react/no-danger

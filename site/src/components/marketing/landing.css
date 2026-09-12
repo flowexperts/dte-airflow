@@ -13,7 +13,10 @@
   color: var(--text);
   min-height: 100vh;
   position: relative;
-  overflow-x: hidden;
+  /* `clip`, not `hidden`: hidden makes this a scroll container, which pins
+     nav.top to .mkt-root instead of the viewport and kills the sticky header.
+     clip contains the same overflow without creating that container. */
+  overflow-x: clip;
   letter-spacing: -0.005em;
 }
 
@@ -1353,6 +1356,10 @@
   .mkt-root .section-head-copy h2 { margin-top: 8px; }
   .mkt-root nav.top .wrap { height: 54px; }
   .mkt-root .brand { font-size: 24px; }
+  /* Two nav buttons don't fit beside the brand on a phone. Request access is
+     the one that matters; the use cases still have the first-visit picker and
+     the #use-cases section. */
+  .mkt-root .nav-right .btn.ghost { display: none; }
 
   /* "12 ways to shape your data" is desktop-only. The flow diagram above it
      already shows the ops in a running pipeline, so on a phone the chip grid
@@ -1410,4 +1417,76 @@
     transition: none !important;
   }
   .mkt-root .step { opacity: 1 !important; transform: none !important; }
+}
+
+/* --- First-visit use-case picker ------------------------------------------ */
+.mkt-root .ucp-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: var(--mkt-pad);
+  background: color-mix(in oklab, var(--bg) 82%, transparent);
+  backdrop-filter: blur(6px);
+  overflow-y: auto;
+}
+.mkt-root .ucp-card {
+  width: min(520px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--mkt-border-hi);
+  border-radius: var(--radius);
+  padding: clamp(20px, 4vw, 32px);
+}
+.mkt-root .ucp-sub {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 10px 0 18px;
+}
+.mkt-root .ucp-opts { display: flex; flex-direction: column; gap: 8px; }
+.mkt-root .ucp-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.mkt-root .ucp-opt:hover { border-color: var(--accent); background: var(--hover); }
+.mkt-root .ucp-opt-dept {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+.mkt-root .ucp-opt-pick { font-size: 14.5px; font-weight: 500; }
+.mkt-root .ucp-skip {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.mkt-root .ucp-skip:hover { color: var(--text); }
+
+/* --- Use-case cards + page ------------------------------------------------ */
+.mkt-root .uc-card:hover { border-color: var(--accent); }
+.mkt-root .uc-card-dept {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--subtle);
+  margin-bottom: 8px;
+}
+.mkt-root .uc-hero .lede { max-width: 60ch; }
+.mkt-root .uc-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(28px, 5vw, 64px);
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .mkt-root .uc-grid { grid-template-columns: minmax(0, 1fr); }
 }
