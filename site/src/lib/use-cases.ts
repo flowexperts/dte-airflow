@@ -8,7 +8,8 @@ export type UseCase = {
   title: string;
   headline: string;
   lede: string;
-  /** What breaks today, before DTE. */
+  /** What breaks today, before DTE. Written to the person who owns the
+   *  number, not the person doing the typing. */
   pains: string[];
   /** The pipeline, as it reads in the builder. */
   steps: { op: string; expr: string }[];
@@ -22,13 +23,13 @@ export const USE_CASES: UseCase[] = [
     dept: "Finance · Accounts Payable",
     pick: "Invoice processing & 3-way matching",
     title: "Invoice processing & 3-way matching",
-    headline: "Invoices in. Matched lines out.",
+    headline: "Match every invoice before you approve it",
     lede:
-      "Pull vendor invoice PDFs, turn them into typed columns, and match every line against the purchase order and the goods receipt — before anyone approves a payment.",
+      "Someone eyeballs the PO, the receipt, the invoice, and signs off. Most of the time that's fine. The exceptions are what end up in reconciliation, weeks later, as a number nobody can explain.",
     pains: [
-      "Invoice PDFs get keyed into the ERP by hand, one line at a time.",
-      "PO, receipt and invoice live in three systems nobody joins.",
-      "Price and quantity breaks surface after payment, not before.",
+      "Volume went up. Headcount didn't.",
+      "You approve the run trusting the match happened. Usually it did.",
+      "The overbill shows up in reconciliation, after the money's gone.",
     ],
     steps: [
       { op: "source", expr: "s3://ap-inbox/invoices/*.pdf" },
@@ -40,10 +41,10 @@ export const USE_CASES: UseCase[] = [
       { op: "destination", expr: "postgres://erp.ap.matched_lines" },
     ],
     outcomes: [
-      { label: "Three-way match", hint: "Invoice, PO and receipt reconciled line by line" },
-      { label: "Exceptions only", hint: "Clean lines pass; breaks route to a review table" },
-      { label: "Price & qty checks", hint: "Tolerance rules as assertions, not spreadsheets" },
-      { label: "Audit trail", hint: "Every run keeps the source file and the matched row" },
+      { label: "Auto-matched", hint: "PO, receipt, and invoice matched without manual entry" },
+      { label: "Exceptions surfaced", hint: "Only mismatches reach your team, not every invoice" },
+      { label: "Full lineage", hint: "Every match traces back to the source document" },
+      { label: "Runs on schedule", hint: "Processing happens automatically, not when remembered" },
     ],
   },
   {
@@ -51,13 +52,13 @@ export const USE_CASES: UseCase[] = [
     dept: "Procurement",
     pick: "Purchase requisition & PO compliance",
     title: "Purchase requisition & PO compliance",
-    headline: "Every requisition, checked against policy.",
+    headline: "Prove the rate you negotiated held",
     lede:
-      "Read requisitions, quotes and signed vendor agreements, then test each one against your spend thresholds, approved-vendor list and contracted rates.",
+      "You negotiated the discount. Nobody checks whether purchasing actually used it. DTE reads contracts and requisitions into one table, so the gap between agreed and paid is a query, not a guess.",
     pains: [
-      "Quotes and agreements sit as PDFs nobody can query.",
-      "Off-contract spend is found in a quarterly review, months late.",
-      "Approval thresholds are enforced by memory and goodwill.",
+      "You negotiated the rate. Nobody checks if purchasing used it.",
+      "Finance asks where the savings went. The answer's buried in PDFs.",
+      "Maverick spend is a number you estimate, not a line item you can show.",
     ],
     steps: [
       { op: "source", expr: "gcs://procurement/requisitions/*.pdf" },
@@ -69,10 +70,10 @@ export const USE_CASES: UseCase[] = [
       { op: "destination", expr: "postgres://spend.compliance_flags" },
     ],
     outcomes: [
-      { label: "Approved-vendor test", hint: "Unlisted vendors flagged the day they appear" },
-      { label: "Rate adherence", hint: "Quoted price checked against the signed contract" },
-      { label: "Threshold rules", hint: "Approval limits enforced per cost centre" },
-      { label: "Maverick spend", hint: "Off-contract purchases surface in the run, not the audit" },
+      { label: "Rates enforced", hint: "Every requisition checked against the contracted price" },
+      { label: "Savings visible", hint: "See the gap between agreed and paid, by line item" },
+      { label: "Spend flagged", hint: "Off-contract purchases surface instead of hiding in PDFs" },
+      { label: "One source of truth", hint: "Contracts and requisitions live in the same table" },
     ],
   },
   {
@@ -80,13 +81,13 @@ export const USE_CASES: UseCase[] = [
     dept: "HR & People Ops",
     pick: "Employee document & background-check review",
     title: "Employee document & background-check review",
-    headline: "Onboarding documents, verified in one pass.",
+    headline: "Know who's compliant before the audit",
     lede:
-      "Turn offer letters, ID documents, certifications and background-check reports into rows, then check completeness and expiry against your roster automatically.",
+      "Someone asks if every employee's paperwork is current. Today that's a week of digging, and the answer is still a guess. DTE reads the files as they land and keeps the answer live.",
     pains: [
-      "Document chasing is a checklist in someone's inbox.",
-      "Certification expiry is noticed when an auditor asks.",
-      "Background-check reports are read once and never queried again.",
+      "A shift got worked on a license that expired months ago.",
+      "“Is everyone compliant” takes a week to answer. It's still a guess.",
+      "The fine isn't the worry. Explaining it to the board is.",
     ],
     steps: [
       { op: "source", expr: "s3://people-ops/onboarding/*.pdf" },
@@ -98,10 +99,10 @@ export const USE_CASES: UseCase[] = [
       { op: "destination", expr: "postgres://hris.document_status" },
     ],
     outcomes: [
-      { label: "Completeness", hint: "Missing documents listed per employee, per run" },
-      { label: "Expiry watch", hint: "Certifications flagged 30 days out, on a schedule" },
-      { label: "Right-to-work", hint: "ID fields extracted and matched to the roster" },
-      { label: "Audit-ready", hint: "One table answers what HR holds for whom" },
+      { label: "Docs stay current", hint: "Licenses and certifications tracked as they expire" },
+      { label: "Answers on demand", hint: "Compliance status is a query, not a week of digging" },
+      { label: "Expirations flagged", hint: "Expired credentials surface before the shift is worked" },
+      { label: "Audit-ready", hint: "Evidence assembled before the auditor asks for it" },
     ],
   },
   {
@@ -109,13 +110,13 @@ export const USE_CASES: UseCase[] = [
     dept: "Insurance & Healthcare",
     pick: "Claims processing & medical bill review",
     title: "Claims processing & medical bill review",
-    headline: "Claims and bills, priced against the policy.",
+    headline: "Price every claim line before you pay",
     lede:
-      "Extract claim forms and itemised medical bills, join them to coverage and fee schedules, and let the rules decide what pays, what reduces, and what gets a human.",
+      "Adjusters spend their day retyping bills instead of deciding claims. DTE checks every line against the fee schedule and the policy first, so the desk only sees what actually needs judgment.",
     pains: [
-      "Adjusters re-key bill line items before they can price anything.",
-      "Duplicate and unbundled charges slip through on volume.",
-      "Coverage limits are applied by hand, claim by claim.",
+      "Leakage is something the auditors find, not you.",
+      "You need more capacity. Nobody's handing you more adjusters.",
+      "The same procedure gets billed twice, caught after payout, if ever.",
     ],
     steps: [
       { op: "source", expr: "s3://claims/intake/*.pdf" },
@@ -127,10 +128,10 @@ export const USE_CASES: UseCase[] = [
       { op: "destination", expr: "postgres://claims.adjudicated" },
     ],
     outcomes: [
-      { label: "Line-level pricing", hint: "Each charge tested against the fee schedule" },
-      { label: "Duplicate detection", hint: "Repeat codes on a claim caught before payment" },
-      { label: "Coverage limits", hint: "Policy caps and exclusions applied as rules" },
-      { label: "Adjuster queue", hint: "Only the exceptions reach a person" },
+      { label: "Auto-priced", hint: "Every line checked against fee schedule and policy" },
+      { label: "Desk sees exceptions", hint: "Only lines needing judgment reach the adjuster" },
+      { label: "Duplicates caught", hint: "Repeat billing flagged before payout, not after" },
+      { label: "Leakage visible", hint: "See where the money's going before the audit does" },
     ],
   },
   {
@@ -138,13 +139,13 @@ export const USE_CASES: UseCase[] = [
     dept: "Compliance & Risk",
     pick: "KYC document verification",
     title: "KYC document verification",
-    headline: "KYC packs, turned into evidence you can query.",
+    headline: "Walk into the exam with evidence ready",
     lede:
-      "Read identity documents, proof of address and incorporation papers into typed columns, match them to the customer record, and keep a dated trail of every check.",
+      "You sign the attestation. Behind it is a spreadsheet you didn't build and a folder nobody's opened since onboarding. DTE turns those packs into a table you can actually stand behind.",
     pains: [
-      "Onboarding packs are PDFs in a folder, not data in a system.",
-      "Refresh cycles are tracked in a spreadsheet that drifts.",
-      "Proving a check happened means opening files one by one.",
+      "The review backlog grows faster than the team clears it.",
+      "One finding costs more than the fix that would've prevented it.",
+      "You attest to the controls. You're trusting a spreadsheet to be current.",
     ],
     steps: [
       { op: "source", expr: "s3://kyc/customer-packs/*.pdf" },
@@ -156,10 +157,10 @@ export const USE_CASES: UseCase[] = [
       { op: "destination", expr: "postgres://compliance.kyc_status" },
     ],
     outcomes: [
-      { label: "Identity match", hint: "Extracted names and dates tested against the record" },
-      { label: "Expiry & refresh", hint: "Stale documents surface on every scheduled run" },
-      { label: "Pack completeness", hint: "Missing evidence listed per customer" },
-      { label: "Regulator-ready", hint: "Every check dated, sourced and reproducible" },
+      { label: "Packs structured", hint: "Documents turned into a table you can query" },
+      { label: "Backlog shrinks", hint: "Periodic reviews keep pace instead of piling up" },
+      { label: "Evidence on file", hint: "Every attestation backed by a traceable document" },
+      { label: "Always current", hint: "Status reflects the latest documents, not onboarding" },
     ],
   },
 ];

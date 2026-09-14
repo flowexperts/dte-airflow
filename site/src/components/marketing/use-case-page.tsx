@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { USE_CASES, type UseCase } from "@/lib/use-cases";
+import { UseCaseCards } from "./use-case-cards";
+import { type UseCase } from "@/lib/use-cases";
 import { SiteFooter, TopNav } from "./site-chrome";
 import "./landing.css";
 
 export function UseCasePage({ uc }: { uc: UseCase }) {
-  const others = USE_CASES.filter((u) => u.slug !== uc.slug);
-
   return (
-    <div className="mkt-root" data-theme="dark">
+    <div className="mkt-root uc-page" data-theme="dark">
       <TopNav />
 
       <main>
@@ -71,7 +70,7 @@ export function UseCasePage({ uc }: { uc: UseCase }) {
             <div className="section-head">
               <div className="section-head-copy">
                 <span className="section-eyebrow">With DTE</span>
-                <h2>What the pipeline leaves behind.</h2>
+                <h2>What you get instead.</h2>
               </div>
             </div>
             <div className="steps-grid">
@@ -93,15 +92,7 @@ export function UseCasePage({ uc }: { uc: UseCase }) {
                 <h2>Same engine, different paperwork.</h2>
               </div>
             </div>
-            <div className="steps-grid">
-              {others.map((u) => (
-                <Link key={u.slug} className="steps-card uc-card" href={`/use-cases/${u.slug}/`}>
-                  <span className="uc-card-dept">{u.dept}</span>
-                  <span className="steps-card-label">{u.pick}</span>
-                  <span className="steps-card-hint">{u.headline}</span>
-                </Link>
-              ))}
-            </div>
+            <UseCaseCards exclude={uc.slug} />
           </div>
         </section>
 
