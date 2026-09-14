@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { CalEmbed } from "./cal-embed";
 import { DemoPlayer } from "./demo-player";
 import { SiteFooter, TopNav } from "./site-chrome";
-import { UseCaseCards, UseCasePicker } from "./use-case-picker";
+import { UseCaseCards } from "./use-case-cards";
 import "./landing.css";
 
 type PillState = "pending" | "running" | "ok";
@@ -24,13 +24,13 @@ const HERO_STEPS = [
 ] as const;
 
 const SOURCE_TILES = [
-  { mono: "S3", name: "Amazon S3", sub: "json · csv · parquet" },
-  { mono: "GCS", name: "Google Cloud", sub: "gcs · hmac" },
-  { mono: "AZ", name: "Azure Blob", sub: "connection string" },
-  { mono: "PG", name: "Postgres", sub: "table · query" },
-  { mono: "MO", name: "MongoDB", sub: "collection" },
-  { mono: "RE", name: "REST API", sub: "paginated" },
-  { mono: "FS", name: "Filesystem", sub: "local · glob" },
+  { mono: "GS", name: "Google Sheets", sub: "tabs · ranges" },
+  { mono: "XL", name: "Excel", sub: "xlsx · csv" },
+  { mono: "HS", name: "HubSpot", sub: "deals · contacts" },
+  { mono: "SF", name: "Salesforce", sub: "objects · reports" },
+  { mono: "ERP", name: "ERP / NetSuite", sub: "orders · invoices" },
+  { mono: "GA", name: "Analytics", sub: "GA4 · ad platforms" },
+  { mono: "DB", name: "Your database", sub: "postgres · s3 · api" },
 ];
 
 const DEST_TILES = [
@@ -51,21 +51,6 @@ const LOGIC_STEPS = [
   { idx: "04", op: "aggregate", expr: "sum(amount) by cust_id" },
   { idx: "05", op: "join", expr: "customers on cust_id" },
 ];
-
-const ALL_STEPS = [
-  { label: "Filter",        hint: "SQL WHERE — GUI builder or raw expression", cat: "transform" },
-  { label: "Rename",        hint: "remap column names in bulk",                cat: "transform" },
-  { label: "Retype",        hint: "cast to any DuckDB type",                   cat: "transform" },
-  { label: "Map · Lookup",  hint: "join a saved lookup table",                 cat: "transform" },
-  { label: "Map · Expr",    hint: "derive a new column in SQL",                cat: "transform" },
-  { label: "Sort",          hint: "order by any field set, asc or desc",       cat: "transform" },
-  { label: "Aggregate",     hint: "group-by with sum · count · avg · min/max", cat: "transform" },
-  { label: "Join",          hint: "inner · left · right · outer",              cat: "transform" },
-  { label: "Pivot",         hint: "rows → columns (DuckDB PIVOT)",             cat: "transform" },
-  { label: "Select / Drop", hint: "keep or strip fields, with aliases",        cat: "transform" },
-  { label: "Check",         hint: "assert a rule — fail or warn on breach",    cat: "quality"   },
-  { label: "Profile",       hint: "null % · distinct count · min/max stats",   cat: "quality"   },
-] as const;
 
 // `live: true` means it works in the product today. PDF does: the `extract`
 // step ships pypdf and pdfplumber providers, and `structure` turns the text
@@ -135,7 +120,6 @@ export function LandingPage() {
 
   return (
     <div className="mkt-root" data-theme="dark">
-      <UseCasePicker />
       <TopNav />
 
       <main>
@@ -194,21 +178,6 @@ export function LandingPage() {
                 <span>1,284 rows · 342 ms</span>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="demo" className="demo">
-        <div className="wrap">
-          <div className="section-head">
-            <div className="section-head-copy">
-              <h2>
-                Transformation Pipeline in minutes.{" "}<br className="brk" />No code, no scripts.
-              </h2>
-            </div>
-          </div>
-          <div className="demo-frame">
-            <DemoPlayer />
           </div>
         </div>
       </section>
@@ -318,83 +287,92 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section id="steps" className="steps-section">
+      <section id="demo" className="demo">
         <div className="wrap">
           <div className="section-head">
             <div className="section-head-copy">
-              <span className="section-eyebrow">STEPS</span>
-              <h2>12 ways to shape your data.</h2>
-              <p>Each step is composable and ordered. Mix and match — the pipeline runs them in sequence on every trigger.</p>
-            </div>
-          </div>
-          <div className="steps-grid">
-            {ALL_STEPS.map((s) => (
-              <div key={s.label} className={`steps-card${s.cat === "quality" ? " steps-card--qa" : ""}`}>
-                {s.cat === "quality" && <span className="steps-qa-badge">QA</span>}
-                <span className="steps-card-label">{s.label}</span>
-                <span className="steps-card-hint">{s.hint}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="quality" className="feat-section">
-        <div className="wrap">
-          <div className="qa-grid">
-            <div className="qa-copy">
               <h2>
-                Data Quality?<br />
-                <span className="h2-soft">we got it.</span>
+                Transformation Pipeline in minutes.{" "}<br className="brk" />No code, no scripts.
               </h2>
-              <div className="qa-rows">
-                {QUALITY_ROWS.map((r) => (
-                  <div key={r.label} className="qa-row">
-                    <div className="qa-glyph">{r.glyph}</div>
-                    <div>
-                      <span className="qa-row-label">{r.label}</span>
-                      <span className="qa-row-hint">{r.hint}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
+          </div>
+          <div className="demo-frame">
+            <DemoPlayer />
+          </div>
+        </div>
+      </section>
 
-            <div className="qa-panel" aria-hidden="true">
-              <div className="qa-panel-head">
-                <span className="dots"><i /><i /><i /></span>
-                <span>orders_pipeline · step 4 · check</span>
+      <section id="use-cases" className="steps-section">
+        <div className="wrap">
+          <div className="section-head">
+            <div className="section-head-copy">
+              <span className="section-eyebrow">Use cases</span>
+              <h2>Where will you use DTE?</h2>
+            </div>
+          </div>
+          <UseCaseCards />
+        </div>
+      </section>
+
+      {/* ponytail: quality section hidden for now — flip to true to bring it back */}
+      {false && (
+        <section id="quality" className="feat-section">
+          <div className="wrap">
+            <div className="qa-grid">
+              <div className="qa-copy">
+                <h2>
+                  Data Quality?<br />
+                  <span className="h2-soft">we got it.</span>
+                </h2>
+                <div className="qa-rows">
+                  {QUALITY_ROWS.map((r) => (
+                    <div key={r.label} className="qa-row">
+                      <div className="qa-glyph">{r.glyph}</div>
+                      <div>
+                        <span className="qa-row-label">{r.label}</span>
+                        <span className="qa-row-hint">{r.hint}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="qa-checks">
-                <div className="qa-check ok">
-                  <span className="qa-check-mark">✓</span>
-                  <span className="qa-check-expr">amount &gt; 0</span>
-                  <span className="qa-check-count">12,847 ok</span>
+  
+              <div className="qa-panel" aria-hidden="true">
+                <div className="qa-panel-head">
+                  <span className="dots"><i /><i /><i /></span>
+                  <span>orders_pipeline · step 4 · check</span>
                 </div>
-                <div className="qa-check fail">
-                  <span className="qa-check-mark">✗</span>
-                  <span className="qa-check-expr">customer_id IS NOT NULL</span>
-                  <span className="qa-check-count">3 failed</span>
+                <div className="qa-checks">
+                  <div className="qa-check ok">
+                    <span className="qa-check-mark">✓</span>
+                    <span className="qa-check-expr">amount &gt; 0</span>
+                    <span className="qa-check-count">12,847 ok</span>
+                  </div>
+                  <div className="qa-check fail">
+                    <span className="qa-check-mark">✗</span>
+                    <span className="qa-check-expr">customer_id IS NOT NULL</span>
+                    <span className="qa-check-count">3 failed</span>
+                  </div>
+                  <div className="qa-check warn">
+                    <span className="qa-check-mark">⚠</span>
+                    <span className="qa-check-expr">country IN (&apos;US&apos;, &apos;EU&apos;)</span>
+                    <span className="qa-check-count">42 warned</span>
+                  </div>
                 </div>
-                <div className="qa-check warn">
-                  <span className="qa-check-mark">⚠</span>
-                  <span className="qa-check-expr">country IN (&apos;US&apos;, &apos;EU&apos;)</span>
-                  <span className="qa-check-count">42 warned</span>
-                </div>
-              </div>
-              <div className="qa-profile">
-                <div className="qa-profile-head">profile · amount</div>
-                <div className="qa-profile-stats">
-                  <span><b>0%</b> null</span>
-                  <span><b>847</b> distinct</span>
-                  <span><b>1.20</b> min</span>
-                  <span><b>9,420</b> max</span>
+                <div className="qa-profile">
+                  <div className="qa-profile-head">profile · amount</div>
+                  <div className="qa-profile-stats">
+                    <span><b>0%</b> null</span>
+                    <span><b>847</b> distinct</span>
+                    <span><b>1.20</b> min</span>
+                    <span><b>9,420</b> max</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <section id="unstructured" className="steps-section">
         <div className="wrap">
@@ -402,17 +380,10 @@ export function LandingPage() {
             <div className="section-head-copy">
               <span className="section-eyebrow">Now shipping</span>
               <h2>
-                PDFs in. <span className="h2-accent">Typed columns out.</span>
+                Documents in.{" "}
+                <span className="h2-accent">Data out.</span>
               </h2>
-              <p>
-                Extract the text, declare the columns you want in plain language, and
-                the rows join against your database like any other table. Images, audio
-                and free text use the same model — they land next.
-              </p>
             </div>
-          </div>
-          <div className="demo-frame">
-            <DemoPlayer src="dte-unstructured" label="Extracting invoices from PDFs" />
           </div>
           <div className="steps-grid">
             {UNSTRUCTURED_TILES.map((t) => (
@@ -426,19 +397,9 @@ export function LandingPage() {
               </div>
             ))}
           </div>
-        </div>
-      </section>
-
-      <section id="use-cases" className="steps-section">
-        <div className="wrap">
-          <div className="section-head">
-            <div className="section-head-copy">
-              <span className="section-eyebrow">Use cases</span>
-              <h2>Where will you use DTE?</h2>
-              <p>One pipeline per department. Pick the closest — the shape transfers.</p>
-            </div>
+          <div className="demo-frame">
+            <DemoPlayer src="dte-unstructured" label="Extracting invoices from PDFs" />
           </div>
-          <UseCaseCards />
         </div>
       </section>
 

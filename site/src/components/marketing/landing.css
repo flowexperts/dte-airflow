@@ -989,13 +989,6 @@
   .mkt-root .steps-card-label { font-size: 12.5px; padding-right: 0; }
   /* the coming-soon section's eyebrow already says "Coming soon" */
   .mkt-root .steps-soon-badge { display: none; }
-  .mkt-root .steps-qa-badge {
-    position: static;
-    align-self: flex-start;
-    order: -1;
-    font-size: 8.5px;
-    padding: 1px 5px;
-  }
 }
 
 .mkt-root .steps-card {
@@ -1016,31 +1009,6 @@
   background: var(--hover);
   border-color: var(--mkt-border-hi);
   border-left-color: var(--mkt-border-hi);
-}
-
-.mkt-root .steps-card--qa {
-  border-left-color: var(--gold);
-}
-
-.mkt-root .steps-card--qa:hover {
-  border-left-color: var(--gold);
-  background: color-mix(in oklab, var(--gold) 4%, var(--hover));
-}
-
-.mkt-root .steps-qa-badge {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--gold);
-  background: color-mix(in oklab, var(--gold) 12%, var(--surface-2));
-  border: 1px solid color-mix(in oklab, var(--gold) 35%, var(--border));
-  border-radius: 3px;
-  padding: 2px 6px;
 }
 
 .mkt-root .steps-card--soon {
@@ -1357,15 +1325,8 @@
   .mkt-root nav.top .wrap { height: 54px; }
   .mkt-root .brand { font-size: 24px; }
   /* Two nav buttons don't fit beside the brand on a phone. Request access is
-     the one that matters; the use cases still have the first-visit picker and
-     the #use-cases section. */
+     the one that matters, and the #use-cases section is still in the page. */
   .mkt-root .nav-right .btn.ghost { display: none; }
-
-  /* "12 ways to shape your data" is desktop-only. The flow diagram above it
-     already shows the ops in a running pipeline, so on a phone the chip grid
-     re-lists them without adding an argument. #unstructured keeps the same
-     .steps-grid / .steps-card rules below. */
-  .mkt-root main > section#steps { display: none; }
   .mkt-root #unstructured .section-head p { display: none; }
 
 
@@ -1419,57 +1380,6 @@
   .mkt-root .step { opacity: 1 !important; transform: none !important; }
 }
 
-/* --- First-visit use-case picker ------------------------------------------ */
-.mkt-root .ucp-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: var(--mkt-pad);
-  background: color-mix(in oklab, var(--bg) 82%, transparent);
-  backdrop-filter: blur(6px);
-  overflow-y: auto;
-}
-.mkt-root .ucp-card {
-  width: min(520px, 100%);
-  background: var(--surface);
-  border: 1px solid var(--mkt-border-hi);
-  border-radius: var(--radius);
-  padding: clamp(20px, 4vw, 32px);
-}
-.mkt-root .ucp-sub {
-  color: var(--muted);
-  font-size: 14px;
-  margin: 10px 0 18px;
-}
-.mkt-root .ucp-opts { display: flex; flex-direction: column; gap: 8px; }
-.mkt-root .ucp-opt {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 11px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  transition: border-color 140ms ease, background 140ms ease;
-}
-.mkt-root .ucp-opt:hover { border-color: var(--accent); background: var(--hover); }
-.mkt-root .ucp-opt-dept {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--subtle);
-}
-.mkt-root .ucp-opt-pick { font-size: 14.5px; font-weight: 500; }
-.mkt-root .ucp-skip {
-  margin-top: 16px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.mkt-root .ucp-skip:hover { color: var(--text); }
-
 /* --- Use-case cards + page ------------------------------------------------ */
 .mkt-root .uc-card:hover { border-color: var(--accent); }
 .mkt-root .uc-card-dept {
@@ -1480,7 +1390,19 @@
   color: var(--subtle);
   margin-bottom: 8px;
 }
+/* Use-case h1s carry a specific claim, not a two-word brand statement, so
+   they run longer than the landing hero's and want roughly two-thirds its
+   size to stay on one or two lines. */
+.mkt-root .uc-hero h1 {
+  font-size: clamp(28px, 4.2vw, 50px);
+  line-height: 1.08;
+  max-width: 20ch;
+}
 .mkt-root .uc-hero .lede { max-width: 60ch; }
+/* Section h2s step down too. At the landing sizes an h1 of 50 sat next to an
+   h2 of 44 in a heavier weight, so the section heads read louder than the
+   page's own claim. */
+.mkt-root.uc-page h2 { font-size: clamp(22px, 2.6vw, 32px); }
 .mkt-root .uc-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
