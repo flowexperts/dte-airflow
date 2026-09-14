@@ -31,17 +31,18 @@ const SOURCE_TILES = [
   { mono: "ERP", name: "ERP / NetSuite", sub: "orders · invoices" },
   { mono: "GA", name: "Analytics", sub: "GA4 · ad platforms" },
   { mono: "DB", name: "Your database", sub: "postgres · s3 · api" },
+  { mono: "FTP", name: "FTP / cloud storage", sub: "sftp · drive · s3" },
 ];
 
 const DEST_TILES = [
-  { mono: "S3", name: "Amazon S3", sub: "parquet · columnar" },
-  { mono: "GCS", name: "Google Cloud", sub: "gcs · hmac" },
-  { mono: "AZ", name: "Azure Blob", sub: "connection string" },
-  { mono: "PG", name: "Postgres", sub: "upsert · pk" },
-  { mono: "SQ", name: "SQL databases", sub: "via dlt" },
-  { mono: "JS", name: "JSON file", sub: "json · jsonl" },
-  { mono: "CS", name: "CSV file", sub: "flat" },
-  { mono: "XL", name: "Excel", sub: "xlsx" },
+  { mono: "GS", name: "Google Sheets", sub: "live tabs" },
+  { mono: "XL", name: "Excel", sub: "xlsx · formatted" },
+  { mono: "BI", name: "BI dashboards", sub: "looker · power bi" },
+  { mono: "HS", name: "HubSpot", sub: "records · fields" },
+  { mono: "ERP", name: "ERP / NetSuite", sub: "journal · invoices" },
+  { mono: "CS", name: "CSV export", sub: "for finance · ops" },
+  { mono: "DW", name: "Your warehouse", sub: "postgres · s3" },
+  { mono: "FTP", name: "FTP / cloud storage", sub: "sftp · drive · s3" },
 ];
 
 const LOGIC_STEPS = [
