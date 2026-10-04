@@ -157,12 +157,12 @@ iterate on, and editing a prompt never re-parses a PDF. But there is no
 partial reuse: changing one field's description re-calls the model for every
 field on every row. Artifacts are never garbage-collected today.
 
-`DTE_ARTIFACT_DIR` **must** point at storage shared by the API and the
-workers. It defaults to the relative `.dte-artifacts`, which resolves inside
-each container — backend and worker then keep separate caches and Trigger
-re-pays for what Preview bought. Compose mounts a named volume; the Dockerfile
-creates the directory owned by `dte` so the fresh volume inherits that
-ownership (a root-owned volume fails silently for the non-root process).
+`DTE_ARTIFACT_DIR` **must** point at storage shared by the Airflow api-server
+(Preview) and the task-running scheduler (Run). It defaults to the relative
+`.dte-artifacts`, which resolves inside each container — they then keep
+separate caches and Run re-pays for what Preview bought. Compose mounts a named
+volume at `/var/lib/dte/artifacts`; `Dockerfile.airflow` creates it owned by
+`airflow` so the fresh volume inherits that ownership.
 
 **Demo/test `documents` corpora live in `backend/sample_data/`, never
 `/tmp`.** `/tmp` gets swept — macOS, CI, a reboot — and a `documents` source
@@ -172,8 +172,8 @@ orphans every label with no way to reproduce the exact bytes they were keyed
 against. `backend/sample_data/eval-demo/invoices/` is committed to git,
 regenerated deterministically by `backend/scripts/generate_eval_demo_invoices.py`
 (built on the same `tests/fixtures/pdf_builder.build_pdf` the test suite
-uses), and bind-mounted read-only into `backend` and `worker` at
-`/app/sample_data`. If you add a new demo/test PDF corpus, put it here, not
+uses), and bind-mounted read-only into every Airflow container at
+`/opt/dte/backend/sample_data`. If you add a new demo/test PDF corpus, put it here, not
 in a path under `/tmp` — `/tmp/dte-samples` stays reserved for data that is
 genuinely regenerated on every bring-up (e.g. `docs/user/scripts/seed.py`'s
 JSON fixtures), where losing it on a sweep is a non-event.
@@ -214,7 +214,7 @@ anthropic + openai SDKs. Both are lazy imports, so a missing extra surfaces
 only on a real run, never in tests.
 
 **API keys** currently come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in the
-environment, wired to both `backend` and `worker`. Do **not** put a key in the
+environment, wired to every Airflow container. Do **not** put a key in the
 step's `params.api_key`: step params are stored unencrypted in
 `pipelines.steps` JSONB and copied into every revision. See
 `plans/052-model-provider-connections.md`.
@@ -301,7 +301,7 @@ mode in this codebase and it is invisible from every surface.
   a normalised schema per `pipeline_name` and the stored copy wins. These
   writers materialise the whole table each run and use no incremental
   source, so that state buys nothing — and living inside each container it
-  also split between `backend` and `worker`, the same trap
+  also split between the api-server and the scheduler, the same trap
   `DTE_ARTIFACT_DIR` documents. A fresh directory per write removes both.
 - **dlt also persists the convention at the destination**, in the dataset's
   `_dlt_version` / `_dlt_loads` / `_dlt_pipeline_state` tables. So a

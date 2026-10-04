@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from dte.security.permissions import requires
 
 router = APIRouter()
 
@@ -42,7 +44,7 @@ def _configured(var: str) -> bool:
     return bool((os.environ.get(var) or "").strip())
 
 
-@router.get("/providers/structure")
+@router.get("/providers/structure", dependencies=[Depends(requires("pipeline:read"))])
 async def structure_provider_status():
     """Per-provider readiness for the `structure` step."""
     from dte.models.pipeline import StructureStep

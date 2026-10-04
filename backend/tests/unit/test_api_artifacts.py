@@ -103,20 +103,6 @@ def test_unparseable_range_falls_back_to_the_whole_body(client):
     assert r.content == b"0123456789"
 
 
-def test_range_headers_are_readable_cross_origin():
-    """pdf.js runs on :3000 and the API is on :8001, so every range response
-    is cross-origin. The browser hides `Content-Range` from JS unless it is
-    named here — and pdf.js reads it to learn the document length. Without
-    this the viewer silently falls back to downloading whole documents, which
-    still *works*, so it would never show up as a failure."""
-    from dte.api.main import app as fresh_app
-
-    cors = [m for m in fresh_app.user_middleware if "CORS" in str(m)]
-    assert cors, "CORS middleware not installed"
-    exposed = cors[0].kwargs.get("expose_headers") or []
-    assert {"Content-Range", "Accept-Ranges", "Content-Length"} <= set(exposed)
-
-
 def test_a_large_artifact_is_not_read_whole_to_serve_one_range(client, monkeypatch):
     """The server-side half of the same problem: `store.get()` pulls the entire
     document into memory. One user opening a 500-page PDF should not cost

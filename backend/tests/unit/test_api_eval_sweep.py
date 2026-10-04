@@ -25,16 +25,6 @@ def _run(coro):
 
 @pytest.fixture
 def client(fake_stores, monkeypatch):
-    # Runs are started for real by the endpoint; executing them would need
-    # PDFs and providers. Patch the executor, not the enqueue path, so the
-    # run rows and their eval identity are still written exactly as in
-    # production.
-    async def fake_execute(*a, **kw):
-        return None
-
-    import dte.worker.tasks as tasks
-    monkeypatch.setattr(tasks, "_execute_pipeline", fake_execute)
-
     c = TestClient(app)
     _run(fake_stores["source"].save(SourceCreate(
         id="sw_src", connection_id="local_fs", source_type="documents",

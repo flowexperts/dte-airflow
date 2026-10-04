@@ -43,11 +43,11 @@ def test_endpoint_returns_probe_result(fake_stores, tmp_path):
     db = tmp_path / "probe.db"
     sqlite3.connect(str(db)).close()
 
+    import asyncio
+    from dte.models.pipeline import ConnectionBase
+    asyncio.get_event_loop().run_until_complete(fake_stores["connection"].save(ConnectionBase(
+        id="db", connection_type="sqlite", credentials={"url": f"sqlite:///{db}"})))
     c = TestClient(app)
-    c.post("/api/connections", json={
-        "id": "db", "connection_type": "sqlite",
-        "credentials": {"url": f"sqlite:///{db}"},
-    })
     r = c.post("/api/connections/db/test")
     assert r.status_code == 200
     body = r.json()

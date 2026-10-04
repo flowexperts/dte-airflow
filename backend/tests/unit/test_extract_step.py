@@ -13,6 +13,7 @@ preservation, caching, and per-row failure isolation.
 import json
 
 import ibis
+import pandas as pd
 import pytest
 
 from dte.compiler.ibis_compiler import compile_pipeline
@@ -287,7 +288,7 @@ def test_unreadable_document_has_no_artifact_ref(corpus):
     table = _documents_table(corpus, engine)
     (corpus / "a.pdf").unlink()
     out = _extract(engine, table).execute()
-    assert out[out["filename"] == "a.pdf"].iloc[0]["artifact_ref"] is None
+    assert pd.isna(out[out["filename"] == "a.pdf"].iloc[0]["artifact_ref"])
 
 
 def test_cached_blocks_keep_the_word_boxes(corpus):
@@ -389,7 +390,7 @@ def test_one_corrupt_document_does_not_fail_the_batch(corpus):
 
     bad = out[out["filename"] == "corrupt.pdf"]
     assert len(bad) == 1
-    assert bad.iloc[0]["content"] is None
+    assert pd.isna(bad.iloc[0]["content"])  # pandas 3: missing str is NaN
     assert bad.iloc[0]["extract_meta"]["error"] is not None
     assert len(out[out["filename"] != "corrupt.pdf"]) == 6      # others fine
 

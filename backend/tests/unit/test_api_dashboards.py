@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from dte.api.main import app
 from dte.api.deps import get_current_user
-from dte.models.user import Role, User
+from dte.models.user import User
 
 
 def _run(coro):
@@ -127,13 +127,8 @@ class TestValidation:
 def _viewer() -> User:
     """A user holding only `dashboard:read`.
 
-    `User.permissions` is a property derived from attached roles, not a
-    settable field — passing `permissions=[...]` to the constructor is
-    silently a no-op and yields a user with *no* permissions, which makes a
-    "cannot" assertion pass for the wrong reason.
     """
-    u = User(id="v", email="v@example.com", is_active=True, password_hash="unused")
-    u.narrow_roles([Role(id="viewer", name="viewer", permissions=["dashboard:read"])])
+    u = User(id="v", email="v@example.com", permissions=["dashboard:read"])
     return u
 
 

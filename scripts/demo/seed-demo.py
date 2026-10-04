@@ -1,4 +1,5 @@
-"""Seed the demo warehouse's connection, sources, destinations and pipelines.
+"""Seed the demo warehouse's connections, sources, destinations, pipelines
+and dashboard — and delete anything else the demo tenant is carrying.
 
 Everything goes over the HTTP API (same pattern as docs/user/scripts/seed.py)
 so the seeded objects are indistinguishable from ones a user clicked together
@@ -55,6 +56,10 @@ SOURCES = [
      "connection_id": "demo_warehouse", "table": "orders", "config": {"schema": "sales"}},
     {"id": "demo_staging", "name": "Landing zone", "source_type": "sql_database",
      "connection_id": "demo_warehouse", "table": "invoice_lines", "config": {"schema": "staging"}},
+    # The published mart, read back so the dashboard draws what the ingestion
+    # pipeline wrote. Nothing in the demo writes through this source.
+    {"id": "demo_analytics", "name": "Analytics mart", "source_type": "sql_database",
+     "connection_id": "demo_warehouse", "table": "order_facts", "config": {"schema": "analytics"}},
     # The invoice corpus: git-tracked PDFs, bind-mounted read-only into both
     # backend and worker at /app/sample_data.
     {"id": "demo_invoices", "name": "Vendor invoices (PDF)", "source_type": "documents",
@@ -76,14 +81,6 @@ DESTINATIONS = [
     {"id": "demo_invoice_lines", "name": "staging.invoice_lines",
      "connection_id": "demo_warehouse",
      "config": {"type": "postgres", "schema": "staging", "table": "invoice_lines",
-                "write_disposition": "replace"}},
-    {"id": "demo_customer_orders", "name": "analytics.customer_orders",
-     "connection_id": "demo_warehouse",
-     "config": {"type": "postgres", "schema": "analytics", "table": "customer_orders",
-                "write_disposition": "replace"}},
-    {"id": "demo_recon", "name": "analytics.invoice_reconciliation",
-     "connection_id": "demo_warehouse",
-     "config": {"type": "postgres", "schema": "analytics", "table": "invoice_reconciliation",
                 "write_disposition": "replace"}},
 ]
 
@@ -213,36 +210,81 @@ INVOICE_EXTRACT = {
     ],
 }
 
-# ─── Pipeline C: reconcile what was extracted ─────────────────────────────
+# ─── Pipeline C: quality gate on what was extracted ───────────────────────
 #
-# Both sources are on demo_warehouse, so one backend, pushdown, no
-# MixedBackendError. The corpus ships two PDFs per invoice number and two of
-# those pairs disagree — so this lands on exactly 2 rows.
+# pipeline_type "quality" writes nowhere: `check` steps report pass/fail and
+# the run ends in completed / completed_with_warnings / failed_quality.
+#
+# The corpus ships two PDFs per invoice number and two of those pairs
+# disagree with the vendor bill on purpose, so the variance check lands on
+# exactly 2 violating rows — a warn, not a fail: amber on camera, with the
+# two offending invoices named in the detail line.
 
-RECONCILIATION = {
+QUALITY = {
     "id": "demo_invoice_recon",
-    "name": "Invoice reconciliation",
+    "name": "Invoice reconciliation checks",
+    "pipeline_type": "quality",
     "sources": [
         {"source_id": "demo_staging", "table": "invoice_lines", "alias": "extracted"},
         {"source_id": "demo_sales", "table": "vendor_bills", "alias": "bills"},
     ],
-    "output_id": "demo_recon",
-    "engine": "postgres",
+    "engine": "auto",
     "steps": [
         {"op": "join", "left": "extracted", "right": "bills",
          "on": {"invoice_number": "invoice_number"}, "how": "inner", "output_id": "recon"},
-        {"op": "map", "mode": "expression", "output_field": "variance",
-         "expr": "total - expected_total"},
-        {"op": "filter", "expr": "abs(\"total\" - \"expected_total\") > 0.01"},
-        {"op": "select", "fields": [
-            {"field": "invoice_number"}, {"field": "vendor"},
-            {"field": "total", "alias": "extracted_total"},
-            {"field": "expected_total"}, {"field": "variance"},
-        ]},
+        {"op": "check", "expr": "\"invoice_number\" IS NOT NULL",
+         "label": "invoice number present", "severity": "fail"},
+        {"op": "check", "expr": "\"total\" > 0",
+         "label": "extracted total is positive", "severity": "fail"},
+        {"op": "check", "expr": "abs(\"total\" - \"expected_total\") <= 0.01",
+         "label": "extracted total matches the vendor bill", "severity": "warn"},
     ],
 }
 
-PIPELINES = [ORDER_FACTS, INVOICE_EXTRACT, RECONCILIATION]
+# ─── Pipeline D: the dashboard's data ─────────────────────────────────────
+#
+# pipeline_type "viz" also writes nowhere — every tile fetches
+# GET /api/pipelines/{id}/preview. Reads analytics.order_facts, so it shows
+# data only after the ingestion pipeline has run at least once.
+
+REVENUE_BY_REGION = {
+    "id": "demo_revenue_by_region",
+    "name": "Revenue by region",
+    "pipeline_type": "viz",
+    "sources": [{"source_id": "demo_analytics", "table": "order_facts", "alias": "facts"}],
+    "engine": "auto",
+    "steps": [
+        {"op": "aggregate", "group_by": ["region_name"], "aggregations": [
+            {"field": "net_amount", "func": "sum", "alias": "net_revenue"},
+            {"field": "order_id", "func": "count_distinct", "alias": "orders"},
+        ]},
+        {"op": "sort", "by": ["net_revenue"], "ascending": False},
+    ],
+}
+
+# One dashboard, three tiles off that one pipeline: the same rows drawn three
+# ways, which is the point — layout is not execution.
+DASHBOARDS = [
+    {
+        "id": "demo_revenue_overview",
+        "name": "Revenue overview",
+        "description": "Published order facts, drawn straight off the pipeline preview.",
+        "tiles": [
+            {"id": "tile_net_revenue", "title": "Net revenue by region",
+             "pipeline_id": "demo_revenue_by_region", "width": 6, "height": "m",
+             "chart": {"kind": "bar", "x": "region_name", "y": ["net_revenue"]}},
+            {"id": "tile_orders", "title": "Orders by region",
+             "pipeline_id": "demo_revenue_by_region", "width": 6, "height": "m",
+             "chart": {"kind": "pie", "x": "region_name", "y": ["orders"]}},
+            {"id": "tile_detail", "title": "Region detail",
+             "pipeline_id": "demo_revenue_by_region", "width": 12, "height": "m",
+             "chart": {"kind": "table"}},
+        ],
+    },
+]
+
+# Four, one of each kind: ingestion, extraction, quality, dashboard.
+PIPELINES = [ORDER_FACTS, INVOICE_EXTRACT, QUALITY, REVENUE_BY_REGION]
 
 
 def call(method: str, path: str, body: dict | None = None,
@@ -299,15 +341,50 @@ def upsert(coll: str, items: list[dict], token: str) -> int:
     return failures
 
 
+def prune(coll: str, keep: list[dict], token: str) -> int:
+    """Delete everything in `coll` that this file does not declare.
+
+    Without it the demo tenant accumulates whatever a previous session
+    clicked together — half-built pipelines, sources pointing at a database
+    that no longer exists — and the sidebar on camera is a junk drawer.
+    Delete order in main() is dashboards → pipelines → destinations →
+    sources → connections, because each level references the next.
+    """
+    keep_ids = {item["id"] for item in keep}
+    status, body = call("GET", f"/api/{coll}?limit=500", None, token)
+    if status >= 400 or not isinstance(body, list):
+        print(f"  ! list {coll}: {status} {body}")
+        return 1
+    failures = 0
+    for row in body:
+        rid = row.get("id")
+        if rid in keep_ids:
+            continue
+        status, body = call("DELETE", f"/api/{coll}/{rid}", None, token)
+        if status >= 400:
+            print(f"  ! delete {coll}/{rid}: {status} {body}")
+            failures += 1
+            continue
+        print(f"  ✗ deleted {coll}/{rid} ({row.get('name')}) — not in the seed")
+    return failures
+
+
 def main() -> int:
     print("auth:")
     token = bootstrap_token()
 
     failures = 0
     for coll, items in (("connections", CONNECTIONS), ("sources", SOURCES),
-                        ("destinations", DESTINATIONS), ("pipelines", PIPELINES)):
+                        ("destinations", DESTINATIONS), ("pipelines", PIPELINES),
+                        ("dashboards", DASHBOARDS)):
         print(f"{coll}:")
         failures += upsert(coll, items, token)
+
+    print("prune:")
+    for coll, items in (("dashboards", DASHBOARDS), ("pipelines", PIPELINES),
+                        ("destinations", DESTINATIONS), ("sources", SOURCES),
+                        ("connections", CONNECTIONS)):
+        failures += prune(coll, items, token)
 
     if failures:
         print(f"\n{failures} object(s) failed to seed.")

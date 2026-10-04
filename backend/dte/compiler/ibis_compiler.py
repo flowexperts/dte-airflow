@@ -597,38 +597,32 @@ def _apply_check_step(
     if engine is None:
         return table
 
-    view_name = f"__check_v_{idx}__"
-    sql = ibis.to_sql(table)
-    engine.con.con.execute(f"CREATE OR REPLACE TEMP VIEW {view_name} AS {sql}")
+    # Counted through the engine's raw-SQL seam — the same one `filter` uses —
+    # so the violation query runs on the table's OWN backend, transpiled from
+    # DuckDB dialect by sqlglot. The previous implementation created a DuckDB
+    # temp view over `ibis.to_sql(table)`, which meant a quality pipeline on a
+    # Postgres source asked DuckDB for tables only Postgres has and died with
+    # `Catalog Error: schema "staging" does not exist`.
+    violations = engine.apply_filter_sql(table, f"NOT ({expr})")
     if on_step_sql is not None:
         try:
-            on_step_sql(idx, f"SELECT * FROM {view_name} WHERE NOT ({expr})")
+            on_step_sql(idx, ibis.to_sql(violations))
         except Exception:
             pass
-    try:
-        violation_count = engine.con.con.execute(
-            f"SELECT COUNT(*) FROM {view_name} WHERE NOT ({expr})"
-        ).fetchone()[0]
-        total = engine.con.con.execute(
-            f"SELECT COUNT(*) FROM {view_name}"
-        ).fetchone()[0]
-        passed = violation_count == 0
-        detail = f"{violation_count}/{total} rows failed: {label}" if not passed else None
-        result = QualityResult(
-            contract_id=str(_uuid.uuid4()),
-            contract_type="check",
-            label=label,
-            passed=passed,
-            severity=severity,
-            detail=detail,
-        )
-        if on_quality_result is not None:
-            on_quality_result(idx, result)
-    finally:
-        try:
-            engine.con.con.execute(f"DROP VIEW IF EXISTS {view_name}")
-        except Exception:
-            pass
+    violation_count = int(violations.count().execute())
+    total = int(table.count().execute())
+    passed = violation_count == 0
+    detail = f"{violation_count}/{total} rows failed: {label}" if not passed else None
+    result = QualityResult(
+        contract_id=str(_uuid.uuid4()),
+        contract_type="check",
+        label=label,
+        passed=passed,
+        severity=severity,
+        detail=detail,
+    )
+    if on_quality_result is not None:
+        on_quality_result(idx, result)
     return table
 
 

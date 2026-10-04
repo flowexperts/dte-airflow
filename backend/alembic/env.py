@@ -1,7 +1,7 @@
 import os
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 from alembic import context
 
 config = context.config
@@ -10,6 +10,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = None
+DTE_SCHEMA = "dte"
 
 database_url = os.environ.get("DATABASE_URL", "")
 if database_url:
@@ -59,8 +60,15 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # DTE lives in its own schema of Airflow's metadata DB (plan 065), with
+        # its own version table, so it never touches Airflow's migrations.
+        connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {DTE_SCHEMA}"))
+        connection.execute(text(f"SET search_path TO {DTE_SCHEMA}"))
+        connection.commit()
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            version_table_schema=DTE_SCHEMA,
         )
 
         with context.begin_transaction():

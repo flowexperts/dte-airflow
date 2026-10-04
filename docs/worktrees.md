@@ -26,10 +26,7 @@ cd ../backend && uv venv && uv pip install -e ".[dev]"   # 4
    `tsc` — which reads as a broken import, not a missing install. The same
    applies to any checkout whose `node_modules` predates a new dependency,
    `main` included.
-3. `PageProps` / `LayoutProps` are Next 16 **generated globals**. Without
-   `next typegen` (or a `dev`/`build` run) `tsc` reports
-   `Cannot find name 'LayoutProps'` in files nobody touched.
-4. No venv means `uv run pytest` fails with `Failed to spawn: pytest`. The
+3. No venv means `uv run pytest` fails with `Failed to spawn: pytest`. The
    `[dev]` extra does **not** pull `trino`, so a fresh venv fails 6 tests in
    `tests/unit/test_engine_seam.py` that read as a Trino regression and are
    not one — `uv pip install "ibis-framework[trino]"` fixes them.

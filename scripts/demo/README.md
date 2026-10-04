@@ -21,8 +21,11 @@ docker compose up -d --build          # incl. the postgres-demo service
 ./scripts/demo/verify.sh              # do not skip this
 ```
 
-`verify.sh` seeds the control plane, runs all three pipelines, and prints
-what Auto-map actually returns. It is the only thing standing between you
+`verify.sh` seeds the control plane — and deletes anything in the demo
+tenant that `seed-demo.py` does not declare, so a previous session's
+half-built sources never show up on camera. It then runs all four pipelines
+(ingestion, extraction, quality, dashboard), checks the dashboard's three
+tiles can draw, and prints what Auto-map actually returns. It is the only thing standing between you
 and discovering a dead beat with the camera rolling.
 
 `ANTHROPIC_API_KEY` must be in `.env` — the `structure` step in

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from dte.api.deps import get_current_user
 from dte.api.main import app
-from dte.models.user import Role, User
+from dte.models.user import User
 from dte.security.permissions import (
     ADMIN_PERMISSIONS,
     EDITOR_PERMISSIONS,
@@ -17,8 +17,7 @@ from dte.security.permissions import (
 
 
 def _override_user(perms: list[str]) -> User:
-    u = User(id="u", email="u@x.com", is_active=True, password_hash="x")
-    u.narrow_roles([Role(id="r", name="r", permissions=perms)])
+    u = User(id="u", email="u@x.com", permissions=perms)
     app.dependency_overrides[get_current_user] = lambda: u
     return u
 
@@ -79,27 +78,12 @@ def test_editor_cannot_delete_pipeline():
     assert TestClient(app).delete("/api/pipelines/anything").status_code == 403
 
 
-def test_editor_cannot_delete_connection():
-    _override_user(EDITOR_PERMISSIONS)
-    assert TestClient(app).delete("/api/connections/anything").status_code == 403
-
-
-# ── admin ─────────────────────────────────────────────────────────────────────
-
 def test_admin_can_delete_pipeline():
     """Passes the gate — endpoint may 404, that's fine."""
     _override_user(ADMIN_PERMISSIONS)
     r = TestClient(app).delete("/api/pipelines/anything")
     assert r.status_code != 403
 
-
-def test_admin_can_delete_connection():
-    _override_user(ADMIN_PERMISSIONS)
-    r = TestClient(app).delete("/api/connections/anything")
-    assert r.status_code != 403
-
-
-# ── empty role user ──────────────────────────────────────────────────────────
 
 def test_user_with_no_roles_gets_403_on_everything():
     _override_user([])

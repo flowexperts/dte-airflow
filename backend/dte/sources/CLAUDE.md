@@ -39,7 +39,7 @@ Enforced in the API save layer (`SOURCE_CONNECTION_COMPAT` / `DESTINATION_CONNEC
 
 ### Test endpoint
 
-`POST /api/connections/{id}/test` — lightweight connectivity probe. Returns `{ok: bool, elapsed_ms: int, detail: str}`. Per-type probes in `dte/sources/connection_test.py`. UI shows the result inline on `/connections`.
+`POST /dte/api/connections/{id}/test` — lightweight connectivity probe. Returns `{ok: bool, elapsed_ms: int, detail: str}`. Per-type probes in `dte/sources/connection_test.py`. UI shows the result inline on `/connections`.
 
 ### Migration
 

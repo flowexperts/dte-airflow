@@ -1,7 +1,7 @@
-"""RBAC — permission enum + `requires(perm)` FastAPI dependency.
+"""Permission enum + `requires(perm)` FastAPI dependency.
 
-Route-level gate. `get_current_user` (plan 022) fetches the user;
-`requires(perm)` then checks the union of role permissions.
+`get_current_user` (Airflow-backed, `dte.airflow.auth`) fills `user.permissions`
+from Airflow DAG access; `requires(perm)` checks it.
 """
 from __future__ import annotations
 
@@ -21,21 +21,17 @@ Permission = Literal[
     "dashboard:read", "dashboard:write", "dashboard:delete",
     "run:read", "run:delete",
     "eval:read", "eval:write", "eval:delete",
-    "user:read", "user:write", "user:delete",
 ]
 
 ALL_PERMISSIONS: list[str] = list(get_args(Permission))
 
 
-# ── Canned role permission sets ──────────────────────────────────────────────
-
+# Canned permission sets (tests, docs). Live users get theirs from Airflow.
 ADMIN_PERMISSIONS: list[str] = list(ALL_PERMISSIONS)
-
 EDITOR_PERMISSIONS: list[str] = [
     p for p in ALL_PERMISSIONS
     if p.endswith(":read") or p.endswith(":write") or p in {"pipeline:trigger", "connection:test"}
 ]
-
 VIEWER_PERMISSIONS: list[str] = [p for p in ALL_PERMISSIONS if p.endswith(":read")]
 
 

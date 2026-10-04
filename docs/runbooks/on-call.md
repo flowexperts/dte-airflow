@@ -1,5 +1,7 @@
 # DTE on-call runbook
 
+> **Outdated since plan 065.** DTE now runs inside Airflow: there is no `backend`/`worker` service, job queue or `DTE_JOB_QUEUE_ENABLED`. Runs are Airflow dag runs — debug them in the Airflow UI (task logs) and `docker compose logs airflow-scheduler`. Sections below that mention workers or procrastinate no longer apply.
+
 2am document. Terse, imperative. Assume the reader has never opened this repo.
 
 ---

@@ -1,0 +1,9 @@
+.git
+worktrees
+.venv
+**/node_modules
+**/.next
+**/__pycache__
+.serena
+.codegraph
+site

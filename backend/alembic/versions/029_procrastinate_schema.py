@@ -24,10 +24,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    from procrastinate.schema import SchemaManager
-
-    schema_sql = SchemaManager.get_schema()
-    op.execute(schema_sql)
+    # No-op since plan 065: the job queue is gone (Airflow runs pipelines).
+    # Migration 039 drops any procrastinate objects left by older installs.
+    pass
 
 
 def downgrade() -> None:

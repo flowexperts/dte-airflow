@@ -8,7 +8,7 @@ from fastapi import FastAPI, Depends
 from fastapi.testclient import TestClient
 
 from dte.api.deps import get_current_user
-from dte.models.user import Role, User
+from dte.models.user import User
 from dte.security.permissions import (
     ALL_PERMISSIONS,
     ADMIN_PERMISSIONS,
@@ -20,9 +20,7 @@ from dte.security.permissions import (
 
 
 def _user_with(perms: list[str]) -> User:
-    u = User(id="u", email="u@x.com", is_active=True, password_hash="x")
-    u.narrow_roles([Role(id="r", name="r", permissions=perms)])
-    return u
+    return User(id="u", email="u@x.com", permissions=perms)
 
 
 # ── enum / canned role sets ──────────────────────────────────────────────────
@@ -59,20 +57,6 @@ def test_user_has_perm_negative():
     assert user_has_perm(u, "pipeline:delete") is False
 
 
-def test_user_permissions_are_union_of_roles():
-    u = User(id="u", email="u@x.com", is_active=True, password_hash="x")
-    u.narrow_roles([
-        Role(id="a", name="a", permissions=["pipeline:read"]),
-        Role(id="b", name="b", permissions=["pipeline:write", "connection:test"]),
-    ])
-    assert u.permissions == {"pipeline:read", "pipeline:write", "connection:test"}
-
-
-def test_user_no_roles_has_no_perms():
-    u = User(id="u", email="u@x.com", is_active=True, password_hash="x")
-    assert u.permissions == set()
-
-
 # ── requires() dep — real HTTP via a minimal FastAPI ─────────────────────────
 
 def _mini_app(user: User) -> TestClient:
@@ -100,7 +84,7 @@ def test_requires_forbids_when_perm_missing():
 
 
 def test_requires_forbids_when_user_has_no_roles():
-    u = User(id="u", email="u@x.com", is_active=True, password_hash="x")
+    u = User(id="u", email="u@x.com")
     c = _mini_app(u)
     r = c.get("/gated")
     assert r.status_code == 403

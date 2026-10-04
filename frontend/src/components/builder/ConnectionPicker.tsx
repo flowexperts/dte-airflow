@@ -1,7 +1,5 @@
-"use client";
-
 import useSWR from "swr";
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import { Dropdown, Field, type DropdownOption } from "@/components/ui";
 import type { Connection, ConnectionType } from "@/lib/api";
 

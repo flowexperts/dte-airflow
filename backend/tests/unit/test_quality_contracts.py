@@ -420,12 +420,11 @@ async def quality_async_client(fake_stores):
     import httpx
     from dte.api.main import app
     from dte.api.deps import get_current_user
-    from dte.models.user import Role, User
+    from dte.models.user import User
     from dte.security.permissions import ADMIN_PERMISSIONS
 
     def _fake_user() -> User:
-        u = User(id="q-test-user", email="q@example.com", is_active=True, password_hash="unused")
-        u.narrow_roles([Role(id="admin", name="admin", permissions=list(ADMIN_PERMISSIONS))])
+        u = User(id="q-test-user", email="q@example.com", permissions=list(ADMIN_PERMISSIONS))
         return u
 
     app.dependency_overrides[get_current_user] = lambda: _fake_user()

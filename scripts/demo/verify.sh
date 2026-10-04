@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Verify the demo warehouse and all three demo pipelines before a recording
-# session. Run this instead of discovering a broken beat with the camera
+# Verify the demo warehouse, all four demo pipelines and the dashboard before
+# a recording session. Run this instead of discovering a broken beat with the camera
 # rolling.
 #
 #   ./scripts/demo/verify.sh
@@ -105,9 +105,80 @@ run_pipeline() {  # name, trigger-body, expected-rows
 
 run_pipeline demo_order_facts_pipeline '{"params":{"min_order_date":"2024-01-01"}}' 27691
 run_pipeline demo_invoice_extract      '{}'                                            10
-# Exactly 2: the eval corpus ships two PDFs per invoice number and the
-# INV-1004 / INV-1005 pairs disagree with the vendor bill on purpose.
-run_pipeline demo_invoice_recon        '{}'                                             2
+
+# The quality pipeline writes nothing, so it terminates in
+# completed_with_warnings rather than completed: two checks pass and the
+# variance check flags exactly 2 rows, because the eval corpus ships two PDFs
+# per invoice number and the INV-1004 / INV-1005 pairs disagree with the
+# vendor bill on purpose. Green here would mean the check stopped checking.
+run_quality() {  # pipeline-id, expected status
+  local rid
+  rid=$(curl -sf -X POST "$API/api/pipelines/$1/trigger" -H "$AUTH" \
+        -H 'Content-Type: application/json' -d '{}' \
+        | python3 -c 'import sys,json;print(json.load(sys.stdin)["run_id"])')
+  for _ in $(seq 1 120); do
+    curl -sf "$API/api/runs/$rid" -H "$AUTH" -o /tmp/dte-run.json
+    local status
+    status=$(python3 -c "import json;print(json.load(open('/tmp/dte-run.json',encoding='utf-8')).get('status'))")
+    case "$status" in
+      completed|completed_with_warnings|failed_quality)
+        [ "$status" = "$2" ] || fail "$1: status $status, expected $2"
+        curl -sf "$API/api/runs/$rid/quality" -H "$AUTH" -o /tmp/dte-quality.json \
+          || fail "$1: no quality detail for run $rid"
+        python3 - <<'PY' || fail "$1: check steps produced no results"
+import json, sys
+body = json.load(open('/tmp/dte-quality.json', encoding='utf-8'))
+results = body.get("results") or []
+if len(results) != 3:
+    print(f"  {len(results)} check results, expected 3")
+    sys.exit(1)
+for r in results:
+    mark = "\033[32m OK \033[0m" if r.get("passed") else "\033[33mWARN\033[0m"
+    print(f"  {mark} {r.get('label')}: {r.get('detail') or 'passed'}")
+warned = [r for r in results if not r.get("passed")]
+if len(warned) != 1:
+    print(f"  {len(warned)} failing checks, expected exactly 1 (the variance check)")
+    sys.exit(1)
+PY
+        ok "$1: $status, 3 checks (1 warn)"
+        return;;
+      failed)
+        python3 -c "import json;print(str(json.load(open('/tmp/dte-run.json',encoding='utf-8')).get('error'))[:800])"
+        fail "$1: run failed";;
+    esac
+    sleep 2
+  done
+  fail "$1: run did not reach a terminal state"
+}
+
+run_quality demo_invoice_recon completed_with_warnings
+
+# ── 4b. dashboard ─────────────────────────────────────────────────────────
+# A tile draws GET /api/pipelines/{id}/preview, so the viz pipeline previewing
+# is the whole of "the dashboard works" — there is no dashboard run.
+step "4b. dashboard"
+curl -sf "$API/api/dashboards/demo_revenue_overview" -H "$AUTH" -o /tmp/dte-dash.json \
+  || fail "dashboard demo_revenue_overview missing (re-run seed-demo.py)"
+tiles=$(python3 -c "import json;print(len(json.load(open('/tmp/dte-dash.json',encoding='utf-8'))['tiles']))")
+[ "$tiles" -eq 3 ] || fail "dashboard has $tiles tiles, expected 3"
+ok "dashboard: $tiles tiles"
+
+curl -sf "$API/api/pipelines/demo_revenue_by_region/preview?limit=50" -H "$AUTH" \
+  -o /tmp/dte-viz.json || fail "viz pipeline preview failed — tiles will render empty"
+python3 - <<'PY' || fail "viz preview returned nothing to draw"
+import json, sys
+body = json.load(open('/tmp/dte-viz.json', encoding='utf-8'))
+rows = body.get("rows") if isinstance(body, dict) else body
+if not rows:
+    sys.exit(1)
+cols = set(rows[0])
+missing = {"region_name", "net_revenue", "orders"} - cols
+if missing:
+    print(f"  preview is missing {sorted(missing)} — got {sorted(cols)}")
+    sys.exit(1)
+print(f"  {len(rows)} regions, top: {rows[0]['region_name']} {rows[0]['net_revenue']}")
+PY
+ok "viz pipeline previews the columns every tile names"
 
 # ── 5. output sanity ──────────────────────────────────────────────────────
 step "5. output sanity"

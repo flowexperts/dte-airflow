@@ -39,13 +39,10 @@ def _dependency_call_chain(route) -> list:
     return out
 
 
-# Routes deliberately outside the RBAC guard umbrella. Auth endpoints
-# need to be reachable to log in; docs/openapi are metadata; healthcheck
-# n/a here.
+# Routes deliberately outside the RBAC guard umbrella. /api/me reports the
+# caller's permissions, so it can't require one; docs/openapi are metadata.
 _EXEMPT_PATHS = {
-    "/api/auth/login",
-    "/api/auth/register",
-    "/api/auth/me",   # gated by get_current_user only — no perm needed
+    "/api/me",   # Airflow login via get_current_user — no DTE perm needed
     "/openapi.json",
     "/docs",
     "/docs/oauth2-redirect",

@@ -23,3 +23,4 @@ docker-compose.override.yml
 # Content-addressed extract cache (plan 050). Relative default resolves
 # against CWD, so a backend run drops it in backend/.
 .dte-artifacts/
+marketing-plans/

@@ -76,11 +76,3 @@ def test_revisions_route_sets_total_count_header(seeded_revs):
     assert res.headers["x-total-count"] == "7"
 
 
-def test_total_count_is_readable_cross_origin():
-    """A header the browser can't read is the same as no header at all."""
-    from dte.api.main import app as fresh_app
-
-    cors = [m for m in fresh_app.user_middleware if "CORS" in str(m)]
-    assert cors, "CORS middleware not installed"
-    exposed = cors[0].kwargs.get("expose_headers") or []
-    assert "X-Total-Count" in exposed

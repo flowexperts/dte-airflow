@@ -6,14 +6,10 @@ Replaces scattered `os.getenv` calls with a typed, documented surface.
 Direct `os.getenv` reads are kept in a few places on purpose:
 - `dte/api/deps.py::_session_factory` — needs a lazy read so tests that never
   touch Postgres don't pay a startup cost. It falls back to `settings.database_url`.
-- `dte/secrets/__init__.py` — the resolver picker is invoked before Settings
-  might exist. It still reads env directly and that's fine.
 """
 from __future__ import annotations
 
-from typing import Literal
-
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,35 +21,6 @@ class Settings(BaseSettings):
         env_prefix="DTE_",
         extra="ignore",
     )
-
-    # Auth
-    jwt_secret: str | None = None
-    jwt_ttl_seconds: int = 60 * 60 * 24
-    allow_registration: bool = True
-
-    # Rate limiting on auth endpoints.
-    # Set auth_rate_limit_enabled=False in test environments so serial unit
-    # tests don't accidentally trip the per-IP window.
-    auth_rate_limit_enabled: bool = True
-    auth_login_rate_limit: str = "5/minute"
-    auth_register_rate_limit: str = "3/minute"
-
-    # CORS
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
-    # Regex alternative to the exact-match list above. Starlette's
-    # allow_origins has no wildcard support, so any-port matching has to go
-    # through allow_origin_regex. Left unset by default: combined with
-    # allow_credentials=True a permissive pattern is not something to enable
-    # implicitly in production. Dev sets it in docker-compose.yml.
-    cors_origin_regex: str | None = None
-
-    # Admin
-    admin_enabled: bool = False
-    admin_secret_key: str | None = None
-
-    # Secrets
-    secrets_backend: Literal["env", "fernet", "auto"] = "auto"
-    secrets_key: str | None = None
 
     # Database (NOT under DTE_ prefix — standard 12-factor name)
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
@@ -71,56 +38,6 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     log_json: bool = False  # default False in dev; set true in prod
-
-    # Multi-tenancy (plan 030). Off by default — ship migrations first, flip
-    # the flag only after CI is green for two consecutive weeks.
-    # When off: tenant_id is always "default", RLS session var is not set,
-    # and fake stores don't filter by tenant.
-    multi_tenant_enabled: bool = False
-
-    # Root key for wrapping per-tenant Fernet keys (plan 030).
-    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-    root_key: str | None = None
-
-    # Distributed run execution via a Postgres-backed job queue (plan 046).
-    # Off by default: `POST /trigger` keeps spawning an in-process
-    # asyncio.create_task, exactly as before. When on, trigger enqueues a
-    # procrastinate job instead and a separate `python -m dte.worker`
-    # process executes it.
-    job_queue_enabled: bool = False
-
-    # Whether the deployment's output filesystem is shared across the API
-    # and worker processes (e.g. an RWX NFS/EFS mount), rather than each
-    # pod's own local disk. Only consulted when job_queue_enabled is True:
-    # if the FS is *not* shared, `local_fs`-backed sources/destinations are
-    # rejected at trigger time (422) because the worker pod can't see files
-    # the API pod wrote, or vice versa. Default False — the safe assumption
-    # for a k8s deployment with per-pod ephemeral storage.
-    shared_output_fs: bool = False
-
-    # Recurring pipeline triggers (plan 047). Off by default, and depends
-    # on job_queue_enabled — the ticker defers `execute_run` jobs the same
-    # way the API's flag-on trigger path does, so scheduling on top of the
-    # in-process asyncio.create_task path (job_queue_enabled=False) would
-    # mean a scheduler that dies with an API replica. Gates whether
-    # dte.worker.app registers the periodic ticker task at all, so a
-    # single-container self-hosted deployment that never sets this doesn't
-    # pay for an extra minute-tick DB query.
-    schedules_enabled: bool = False
-
-    # A schedule tick that's due but more than this many seconds late is
-    # skipped rather than fired — firing a 2am nightly job at 11am is
-    # usually worse than not firing it. See dte.worker.scheduler.run_tick.
-    schedule_grace_seconds: int = 900
-
-    @field_validator("cors_origins")
-    @classmethod
-    def _strip_cors(cls, v: str) -> str:
-        return ",".join(o.strip() for o in v.split(",") if o.strip())
-
-    @property
-    def cors_origin_list(self) -> list[str]:
-        return [o for o in self.cors_origins.split(",") if o]
 
 
 def get_settings() -> Settings:
