@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import contextvars
 import json
 
 import ibis
@@ -67,6 +65,7 @@ from dte.models.pipeline import (
     Pipeline,
     PipelineBase,
     PipelineRevisionBase,
+    PipelineSchedule,
     Source,
     SourceTableRef,
     coerce_source_refs,
@@ -92,31 +91,6 @@ from dte.tracing import tracer
 router = APIRouter()
 _log = get_logger("dte.pipelines")
 
-# Process-local registry of in-flight asyncio tasks for the flag-off
-# (DTE_JOB_QUEUE_ENABLED=False) trigger path — the pre-plan-046 `dte.runs`
-# module's job, now private here since it's only ever consulted by
-# `cancel_run` for runs with no `job_id`. Distributed (job-queue) runs
-# don't need this at all: `cancel_run` cancels those via
-# `procrastinate`'s cancel-by-job-id, which works regardless of which
-# worker pod picked the job up. This registry remains process-local by
-# nature — sufficient for a single-container self-hosted deployment,
-# the only topology that ever runs with the flag off.
-_local_run_tasks: dict[str, asyncio.Task] = {}
-
-
-def _register_local_task(run_id: str, task: asyncio.Task) -> None:
-    _local_run_tasks[run_id] = task
-    task.add_done_callback(lambda _t, rid=run_id: _local_run_tasks.pop(rid, None))
-
-
-def _cancel_local_task(run_id: str) -> bool:
-    task = _local_run_tasks.get(run_id)
-    if task is None or task.done():
-        return False
-    task.cancel()
-    return True
-
-
 async def _record_revision(
     pipeline: PipelineBase,
     rev_store: PipelineRevisionStore,
@@ -126,7 +100,8 @@ async def _record_revision(
     POST/PUT. Returns the new revision id. Populates `summary` from the
     diff against the prior revision (None for the first revision)."""
     import uuid as _uuid
-    new_config = pipeline.model_dump()
+    # Sweep/promote/as-eval pass a copied table row; its timestamps aren't spec.
+    new_config = pipeline.model_dump(mode="json", exclude={"created_at", "updated_at"})
     prior = await rev_store.latest_for_pipeline(pipeline.id)
     summary: str | None = None
     if prior is not None:
@@ -160,20 +135,6 @@ def _parse_params_query(raw: str | None) -> dict[str, str] | None:
         if not isinstance(k, str) or not isinstance(v, str):
             raise HTTPException(status_code=422, detail="params keys and values must be strings")
     return parsed
-
-
-def _eval_run_fields(eval_set_id: str | None, sweep_id: str | None) -> dict:
-    """Only emit the eval columns when they were supplied.
-
-    A transform run must not write `eval_set_id = NULL` explicitly — the
-    column is how the leaderboard finds eval runs, and writing it on every
-    run would make the partial index useless."""
-    fields: dict = {}
-    if eval_set_id:
-        fields["eval_set_id"] = eval_set_id
-    if sweep_id:
-        fields["sweep_id"] = sweep_id
-    return fields
 
 
 async def _validate_pipeline_refs(
@@ -327,57 +288,6 @@ async def _validate_engine_compat(
     return resolved
 
 
-async def _check_shared_fs_guard(
-    pipeline: PipelineBase,
-    s_store: SourceStore,
-    d_store: DestinationStore,
-    c_store: ConnectionStore,
-) -> None:
-    """Reject (422) a trigger when the job queue is on, the output
-    filesystem isn't shared across pods, and the pipeline touches a
-    `local_fs` source or destination (plan 046 "Sharp edge 1"). Only
-    called when `settings.job_queue_enabled and not settings.shared_output_fs`
-    — assumes `_resolve`/`_resolve_sources` already confirmed every id
-    exists, so a missing lookup here is silently skipped rather than
-    re-raised (that 422 already fired).
-    """
-    offending: list[str] = []
-    for ref in coerce_source_refs(pipeline.sources):
-        source = await s_store.get(ref.source_id)
-        if not source:
-            continue
-        conn = await c_store.get(source.connection_id)
-        if conn and conn.connection_type == "local_fs":
-            offending.append(ref.source_id)
-
-    # Quality, eval and viz pipelines all write nowhere, so none requires a
-    # destination. Without this an eval pipeline is rejected at save for a
-    # missing `output_id` it is never supposed to have.
-    needs_output = pipeline_requires_output(pipeline)
-    if needs_output:
-        destination = await d_store.get(pipeline.output_id)
-        if destination:
-            dest_conn = await c_store.get(destination.connection_id)
-            if dest_conn and dest_conn.connection_type == "local_fs":
-                offending.append(destination.id)
-
-    if offending:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "local_fs_not_shared",
-                "message": (
-                    "DTE_JOB_QUEUE_ENABLED is on and DTE_SHARED_OUTPUT_FS is "
-                    "off: local_fs sources/destinations can't cross the "
-                    "API/worker process boundary. Use an s3/gcs/azure "
-                    "connection, or set DTE_SHARED_OUTPUT_FS=true if this "
-                    "deployment mounts a shared RWX volume."
-                ),
-                "offending_ids": offending,
-            },
-        )
-
-
 @router.post("/pipelines", dependencies=[Depends(requires("pipeline:write"))])
 async def create_pipeline(
     pipeline: PipelineBase,
@@ -387,9 +297,13 @@ async def create_pipeline(
     c_store: ConnectionStore = Depends(get_connection_store),
     rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
     user: User = Depends(get_current_user),
+    es_store: EvalSetStore = Depends(get_eval_set_store),
 ):
+    from dte.api.routes.schedules import validate_schedule
+
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
+    await validate_schedule(pipeline, es_store)
     try:
         await store.save(Pipeline(**pipeline.model_dump()))
     except ValueError as e:  # name collision on UNIQUE(tenant_id, name)
@@ -421,14 +335,22 @@ async def update_pipeline(
     c_store: ConnectionStore = Depends(get_connection_store),
     rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
     user: User = Depends(get_current_user),
+    es_store: EvalSetStore = Depends(get_eval_set_store),
 ) -> Pipeline:
+    from dte.api.routes.schedules import validate_schedule
+
     if pipeline.id != pipeline_id:
         raise HTTPException(status_code=400, detail="Pipeline id in path and body must match")
     existing = await store.get(pipeline_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Pipeline not found")
+    # A body that doesn't mention the schedule (the builder saving steps)
+    # keeps it; an explicit `null` removes it.
+    if "schedule" not in pipeline.model_fields_set and existing.schedule:
+        pipeline.schedule = PipelineSchedule.model_validate(existing.schedule)
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
+    await validate_schedule(pipeline, es_store)
     row = Pipeline(**pipeline.model_dump())
     try:
         await store.save(row)
@@ -510,6 +432,8 @@ async def pipeline_as_eval(
     response: Response,
     p_store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
+    rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
+    user: User = Depends(get_current_user),
 ):
     """The eval twin of an extraction pipeline — same steps, no destination.
 
@@ -580,6 +504,7 @@ async def pipeline_as_eval(
     twin_steps[idx] = _normalise_sweepable_keys(twin_steps[idx])
     twin.steps = twin_steps
     await p_store.save(twin)
+    await _record_revision(twin, rev_store, user)
     response.status_code = 201
     return {"pipeline_id": twin_id, "created": True}
 
@@ -1117,53 +1042,18 @@ async def start_eval_run(
     pipeline_id: str,
     *,
     eval_set_id: str,
+    revision_id: str,
     sweep_id: str | None = None,
-    p_store: PipelineStore,
-    r_store: RunStore,
-    re_store: RunEventStore,
-    s_store: SourceStore,
-    d_store: DestinationStore,
-    c_store: ConnectionStore,
-    lt_store: LookupTableStore,
-    es_store=None,
-    ee_store=None,
+    **_unused,
 ) -> str:
-    """Start one eval run and return its run id.
+    """Start one eval run (an Airflow dag run) of `revision_id` and return its
+    run id. The sweep launcher comes through here."""
+    from dte.airflow.trigger import trigger_dag_run
 
-    Factored out of `trigger_pipeline` so the sweep launcher starts runs the
-    same way a manual trigger does — including the job-queue/in-process
-    split. A second, parallel way to start a run is how the two drift until
-    one of them stops recording something the other does.
-    """
-    settings = get_settings()
-    if settings.job_queue_enabled:
-        from dte.tenancy import get_current_tenant
-        from dte.worker.tasks import enqueue_run
-        run_id, _job = await enqueue_run(
-            pipeline_id, None, tenant_id=get_current_tenant(),
-        )
-        await r_store.update(run_id, **_eval_run_fields(eval_set_id, sweep_id))
-        return run_id
-
-    run_id = await r_store.create(pipeline_id)
-    await r_store.update(run_id, **_eval_run_fields(eval_set_id, sweep_id))
-    _ctx = contextvars.copy_context()
-
-    async def _task_with_context():
-        from dte.tenancy import get_current_tenant, tenant_context_var
-        from dte.worker.tasks import _execute_pipeline
-        tok = tenant_context_var.set(_ctx.run(get_current_tenant))
-        try:
-            await _execute_pipeline(
-                pipeline_id, run_id, p_store, r_store, re_store,
-                s_store, d_store, c_store, lt_store,
-                es_store=es_store, ee_store=ee_store,
-            )
-        finally:
-            tenant_context_var.reset(tok)
-
-    _register_local_task(run_id, asyncio.create_task(_task_with_context()))
-    return run_id
+    conf = {"eval_set_id": eval_set_id, "revision_id": revision_id}
+    if sweep_id:
+        conf["sweep_id"] = sweep_id
+    return await trigger_dag_run(pipeline_id, conf, wait=120)
 
 
 async def materialise_pipeline_rows(
@@ -1204,16 +1094,16 @@ async def trigger_pipeline(
     pipeline_id: str,
     body: TriggerRequest | None = None,
     p_store: PipelineStore = Depends(get_pipeline_store),
-    r_store: RunStore = Depends(get_run_store),
-    re_store: RunEventStore = Depends(get_run_event_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
     lt_store: LookupTableStore = Depends(get_lookup_table_store),
     rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
     es_store: EvalSetStore = Depends(get_eval_set_store),
-    ee_store: EvalExampleStore = Depends(get_eval_example_store),
 ):
+    """Validate, then start an Airflow dag run of `dte__<pipeline_id>`."""
+    from dte.airflow.trigger import trigger_dag_run
+
     pipeline = await p_store.get(pipeline_id)
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
@@ -1225,8 +1115,7 @@ async def trigger_pipeline(
     else:
         await _resolve(pipeline, s_store, d_store, c_store)
 
-    # An eval run with no corpus would compile, produce rows, and score
-    # nothing — a green run that measured zero documents. Reject at trigger.
+    # An eval run with no corpus would score nothing — reject at trigger.
     eval_set_id = body.eval_set_id if body else None
     sweep_id = body.sweep_id if body else None
     if _ptype == "eval" and not eval_set_id:
@@ -1242,84 +1131,28 @@ async def trigger_pipeline(
     if eval_set_id:
         await validate_eval_corpus_match(pipeline, eval_set_id, es_store)
     await _resolve_lookups(pipeline, lt_store)
-    # Engine compatibility: catches cases where a pipeline was saved before
-    # the engine matrix existed, or a source's connection type changed
-    # since save.
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
-    settings = get_settings()
-    if settings.job_queue_enabled and not settings.shared_output_fs:
-        # plan 046 "Sharp edge 1": a local_fs source/destination is only
-        # readable by whichever process wrote/reads it. With execution
-        # split across an API pod and a worker pod (and no shared RWX
-        # volume), reject at trigger time rather than failing mid-run.
-        await _check_shared_fs_guard(pipeline, s_store, d_store, c_store)
     user_params = (body.params if body else {}) or {}
-    # Resolve the interpolation context up-front so `now`/`today` snapshot at
-    # trigger time (not at compile time deep inside the task) and get
-    # persisted alongside the caller's params for post-hoc inspection.
+    # Resolve the context up-front so `now`/`today` snapshot at trigger time
+    # and bad params / unknown vars fail here instead of inside the task.
     try:
         run_context = resolve_context(pipeline, user_params)
-        interpolate_pipeline(pipeline, run_context)  # early fail on unknown vars
+        interpolate_pipeline(pipeline, run_context)
     except ParamValidationError as e:
         raise HTTPException(status_code=422, detail=e.payload())
     except InterpolationError as e:
         raise HTTPException(status_code=422, detail=str(e))
     latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
-    revision_id = latest_rev.id if latest_rev else None
 
-    if settings.job_queue_enabled:
-        # Distributed path (plan 046): enqueue a procrastinate job instead
-        # of spawning an in-process task. A separate `python -m dte.worker`
-        # process executes it.
-        # Local import: dte.worker.tasks imports `_run_body` from this
-        # module at import time — importing it back at module scope here
-        # would be circular (same reason `_execute_pipeline` is imported
-        # locally in `_task_with_context` below).
-        from dte.tenancy import get_current_tenant
-        from dte.worker.tasks import enqueue_run
-        run_id, _job_id = await enqueue_run(
-            pipeline_id, revision_id, tenant_id=get_current_tenant(),
-        )
-        await r_store.update(
-            run_id, params=run_context, **_eval_run_fields(eval_set_id, sweep_id)
-        )
-        return {"run_id": run_id}
-
-    run_id = await r_store.create(pipeline_id, revision_id=revision_id)
-    await r_store.update(
-        run_id, params=run_context, **_eval_run_fields(eval_set_id, sweep_id)
-    )
-    # asyncio.create_task in CPython 3.7+ already copies the current context
-    # into the new task, so the dte_tenant_id contextvar set by
-    # TenantContextMiddleware is automatically available inside _execute_pipeline.
-    # We capture copy_context() here explicitly so the intent is searchable
-    # and auditable — grep for copy_context to find all tenant-propagation sites.
-    _ctx = contextvars.copy_context()
-
-    async def _task_with_context():
-        # Re-apply the captured context vars inside the coroutine.
-        # This is belt-and-suspenders: create_task already propagates them, but
-        # explicit is better than implicit for security-critical code.
-        from dte.tenancy import tenant_context_var, get_current_tenant
-        # Local import: dte.worker.tasks imports `_run_body` from this module
-        # at import time, so importing it back at module scope here would be
-        # circular. _execute_pipeline itself is unchanged by plan 046 — only
-        # its address moved (dte.api.routes.pipelines -> dte.worker.tasks).
-        from dte.worker.tasks import _execute_pipeline
-        _tid = _ctx.run(get_current_tenant)
-        tok = tenant_context_var.set(_tid)
-        try:
-            await _execute_pipeline(
-                pipeline_id, run_id, p_store, r_store, re_store,
-                s_store, d_store, c_store, lt_store,
-                es_store=es_store, ee_store=ee_store,
-            )
-        finally:
-            tenant_context_var.reset(tok)
-
-    task = asyncio.create_task(_task_with_context())
-    _register_local_task(run_id, task)
-    return {"run_id": run_id}
+    conf = {"params": user_params, "context": run_context}
+    if latest_rev:
+        conf["revision_id"] = latest_rev.id
+    if eval_set_id:
+        conf["eval_set_id"] = eval_set_id
+    if sweep_id:
+        conf["sweep_id"] = sweep_id
+    # A pipeline saved seconds ago may not be a DAG yet; wait for the parse.
+    return {"run_id": await trigger_dag_run(pipeline_id, conf, wait=60)}
 
 
 @router.get("/runs/{run_id}/events", dependencies=[Depends(requires("run:read"))])
@@ -1336,410 +1169,12 @@ async def list_run_events(
 
 @router.post("/runs/{run_id}/cancel", dependencies=[Depends(requires("pipeline:trigger"))])
 async def cancel_run(run_id: str, r_store: RunStore = Depends(get_run_store)):
+    """Mark the Airflow dag run failed; Airflow stops its running task."""
+    from dte.airflow.trigger import cancel_dag_run, dag_id_for
+
     run = await r_store.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     if run.get("status") not in ("pending", "running"):
         raise HTTPException(status_code=409, detail=f"Run is already {run.get('status')}")
-
-    job_id = run.get("job_id")
-    if job_id:
-        # Distributed path (plan 046): queue-native cancel. Works
-        # regardless of which worker pod picked up the job — no
-        # process-local state to consult. abort=True covers both a job
-        # still `todo` (marks it cancelled, never dequeued) and a job
-        # `doing` (procrastinate's worker cancels the asyncio task
-        # running it; the existing `except asyncio.CancelledError` handler
-        # in dte.worker.tasks._execute_pipeline already writes
-        # status=failed, error=cancelled).
-        from dte.worker.app import get_running_app
-
-        app = await get_running_app()
-        cancelled = await app.job_manager.cancel_job_by_id_async(job_id, abort=True)
-        if not cancelled:
-            # No job in a cancellable state — it already reached a
-            # terminal status between our read above and this call.
-            await r_store.update(run_id, status="failed", error="cancelled (job already finished)")
-            return {"cancelled": False, "detail": "job already finished"}
-        return {"cancelled": True}
-
-    cancelled = _cancel_local_task(run_id)
-    if not cancelled:
-        # No local task — likely a stale run from a previous worker. Best-effort
-        # mark it cancelled so operators can move on.
-        await r_store.update(run_id, status="failed", error="cancelled (no local task)")
-        return {"cancelled": False, "detail": "no live task on this worker"}
-    return {"cancelled": True}
-
-
-async def _run_body(
-    pipeline_id: str,
-    run_id: str,
-    p_store: PipelineStore,
-    r_store: RunStore,
-    re_store: RunEventStore,
-    s_store: SourceStore,
-    d_store: DestinationStore,
-    c_store: ConnectionStore,
-    lt_store: LookupTableStore,
-    *,
-    es_store: "EvalSetStore | None" = None,
-    ee_store: "EvalExampleStore | None" = None,
-):
-    settings = get_settings()
-    tr = tracer()
-    with tr.start_as_current_span("run") as run_span:
-        run_span.set_attribute("pipeline_id", pipeline_id)
-        run_span.set_attribute("run_id", run_id)
-
-        with tr.start_as_current_span("resolve"):
-            pipeline = await p_store.get(pipeline_id)
-            # Reuse the context that was frozen at trigger time so `now`/`today`
-            # don't drift and the resolved values match what the run record shows.
-            run_row = await r_store.get(run_id)
-            run_context = (run_row or {}).get("params") or resolve_context(pipeline)
-            pipeline = interpolate_pipeline(pipeline, run_context)
-            pipeline_type = getattr(pipeline, "pipeline_type", "transform") or "transform"
-
-            if pipeline_type in ("quality", "eval"):
-                # Neither writes anywhere: a quality run reports checks, an
-                # eval run reports scores. Resolve sources only.
-                sources = await _resolve_sources(pipeline, s_store, c_store)
-                destination = None
-                dest_creds = None
-            else:
-                sources, (destination, dest_creds) = await _resolve(
-                    pipeline, s_store, d_store, c_store,
-                )
-            lookups = await _resolve_lookups(pipeline, lt_store)
-
-        with tr.start_as_current_span("load_sources") as span:
-            # Resolve `engine="auto"` from the source composition so
-            # pushdown happens for single-source DB pipelines.  The engine
-            # instance returned by get_engine is the local orchestrator +
-            # writer glue; the *actual* execution locus for each source
-            # comes from BackendRegistry (ibis-native backend per
-            # connection_type).
-            from dte.models.pipeline import resolve_pipeline_engine
-            _engine_choice = getattr(pipeline, "engine", None) or "auto"
-            _src_ctypes = [conn.connection_type for _, _, conn, _ in sources]
-            _engine_name = resolve_pipeline_engine(_engine_choice, _src_ctypes)
-            engine = get_engine(_engine_name)
-            registry = BackendRegistry(duckdb_con=engine.con)
-            tables = {
-                ref.alias: load_source(s, registry, conn, creds, table=ref.table)
-                for ref, s, conn, creds in sources
-            }
-            span.set_attribute("source_count", len(tables))
-            span.set_attribute("engine", _engine_name)
-
-        if pipeline_type == "quality":
-            # Quality pipeline: compile with inline check callbacks, skip write.
-            with tr.start_as_current_span("compile"):
-                events_buf: list[tuple[int, str, str, str | None]] = []
-                quality_results = []
-                step_sqls: dict[int, str] = {}
-
-                def _cb(idx, op, status, msg=None):
-                    events_buf.append((idx, op, status, msg))
-
-                def _on_quality_result(step_idx, qresult):
-                    quality_results.append(qresult)
-
-                def _capture_sql(idx: int, sql: str):
-                    step_sqls[idx] = sql
-
-                try:
-                    compile_pipeline(
-                        pipeline, tables,
-                        lookup_tables=lookups,
-                        on_step=_cb,
-                        engine=engine,
-                        on_quality_result=_on_quality_result,
-                        on_step_sql=_capture_sql,
-                    )
-                finally:
-                    for idx, op, status, msg in events_buf:
-                        await re_store.record(run_id, idx, op, status, msg)
-            if step_sqls:
-                await r_store.update(run_id, sql_query={"step_sqls": {str(k): v for k, v in step_sqls.items()}})
-
-            await r_store.set_quality(run_id, [r.model_dump() for r in quality_results])
-
-            failed_hard = any(not r.passed and r.severity == "fail" for r in quality_results)
-            failed_warn = any(not r.passed and r.severity == "warn" for r in quality_results)
-            final_status = (
-                "failed_quality" if failed_hard
-                else "completed_with_warnings" if failed_warn
-                else "completed"
-            )
-            await r_store.update(run_id, status=final_status, rows_written=0, location=None)
-            _log.info(
-                "quality run completed",
-                extra={"pipeline_id": pipeline_id, "checks": len(quality_results), "status": final_status},
-            )
-            return
-
-        if pipeline_type == "eval":
-            await _run_eval_body(
-                pipeline, run_id, run_row, tables, lookups, engine,
-                r_store, re_store, es_store, ee_store, tr,
-            )
-            return
-
-        # Transform pipeline: existing compile → write → post-run contracts path.
-        with tr.start_as_current_span("compile"):
-            # Compiler emits synchronously; buffer here and flush async.
-            events_buf: list[tuple[int, str, str, str | None]] = []
-            step_sqls: dict[int, str] = {}
-
-            def _cb(idx, op, status, msg=None):
-                events_buf.append((idx, op, status, msg))
-
-            def _capture_sql(idx: int, sql: str):
-                step_sqls[idx] = sql
-
-            try:
-                compiled = compile_pipeline(
-                    pipeline, tables,
-                    output=destination.config, lookup_tables=lookups,
-                    on_step=_cb,
-                    on_step_sql=_capture_sql,
-                    engine=engine,
-                )
-            finally:
-                for idx, op, status, msg in events_buf:
-                    await re_store.record(run_id, idx, op, status, msg)
-            dialect = getattr(engine, "dialect", "duckdb")
-            final_sql: str | None = None
-            try:
-                final_sql = str(ibis.to_sql(compiled.limit(settings.run_max_rows), dialect=dialect))
-            except Exception:
-                pass
-            if step_sqls or final_sql:
-                await r_store.update(run_id, sql_query={
-                    "step_sqls": {str(k): v for k, v in step_sqls.items()},
-                    "final_sql": final_sql,
-                })
-            compiled = compiled.limit(settings.run_max_rows)
-
-        with tr.start_as_current_span("write") as span:
-            span.set_attribute("destination_type", destination.config.type)
-            result = engine.execute(
-                compiled, destination.config, credentials=dest_creds, run_id=run_id
-            )
-            span.set_attribute("rows_written", result["rows_written"])
-
-        with tr.start_as_current_span("quality") as q_span:
-            contracts = getattr(pipeline, "quality_contracts", []) or []
-            quality_results = []
-            if contracts:
-                from dte.quality.evaluator import evaluate_contracts
-                quality_results = evaluate_contracts(contracts, destination.config, engine.con)
-                q_span.set_attribute("contracts_evaluated", len(contracts))
-                q_span.set_attribute("contracts_passed", sum(1 for r in quality_results if r.passed))
-            await r_store.set_quality(run_id, [r.model_dump() for r in quality_results])
-
-    failed_hard = any(not r.passed and r.severity == "fail" for r in quality_results)
-    failed_warn = any(not r.passed and r.severity == "warn" for r in quality_results)
-    final_status = (
-        "failed_quality" if failed_hard
-        else "completed_with_warnings" if failed_warn
-        else "completed"
-    )
-    await r_store.update(
-        run_id,
-        status=final_status,
-        rows_written=result["rows_written"],
-        location=result["location"],
-    )
-    _log.info(
-        "run completed",
-        extra={"pipeline_id": pipeline_id, "rows_written": result["rows_written"], "status": final_status},
-    )
-
-
-async def _run_eval_body(
-    pipeline,
-    run_id: str,
-    run_row: dict | None,
-    tables: dict,
-    lookups: dict,
-    engine,
-    r_store: RunStore,
-    re_store: RunEventStore,
-    es_store: "EvalSetStore | None",
-    ee_store: "EvalExampleStore | None",
-    tr,
-):
-    """Compile, materialise, join to labels, score (plan 051 task 7).
-
-    Scoring runs here rather than as a compiler op for a concrete reason:
-    precision/recall over a corpus *is* an aggregation, and
-    `PipelineBase._validate_steps` rejects `aggregate` outside transform
-    pipelines. Relaxing that guard to let a "score" step exist would trade a
-    narrow rule for a user-visible step they have to wire correctly. Doing it
-    in the runner mirrors `evaluate_contracts` in the quality branch, and
-    keeps the compiler a pure table -> table function.
-
-    The eval set is bound at trigger time and recorded on the run row, so a
-    run always carries what it was scored against.
-    """
-    from dte.evals.cost import throughput_stats
-    from dte.evals.digest import config_digest
-    from dte.evals.runner import join_and_score
-
-    eval_set_id = (run_row or {}).get("eval_set_id")
-    if not eval_set_id:
-        raise ValueError(
-            "eval pipeline triggered without an eval_set_id — nothing to score "
-            "against; pass eval_set_id when triggering"
-        )
-    if es_store is None or ee_store is None:
-        # Lazy: only an eval run needs these, and building one requires
-        # DATABASE_URL. Resolving them eagerly on the shared run path would
-        # make every transform run depend on config it never reads.
-        from dte.api.deps import get_eval_example_store, get_eval_set_store
-        es_store = es_store or get_eval_set_store()
-        ee_store = ee_store or get_eval_example_store()
-
-    eval_set = await es_store.get(eval_set_id)
-    if eval_set is None:
-        raise ValueError(f"eval set not found: {eval_set_id}")
-
-    specs = eval_set.to_field_specs()
-    # Pin the label version *before* compiling. Labels can be edited while a
-    # run is in flight; recording the version we actually read is what lets
-    # the leaderboard grey out runs whose labels have since changed instead of
-    # silently comparing against a moved target.
-    labels_version = eval_set.labels_version
-    examples = await ee_store.list_for_set(eval_set_id, limit=10**6)
-
-    with tr.start_as_current_span("compile"):
-        events_buf: list[tuple[int, str, str, str | None]] = []
-
-        def _cb(idx, op, status, msg=None):
-            events_buf.append((idx, op, status, msg))
-
-        try:
-            compiled = compile_pipeline(
-                pipeline, tables,
-                lookup_tables=lookups,
-                on_step=_cb,
-                engine=engine,
-            )
-        finally:
-            for idx, op, status, msg in events_buf:
-                await re_store.record(run_id, idx, op, status, msg)
-
-    with tr.start_as_current_span("materialise") as span:
-        settings = get_settings()
-        df = compiled.limit(settings.run_max_rows).execute()
-        rows = json.loads(df.to_json(orient="records", date_format="iso"))
-        span.set_attribute("rows", len(rows))
-
-    with tr.start_as_current_span("score") as span:
-        scores = join_and_score(rows, examples, specs, collect_failures=True)
-        # Cost, cache-hit rate and latency come from the same rows that were
-        # scored, so the spend reported always describes the work the score
-        # is based on. Plan 051's economic claim — caching makes sweeps
-        # affordable — is only checkable once these are on screen.
-        scores["throughput"] = throughput_stats(rows)
-        digest = config_digest(pipeline)
-        span.set_attribute("macro_f1", scores.get("macro_f1") or -1.0)
-        span.set_attribute("n", scores.get("n", 0))
-
-    # Regression check against the previous run of the *same* config. A drop
-    # here means nothing about the pipeline changed and the score moved anyway
-    # — the provider shifted under you, which is the whole point of recording
-    # a digest.
-    regression = await _detect_eval_regression(
-        r_store, eval_set_id, digest, labels_version, run_id, scores
-    )
-    if regression:
-        scores["regression"] = regression
-
-    await r_store.update(
-        run_id,
-        status="completed_with_warnings" if regression else "completed",
-        rows_written=scores.get("n", 0),
-        location=None,
-        eval_set_id=eval_set_id,
-        labels_version=labels_version,
-        config_digest=digest,
-        scores=scores,
-    )
-    _log.info(
-        "eval run completed",
-        extra={
-            "eval_set_id": eval_set_id,
-            "macro_f1": scores.get("macro_f1"),
-            "n": scores.get("n"),
-            "regressed": bool(regression),
-        },
-    )
-
-
-# Default drop, in F1 points, that counts as a regression.
-EVAL_REGRESSION_THRESHOLD = 0.03
-
-
-async def _detect_eval_regression(
-    r_store: RunStore,
-    eval_set_id: str,
-    digest: str,
-    labels_version: int,
-    run_id: str,
-    scores: dict,
-) -> dict | None:
-    """Compare against the most recent completed run at the same digest.
-
-    Gated on three things, all of which must hold before this warns:
-
-    - **Same `config_digest`** — otherwise the "regression" is just a config
-      change, which is a result, not an alert.
-    - **Same `labels_version`** — comparing across a label edit measures the
-      labels, not the extractor.
-    - **The drop clears the Wilson interval** — a nightly job that pages
-      someone on sampling noise gets muted within a week, and then it is worth
-      nothing on the night it is right.
-    """
-    current = scores.get("macro_f1")
-    if current is None:
-        return None
-    try:
-        history = await r_store.list_for_eval_set(eval_set_id, limit=50)
-    except Exception:  # noqa — a failed comparison must never fail the run
-        _log.exception("regression lookup failed", extra={"run_id": run_id})
-        return None
-
-    for prior in history:
-        if prior.get("id") == run_id:
-            continue
-        if prior.get("config_digest") != digest:
-            continue
-        if prior.get("labels_version") != labels_version:
-            continue
-        prior_scores = prior.get("scores") or {}
-        previous = prior_scores.get("macro_f1")
-        if previous is None:
-            continue
-
-        drop = previous - current
-        if drop < EVAL_REGRESSION_THRESHOLD:
-            return None
-
-        lo, hi = (scores.get("macro_f1_interval") or [0.0, 1.0])[:2]
-        prior_interval = prior_scores.get("macro_f1_interval") or [0.0, 1.0]
-        if prior_interval[0] <= hi and lo <= prior_interval[1]:
-            # Intervals overlap: the drop is not distinguishable from noise.
-            return None
-
-        return {
-            "previous_run_id": prior.get("id"),
-            "previous_macro_f1": previous,
-            "current_macro_f1": current,
-            "drop": drop,
-            "threshold": EVAL_REGRESSION_THRESHOLD,
-        }
-    return None
+    return {"cancelled": await cancel_dag_run(dag_id_for(run["pipeline_id"]), run_id)}

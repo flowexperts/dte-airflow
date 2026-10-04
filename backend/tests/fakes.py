@@ -15,15 +15,13 @@ from dte.models.eval import (
     EvalSet, EvalSetBase,
 )
 from dte.models.pipeline import (
-    Connection, ConnectionBase,
+    Connection,
     Destination, DestinationBase,
     LookupTable, LookupTableBase,
     Pipeline, PipelineBase,
     PipelineRevision, PipelineRevisionBase,
-    Schedule, ScheduleBase,
     Source, SourceBase,
 )
-from dte.models.user import Role, User, UserBase
 
 
 def _utcnow_iso() -> str:
@@ -123,7 +121,7 @@ class FakeRunStore:
             "sql_query": None,
             "job_id": None,
             "last_heartbeat_at": None,
-            "schedule_id": None,
+            "scheduled": False,
             # Plan 051. Present-but-null on every run, not only eval runs, so
             # a caller reading them off a transform run gets None rather than
             # a KeyError — same contract the Postgres select list gives.
@@ -543,57 +541,9 @@ class FakeLookupTableStore:
         return False
 
 
-class FakeScheduleStore:
-    """In-memory schedule store for tests. `list_due`/`advance` mirror the
-    ticker-facing (RLS-bypassing) side of `PostgresScheduleStore` — no
-    tenant filtering, since the real ticker deliberately sees every
-    tenant's due schedules in one pass."""
-
-    def __init__(self):
-        self._data: dict[str, Schedule] = {}
-
-    async def get(self, id: str) -> Schedule | None:
-        return self._data.get(id)
-
-    async def save(self, schedule: "ScheduleBase | Schedule") -> None:
-        existing = self._data.get(schedule.id)
-        row = Schedule(**schedule.model_dump(exclude={"created_at", "updated_at"}))
-        row.created_at = existing.created_at if existing else _utcnow()
-        row.updated_at = _utcnow()
-        self._data[row.id] = row
-
-    async def list_for_pipeline(self, pipeline_id: str) -> list[Schedule]:
-        items = [s for s in self._data.values() if s.pipeline_id == pipeline_id]
-        return sorted(items, key=lambda s: s.created_at or _utcnow(), reverse=True)
-
-    async def list_for_eval_set(self, eval_set_id: str) -> list[Schedule]:
-        items = [s for s in self._data.values() if s.eval_set_id == eval_set_id]
-        return sorted(items, key=lambda s: s.created_at or _utcnow(), reverse=True)
-
-    async def list_due(self, now: datetime) -> list[Schedule]:
-        return [
-            s for s in self._data.values()
-            if s.enabled and s.next_run_at is not None and s.next_run_at <= now
-        ]
-
-    async def advance(self, id: str, **fields) -> None:
-        row = self._data.get(id)
-        if row is None:
-            return
-        for k, v in fields.items():
-            setattr(row, k, v)
-
-    async def delete(self, id: str) -> bool:
-        if id in self._data:
-            del self._data[id]
-            return True
-        return False
-
-
 class FakeConnectionStore:
-    """In-memory connection store for tests. Stores typed `Connection`
-    instances; `credentials` is a real attribute on the Connection (backed
-    by EncryptedJSON in Postgres, plain dict in the fake)."""
+    """In-memory stand-in for the Airflow-backed ConnectionStore. `_data`
+    is seeded directly by tests (and conftest's `local_fs`)."""
 
     def __init__(self):
         self._data: dict[str, Connection] = {}
@@ -601,143 +551,23 @@ class FakeConnectionStore:
     async def get(self, id: str) -> Connection | None:
         return self._data.get(id)
 
-    async def save(self, connection: "ConnectionBase | Connection") -> None:
-        existing = self._data.get(connection.id)
-        name = connection.name or connection.id
-        tenant_id = getattr(connection, "tenant_id", "default") or "default"
-        # Enforce UNIQUE(tenant_id, name) — mirrors DB constraint from migration 020.
-        for other in self._data.values():
-            if other.id == connection.id:
-                continue
-            if getattr(other, "tenant_id", "default") == tenant_id and (other.name or other.id) == name:
-                raise ValueError(
-                    f"Connection name '{name}' already exists for tenant '{tenant_id}'"
-                )
-        row = Connection(
-            id=connection.id,
-            name=name,
+    async def save(self, connection) -> None:
+        """Test seeding helper (the real store is read-only)."""
+        self._data[connection.id] = Connection.model_construct(
+            id=connection.id, name=connection.name or connection.id,
             connection_type=connection.connection_type,
-            credentials=connection.credentials,
+            credentials=connection.credentials, tenant_id="default",
         )
-        # Preserve created_at if already saved (mirrors FakePipelineStore).
-        if existing is not None:
-            row.created_at = existing.created_at
-        row.updated_at = _utcnow()
-        self._data[connection.id] = row
+
+    async def delete(self, id: str) -> bool:
+        return self._data.pop(id, None) is not None
 
     async def list(self, limit: int = 50, offset: int = 0) -> list[Connection]:
-        from dte.secrets.encrypted_json import UnreadableCredentials
-
-        items = list(self._data.values())
-        # Mask: return copies with credentials={}. A row whose credentials
-        # failed to decrypt (real Postgres) / were seeded as unreadable
-        # (tests) stays flagged even though masked, mirroring
-        # PostgresConnectionStore.list.
-        masked = []
-        for c in items[offset:offset + limit]:
-            creds = c.credentials
-            masked_row = Connection(
-                id=c.id,
-                name=c.name,
-                connection_type=c.connection_type,
-                credentials=(
-                    UnreadableCredentials(b"", reason=creds.reason)
-                    if isinstance(creds, UnreadableCredentials)
-                    else {}
-                ),
-            )
-            masked.append(masked_row)
-        return masked
-
-    async def delete(self, id: str) -> bool:
-        if id in self._data:
-            del self._data[id]
-            return True
-        return False
-
-
-class FakeUserStore:
-    """In-memory user store for tests. Stores typed `User` instances.
-
-    `save` accepts a `UserBase` instance plus a pre-hashed password.
-    Mirrors the `UserStore` Protocol in `dte/store/base.py`.
-    """
-
-    def __init__(self, role_store: "FakeRoleStore | None" = None):
-        self._data: dict[str, User] = {}
-        # (user_id, role_id) pairs
-        self._links: set[tuple[str, str]] = set()
-        self._role_store = role_store
-
-    def _attach_roles(self, user: User) -> User:
-        if self._role_store is None:
-            user.narrow_roles([])
-            return user
-        rids = [rid for uid, rid in self._links if uid == user.id]
-        roles = [self._role_store._data[rid] for rid in rids if rid in self._role_store._data]
-        user.narrow_roles(roles)
-        return user
-
-    async def get_by_id(self, id: str) -> User | None:
-        u = self._data.get(id)
-        return self._attach_roles(u) if u is not None else None
-
-    async def get_by_email(self, email: str) -> User | None:
-        for user in self._data.values():
-            if user.email == email:
-                return self._attach_roles(user)
-        return None
-
-    async def save(self, user: "UserBase", password_hash: str) -> None:
-        existing = self._data.get(user.id)
-        row = User(
-            id=user.id,
-            email=str(user.email),
-            is_active=user.is_active,
-            password_hash=password_hash,
-            tenant_id=getattr(user, "tenant_id", "default") or "default",
-        )
-        row.created_at = existing.created_at if existing else _utcnow()
-        row.updated_at = _utcnow()
-        self._data[user.id] = row
-
-    async def list(self, limit: int = 50, offset: int = 0) -> list[User]:
-        items = sorted(
-            self._data.values(),
-            key=lambda u: u.created_at or _utcnow(),
-            reverse=True,
-        )
-        return [self._attach_roles(u) for u in items[offset:offset + limit]]
-
-    async def delete(self, id: str) -> bool:
-        if id in self._data:
-            del self._data[id]
-            self._links = {(u, r) for (u, r) in self._links if u != id}
-            return True
-        return False
-
-    async def count(self) -> int:
-        return len(self._data)
-
-    async def add_role(self, user_id: str, role_id: str) -> None:
-        self._links.add((user_id, role_id))
-
-    async def remove_role(self, user_id: str, role_id: str) -> bool:
-        if (user_id, role_id) in self._links:
-            self._links.discard((user_id, role_id))
-            return True
-        return False
-
-
-class FakeRoleStore:
-    def __init__(self):
-        self._data: dict[str, Role] = {}
-
-    async def get(self, id: str) -> Role | None:
-        return self._data.get(id)
-
-    async def list(self) -> list[Role]:
-        return sorted(self._data.values(), key=lambda r: r.name)
+        return [
+            Connection.model_construct(id=c.id, name=c.name, connection_type=c.connection_type,
+                                       credentials={}, tenant_id="default")
+            for c in list(self._data.values())[offset:offset + limit]
+        ]
 
 
 class FakeEvalSetStore:

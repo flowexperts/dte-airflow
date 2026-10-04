@@ -10,7 +10,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as SMField
 from sqlmodel import SQLModel
 
-from dte.secrets.encrypted_json import EncryptedJSON
 
 # ─── Connections ─────────────────────────────────────────────────────────
 
@@ -243,47 +242,17 @@ class ConnectionBase(SQLModel):
         return self
 
 
-class Connection(ConnectionBase, table=True):
-    """ORM-mapped row.
+class Connection(ConnectionBase):
+    """An Airflow Connection viewed through DTE's types (plan 065).
 
-    SQLModel 0.0.39 cannot map Literal[...] to a SA column, so
-    `connection_type` is overridden as plain `str` with an explicit
-    `sa_column`.  `credentials` is backed by `EncryptedJSON` (BYTEA) —
-    encrypt/decrypt happen transparently at the TypeDecorator level.
+    Not persisted here: `dte.airflow.connections.from_airflow` builds it from
+    the Airflow connection, and `id` is the Airflow `conn_id`. Credentials are
+    already in DTE's shape, so the dlt spec validation on `ConnectionBase`
+    is skipped.
     """
-    __tablename__ = "connections"
 
-    # Override id to declare it as the primary key.
-    id: str = SMField(  # type: ignore[override]
-        default_factory=lambda: str(_uuid.uuid4()), primary_key=True
-    )
-    # Editable, unique-per-tenant display name. NOT NULL at the DB layer
-    # (see migration 020); nullable here so back-compat callers that only
-    # pass `id` still construct — `_default_name_to_id` fills it in on Base
-    # and we mirror the same fallback in stores.
-    name: str | None = SMField(  # type: ignore[override]
-        default=None, sa_column=Column(Text, nullable=False)
-    )
-    # Override: Literal → str for SQLAlchemy mapping.
-    connection_type: str = SMField(  # type: ignore[override]
-        sa_column=Column(Text, nullable=False)
-    )
-    # Real mapped column — replaces the legacy `credentials_encrypted` BYTEA.
-    # Physical column name kept as `credentials_encrypted` so no migration needed.
-    credentials: dict = SMField(  # type: ignore[override]
-        default_factory=dict,
-        sa_column=Column("credentials_encrypted", EncryptedJSON, nullable=False),
-    )
-    tenant_id: str = SMField(  # type: ignore[override]
-        default="default", sa_column=Column(Text, nullable=False, server_default="default")
-    )
-    created_at: datetime | None = SMField(
-        default=None, sa_column=Column(server_default=func.now())
-    )
-    updated_at: datetime | None = SMField(
-        default=None,
-        sa_column=Column(server_default=func.now(), onupdate=func.now()),
-    )
+    def _validate_credentials(self):  # overrides ConnectionBase's validator
+        return self
 
 
 # Back-compat alias — ConnectionCreate was the old 3-class name.
@@ -1309,6 +1278,28 @@ def coerce_source_refs(sources: list) -> list["SourceTableRef"]:
     return out
 
 
+OverlapPolicy = Literal["skip", "allow"]
+
+
+class PipelineSchedule(BaseModel):
+    """A pipeline's one recurring trigger (plan 068), embedded in the spec.
+
+    `cron_expr`/`timezone`, `params` and `eval_set_id` are validated at the
+    API layer (`routes/pipelines._validate_schedule`) — each needs something
+    this model doesn't have (a clock, the pipeline's declared params, the
+    eval-set store). Airflow does the firing: the pipeline's one DAG gets
+    this cron (`dte.airflow.dag_factory`).
+    """
+    cron_expr: str
+    timezone: str = "UTC"
+    params: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+    overlap: OverlapPolicy = "skip"
+    # The corpus a scheduled *eval* run scores against; required for eval
+    # pipelines, since a nightly eval run with no corpus scores nothing.
+    eval_set_id: str | None = None
+
+
 class PipelineParam(BaseModel):
     """Declared trigger-time input on a pipeline.
 
@@ -1442,6 +1433,9 @@ class PipelineBase(SQLModel):
     # {{params.<name>}}; validated against declared types on trigger.
     params: list[PipelineParam] = SMField(default_factory=list)
     tenant_id: str = "default"
+    # At most one schedule: a pipeline is one DAG and a DAG has one schedule
+    # (plan 068). Part of the spec, so a schedule edit is a revision.
+    schedule: PipelineSchedule | None = None
 
     @model_validator(mode="after")
     def _validate_matrix(self):
@@ -1616,6 +1610,9 @@ class Pipeline(PipelineBase, table=True):
     matrix: dict[str, list] | None = SMField(  # type: ignore[override]
         default=None, sa_column=Column(JSONB, nullable=True)
     )
+    schedule: dict | None = SMField(  # type: ignore[override]
+        default=None, sa_column=Column(JSONB, nullable=True)
+    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
     )
@@ -1681,93 +1678,6 @@ class PipelineRevision(PipelineRevisionBase, table=True):
     )
     changed_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
-    )
-
-
-# ─── Schedules (plan 047) ───────────────────────────────────────────────
-
-OverlapPolicy = Literal["skip", "allow"]
-
-
-class ScheduleBase(SQLModel):
-    """API/domain fields for a recurring trigger of one pipeline.
-
-    `cron_expr` + `timezone` are validated for parseability by
-    `dte.scheduling.cron.next_fire_after` at the API layer (task 3) — kept
-    out of a Pydantic validator here because computing the *next* fire
-    time needs a `now`, which the model doesn't have.  `params` are
-    validated against the pipeline's declared `PipelineParam`s the same
-    way, also at the API layer, since that needs the `Pipeline` row.
-
-    `next_run_at`/`last_run_id`/`last_fired_at` are ticker-owned — set by
-    `dte.worker.scheduler`, not by the CRUD API.
-    """
-    id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
-    pipeline_id: str
-    cron_expr: str
-    timezone: str = "UTC"
-    params: dict[str, str] = SMField(default_factory=dict)
-    enabled: bool = True
-    overlap: OverlapPolicy = "skip"
-    next_run_at: datetime | None = None
-    last_run_id: str | None = None
-    last_fired_at: datetime | None = None
-    tenant_id: str = "default"
-    # Which corpus a scheduled *eval* run scores against (plan 051 phase
-    # 5). The runner reads `eval_set_id` off the run row, so the ticker
-    # has to stamp it there exactly as the trigger route does — without
-    # it a nightly eval run dies at scoring time with no corpus, which is
-    # the one failure a nightly eval exists to catch.
-    eval_set_id: str | None = None
-
-
-class Schedule(ScheduleBase, table=True):
-    __tablename__ = "schedules"
-
-    id: str = SMField(  # type: ignore[override]
-        default_factory=lambda: str(_uuid.uuid4()), primary_key=True
-    )
-    pipeline_id: str = SMField(  # type: ignore[override]
-        sa_column=Column(Text, ForeignKey("pipelines.id", ondelete="CASCADE"), nullable=False)
-    )
-    cron_expr: str = SMField(sa_column=Column(Text, nullable=False))  # type: ignore[override]
-    timezone: str = SMField(  # type: ignore[override]
-        default="UTC", sa_column=Column(Text, nullable=False, server_default="UTC")
-    )
-    params: dict = SMField(  # type: ignore[override]
-        default_factory=dict, sa_column=Column(JSONB, nullable=False)
-    )
-    # Override: Literal → str for SQLAlchemy mapping (SQLModel 0.0.39 gotcha).
-    overlap: str = SMField(  # type: ignore[override]
-        default="skip", sa_column=Column(Text, nullable=False, server_default="skip")
-    )
-    tenant_id: str = SMField(  # type: ignore[override]
-        default="default", sa_column=Column(Text, nullable=False, server_default="default")
-    )
-    # No FK to eval_sets: the API refuses to delete a set a schedule still
-    # references (409, naming the schedules), the same contract sources and
-    # destinations use. A cascade here would silently delete a user's
-    # schedule as a side effect of tidying up an eval set.
-    eval_set_id: str | None = SMField(  # type: ignore[override]
-        default=None, sa_column=Column(Text, nullable=True)
-    )
-    # Explicit timezone=True: these three are *app-supplied* aware
-    # datetimes (unlike created_at/updated_at below, which are DB-filled
-    # via server_default and never bound as a Python value). Without it,
-    # SQLModel infers a naive TIMESTAMP column and asyncpg rejects the
-    # aware datetime the API/ticker actually sends.
-    next_run_at: datetime | None = SMField(
-        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
-    )
-    last_fired_at: datetime | None = SMField(
-        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
-    )
-    created_at: datetime | None = SMField(
-        default=None, sa_column=Column(server_default=func.now())
-    )
-    updated_at: datetime | None = SMField(
-        default=None,
-        sa_column=Column(server_default=func.now(), onupdate=func.now()),
     )
 
 

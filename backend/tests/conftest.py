@@ -14,7 +14,6 @@ bad/missing token) opt out via
 import json
 import pytest
 
-from dte.api.limiter import limiter
 from dte.api.main import app
 from dte.api.deps import (
     get_pipeline_revision_store,
@@ -24,20 +23,15 @@ from dte.api.deps import (
     get_source_store,
     get_destination_store,
     get_connection_store,
-    get_user_store,
-    get_role_store,
     get_current_user,
     get_current_tenant_id,
     get_dashboard_store,
     get_lookup_table_store,
     get_eval_example_store,
     get_eval_set_store,
-    get_schedule_store,
 )
 from dte.models.pipeline import Connection
-from dte.models.user import Role, User, UserBase
-from dte.security.jwt import create_access_token
-from dte.security.passwords import hash_password
+from dte.models.user import User
 from tests.fakes import (
     FakePipelineRevisionStore,
     FakePipelineStore,
@@ -46,40 +40,21 @@ from tests.fakes import (
     FakeSourceStore,
     FakeDestinationStore,
     FakeConnectionStore,
-    FakeRoleStore,
-    FakeUserStore,
     FakeDashboardStore,
     FakeLookupTableStore,
     FakeEvalExampleStore,
     FakeEvalSetStore,
-    FakeScheduleStore,
 )
 
 
 def _make_local_fs_connection() -> Connection:
     """Build the pre-seeded local_fs Connection instance."""
-    return Connection(
-        id="local_fs",
-        connection_type="local_fs",
-        credentials={},
-    )
+    return Connection(id="local_fs", connection_type="local_fs", credentials={})
 
 
 def _fake_test_user() -> User:
-    from dte.models.user import Role
-    from dte.security.permissions import ADMIN_PERMISSIONS
-    u = User(
-        id="test-user",
-        email="test@example.com",
-        is_active=True,
-        password_hash="unused-in-tests",
-    )
-    # Attach an admin role so autouse tests pass every requires(...) gate.
-    # RBAC-specific tests override get_current_user with a scoped user.
-    u.narrow_roles([Role(id="admin", name="admin", permissions=list(ADMIN_PERMISSIONS))])
-    # Embed the default tenant so multi-tenant deps work in tests.
-    object.__setattr__(u, "_tenant_id", "default")
-    return u
+    from dte.security.permissions import ALL_PERMISSIONS
+    return User(id="test-user", email="test@example.com", permissions=list(ALL_PERMISSIONS))
 
 
 @pytest.fixture(autouse=True)
@@ -95,43 +70,16 @@ def _isolated_artifact_dir(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _disable_rate_limiter():
-    """Disable the global slowapi limiter for every test.
-
-    Unit tests that call login/register multiple times in sequence would
-    otherwise trip the per-IP window. ``test_rate_limit.py`` re-enables the
-    limiter explicitly inside its own fixture so the 429 path is testable.
-    """
-    original = limiter.enabled
-    limiter.enabled = False
-    yield
-    limiter.enabled = original
-
-
-@pytest.fixture(autouse=True)
 def fake_stores():
-    from dte.security.permissions import (
-        ADMIN_PERMISSIONS,
-        EDITOR_PERMISSIONS,
-        VIEWER_PERMISSIONS,
-    )
-    role_store = FakeRoleStore()
-    # Seed the three canned roles (mirrors alembic 011).
-    role_store._data["admin"] = Role(id="admin", name="admin", permissions=list(ADMIN_PERMISSIONS))
-    role_store._data["editor"] = Role(id="editor", name="editor", permissions=list(EDITOR_PERMISSIONS))
-    role_store._data["viewer"] = Role(id="viewer", name="viewer", permissions=list(VIEWER_PERMISSIONS))
-
-    p, r, re, s, d, c, u, lt, pr, sch = (
+    p, r, re, s, d, c, lt, pr = (
         FakePipelineStore(),
         FakeRunStore(),
         FakeRunEventStore(),
         FakeSourceStore(),
         FakeDestinationStore(),
         FakeConnectionStore(),
-        FakeUserStore(role_store=role_store),
         FakeLookupTableStore(),
         FakePipelineRevisionStore(),
-        FakeScheduleStore(),
     )
     es, ee = FakeEvalSetStore(), FakeEvalExampleStore()
     dash = FakeDashboardStore()
@@ -144,12 +92,9 @@ def fake_stores():
     app.dependency_overrides[get_source_store] = lambda: s
     app.dependency_overrides[get_destination_store] = lambda: d
     app.dependency_overrides[get_connection_store] = lambda: c
-    app.dependency_overrides[get_user_store] = lambda: u
-    app.dependency_overrides[get_role_store] = lambda: role_store
     app.dependency_overrides[get_lookup_table_store] = lambda: lt
     app.dependency_overrides[get_dashboard_store] = lambda: dash
     app.dependency_overrides[get_pipeline_revision_store] = lambda: pr
-    app.dependency_overrides[get_schedule_store] = lambda: sch
     app.dependency_overrides[get_eval_set_store] = lambda: es
     app.dependency_overrides[get_eval_example_store] = lambda: ee
     # Bypass auth for existing tests — auth-flow tests opt out per-test.
@@ -163,33 +108,29 @@ def fake_stores():
         "source": s,
         "destination": d,
         "connection": c,
-        "user": u,
-        "role": role_store,
         "lookup_table": lt,
         "dashboard": dash,
         "pipeline_revision": pr,
-        "schedule": sch,
         "eval_set": es,
         "eval_example": ee,
     }
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def auth_headers(fake_stores):
-    """Return an Authorization header for a freshly-created user.
+@pytest.fixture(autouse=True)
+def fake_airflow_trigger(fake_stores, monkeypatch):
+    """Triggering is an Airflow REST call; in tests it just records a run row
+    in the fake run store, carrying what the dag run `conf` would."""
+    import dte.airflow.trigger as trig
 
-    Use with `TestClient(app).get(..., headers=auth_headers)` when you
-    need a real JWT (e.g. testing the round-trip). Synchronous to avoid
-    perturbing the event loop that sibling test files reuse."""
-    import asyncio
-    users: FakeUserStore = fake_stores["user"]
-    user = UserBase(id="auth-fixture-user", email="fixture@example.com")
-    asyncio.get_event_loop().run_until_complete(
-        users.save(user, password_hash=hash_password("fixturepass"))
-    )
-    token = create_access_token(user_id=user.id, email=str(user.email))
-    return {"Authorization": f"Bearer {token}"}
+    async def _trigger(pipeline_id, conf, wait=0):
+        r = fake_stores["run"]
+        run_id = await r.create(pipeline_id, revision_id=conf.get("revision_id"))
+        fields = {k: conf[k] for k in ("eval_set_id", "sweep_id") if k in conf}
+        await r.update(run_id, params=conf.get("context"), **fields)
+        return run_id
+
+    monkeypatch.setattr(trig, "trigger_dag_run", _trigger)
 
 
 @pytest.fixture

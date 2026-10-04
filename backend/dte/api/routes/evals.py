@@ -29,6 +29,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from dte.api.deps import (
+    get_current_user,
+    get_pipeline_revision_store,
     get_connection_store,
     get_eval_example_store,
     get_eval_set_store,
@@ -37,10 +39,10 @@ from dte.api.deps import (
     get_destination_store,
     get_run_event_store,
     get_run_store,
-    get_schedule_store,
     get_source_store,
 )
 from dte.api.routes.pipelines import (
+    _record_revision,
     materialise_pipeline_rows,
     start_eval_run,
     validate_eval_corpus_match,
@@ -313,22 +315,25 @@ async def update_eval_set(
 async def delete_eval_set(
     eval_set_id: str,
     store: EvalSetStore = Depends(get_eval_set_store),
-    sch_store=Depends(get_schedule_store),
+    p_store: PipelineStore = Depends(get_pipeline_store),
 ):
     # Same contract as sources and destinations: refuse and name the
     # referrers. Cascading would silently delete a schedule the user built
     # separately, and orphaning would leave one that fires nightly and
     # fails every time — a broken thing that reports itself as a run
     # failure rather than as the deletion that actually caused it.
-    referencing = await sch_store.list_for_eval_set(eval_set_id)
+    referencing = [
+        p.id for p in await p_store.list(limit=10_000)
+        if (p.schedule or {}).get("eval_set_id") == eval_set_id
+    ]
     if referencing:
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "eval_set_in_use",
-                "message": "This eval set is scheduled. Delete or repoint "
-                           "the schedules first.",
-                "referenced_by": {"schedules": [s.id for s in referencing]},
+                "message": "This eval set is scheduled. Remove or repoint "
+                           "those pipelines' schedules first.",
+                "referenced_by": {"pipelines": referencing},
             },
         )
     if not await store.delete(eval_set_id):
@@ -832,6 +837,8 @@ async def launch_sweep(
     d_store=Depends(get_destination_store),
     c_store=Depends(get_connection_store),
     lt_store=Depends(get_lookup_table_store),
+    rev_store=Depends(get_pipeline_revision_store),
+    user=Depends(get_current_user),
 ):
     eval_set = await store.get(eval_set_id)
     if not eval_set:
@@ -926,8 +933,9 @@ async def launch_sweep(
             p_store, variant_name(pipeline, cell), vid
         )
         await p_store.save(variant)
+        rev_id = await _record_revision(variant, rev_store, user)
         run_id = await start_eval_run(
-            vid, eval_set_id=eval_set_id, sweep_id=sweep_id,
+            vid, eval_set_id=eval_set_id, revision_id=rev_id, sweep_id=sweep_id,
             p_store=p_store, r_store=r_store, re_store=re_store,
             s_store=s_store, d_store=d_store, c_store=c_store,
             lt_store=lt_store, es_store=store, ee_store=ex_store,
@@ -1068,6 +1076,8 @@ async def promote_pipeline(
     body: PromoteRequest,
     store: EvalSetStore = Depends(get_eval_set_store),
     p_store: PipelineStore = Depends(get_pipeline_store),
+    rev_store=Depends(get_pipeline_revision_store),
+    user=Depends(get_current_user),
 ):
     """Copy a scored config into a transform pipeline that writes somewhere.
 
@@ -1107,6 +1117,7 @@ async def promote_pipeline(
     promoted.pipeline_type = "transform"
     promoted.output_id = body.output_id
     await p_store.save(promoted)
+    await _record_revision(promoted, rev_store, user)
     return {
         "pipeline_id": body.new_pipeline_id,
         "config_digest": config_digest(promoted),

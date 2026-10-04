@@ -91,11 +91,11 @@ enqueues nothing. Confirmed, each cell becomes a **real pipeline and run** via
   identical cells scoring the same, which reads as "this setting makes no
   difference".
 
-**Schedules** carry an optional `eval_set_id` (migration `035`) and the ticker
-stamps it onto the run row, only when set. Validation at save time repeats the
-trigger route's rules exactly — a schedule is a trigger on a timer, and a
-disagreement between the two surfaces at 2am. No FK: deleting an eval set a
-schedule references returns 409 naming the schedules.
+**A pipeline's schedule** (`pipeline.schedule`, plan 068) carries an optional
+`eval_set_id`; the DAG factory hands it to the operator. Validation at save time
+repeats the trigger route's rules exactly — a schedule is a trigger on a timer,
+and a disagreement between the two surfaces at 2am. No FK: deleting an eval set
+a schedule references returns 409 naming the pipelines.
 
 **Frontend** — `/eval-sets` (list, with best-F1 and last-run), `/eval-sets/new`
 (create) and `/eval-sets/[id]` (Leaderboard / Examples / Review).

@@ -41,57 +41,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Register */
-        post: operations["register_api_auth_register_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Login */
-        post: operations["login_api_auth_login_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Me */
-        get: operations["me_api_auth_me_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/pipelines": {
         parameters: {
             query?: never;
@@ -341,7 +290,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Trigger Pipeline */
+        /**
+         * Trigger Pipeline
+         * @description Validate, then start an Airflow dag run of `dte__<pipeline_id>`.
+         */
         post: operations["trigger_pipeline_api_pipelines__pipeline_id__trigger_post"];
         delete?: never;
         options?: never;
@@ -375,7 +327,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancel Run */
+        /**
+         * Cancel Run
+         * @description Mark the Airflow dag run failed; Airflow stops its running task.
+         */
         post: operations["cancel_run_api_runs__run_id__cancel_post"];
         delete?: never;
         options?: never;
@@ -745,8 +700,7 @@ export interface paths {
         /** List Connections */
         get: operations["list_connections_api_connections_get"];
         put?: never;
-        /** Create Connection */
-        post: operations["create_connection_api_connections_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -762,11 +716,9 @@ export interface paths {
         };
         /** Get Connection */
         get: operations["get_connection_api_connections__connection_id__get"];
-        /** Update Connection */
-        put: operations["update_connection_api_connections__connection_id__put"];
+        put?: never;
         post?: never;
-        /** Delete Connection */
-        delete: operations["delete_connection_api_connections__connection_id__delete"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -783,9 +735,7 @@ export interface paths {
         put?: never;
         /**
          * Test Connection
-         * @description Lightweight connectivity probe. Returns
-         *     `{ok: bool, elapsed_ms: int, detail: str}`. Does not raise on probe
-         *     failure — the UI shows detail either way.
+         * @description Connectivity probe: `{ok, elapsed_ms, detail}`; never raises on probe failure.
          */
         post: operations["test_connection_api_connections__connection_id__test_post"];
         delete?: never;
@@ -803,36 +753,12 @@ export interface paths {
         };
         /**
          * List Connection Schemas
-         * @description Schema/database names visible through a connection's native ibis
-         *     backend — lets the UI offer a picker instead of a blind text field.
-         *     422 (not 500) for connection types with no native backend (e.g.
-         *     filesystem-family) or for a real driver failure.
+         * @description Schema names visible through a connection's native ibis backend; 422
+         *     for types with no native backend or on a driver failure.
          */
         get: operations["list_connection_schemas_api_connections__connection_id__schemas_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connections/bulk-delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Bulk Delete Connections
-         * @description Delete many connections in one call. Returns a per-id breakdown so
-         *     partial success (some blocked by references, some already gone) can be
-         *     surfaced by the UI without failing the whole operation.
-         */
-        post: operations["bulk_delete_connections_api_connections_bulk_delete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -930,25 +856,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/pipelines/{pipeline_id}/schedules": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Schedules For Pipeline */
-        get: operations["list_schedules_for_pipeline_api_pipelines__pipeline_id__schedules_get"];
-        put?: never;
-        /** Create Schedule */
-        post: operations["create_schedule_api_pipelines__pipeline_id__schedules_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/schedules/{schedule_id}": {
+    "/api/pipelines/{pipeline_id}/schedule": {
         parameters: {
             query?: never;
             header?: never;
@@ -956,12 +864,12 @@ export interface paths {
             cookie?: never;
         };
         /** Get Schedule */
-        get: operations["get_schedule_api_schedules__schedule_id__get"];
-        /** Update Schedule */
-        put: operations["update_schedule_api_schedules__schedule_id__put"];
+        get: operations["get_schedule_api_pipelines__pipeline_id__schedule_get"];
+        /** Put Schedule */
+        put: operations["put_schedule_api_pipelines__pipeline_id__schedule_put"];
         post?: never;
         /** Delete Schedule */
-        delete: operations["delete_schedule_api_schedules__schedule_id__delete"];
+        delete: operations["delete_schedule_api_pipelines__pipeline_id__schedule_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1245,85 +1153,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/users": {
+    "/api/me": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Users */
-        get: operations["list_users_api_users_get"];
-        put?: never;
-        /** Create User */
-        post: operations["create_user_api_users_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get User */
-        get: operations["get_user_api_users__user_id__get"];
-        put?: never;
-        post?: never;
-        /** Delete User */
-        delete: operations["delete_user_api_users__user_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/{user_id}/roles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Assign Role */
-        post: operations["assign_role_api_users__user_id__roles_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/users/{user_id}/roles/{role_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Revoke Role */
-        delete: operations["revoke_role_api_users__user_id__roles__role_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/roles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Roles */
-        get: operations["list_roles_api_roles_get"];
+        /**
+         * Me
+         * @description Who the Airflow session is, and what DTE lets them do (for UI gating).
+         */
+        get: operations["me_api_me_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1336,11 +1177,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AssignRoleBody */
-        AssignRoleBody: {
-            /** Role Id */
-            role_id: string;
-        };
         /** AutomapField */
         AutomapField: {
             /** Name */
@@ -1447,50 +1283,6 @@ export interface components {
              * @default false
              */
             stacked: boolean;
-        };
-        /**
-         * ConnectionBase
-         * @description API/domain fields.  `credentials` is validated against the dlt spec
-         *     class for the given `connection_type` and stored as a cleaned dict.
-         *
-         *     Identity model
-         *     --------------
-         *     - `id`: opaque, server-generated (default: UUID4 string). Clients that
-         *       omit it get a fresh one; clients that supply it (legacy migration
-         *       scripts, historic tests) keep working. Never edited after creation.
-         *     - `name`: user-facing label, editable, unique per (tenant_id, class).
-         *       If omitted at construction we default to `id` so historic call
-         *       sites (e.g. `ConnectionBase(id="local_fs", ...)`) still round-trip.
-         */
-        ConnectionBase: {
-            /** Id */
-            id?: string;
-            /** Name */
-            name?: string | null;
-            /**
-             * Connection Type
-             * @enum {string}
-             */
-            connection_type: "local_fs" | "s3" | "gcs" | "azure" | "postgres" | "mysql" | "sqlite" | "mongodb" | "rest_api" | "snowflake" | "bigquery";
-            /** Credentials */
-            credentials?: {
-                [key: string]: unknown;
-            };
-            /**
-             * Tenant Id
-             * @default default
-             */
-            tenant_id: string;
-        };
-        /** CreateUserBody */
-        CreateUserBody: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Password */
-            password: string;
         };
         /**
          * DashboardBase
@@ -1671,16 +1463,6 @@ export interface components {
             /** Fields */
             fields: components["schemas"]["SchemaFieldNode"][];
         };
-        /** LoginBody */
-        LoginBody: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Password */
-            password: string;
-        };
         /**
          * LookupTableBase
          * @description API/domain fields.
@@ -1743,6 +1525,10 @@ export interface components {
              * @default default
              */
             tenant_id: string;
+            /** Schedule */
+            schedule?: {
+                [key: string]: unknown;
+            } | null;
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -1793,6 +1579,7 @@ export interface components {
              * @default default
              */
             tenant_id: string;
+            schedule?: components["schemas"]["PipelineSchedule"] | null;
         };
         /**
          * PipelineParam
@@ -1819,6 +1606,42 @@ export interface components {
             default?: string | null;
             /** Description */
             description?: string | null;
+        };
+        /**
+         * PipelineSchedule
+         * @description A pipeline's one recurring trigger (plan 068), embedded in the spec.
+         *
+         *     `cron_expr`/`timezone`, `params` and `eval_set_id` are validated at the
+         *     API layer (`routes/pipelines._validate_schedule`) — each needs something
+         *     this model doesn't have (a clock, the pipeline's declared params, the
+         *     eval-set store). Airflow does the firing: the pipeline's one DAG gets
+         *     this cron (`dte.airflow.dag_factory`).
+         */
+        PipelineSchedule: {
+            /** Cron Expr */
+            cron_expr: string;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /** Params */
+            params?: {
+                [key: string]: string;
+            };
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Overlap
+             * @default skip
+             * @enum {string}
+             */
+            overlap: "skip" | "allow";
+            /** Eval Set Id */
+            eval_set_id?: string | null;
         };
         /**
          * PromoteRequest
@@ -1858,60 +1681,6 @@ export interface components {
              * @default false
              */
             confirm: boolean;
-        };
-        /** RegisterBody */
-        RegisterBody: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Password */
-            password: string;
-        };
-        /** RolePublic */
-        RolePublic: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Permissions */
-            permissions: string[];
-        };
-        /**
-         * ScheduleWriteRequest
-         * @description Shared shape for POST (create) and PUT (full replace) bodies.
-         *     `pipeline_id` isn't here — it's the path param on create and immutable
-         *     on update; ticker-owned fields (`next_run_at`, `last_run_id`,
-         *     `last_fired_at`) aren't client-settable either.
-         */
-        ScheduleWriteRequest: {
-            /** Id */
-            id?: string | null;
-            /** Cron Expr */
-            cron_expr: string;
-            /**
-             * Timezone
-             * @default UTC
-             */
-            timezone: string;
-            /** Params */
-            params?: {
-                [key: string]: string;
-            };
-            /**
-             * Enabled
-             * @default true
-             */
-            enabled: boolean;
-            /**
-             * Overlap
-             * @default skip
-             * @enum {string}
-             */
-            overlap: "skip" | "allow";
-            /** Eval Set Id */
-            eval_set_id?: string | null;
         };
         /**
          * SchemaFieldNode
@@ -2004,16 +1773,6 @@ export interface components {
              */
             confirm: boolean;
         };
-        /** TokenResponse */
-        TokenResponse: {
-            /** Access Token */
-            access_token: string;
-            /**
-             * Token Type
-             * @default bearer
-             */
-            token_type: string;
-        };
         /**
          * TriggerRequest
          * @description Optional trigger-time params. Keys are user-defined; values are
@@ -2028,25 +1787,6 @@ export interface components {
             eval_set_id?: string | null;
             /** Sweep Id */
             sweep_id?: string | null;
-        };
-        /** UserPublic */
-        UserPublic: {
-            /** Id */
-            id: string;
-            /** Email */
-            email: string;
-            /** Is Active */
-            is_active: boolean;
-            /**
-             * Roles
-             * @default []
-             */
-            roles: string[];
-            /**
-             * Permissions
-             * @default []
-             */
-            permissions: string[];
         };
         /** ValidationError */
         ValidationError: {
@@ -2106,92 +1846,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    register_api_auth_register_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RegisterBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserPublic"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    login_api_auth_login_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    me_api_auth_me_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserPublic"];
                 };
             };
         };
@@ -3514,44 +3168,9 @@ export interface operations {
             };
         };
     };
-    create_connection_api_connections_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConnectionBase"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_connection_api_connections__connection_id__get: {
         parameters: {
-            query?: {
-                reveal?: boolean;
-            };
+            query?: never;
             header?: never;
             path: {
                 connection_id: string;
@@ -3568,70 +3187,6 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_connection_api_connections__connection_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connection_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConnectionBase"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_connection_api_connections__connection_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connection_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -3685,39 +3240,6 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    bulk_delete_connections_api_connections_bulk_delete_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BulkDeleteRequest"];
-            };
-        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4092,7 +3614,7 @@ export interface operations {
             };
         };
     };
-    list_schedules_for_pipeline_api_pipelines__pipeline_id__schedules_get: {
+    get_schedule_api_pipelines__pipeline_id__schedule_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4123,7 +3645,7 @@ export interface operations {
             };
         };
     };
-    create_schedule_api_pipelines__pipeline_id__schedules_post: {
+    put_schedule_api_pipelines__pipeline_id__schedule_put: {
         parameters: {
             query?: never;
             header?: never;
@@ -4134,7 +3656,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ScheduleWriteRequest"];
+                "application/json": components["schemas"]["PipelineSchedule"];
             };
         };
         responses: {
@@ -4158,78 +3680,12 @@ export interface operations {
             };
         };
     };
-    get_schedule_api_schedules__schedule_id__get: {
+    delete_schedule_api_pipelines__pipeline_id__schedule_delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                schedule_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_schedule_api_schedules__schedule_id__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                schedule_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScheduleWriteRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_schedule_api_schedules__schedule_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                schedule_id: string;
+                pipeline_id: string;
             };
             cookie?: never;
         };
@@ -4821,197 +4277,7 @@ export interface operations {
             };
         };
     };
-    list_users_api_users_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserPublic"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_user_api_users_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateUserBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserPublic"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_user_api_users__user_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserPublic"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_user_api_users__user_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    assign_role_api_users__user_id__roles_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AssignRoleBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserPublic"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    revoke_role_api_users__user_id__roles__role_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-                role_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_roles_api_roles_get: {
+    me_api_me_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5026,7 +4292,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RolePublic"][];
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

@@ -1,15 +1,13 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { CronExplainer } from "./CronExplainer";
 import { createPortal } from "react-dom";
+import { portalHost } from "@/components/ui/portal-host";
 import { Button, Dropdown, Field, Input, Segmented } from "@/components/ui";
 import {
   ApiError,
-  createSchedule,
   listEvalSets,
-  updateSchedule,
+  putSchedule,
   type EvalSet,
   type OverlapPolicy,
   type PipelineParam,
@@ -127,7 +125,7 @@ export function ScheduleForm({
     setErr(null);
     setBusy(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, schedule?.id]);
+  }, [open]);
 
   if (!open || !mounted) return null;
 
@@ -160,9 +158,7 @@ export function ScheduleForm({
       ...(isEval ? { eval_set_id: evalSetId } : {}),
     };
     try {
-      const saved = schedule
-        ? await updateSchedule(schedule.id, body)
-        : await createSchedule(pipelineId, body);
+      const saved = await putSchedule(pipelineId, body);
       onSaved(saved);
       onClose();
     } catch (e) {
@@ -393,7 +389,7 @@ export function ScheduleForm({
         </div>
       </div>
     </div>,
-    document.body,
+    portalHost(),
   );
 }
 

@@ -8,7 +8,7 @@ DTE is a batch data transformation engine. A user defines a **Pipeline** — one
 
 The engine is deliberately embedded and single-node today. DuckDB is the runtime; Ibis is the expression language; dlt handles a small number of API-shaped sources where its pagination and normalisation earn their keep. Everything else — filesystem globs, SQL databases, cloud object stores — goes through DuckDB extensions directly, because that is significantly faster and involves fewer moving parts than routing through dlt.
 
-The UI is a Next.js 16 app that lets users compose pipelines visually, preview them against sample rows, and monitor runs. The backend is a FastAPI service backed by Postgres. Everything ships together in a Docker Compose stack.
+The UI is a React app, rendered natively inside Airflow as a plugin, that lets users compose pipelines visually, preview them against sample rows, and monitor runs. The backend is a FastAPI service backed by Postgres. Everything ships together in a Docker Compose stack.
 
 ## Data flow
 
@@ -244,7 +244,7 @@ Guardrails default off in dev but are wired to environment / settings knobs so p
 
 ## Frontend
 
-The UI is a Next.js 16 app under `frontend/` — App Router with Turbopack, React 19, Tailwind v4, pnpm. Routes live under `src/app/(app)/`: pipeline list, pipeline detail, pipeline edit, run detail, and a component-gallery preview page. Data fetching is SWR-based, with a hand-written `apiFetch<T>` wrapper over a generated `api-types.ts` (regenerated from the backend's `/openapi.json`). Run pages poll `/api/runs/{id}` every 2s until the run is terminal, then stop.
+The UI lives under `frontend/` — React 19, Tailwind v4, pnpm, built by Vite into one Airflow `react_apps` bundle (plan 066). Airflow renders it inside its own page with its shared React and router, so DTE takes Airflow's theme, fonts and light/dark mode. Pages live in `src/pages/` and the route table in `src/plugin.tsx`. Data fetching is SWR-based, with a hand-written `apiFetch<T>` wrapper over a generated `api-types.ts` (regenerated from the backend's `/openapi.json`). Run pages poll `/api/runs/{id}` every 2s until the run is terminal, then stop.
 
 The design system in `src/components/ui/` is intentionally self-contained (imports only itself and a `cn.ts` helper) so it can be ported to other projects. DTE-specific composition lives in `src/components/builder/`. The full frontend playbook — server-vs-client discipline, the `FieldPicker` portal, the discriminated `output` union, step editors — is documented in `CLAUDE.md` and `frontend/AGENTS.md`.
 
@@ -274,15 +274,19 @@ The reference deployment is Docker Compose: a Postgres container, a backend cont
 
 Dev mode mounts `./backend/dte` and `./backend/alembic` into the backend container and `./frontend` into the frontend container, so both sides hot-reload. Production images are built from the same Dockerfiles with dev volumes stripped. The backend service runs `alembic upgrade head` before execing uvicorn, so a fresh database self-migrates on first boot.
 
-CORS origins are read from `DTE_CORS_ORIGINS` (default `http://localhost:3000`). Secrets backend is chosen at process start based on `DTE_SECRETS_BACKEND` and `DTE_SECRETS_KEY`. Tracing is opt-in via `DTE_TRACING_ENABLED=1`. Auth is JWT-based; the first registered user becomes an admin.
+Settings are read from `DTE_*` environment variables (`dte/config.py`). Tracing is opt-in via `DTE_TRACING_ENABLED=1`.
 
-### Distributed run execution (opt-in)
+### Running inside Airflow (plan 065)
 
-By default a run is an `asyncio.create_task` inside the API process. Setting `DTE_JOB_QUEUE_ENABLED=true` moves execution to a separate `dte-worker` deployable (`python -m dte.worker`): `POST /trigger` inserts the run row and enqueues a procrastinate job **in one transaction** (run row exists ⟺ job exists), and a worker executes it. The queue is Postgres-backed — no second datastore. `_run_body` is identical in both modes; only dispatch differs.
+DTE is an Airflow 3.3 app; there is no standalone mode. Everything lives in `dte/airflow/`:
 
-Two consequences. First, `local_fs` sources and destinations can't cross a process boundary, so they're rejected at trigger (422 `local_fs_not_shared`) unless `DTE_SHARED_OUTPUT_FS=true` declares an RWX mount. Second, a killed worker can't clean up after itself, so workers heartbeat every 30s (`runs.last_heartbeat_at`) and a reaper fails out runs stale beyond 2× that. Runs are never auto-retried — they aren't idempotent against a destination.
+- **Plugin** (`plugin.py`) mounts the FastAPI app at `/dte` in the Airflow api-server and registers the UI bundle (`/dte/ui/dte.umd.js`) as `react_apps` nav entries. Auth is Airflow's: `auth.py` resolves the caller from Airflow's token or session cookie and derives DTE permissions from Airflow DAG access.
+- **DAG factory** (`dag_factory.py`, loaded by `dags/dte_dags.py`) reads the `dte` schema at parse time: one DAG `dte__<pipeline>` per pipeline, built from its latest revision, with the pipeline's single schedule (if enabled) as a `CronTriggerTimetable`. The revision id is a DAG tag (`dte-revision:<id>`), so pipeline revision = DAG version (plan 068); the operator runs the revision the dag run pins (`conf.revision_id`, else the DAG's own), and the trigger waits for the DAG version carrying it.
+- **Operator** (`operators.py`) loads the pipeline, resolves sources/destination through Airflow Connections (`connections.py` maps Airflow conn types onto DTE's), and calls `runner.run_pipeline`. A `fail` quality check fails the task. It writes one `run_results` row per dag run.
+- **Runs**: `POST /trigger` validates, then creates a dag run through Airflow's REST API with the caller's credentials. Run history is Airflow's `dag_run` joined to `run_results`.
+- **Storage**: DTE's tables sit in a `dte` schema inside Airflow's metadata DB, migrated by `dte db upgrade` with its own alembic version table.
 
-See `docs/user/self-hosting/scaling.md` for the operator-facing version.
+Runs are never auto-retried — they aren't idempotent against a destination. See `docs/user/self-hosting/scaling.md` for the operator-facing version.
 
 ## Where to look next
 
@@ -290,4 +294,3 @@ See `docs/user/self-hosting/scaling.md` for the operator-facing version.
 - **`plans/`** — numbered design docs. One per feature. Every non-trivial change starts here.
 - **`plans/027-p0-p4-status-ladder.md`** — the current P0-through-P4 roadmap and honest status ladder.
 - **`backend/tests/scenarios/`** — end-to-end user flows over the real HTTP API. The best place to see what the engine actually does with a given pipeline shape.
-- **`frontend/AGENTS.md`** — Next.js 16 gotchas and frontend-only conventions.

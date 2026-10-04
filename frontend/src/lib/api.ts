@@ -300,9 +300,9 @@ export interface Run {
   location: string | null;
   started_at: string | null;
   finished_at: string | null;
-  /** Set when this run was fired by a schedule rather than a manual
-   *  trigger (plan 047 task 4 / migration 033). Null for manual runs. */
-  schedule_id?: string | null;
+  /** True when Airflow fired this run on the pipeline's schedule rather
+   *  than a manual trigger (dag_run.run_type, plan 068). */
+  scheduled?: boolean;
   /** Resolved trigger-time context: `{ params: {…}, now, today, yesterday, … }`.
    *  Only populated for runs started after plan 040 shipped. */
   params?: RunParams | null;
@@ -337,10 +337,9 @@ export interface PreviewResponse {
   error?: string | null;
 }
 
-const BASE =
-  typeof window === "undefined"
-    ? process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001"
-    : process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+// The DTE API is mounted by the Airflow plugin at /dte, same origin as this
+// UI (/dte/ui), so Airflow's own session cookie authenticates every call.
+const BASE = "/dte";
 
 class ApiError extends Error {
   /** Raw detail parsed from the JSON body (may be a string or an object like
@@ -358,37 +357,6 @@ class ApiError extends Error {
     this.name = "ApiError";
     this.rawDetail = rawDetail ?? detail;
   }
-}
-
-export const TOKEN_STORAGE_KEY = "dte_token";
-export const TOKEN_COOKIE_NAME = "dte_token";
-
-export function readToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
-}
-
-export function setToken(token: string): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
-  // Cookie mirror so Next middleware can gate SSR routes. SameSite=Lax
-  // keeps CSRF surface small; not HttpOnly because we also need JS access.
-  document.cookie = `${TOKEN_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
-}
-
-export function clearToken(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-  document.cookie = `${TOKEN_COOKIE_NAME}=; Path=/; SameSite=Lax; Max-Age=0`;
-}
-
-async function readTokenServer(): Promise<string | null> {
-  // SSR path: token isn't in localStorage — read the `dte_token` cookie the
-  // login flow set (see setToken). Dynamic import so this module still bundles
-  // for the client.
-  const { cookies } = await import("next/headers");
-  const store = await cookies();
-  return store.get(TOKEN_COOKIE_NAME)?.value ?? null;
 }
 
 /** A page of results plus how many there are in total. */
@@ -432,28 +400,18 @@ async function apiRequest<T>(
   init?: RequestInit,
 ): Promise<{ data: T; res: Response }> {
   const url = path.startsWith("http") ? path : `${BASE}${path}`;
-  const token = typeof window === "undefined" ? await readTokenServer() : readToken();
   const res = await fetch(url, {
     ...init,
+    credentials: "same-origin",
     headers: {
       "content-type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
   if (!res.ok) {
-    if (res.status === 401) {
-      if (typeof window !== "undefined") {
-        // Client-side: drop token and bounce to login.
-        clearToken();
-        if (!window.location.pathname.startsWith("/login")) {
-          window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
-        }
-      } else {
-        // Server-side: redirect via Next.js navigation (throws NEXT_REDIRECT).
-        const { redirect } = await import("next/navigation");
-        redirect("/login");
-      }
+    // Session gone: Airflow owns login, so send the whole window there.
+    if (res.status === 401 && typeof window !== "undefined") {
+      window.top!.location.href = "/";
     }
     let detail: unknown = res.statusText;
     try {
@@ -477,16 +435,8 @@ export interface CurrentUser {
   permissions: string[];
 }
 
-export async function login(email: string, password: string): Promise<string> {
-  const res = await apiFetch<{ access_token: string; token_type: string }>(
-    "/api/auth/login",
-    { method: "POST", body: JSON.stringify({ email, password }) },
-  );
-  return res.access_token;
-}
-
 export async function getCurrentUser(): Promise<CurrentUser> {
-  return apiFetch<CurrentUser>("/api/auth/me");
+  return apiFetch<CurrentUser>("/api/me");
 }
 
 export { ApiError };
@@ -505,11 +455,15 @@ export const createPipeline = (pipeline: Pipeline) =>
     body: JSON.stringify(pipeline),
   });
 
-export const updatePipeline = (id: string, pipeline: Pipeline) =>
-  apiFetch<{ id: string }>(`/api/pipelines/${encodeURIComponent(id)}`, {
+/** Omits `schedule`: it's owned by `/schedule`, the server keeps it when
+ *  absent, and the caller's copy may predate a schedule edit. */
+export const updatePipeline = (id: string, pipeline: Pipeline) => {
+  const { schedule: _owned_elsewhere, ...body } = pipeline as Pipeline & { schedule?: unknown };
+  return apiFetch<{ id: string }>(`/api/pipelines/${encodeURIComponent(id)}`, {
     method: "PUT",
-    body: JSON.stringify(pipeline),
+    body: JSON.stringify(body),
   });
+};
 
 export const deletePipeline = (id: string) =>
   apiFetch<void>(`/api/pipelines/${encodeURIComponent(id)}`, {
@@ -819,32 +773,27 @@ export const inferSchema = (source: Source, table?: string | null) =>
     },
   );
 
-// ---------- Schedules (plan 047) ----------
+// ---------- Schedule (plan 068) ----------
 
-/** `ScheduleBase` mirror — routes return the untyped `Schedule` SQLModel
- *  as a dict, same as `Run`, so this is hand-typed rather than generated. */
+/** A pipeline's one schedule — `PipelineSchedule` plus the computed
+ *  `next_run_at`. Part of the pipeline spec: every change is a revision,
+ *  and a revision is the Airflow DAG version. */
 export type OverlapPolicy = "skip" | "allow";
 
 export interface Schedule {
-  id: string;
-  pipeline_id: string;
   cron_expr: string;
   timezone: string;
   params: Record<string, string>;
   enabled: boolean;
   overlap: OverlapPolicy;
-  /** Ticker-owned bookkeeping — never client-settable. */
-  next_run_at: string | null;
-  last_run_id: string | null;
-  last_fired_at: string | null;
   /** Required on an eval pipeline's schedule, forbidden on any other —
    *  the corpus the nightly run scores against. */
   eval_set_id: string | null;
+  next_run_at: string | null;
 }
 
-/** Matches `ScheduleWriteRequest` on the backend — shared POST/PUT body. */
+/** Matches `PipelineSchedule` on the backend — the PUT body. */
 export interface ScheduleWriteRequest {
-  id?: string;
   cron_expr: string;
   timezone: string;
   params: Record<string, string>;
@@ -853,30 +802,17 @@ export interface ScheduleWriteRequest {
   eval_set_id?: string | null;
 }
 
-export const listSchedulesForPipeline = (pipelineId: string) =>
-  apiFetch<Schedule[]>(
-    `/api/pipelines/${encodeURIComponent(pipelineId)}/schedules`,
-  );
+const schedulePath = (pipelineId: string) =>
+  `/api/pipelines/${encodeURIComponent(pipelineId)}/schedule`;
 
-export const createSchedule = (pipelineId: string, body: ScheduleWriteRequest) =>
-  apiFetch<Schedule>(
-    `/api/pipelines/${encodeURIComponent(pipelineId)}/schedules`,
-    { method: "POST", body: JSON.stringify(body) },
-  );
+export const getSchedule = (pipelineId: string) =>
+  apiFetch<Schedule | null>(schedulePath(pipelineId));
 
-export const getSchedule = (id: string) =>
-  apiFetch<Schedule>(`/api/schedules/${encodeURIComponent(id)}`);
+export const putSchedule = (pipelineId: string, body: ScheduleWriteRequest) =>
+  apiFetch<Schedule>(schedulePath(pipelineId), { method: "PUT", body: JSON.stringify(body) });
 
-export const updateSchedule = (id: string, body: ScheduleWriteRequest) =>
-  apiFetch<Schedule>(`/api/schedules/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
-
-export const deleteSchedule = (id: string) =>
-  apiFetch<void>(`/api/schedules/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
+export const deleteSchedule = (pipelineId: string) =>
+  apiFetch<void>(schedulePath(pipelineId), { method: "DELETE" });
 
 // ── artifacts ───────────────────────────────────────────────────────────────
 //
@@ -896,11 +832,10 @@ export function artifactUrl(key: string): string {
   return `${BASE}/api/artifacts/${encodeURIComponent(key)}`;
 }
 
-/** The `Authorization` header pdf.js should send on its range requests. */
+/** Extra headers for pdf.js range requests. None: the Airflow session cookie
+ *  rides along on same-origin requests. */
 export async function artifactAuthHeaders(): Promise<Record<string, string>> {
-  const token =
-    typeof window === "undefined" ? await readTokenServer() : readToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return {};
 }
 
 /** One page of a document as the extract step cached it. */

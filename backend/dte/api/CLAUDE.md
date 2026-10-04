@@ -1,12 +1,17 @@
 ## API surface
 
+Mounted by the Airflow plugin at `/dte`, so every path below is served as `/dte/api/...`. Auth is Airflow's (`dte/airflow/auth.py`).
+
 ```
 POST   /api/pipelines                     create pipeline (validates source/dest ids exist)
 GET    /api/pipelines                     list pipelines
 GET    /api/pipelines/{id}                get pipeline
 PUT    /api/pipelines/{id}                update pipeline
 DELETE /api/pipelines/{id}                delete pipeline
-POST   /api/pipelines/{id}/trigger        start async run → {run_id}
+POST   /api/pipelines/{id}/trigger        validate, then start an Airflow dag run of the latest revision → {run_id}
+GET/PUT/DELETE /api/pipelines/{id}/schedule  the pipeline's one schedule; each change is a revision
+POST   /api/runs/{run_id}/cancel           mark the dag run failed
+GET    /api/me                            Airflow user + derived DTE permissions
 GET    /api/pipelines/{id}/preview?limit  compile + execute on sample rows
 GET    /api/pipelines/{id}/runs?limit     run history per pipeline
 GET    /api/runs/{run_id}                 poll run status
@@ -24,11 +29,8 @@ GET    /api/destinations                  list destinations
 GET    /api/destinations/{id}             get destination
 PUT    /api/destinations/{id}             update destination
 DELETE /api/destinations/{id}             409 with {referenced_by: [...]} if any pipeline uses it
-POST   /api/connections                   create connection (409 on id collision; creds encrypted at rest)
-GET    /api/connections                   list connections (credentials masked)
-GET    /api/connections/{id}              read (?reveal=true for plaintext creds)
-PUT    /api/connections/{id}              update (empty credentials keeps existing)
-DELETE /api/connections/{id}              409 with {referenced_by: {sources, destinations}} if in use
+GET    /api/connections                   Airflow Connections DTE can map (read-only; manage them in Airflow)
+GET    /api/connections/{id}              read (credentials masked)
 POST   /api/connections/{id}/test         connectivity probe → {ok, elapsed_ms, detail}
 GET    /api/connections/{id}/schemas      schemas/databases visible to a DB connection (422 if no native backend)
 GET    /api/destinations/{id}/schema      columns of a DB destination's target table (422 for file targets)
@@ -53,7 +55,5 @@ POST   /api/eval-sets:for-pipeline        eval set derived from a pipeline (idem
 GET    /api/sweeps/{sweep_id}/comparison  configs side by side; works with no labels
 ```
 
-`Run` responses include `id`, `pipeline_id`, `status` (`pending`/`running`/`completed`/`failed`), `error`, `rows_written`, `started_at`, `finished_at`. Per-step run events are **not** recorded yet — the frontend `Timeline` renders an empty state placeholder.
-
-`finished_at` is written by the Postgres store, not the API code. Migration `003` installs a `BEFORE UPDATE` trigger on `runs` that stamps `finished_at = NOW()` when `status` becomes `completed` or `failed`. `MemoryRunStore.update` mirrors the rule. If you introduce a new terminal status, extend both.
+A **run** is an Airflow dag run of a `dte__*` DAG left-joined to `dte.run_results` (`PostgresRunStore._RUNS_SQL`). Status and timing come from `dag_run`; rows, quality, SQL, scores and per-step events come from the operator's `run_results` row. `status` is `pending`/`running`/`completed`/`completed_with_warnings`/`failed_quality`/`failed`.
 

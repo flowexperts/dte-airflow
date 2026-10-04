@@ -1,14 +1,17 @@
 # Scheduling
 
-A schedule runs one pipeline on a repeating clock. Everything a manual trigger does, a
-schedule does — same run history, same output, same error reporting.
+DTE runs inside Airflow, and Airflow does the scheduling. Every pipeline is exactly one Airflow
+DAG, `dte__<pipeline id>`, and a pipeline has at most one schedule: the cron of that DAG. Manual
+and scheduled runs land in the same DAG, with the same run history, output and logs.
 
-Schedules are off unless your operator has enabled them. If you don't see a **Schedules**
-panel on a pipeline, see [enabling schedules](#enabling-schedules) below.
+The schedule is part of the pipeline, so changing it is a pipeline revision like any other edit,
+and every revision becomes a new Airflow DAG version (Airflow starts a new version once the
+previous one has run). Each run executes, and records, the exact revision it was started
+against.
 
 ## Creating one
 
-Open a pipeline, find the **Schedules** panel, and add a schedule.
+Open a pipeline, find the **Schedule** panel, and choose **Set schedule**.
 
 Pick how often:
 
@@ -19,96 +22,63 @@ Pick how often:
 | **Weekly** | Once a week, on the day and time you choose |
 | **Custom** | A standard 5-field cron expression |
 
-Most schedules need one of the first three. **Custom** is there for the ones that don't —
-`0 2 * * 1-5` for weekday-only, say — and it accepts standard 5-field cron.
+**Custom** is there for the ones that don't fit — `0 2 * * 1-5` for weekday-only, say.
+
+The pipeline's DAG picks up the cron on Airflow's next dag-processor parse (a few seconds).
 
 ### Timezone
 
-The picker defaults to **your browser's timezone**, not UTC. Check it before saving if your
-team is spread across zones — "2am" means 2am somewhere specific.
-
-Daylight saving is handled for you. On a spring-forward day, a schedule set for a time that
-doesn't exist runs once at the next valid time. On a fall-back day, one that would happen
-twice runs on the first occurrence only.
+The picker defaults to **your browser's timezone**, not UTC. Daylight saving is handled by
+Airflow's cron timetable.
 
 ### Parameters
 
 If your pipeline declares parameters, the form asks for them. Any parameter that is required
-and has no default **must** get a value here — otherwise the schedule would fail every night
-and you'd only find out from an empty destination. dte rejects the schedule at save time
-instead.
+and has no default **must** get a value here — DTE rejects the schedule at save time
+otherwise, rather than failing every night.
 
-`{{now}}` and `{{today}}` still resolve when the pipeline *runs*, not when you save the
-schedule. A schedule using `{{today}}` gets today's date on every run.
+`{{now}}` and `{{today}}` resolve when the pipeline *runs*, not when you save the schedule.
 
 ## Checking it works
 
-The panel shows the **next run time** for each schedule. This is the fastest way to confirm a
-cron expression means what you think — set it, read the next fire time, adjust.
-
-Runs started by a schedule are marked **Scheduled** in the run list, so you can tell them from
-runs someone triggered by hand.
+The panel shows the schedule's **next run time**. Runs started by a schedule are marked
+**Scheduled** in the run list. The DAG, its next run and every task log are also visible in
+the Airflow UI (filter by the `dte` tag).
 
 ## Rules worth knowing
 
-**Missed runs are not made up.** If dte is down from 1am to 7am, a 2am daily schedule does not
-fire six times when it comes back. It skips to the next scheduled slot. This is deliberate —
-replaying a backlog into a destination usually does more damage than the missed run did.
+**Missed runs are not made up.** Schedule DAGs use `catchup=False`: if the scheduler is down
+from 1am to 7am, a 2am daily schedule does not fire six times when it comes back.
 
-**Very late runs are skipped.** A run more than 15 minutes past its slot is skipped rather
-than started, on the grounds that a 2am job starting at 11am is usually worse than not
-starting. Your operator can change this window.
+**Overlapping runs are skipped by default.** With **Overlap** set to *Skip*, the DAG runs with
+`max_active_runs=1`, so a new run waits until the previous one finishes. That includes manual
+runs: they share the DAG, so a manual trigger queues behind a running scheduled one. Set
+**Overlap** to *Allow* if your pipeline is safe to run concurrently.
 
-**Overlapping runs are skipped by default.** If the previous run of a schedule is still going
-when the next is due, dte skips the new one rather than running both. A nightly job that
-starts taking 25 hours won't pile up. Set **Overlap** to *Allow* if your pipeline is safe to
-run concurrently.
-
-**Disabling keeps the schedule.** The toggle stops it firing without deleting it. Deleting a
-pipeline deletes its schedules.
+**Disabling keeps the schedule.** A disabled schedule leaves the DAG manual-only. Deleting a
+pipeline deletes its schedule.
 
 ## Failures
 
-A scheduled run that fails behaves exactly like a manual one — it lands in run history with
-the error. dte does **not** retry it, because a pipeline that partly wrote to its destination
-isn't safe to re-run unattended.
-
-There's no per-schedule email or alert yet. Watch run history, or poll
-`GET /api/pipelines/{id}/runs`.
-
-## Enabling schedules
-
-For operators. Schedules need distributed execution, so both flags go on:
-
-```yaml
-DTE_JOB_QUEUE_ENABLED: "true"
-DTE_SCHEDULES_ENABLED: "true"
-```
-
-Set them on the `worker` service (the ticker runs there) and the `backend` service. At least
-one worker must be running — see [Scaling and execution](../self-hosting/scaling.md).
-
-`DTE_SCHEDULE_GRACE_SECONDS` (default `900`) is the late-run window described above.
-
-A worker checks for due schedules once a minute. Running several workers is safe: exactly one
-picks up each tick.
+A failed scheduled run behaves like a manual one: it lands in run history with the error. DTE
+does **not** retry it, because a pipeline that partly wrote to its destination isn't safe to
+re-run unattended. Use Airflow's own alerting (email, callbacks) on the `dte` DAGs if you need
+notifications.
 
 ## API
 
 ```
-POST   /api/pipelines/{id}/schedules   create
-GET    /api/pipelines/{id}/schedules   list for a pipeline
-GET    /api/schedules/{id}             read
-PUT    /api/schedules/{id}             update
-DELETE /api/schedules/{id}             delete
+GET    /dte/api/pipelines/{id}/schedule    read (null when unscheduled)
+PUT    /dte/api/pipelines/{id}/schedule    set or replace
+DELETE /dte/api/pipelines/{id}/schedule    remove
 ```
 
-Body: `cron_expr`, `timezone`, `params`, `enabled`, `overlap` (`skip` | `allow`). A bad cron
+Body: `cron_expr`, `timezone`, `params`, `enabled`, `overlap` (`skip` | `allow`), and
+`eval_set_id` for eval pipelines. The schedule is also the `schedule` field of the pipeline
+itself; a pipeline `PUT` that omits it keeps the current one. A bad cron
 expression, an unknown timezone, or a missing required parameter returns 422 explaining which.
 
-## Not supported
+## Chaining
 
-- **Chaining** — "run B after A succeeds". dte runs pipelines; it doesn't orchestrate between
-  them. Point Airflow, Prefect, or Dagster at the trigger API for that.
-- **Sub-minute schedules.** One minute is the floor.
-- **Backfill.** Covered above — missed slots are skipped, not replayed.
+"Run B after A succeeds" is plain Airflow: write a DAG that triggers or depends on the
+`dte__<pipeline id>` DAGs.

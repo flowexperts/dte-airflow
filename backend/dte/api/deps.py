@@ -1,25 +1,20 @@
 """Store wiring for FastAPI routes.
 
-Postgres-only: `DATABASE_URL` must be set. There is no in-memory
-fallback in production code — tests inject fakes via
+Postgres-only: DTE's tables live in the `dte` schema of Airflow's metadata DB
+(`dte.airflow.db`). Tests inject fakes via
 `app.dependency_overrides[get_pipeline_store] = lambda: FakePipelineStore()`
-(see `tests/fakes.py`).
+(see `tests/fakes.py`). Auth and connections come from Airflow.
 """
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 
-import jwt as _jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from dte.models.user import User
-from dte.security.jwt import decode_access_token
-from dte.store.base import UserStore
+from dte.airflow.auth import get_current_user  # noqa: F401 — re-exported for routes/tests
+from dte.airflow.connection_store import AirflowConnectionStore
+from dte.airflow.db import async_engine
 from dte.store.postgres import (
-    PostgresConnectionStore,
     PostgresDashboardStore,
     PostgresDestinationStore,
     PostgresEvalExampleStore,
@@ -27,25 +22,15 @@ from dte.store.postgres import (
     PostgresLookupTableStore,
     PostgresPipelineRevisionStore,
     PostgresPipelineStore,
-    PostgresRoleStore,
     PostgresRunEventStore,
     PostgresRunStore,
-    PostgresScheduleStore,
     PostgresSourceStore,
-    PostgresUserStore,
 )
 
 
 @lru_cache(maxsize=1)
 def _session_factory():
-    url = os.getenv("DATABASE_URL")
-    if not url:
-        raise RuntimeError(
-            "DATABASE_URL is not set. dte requires Postgres in every "
-            "environment; tests inject stores via app.dependency_overrides."
-        )
-    engine = create_async_engine(url)
-    return async_sessionmaker(engine, expire_on_commit=False)
+    return async_sessionmaker(async_engine(), expire_on_commit=False)
 
 
 def get_pipeline_store():
@@ -77,23 +62,11 @@ def get_destination_store():
 
 
 def get_connection_store():
-    return PostgresConnectionStore(_session_factory())
-
-
-def get_user_store():
-    return PostgresUserStore(_session_factory())
-
-
-def get_role_store():
-    return PostgresRoleStore(_session_factory())
+    return AirflowConnectionStore()
 
 
 def get_lookup_table_store():
     return PostgresLookupTableStore(_session_factory())
-
-
-def get_schedule_store():
-    return PostgresScheduleStore(_session_factory())
 
 
 def get_eval_set_store():
@@ -104,45 +77,6 @@ def get_eval_example_store():
     return PostgresEvalExampleStore(_session_factory())
 
 
-# Swagger UI Authorize button wires to this URL.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=True)
-
-
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    users: UserStore = Depends(get_user_store),
-) -> User:
-    creds_error = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or expired token",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = decode_access_token(token)
-    except _jwt.PyJWTError:
-        raise creds_error
-    user_id = payload.get("sub")
-    if not user_id:
-        raise creds_error
-    user = await users.get_by_id(user_id)
-    if user is None or not user.is_active:
-        raise creds_error
-    # Embed the JWT tenant claim on the user object so downstream deps can
-    # read it without re-decoding the token. Legacy tokens without the
-    # `tenant` claim fall back to `"default"`.
-    tenant_id = payload.get("tenant", "default") or "default"
-    object.__setattr__(user, "_tenant_id", tenant_id)
-    return user
-
-
-async def get_current_tenant_id(
-    current_user: User = Depends(get_current_user),
-) -> str:
-    """Extract the tenant_id from the authenticated user's JWT claim.
-
-    Routes that need to scope a query to the caller's tenant inject this
-    via `Depends(get_current_tenant_id)`. When `DTE_MULTI_TENANT_ENABLED`
-    is off (the default) the value is always `"default"`, so existing
-    single-tenant behaviour is unchanged.
-    """
-    return getattr(current_user, "_tenant_id", "default") or "default"
+async def get_current_tenant_id() -> str:
+    """Tenancy is gone (plan 065); kept so route signatures don't churn."""
+    return "default"

@@ -1,8 +1,6 @@
-"use client";
-
 import { useState } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Link } from "@/lib/nav";
+import { useRouter, useSearchParams } from "@/lib/nav";
 import {
   Button,
   Field,
@@ -191,7 +189,7 @@ export function PipelineCanvas({
     const url = new URL(window.location.href);
     if (next === "spec") url.searchParams.delete("tab");
     else url.searchParams.set("tab", next);
-    window.history.replaceState(null, "", url);
+    window.history.replaceState(window.history.state, "", url);
   };
 
   /* Same gate as the Compare… button: without a `structure` step there is
@@ -346,8 +344,8 @@ export function PipelineCanvas({
    * after the destination so the column reads in → out → when, with the
    * steps (the body) following.
    *
-   * Hidden on a revision: schedules are not versioned, so showing one beside
-   * a historical spec would imply a cadence that spec never carried. */
+   * Hidden on a revision: the panel edits the *current* schedule, and a
+   * historical spec's schedule lives in that revision's own config. */
   const scheduleBlock = revision ? null : (
     <SchedulePanel
       pipelineId={pipeline.id}
@@ -376,16 +374,15 @@ export function PipelineCanvas({
 
         <Topbar
           crumbs={[
-            { label: "Workspace", href: "/" },
-            { label: "Pipelines", href: "/pipelines" },
+            { label: "DTE Pipelines", href: "/pipelines" },
             revision
-              ? { label: pipeline.name, href: `/pipelines/${encodeURIComponent(pipeline.id)}` }
+              ? { label: pipeline.name, href: `/pipelines/detail?id=${encodeURIComponent(pipeline.id)}` }
               : { label: pipeline.name },
             ...(revision ? [{ label: revision.id.slice(0, 8) }] : []),
           ]}
           actions={
             revision ? (
-              <Link href={`/pipelines/${encodeURIComponent(pipeline.id)}`}>
+              <Link href={`/pipelines/detail?id=${encodeURIComponent(pipeline.id)}`}>
                 <Button size="sm">Back to current</Button>
               </Link>
             ) : (

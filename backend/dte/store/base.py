@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -11,7 +10,6 @@ if TYPE_CHECKING:
     from dte.models.dashboard import Dashboard, DashboardBase
     from dte.models.pipeline import (
         Connection,
-        ConnectionBase,
         Destination,
         DestinationBase,
         LookupTable,
@@ -19,12 +17,9 @@ if TYPE_CHECKING:
         Pipeline,
         PipelineRevision,
         PipelineRevisionBase,
-        Schedule,
-        ScheduleBase,
         Source,
         SourceBase,
     )
-    from dte.models.user import Role, User, UserBase
 
 
 @runtime_checkable
@@ -37,9 +32,9 @@ class PipelineStore(Protocol):
 
 @runtime_checkable
 class RunStore(Protocol):
+    """Read-only: runs are Airflow dag runs plus DTE's `run_results` row."""
+
     async def get(self, id: str) -> dict | None: ...
-    async def create(self, pipeline_id: str, revision_id: str | None = None) -> str: ...
-    async def update(self, id: str, **fields) -> None: ...
     async def list_for_pipeline(
         self, pipeline_id: str, limit: int = 50, offset: int = 0
     ) -> list[dict]: ...
@@ -52,7 +47,6 @@ class RunStore(Protocol):
     async def list_sweep_runs_for_root(
         self, root_pipeline_id: str, limit: int = 500
     ) -> list[dict]: ...
-    async def set_quality(self, run_id: str, results: list) -> None: ...
     async def get_quality(self, run_id: str) -> list: ...
 
 
@@ -73,21 +67,8 @@ class PipelineRevisionStore(Protocol):
 
 @runtime_checkable
 class RunEventStore(Protocol):
-    """Per-step events emitted during pipeline runs.
+    """Per-step events of a run, for the /api/runs/{id}/events Timeline."""
 
-    `record` inserts or updates the terminal row (started → completed/failed)
-    keyed on (run_id, step_index). `list_for_run` returns them in step order
-    for the /api/runs/{id}/events endpoint that feeds the Timeline UI.
-    """
-
-    async def record(
-        self,
-        run_id: str,
-        step_index: int,
-        op: str,
-        status: str,
-        message: str | None = None,
-    ) -> None: ...
     async def list_for_run(self, run_id: str) -> list[dict]: ...
 
 
@@ -131,58 +112,12 @@ class DashboardStore(Protocol):
 
 @runtime_checkable
 class ConnectionStore(Protocol):
-    """Stores connections with credentials encrypted at rest via EncryptedJSON.
+    """Read-only view of Airflow Connections (`dte.airflow.connections`).
+    `get` returns the mapped `Connection` with its credentials; `list`
+    returns them masked to `{}`."""
 
-    - `get` returns a `Connection` with `credentials` (plaintext dict) populated
-      by the TypeDecorator. Callers own not leaking them to the wire.
-    - `list` returns `Connection` instances with `credentials` masked to `{}`.
-    - `save` accepts a `ConnectionBase` or `Connection` with plaintext credentials;
-      the EncryptedJSON TypeDecorator encrypts them at the column level.
-    """
     async def get(self, id: str) -> "Connection | None": ...
-    async def save(self, connection: "ConnectionBase | Connection") -> None: ...
     async def list(self, limit: int = 50, offset: int = 0) -> "list[Connection]": ...
-    async def delete(self, id: str) -> bool: ...
-
-
-@runtime_checkable
-class UserStore(Protocol):
-    """Stores user rows. `password_hash` is passed separately to `save` so
-    callers can hash once and the store never receives the plaintext."""
-
-    async def get_by_id(self, id: str) -> "User | None": ...
-    async def get_by_email(self, email: str) -> "User | None": ...
-    async def save(self, user: "UserBase", password_hash: str) -> None: ...
-    async def list(self, limit: int = 50, offset: int = 0) -> "list[User]": ...
-    async def delete(self, id: str) -> bool: ...
-    async def count(self) -> int: ...
-    async def add_role(self, user_id: str, role_id: str) -> None: ...
-    async def remove_role(self, user_id: str, role_id: str) -> bool: ...
-
-
-@runtime_checkable
-class RoleStore(Protocol):
-    async def get(self, id: str) -> "Role | None": ...
-    async def list(self) -> "list[Role]": ...
-
-
-@runtime_checkable
-class ScheduleStore(Protocol):
-    """Stores recurring-trigger rows (plan 047). `advance` is the
-    ticker-owned update path — `next_run_at` plus optionally
-    `last_run_id`/`last_fired_at` when a tick actually deferred a run
-    (an overlap-skip only advances `next_run_at`)."""
-
-    async def get(self, id: str) -> "Schedule | None": ...
-    async def save(self, schedule: "ScheduleBase | Schedule") -> None: ...
-    async def list_for_pipeline(self, pipeline_id: str) -> "list[Schedule]": ...
-    # Referential guard for eval-set deletion (plan 051 phase 5): deleting
-    # a set out from under a schedule leaves one that fires nightly and
-    # fails every time, so the API refuses and names the referrers.
-    async def list_for_eval_set(self, eval_set_id: str) -> "list[Schedule]": ...
-    async def list_due(self, now: datetime) -> "list[Schedule]": ...
-    async def advance(self, id: str, **fields) -> None: ...
-    async def delete(self, id: str) -> bool: ...
 
 
 @runtime_checkable
