@@ -28,7 +28,7 @@ const DESTINATION_CONNECTION_COMPAT: Record<string, ConnectionType[]> = {
   excel:   ["local_fs", "s3", "gcs", "azure"],
   parquet: ["local_fs", "s3", "gcs", "azure"],
   postgres:     ["postgres"],
-  sql_database: ["mysql", "snowflake", "bigquery"],
+  sql_database: ["mysql", "mssql", "snowflake", "bigquery"],
 };
 
 export function DestinationForm({

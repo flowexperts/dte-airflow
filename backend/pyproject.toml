@@ -100,6 +100,9 @@ trino = ["ibis-framework[trino]>=12.0,<13.0", "trino>=0.329,<1.0"]
 # Native ibis backends kept optional to avoid heavy or system-level build
 # deps (mysqlclient, google-cloud-bigquery, snowflake-connector-python).
 mysql-source = ["ibis-framework[mysql]>=12.0,<13.0"]
+# SQL Server, read and write (plan 069). Both sides go through pyodbc, which
+# needs Microsoft's ODBC Driver 18 installed on the host (Dockerfile.airflow).
+mssql = ["ibis-framework[mssql]>=12.0,<13.0", "dlt[mssql]>=1.4,<2.0"]
 bigquery-source = ["ibis-framework[bigquery]>=12.0,<13.0"]
 snowflake-source = ["ibis-framework[snowflake]>=12.0,<13.0"]
 

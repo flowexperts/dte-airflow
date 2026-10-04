@@ -33,7 +33,7 @@ def get_engine(name: str) -> BaseEngine:
 
     - ``"duckdb"`` — DuckDBEngine (default, also used as the local
       execution glue for filesystem writers).
-    - ``"postgres"`` / ``"mysql"`` / ``"sqlite"`` / ``"bigquery"`` /
+    - ``"postgres"`` / ``"mysql"`` / ``"mssql"`` / ``"sqlite"`` / ``"bigquery"`` /
       ``"snowflake"`` — pushdown engines.  These resolve to a DuckDBEngine
       instance today; the actual pushdown happens because the source
       tables are bound to their native ibis backend by
@@ -60,7 +60,8 @@ def get_engine(name: str) -> BaseEngine:
         return TrinoEngine()
 
     _PUSHDOWN_ENGINES = {
-        "duckdb", "postgres", "mysql", "sqlite", "bigquery", "snowflake", "auto",
+        "duckdb", "postgres", "mysql", "mssql", "sqlite", "bigquery", "snowflake",
+        "auto",
     }
     if name in _PUSHDOWN_ENGINES:
         # BackendRegistry decides the *actual* per-source execution locus;
@@ -68,6 +69,6 @@ def get_engine(name: str) -> BaseEngine:
         return DuckDBEngine()
 
     raise ValueError(
-        f"Unknown engine {name!r}. Available: duckdb, postgres, mysql, "
+        f"Unknown engine {name!r}. Available: duckdb, postgres, mysql, mssql, "
         "sqlite, bigquery, snowflake, trino (when DTE_TRINO_ENABLED=true)."
     )

@@ -532,6 +532,8 @@ def _fabricate_legacy_connection(source: Source, credentials: dict) -> "Connecti
             ctype = "postgres"
         elif url.startswith("mysql:"):
             ctype = "mysql"
+        elif url.startswith("mssql:"):
+            ctype = "mssql"
         elif url.startswith("snowflake:"):
             ctype = "snowflake"
         elif url.startswith("bigquery:"):
@@ -540,7 +542,7 @@ def _fabricate_legacy_connection(source: Source, credentials: dict) -> "Connecti
             scheme = url.split("://", 1)[0] if "://" in url else url
             raise NotImplementedError(
                 f"sql_database: unsupported credentials scheme '{scheme}://'. "
-                "Supported: sqlite, postgresql, mysql, snowflake, bigquery."
+                "Supported: sqlite, postgresql, mysql, mssql, snowflake, bigquery."
             )
     else:
         # filesystem-family, mongodb, rest_api — all route through DuckDB;

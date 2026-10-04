@@ -14,6 +14,7 @@ def c(conn_type, **kw):
 CASES = [
     (c("postgres", host="h", port=5432, schema="db", login="u", password="p@"), "postgres", {"url": "postgresql://u:p%40@h:5432/db"}),
     (c("mysql", host="h", schema="db", login="u", password="p"), "mysql", {"url": "mysql://u:p@h/db"}),
+    (c("mssql", host="h", port=1433, schema="db", login="sa", password="p", extra_dejson={"TrustServerCertificate": "yes"}), "mssql", {"url": "mssql://sa:p@h:1433/db?TrustServerCertificate=yes"}),
     (c("sqlite", host="/x.db"), "sqlite", {"url": "sqlite:////x.db"}),
     (c("snowflake", login="u", password="p", schema="s", extra_dejson={"account": "acc", "warehouse": "w"}), "snowflake", {"url": "snowflake://u:p@acc/s?warehouse=w"}),
     (c("mongo", host="h", login="u", password="p"), "mongodb", {"url": "mongodb://u:p@h/"}),

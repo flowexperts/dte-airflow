@@ -47,6 +47,21 @@ def _probe_sql_url(creds: dict) -> ProbeResult:
         return _fail(time.perf_counter() - t0, f"{type(e).__name__}: {e}")
 
 
+def _probe_mssql(creds: dict) -> ProbeResult:
+    """Users save `mssql://…`; SQLAlchemy needs the pyodbc driver and the
+    ODBC driver name spelled out."""
+    from sqlalchemy.engine import make_url
+
+    from dte.engine.backend_registry import MSSQL_ODBC_DRIVER
+
+    if not creds.get("url"):
+        return _fail(0, "credentials missing 'url'")
+    url = make_url(creds["url"]).set(drivername="mssql+pyodbc")
+    if "driver" not in url.query:
+        url = url.update_query_dict({"driver": MSSQL_ODBC_DRIVER})
+    return _probe_sql_url({"url": url.render_as_string(hide_password=False)})
+
+
 def _probe_mongodb(creds: dict) -> ProbeResult:
     url = creds.get("url")
     if not url:
@@ -104,6 +119,7 @@ _PROBES: dict[str, Callable[[dict], ProbeResult]] = {
     "azure": _probe_unknown,    # same reasoning.
     "postgres": _probe_sql_url,
     "mysql": _probe_sql_url,
+    "mssql": _probe_mssql,
     "sqlite": _probe_sql_url,
     "snowflake": _probe_sql_url,
     "bigquery": _probe_sql_url,

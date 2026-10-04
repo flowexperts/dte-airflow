@@ -16,7 +16,7 @@ from sqlmodel import SQLModel
 ConnectionType = Literal[
     "local_fs",
     "s3", "gcs", "azure",
-    "postgres", "mysql", "sqlite",
+    "postgres", "mysql", "sqlite", "mssql",
     "mongodb", "rest_api",
     "snowflake", "bigquery",
 ]
@@ -110,6 +110,7 @@ _DLT_CRED_CLASS: dict[str, type | None] = {
     "azure": _AzureSpec,
     "postgres": _DltConnStr,
     "mysql": _DltConnStr,
+    "mssql": _DltConnStr,
     "sqlite": _DltConnStr,
     "snowflake": _DltConnStr,
     "bigquery": _DltConnStr,
@@ -1036,7 +1037,7 @@ class PostgresTarget(BaseModel):
 
 class SqlDatabaseTarget(BaseModel):
     type: Literal["sql_database"]
-    dialect: Literal["mysql", "snowflake", "bigquery"]
+    dialect: Literal["mysql", "mssql", "snowflake", "bigquery"]
     schema_: str = Field(alias="schema")
     table: str
     write_disposition: Literal["replace", "append", "merge"] = "replace"
@@ -1196,7 +1197,7 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
 
 EngineChoice = Literal[
     "auto",
-    "duckdb", "postgres", "mysql", "sqlite", "bigquery", "snowflake", "trino",
+    "duckdb", "postgres", "mysql", "mssql", "sqlite", "bigquery", "snowflake", "trino",
 ]
 
 
@@ -1690,7 +1691,7 @@ SOURCE_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "s3": {"s3"},
     "gcs": {"gcs"},
     "azure": {"azure"},
-    "sql_database": {"postgres", "mysql", "sqlite", "snowflake", "bigquery"},
+    "sql_database": {"postgres", "mysql", "mssql", "sqlite", "snowflake", "bigquery"},
     "mongodb": {"mongodb"},
     "rest_api": {"rest_api"},
     # Documents live wherever files live. Only local_fs has a loader today;
@@ -1712,7 +1713,7 @@ DESTINATION_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     # Shape-level: `sql_database` destinations *may* bind to any SQL-family
     # connection. Runtime-level: whether the active engine has a writer for
     # that specific dialect is enforced by ENGINE_WRITE_SUPPORT below.
-    "sql_database": {"mysql", "snowflake", "bigquery"},
+    "sql_database": {"mysql", "mssql", "snowflake", "bigquery"},
 }
 
 
@@ -1732,13 +1733,14 @@ DESTINATION_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
 #   sources that ibis can't join natively (e.g. snowflake ⨝ filesystem).
 
 EngineName = Literal[
-    "duckdb", "postgres", "mysql", "sqlite", "bigquery", "snowflake", "trino",
+    "duckdb", "postgres", "mysql", "mssql", "sqlite", "bigquery", "snowflake", "trino",
 ]
 
 ENGINE_READ_SUPPORT: dict[EngineName, set[ConnectionType]] = {
     "duckdb":    {"local_fs", "s3", "gcs", "azure", "mongodb", "rest_api"},
     "postgres":  {"postgres"},
     "mysql":     {"mysql"},
+    "mssql":     {"mssql"},
     "sqlite":    {"sqlite"},
     "bigquery":  {"bigquery"},
     "snowflake": {"snowflake"},
@@ -1759,9 +1761,10 @@ ENGINE_READ_SUPPORT: dict[EngineName, set[ConnectionType]] = {
 _FILE_WRITE_TARGETS: set[ConnectionType] = {"local_fs", "s3", "gcs", "azure"}
 
 ENGINE_WRITE_SUPPORT: dict[EngineName, set[ConnectionType]] = {
-    "duckdb":    _FILE_WRITE_TARGETS | {"postgres", "mysql"},
+    "duckdb":    _FILE_WRITE_TARGETS | {"postgres", "mysql", "mssql"},
     "postgres":  _FILE_WRITE_TARGETS | {"postgres"},
     "mysql":     _FILE_WRITE_TARGETS | {"mysql"},
+    "mssql":     _FILE_WRITE_TARGETS | {"mssql"},
     "sqlite":    _FILE_WRITE_TARGETS | {"sqlite"},
     "bigquery":  _FILE_WRITE_TARGETS | {"bigquery"},
     "snowflake": _FILE_WRITE_TARGETS | {"snowflake"},

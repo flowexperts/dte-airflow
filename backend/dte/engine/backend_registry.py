@@ -17,7 +17,7 @@ long-lived pool would leak connections and blur tenant boundaries.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 import ibis
 
@@ -25,6 +25,11 @@ from dte.sources.loader import resolve_secret
 
 if TYPE_CHECKING:
     from dte.models.pipeline import Connection
+
+
+# The one ODBC driver the image installs (Dockerfile.airflow). ibis and dlt
+# both talk to SQL Server through pyodbc, so they share it.
+MSSQL_ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
 
 
 class BackendRegistry:
@@ -115,6 +120,30 @@ def _open_mysql(credentials: dict) -> ibis.BaseBackend:
     )
 
 
+def _open_mssql(credentials: dict) -> ibis.BaseBackend:
+    try:
+        import pyodbc  # noqa: F401
+    except ImportError as e:
+        raise RuntimeError(
+            "SQL Server support requires the `mssql` extra and Microsoft's "
+            "ODBC Driver 18: `uv pip install -e '.[mssql]'`."
+        ) from e
+    url = resolve_secret(credentials["url"])
+    parsed = urlparse(url)
+    # Query params (TrustServerCertificate=yes, Encrypt=…, driver=…) go to
+    # pyodbc as-is, so TLS and auth options need no extra form fields.
+    params = dict(parse_qsl(parsed.query))
+    return ibis.mssql.connect(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 1433,
+        user=unquote(parsed.username) if parsed.username else None,
+        password=unquote(parsed.password) if parsed.password else None,
+        database=(parsed.path or "").lstrip("/") or None,
+        driver=params.pop("driver", MSSQL_ODBC_DRIVER),
+        **params,
+    )
+
+
 def _open_sqlite(credentials: dict) -> ibis.BaseBackend:
     url = resolve_secret(credentials["url"])
     # sqlite:///abs/path or sqlite:///:memory:
@@ -162,6 +191,7 @@ def _open_snowflake(credentials: dict) -> ibis.BaseBackend:
 _OPENERS = {
     "postgres": _open_postgres,
     "mysql": _open_mysql,
+    "mssql": _open_mssql,
     "sqlite": _open_sqlite,
     "bigquery": _open_bigquery,
     "snowflake": _open_snowflake,

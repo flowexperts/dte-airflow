@@ -18,7 +18,11 @@ Pipeline (references source ids + destination id)
 
 **Rule for adding a new integration**: add the connection type to `ConnectionType`, add the dlt cred class to `_DLT_CRED_CLASS`, and (for SQL-family) route through `ConnectionStringCredentials` — dlt destinations accept the resulting URL directly.
 
-`ConnectionString`-family (postgres/mysql/sqlite/snowflake/bigquery/mongodb) collapses to `{"url": "..."}` on store — same shape dlt destinations accept.
+`ConnectionString`-family (postgres/mysql/mssql/sqlite/snowflake/bigquery/mongodb) collapses to `{"url": "..."}` on store — same shape dlt destinations accept.
+
+### SQL Server (plan 069)
+
+`mssql://user:pw@host:port/db?TrustServerCertificate=yes`. Source (ibis), writer (dlt) and probe (SQLAlchemy) all go through **pyodbc + ODBC Driver 18** — the one driver ibis's mssql backend accepts. Query params pass straight to ODBC, so TLS/auth options need no form fields; `?driver=` overrides the default. Airflow `mssql` connections map extras onto that query. Locally: `brew install msodbcsql18` and `uv sync --extra mssql`.
 
 ### Secret resolver seam
 

@@ -3,7 +3,7 @@ no Airflow hooks are wrapped. `gcp` is ambiguous: extra `dte_type` picks
 "gcs" or "bigquery" (default: gcs when hmac keys are present, else bigquery)."""
 from __future__ import annotations
 
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from dte.models.pipeline import Connection
 
@@ -22,6 +22,11 @@ def from_airflow(c) -> Connection:
         kind, creds = "postgres", {"url": _url("postgresql", c)}
     elif t == "mysql":
         kind, creds = "mysql", {"url": _url("mysql", c)}
+    elif t == "mssql":
+        # Extras (TrustServerCertificate, Encrypt, driver, …) become ODBC
+        # options on the URL; `sqlalchemy_scheme` is the provider's own knob.
+        q = urlencode({k: v for k, v in x.items() if k != "sqlalchemy_scheme"})
+        kind, creds = "mssql", {"url": _url("mssql", c) + (f"?{q}" if q else "")}
     elif t == "sqlite":
         kind, creds = "sqlite", {"url": f"sqlite:///{c.host}"}
     elif t == "snowflake":

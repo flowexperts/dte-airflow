@@ -14,7 +14,7 @@ def write(
     credentials: dict | None = None,
 ) -> dict:
     """`credentials["url"]` is the SQLAlchemy-style connection string for
-    the target dialect (mysql/snowflake/bigquery)."""
+    the target dialect (mysql/mssql/snowflake/bigquery)."""
     import dlt
 
     creds = credentials or {}
@@ -46,6 +46,10 @@ def write(
         # raised AttributeError at write time — after the destination saved
         # and previewed cleanly.
         "mysql": lambda: dlt.destinations.sqlalchemy(
+            credentials=url, naming_convention="direct"
+        ),
+        # dlt reads `driver=` and any ODBC options off the URL's query.
+        "mssql": lambda: dlt.destinations.mssql(
             credentials=url, naming_convention="direct"
         ),
         "snowflake": lambda: dlt.destinations.snowflake(

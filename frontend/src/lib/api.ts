@@ -65,6 +65,7 @@ export type EngineChoice =
   | "duckdb"
   | "postgres"
   | "mysql"
+  | "mssql"
   | "sqlite"
   | "bigquery"
   | "snowflake"
@@ -207,7 +208,7 @@ export type DltSource = Source;
 export type ConnectionType =
   | "local_fs"
   | "s3" | "gcs" | "azure"
-  | "postgres" | "mysql" | "sqlite"
+  | "postgres" | "mysql" | "mssql" | "sqlite"
   | "mongodb" | "rest_api"
   | "snowflake" | "bigquery";
 
@@ -236,7 +237,7 @@ export type OutputTarget =
   | ExcelFileOutput
   | ParquetOutput
   | { type: "postgres"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" }
-  | { type: "sql_database"; dialect: "mysql" | "snowflake" | "bigquery"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" };
+  | { type: "sql_database"; dialect: "mysql" | "mssql" | "snowflake" | "bigquery"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" };
 
 export interface Destination {
   /** Opaque, server-generated. Never edited after creation. */
