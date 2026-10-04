@@ -1,5 +1,3 @@
-"use client";
-
 import { Dropdown, Field, Input, type DropdownOption } from "@/components/ui";
 import type { FileFormat } from "@/lib/api";
 

@@ -1,7 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "@/components/ui/portal-host";
 import {
   Button,
   DataTable,
@@ -255,7 +254,7 @@ export function AutoMapButton({
         </Panel>
       </div>
     </div>,
-          document.body,
+          portalHost(),
         );
 
   return (

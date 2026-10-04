@@ -1,7 +1,6 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "@/components/ui/portal-host";
 import { Button } from "@/components/ui";
 import { inspectableRow } from "@/lib/inspect-row";
 import { DocumentInspector } from "./DocumentInspector";
@@ -89,7 +88,7 @@ export function InspectRowButton({ row }: { row: Record<string, unknown> }) {
               />
             </div>
           </div>,
-          document.body,
+          portalHost(),
         )}
     </>
   );

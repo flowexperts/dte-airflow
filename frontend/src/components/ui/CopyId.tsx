@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 
 export function CopyId({ id, shorten }: { id: string; shorten?: boolean }) {

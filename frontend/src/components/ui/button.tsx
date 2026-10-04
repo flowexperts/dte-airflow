@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import { cn } from "@/lib/cn";
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 
@@ -27,7 +27,7 @@ const variants: Record<Variant, string> = {
   default:
     "bg-surface text-text border border-border-2 hover:bg-hover",
   primary:
-    "bg-accent border border-accent text-white hover:bg-accent-h hover:border-accent-h",
+    "bg-accent-solid border border-accent-solid text-accent-contrast hover:opacity-90",
   ghost:
     "bg-transparent border border-transparent text-muted hover:text-text hover:bg-hover",
 };
@@ -71,7 +71,7 @@ export function Button({
     // LinkProps rejects any optional handler passed as possibly-undefined,
     // so a general spread does not typecheck — and a link-shaped button
     // needs a destination and a tooltip, not an onClick. Matches how
-    // `NavItem` and `Topbar` use Link.
+    // `Topbar` uses Link.
     const { title } = rest as AnchorProps;
     return (
       <Link href={href} className={classes} title={title ?? ""}>

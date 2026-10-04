@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import useSWR from "swr";
 import { Button, Dropdown, Panel, PanelHead, type DropdownOption } from "@/components/ui";

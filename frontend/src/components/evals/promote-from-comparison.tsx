@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Button, Dropdown, Panel, PanelHead } from "@/components/ui";
 import { PromoteForm } from "./promote-button";

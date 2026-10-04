@@ -1,5 +1,3 @@
-"use client";
-
 import { cn } from "@/lib/cn";
 import { useEffect, useRef, type ReactNode, type CSSProperties } from "react";
 

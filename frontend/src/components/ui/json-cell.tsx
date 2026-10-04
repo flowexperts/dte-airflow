@@ -1,5 +1,3 @@
-"use client";
-
 /** Table cell renderer for arbitrary JSON values.
  *  - null / undefined → dim "null"
  *  - primitives       → text (truncated to cell width)
@@ -23,7 +21,7 @@ export function JsonCell({ value }: { value: unknown }) {
     // the link back to the document the row was extracted from.
     return (
       <a
-        href={`/documents/${refKey}`}
+        href={`/documents/detail?key=${refKey}`}
         className="text-accent hover:text-accent-h underline underline-offset-2 font-mono text-[11.5px]"
         title={value as string}
       >

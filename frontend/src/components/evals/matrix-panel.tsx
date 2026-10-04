@@ -1,7 +1,5 @@
-"use client";
-
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import useSWR from "swr";
 import { Button, Panel, PanelHead, Textarea } from "@/components/ui";
 import {
@@ -184,7 +182,7 @@ export function MatrixPanel({
         message: "Results fill in as each finishes.",
       });
       router.push(
-        `/pipelines/${encodeURIComponent(pipeline.id)}/compare?sweep=${encodeURIComponent(res.sweep_id ?? "")}`,
+        `/pipelines/compare?id=${encodeURIComponent(pipeline.id)}&sweep=${encodeURIComponent(res.sweep_id ?? "")}`,
       );
     } catch (e) {
       toast.error(humanizeError(e, { action: "run", entity: "comparison" }));

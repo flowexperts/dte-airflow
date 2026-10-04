@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Button, Input, Panel, PanelHead } from "@/components/ui";
 import { DestinationPicker } from "@/components/builder/DestinationPicker";

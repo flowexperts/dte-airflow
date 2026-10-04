@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import { Button } from "@/components/ui";
 import { usePermissions } from "@/lib/use-permissions";
 import { isSweepVariant, rootPipelineId } from "@/lib/pipeline-variant";
@@ -61,7 +59,7 @@ export function CompareButton({
       <Button
         variant="default"
         size="sm"
-        href={`/pipelines/${encodeURIComponent(rootPipelineId(pipeline.id))}`}
+        href={`/pipelines/detail?id=${encodeURIComponent(rootPipelineId(pipeline.id))}`}
         title="This is one cell of a comparison. Compare from the config it came from."
       >
         Compare from the original
@@ -102,7 +100,7 @@ export function CompareButton({
         title: "Eval twin ready",
         message: "Press Compare… here to configure and run it.",
       });
-      router.push(`/pipelines/${encodeURIComponent(pipeline_id)}`);
+      router.push(`/pipelines/detail?id=${encodeURIComponent(pipeline_id)}`);
     } catch (e) {
       toast.error(humanizeError(e, { action: "prepare", entity: "comparison" }));
       setBusy(false);

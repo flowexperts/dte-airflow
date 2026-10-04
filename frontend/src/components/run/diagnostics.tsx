@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { InlineCode, Panel } from "@/components/ui";
 import type { RunEvent } from "@/lib/api";

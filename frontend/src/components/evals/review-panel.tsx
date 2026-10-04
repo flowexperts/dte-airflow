@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { Button, InlineError, Panel, PanelHead } from "@/components/ui";
@@ -321,7 +319,7 @@ function ReviewQueue({
             {current.doc_key.slice(0, 16)}…
           </span>
           <a
-            href={`/documents/${encodeURIComponent(current.doc_key)}`}
+            href={`/documents/detail?key=${encodeURIComponent(current.doc_key)}`}
             target="_blank"
             rel="noreferrer"
             className="text-[12px] text-accent hover:underline"

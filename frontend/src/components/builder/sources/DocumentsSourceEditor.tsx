@@ -1,5 +1,3 @@
-"use client";
-
 import { Field, Input } from "@/components/ui";
 
 interface Config {

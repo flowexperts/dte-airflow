@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import useSWR from "swr";
 import { Button, Panel, PanelHead } from "@/components/ui";
 import { triggerEval, type EvalSet, type Pipeline } from "@/lib/api";
@@ -46,7 +44,7 @@ export function RunEvalButton({ evalSetId }: { evalSetId: string }) {
         message: "Scores land on the leaderboard when it finishes.",
       });
       setOpen(false);
-      router.push(`/runs/${run_id}`);
+      router.push(`/runs/detail?id=${run_id}`);
     } catch (e) {
       toast.error(humanizeError(e, { action: "trigger", entity: "eval run" }));
     } finally {

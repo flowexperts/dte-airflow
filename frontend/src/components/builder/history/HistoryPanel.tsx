@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import useSWR from "swr";
 import { Button, Pagination, Panel, Tag } from "@/components/ui";
 import { listPipelineRevisionsPage, type PipelineRevision } from "@/lib/api";
@@ -137,7 +135,7 @@ function RevisionRow({
       <div className="flex items-center gap-2 pr-3.5">
         {selected && <Tag>selected</Tag>}
         <Link
-          href={`/pipelines/${encodeURIComponent(rev.pipeline_id)}/revisions/${encodeURIComponent(rev.id)}`}
+          href={`/pipelines/revision?id=${encodeURIComponent(rev.pipeline_id)}&rev=${encodeURIComponent(rev.id)}`}
           className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-accent"
         >
           View

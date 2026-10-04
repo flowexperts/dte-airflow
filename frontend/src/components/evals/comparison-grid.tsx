@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import useSWR from "swr";
 import { Button, Panel, PanelHead, Pill } from "@/components/ui";
 import { ScoreBar, pct, scoreTone } from "./score";
@@ -210,7 +208,7 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
                 {data.labels.warning} Add a second provider to the comparison,
                 or label these from the{" "}
                 <Link
-                  href={`/eval-sets/${encodeURIComponent(data.eval_set_id)}?tab=review`}
+                  href={`/eval-sets/detail?id=${encodeURIComponent(data.eval_set_id)}&tab=review`}
                   className="text-text underline underline-offset-2"
                 >
                   review queue
@@ -296,7 +294,7 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
                           className="px-4 py-2 align-top border-r border-border/50"
                         >
                           <Link
-                            href={`/documents/${doc.doc_key}`}
+                            href={`/documents/detail?key=${doc.doc_key}`}
                             className="font-mono text-[11.5px] text-muted hover:text-text break-all"
                           >
                             {doc.doc_ref ?? `${doc.doc_key.slice(0, 12)}…`}

@@ -1,7 +1,6 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "@/components/ui/portal-host";
 import type { Pipeline } from "@/lib/api";
 import { MatrixPanel } from "./matrix-panel";
 
@@ -61,6 +60,6 @@ export function CompareDialog({
         <MatrixPanel pipeline={pipeline} onChange={onChange} readOnly={readOnly ?? false} />
       </div>
     </div>,
-    document.body,
+    portalHost(),
   );
 }

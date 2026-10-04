@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import { CopyId, DataTable, type Column, type DataTableSelection } from "@/components/ui";
 import {
   bulkDeleteDestinations,
@@ -141,7 +139,7 @@ export function DestinationsTable({ rows }: { rows: Destination[] }) {
         selection={selection}
         onRowClick={
           canEdit
-            ? (r) => router.push(`/destinations/${encodeURIComponent(r.id)}/edit`)
+            ? (r) => router.push(`/destinations/edit?id=${encodeURIComponent(r.id)}`)
             : undefined
         }
         emptyText="No destinations yet. Create one to reuse across pipelines."

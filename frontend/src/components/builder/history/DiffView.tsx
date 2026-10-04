@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { Panel, PanelHead, Tag } from "@/components/ui";
 import { diffPipelineRevisions, type StepChange } from "@/lib/api";

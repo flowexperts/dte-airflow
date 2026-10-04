@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import { ParamsModal } from "@/components/params-modal";
 import { Button } from "@/components/ui";
 import { triggerPipeline, type Pipeline } from "@/lib/api";
@@ -71,7 +69,7 @@ export function TriggerRunButton({
             if (onStarted) {
               onStarted(run_id);
             } else {
-              router.push(`/runs/${encodeURIComponent(run_id)}`);
+              router.push(`/runs/detail?id=${encodeURIComponent(run_id)}`);
             }
           } catch (e) {
             // Deliberately left open on failure: the toast says what went

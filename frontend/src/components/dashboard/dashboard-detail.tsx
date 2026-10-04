@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * One dashboard: the grid, plus an edit mode over the same grid (plan 064).
  *
@@ -70,7 +68,7 @@ export function DashboardDetail({ id }: { id: string }) {
     );
   }
 
-  // See dashboards-list: `can()` is empty until /api/auth/me resolves.
+  // See dashboards-list: `can()` is empty until /api/me resolves.
   const mayWrite = permsLoading || can("dashboard:write");
   const editing = draft !== null;
   const tiles = draft ?? data.tiles ?? [];

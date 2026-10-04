@@ -1,5 +1,3 @@
-"use client";
-
 import { Dropdown, Field, Input } from "@/components/ui";
 import type { Source } from "@/lib/api";
 import { SOURCE_KINDS, SOURCE_CONNECTION_COMPAT, type SourceKind } from "./types";

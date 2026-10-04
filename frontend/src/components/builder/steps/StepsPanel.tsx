@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Panel, PanelHead } from "@/components/ui";
 import type { PipelineTypeFilter } from "@/lib/pipeline-type";

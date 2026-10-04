@@ -1,7 +1,6 @@
-"use client";
-
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "@/components/ui/portal-host";
 import {
   Dropdown,
   Field,
@@ -114,7 +113,7 @@ function DynamicValueMenu({
               </button>
             ))}
           </div>,
-          document.body,
+          portalHost(),
         )}
     </>
   );

@@ -1,6 +1,6 @@
 # DTE Frontend
 
-Next.js 16 + Tailwind v4 + TypeScript. Talks to the FastAPI backend at `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`).
+React 19 + Tailwind v4 + TypeScript, built by Vite into `dist/dte.umd.js` — an Airflow `react_apps` plugin bundle (plan 066). See `CLAUDE.md`.
 
 ## Dev
 

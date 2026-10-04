@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import useSWR from "swr";
 import { Panel, PanelHead, Pill, InlineError } from "@/components/ui";
 import {
@@ -170,7 +168,7 @@ function RunRow({
             data all along and was never rendered. */}
         {entry.sweep_id && (
           <Link
-            href={`/pipelines/${encodeURIComponent(rootPipelineId(entry.pipeline_id))}/compare?sweep=${encodeURIComponent(entry.sweep_id)}`}
+            href={`/pipelines/compare?id=${encodeURIComponent(rootPipelineId(entry.pipeline_id))}&sweep=${encodeURIComponent(entry.sweep_id)}`}
             className="text-[11.5px] text-muted hover:text-text underline underline-offset-2"
             title="Open the side-by-side comparison this run belongs to"
           >

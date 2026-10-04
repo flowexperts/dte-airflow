@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import useSWR from "swr";
 import {
   CopyId,
@@ -260,7 +258,7 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
         columns={columns}
         rows={filtered}
         selection={selection}
-        onRowClick={(r) => router.push(`/pipelines/${encodeURIComponent(r.id)}`)}
+        onRowClick={(r) => router.push(`/pipelines/detail?id=${encodeURIComponent(r.id)}`)}
         emptyText={q ? `Nothing matches “${query}”.` : "No pipelines yet."}
       />
     </div>

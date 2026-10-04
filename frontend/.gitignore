@@ -20,9 +20,9 @@
 /playwright/.cache
 /e2e/.auth
 
-# next.js
-/.next/
-/out/
+# build
+/dist/
+
 
 # production
 /build

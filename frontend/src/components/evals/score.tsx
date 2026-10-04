@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Shared score rendering for the eval surfaces.
  *

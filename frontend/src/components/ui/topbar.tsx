@@ -1,6 +1,6 @@
 import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 
 export interface Crumb {
   label: string;

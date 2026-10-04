@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { Button, ErrorPanel, Panel, PanelHead } from "@/components/ui";
 import { getExtractedBlocks, type ExtractedBlock } from "@/lib/api";

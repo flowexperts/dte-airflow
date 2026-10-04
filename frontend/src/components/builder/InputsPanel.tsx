@@ -1,5 +1,3 @@
-"use client";
-
 import { Button, Dropdown, Field, Input, Panel, PanelHead } from "@/components/ui";
 import type { ParamType, PipelineParam } from "@/lib/api";
 import { compatibleFor, type SystemVar } from "@/lib/system-vars";

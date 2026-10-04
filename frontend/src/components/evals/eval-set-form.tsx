@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import useSWR from "swr";
 import {
   Button,
@@ -79,7 +77,7 @@ export function EvalSetForm() {
     setErr(null);
     try {
       const created = await createEvalSet(toEvalSetPayload(draft));
-      router.push(`/eval-sets/${encodeURIComponent(created.id)}`);
+      router.push(`/eval-sets/detail?id=${encodeURIComponent(created.id)}`);
     } catch (e) {
       setErr(humanizeError(e, { action: "create", entity: "eval set" }));
       setSaving(false);

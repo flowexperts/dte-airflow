@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import { CopyId, DataTable, Pill, type Column } from "@/components/ui";
 import type { Run } from "@/lib/api";
 
@@ -36,7 +34,7 @@ export function RunsTable({ runs }: { runs: Run[] }) {
       render: (r) => (
         <span className="flex items-center gap-2 min-w-0">
           <Link
-            href={`/runs/${encodeURIComponent(r.id)}`}
+            href={`/runs/detail?id=${encodeURIComponent(r.id)}`}
             className="font-mono text-[12px] text-text hover:text-accent shrink-0"
           >
             {r.id.slice(0, 8)}
@@ -60,7 +58,7 @@ export function RunsTable({ runs }: { runs: Run[] }) {
       width: "100px",
       render: (r) => (
         <span className="font-mono text-[11px] text-subtle">
-          {r.schedule_id ? "Scheduled" : "Manual"}
+          {r.scheduled ? "Scheduled" : "Manual"}
         </span>
       ),
     },
@@ -75,7 +73,7 @@ export function RunsTable({ runs }: { runs: Run[] }) {
       render: (r) =>
         r.revision_id ? (
           <Link
-            href={`/pipelines/${encodeURIComponent(r.pipeline_id)}/revisions/${encodeURIComponent(r.revision_id)}`}
+            href={`/pipelines/revision?id=${encodeURIComponent(r.pipeline_id)}&rev=${encodeURIComponent(r.revision_id)}`}
             className="font-mono text-[12px] text-muted hover:text-accent"
             title={`Pipeline as it stood for this run (${r.revision_id})`}
           >

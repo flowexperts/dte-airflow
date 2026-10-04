@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import { Panel, PanelHead } from "@/components/ui";
 import { labelFor, type StepShape } from "@/components/builder/steps/types";
 import { stepTitle } from "@/components/builder/steps/summary";
@@ -16,7 +14,7 @@ import { toneVar } from "./helpers";
  * step indices by hand.
  */
 export function stepHref(pipelineId: string, index: number): string {
-  return `/pipelines/${encodeURIComponent(pipelineId)}#step-${index}`;
+  return `/pipelines/detail?id=${encodeURIComponent(pipelineId)}#step-${index}`;
 }
 
 export function FixStepLink({

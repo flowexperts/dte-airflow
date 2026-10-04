@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * The dashboards list, with an inline creator (plan 064).
  *
@@ -17,7 +15,7 @@
  */
 import { useState } from "react";
 import useSWR from "swr";
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import {
   Button,
   DataTable,
@@ -42,7 +40,7 @@ export function DashboardsList() {
   const [err, setErr] = useState<HumanError | null>(null);
 
   // Show while permissions are in flight: `can()` reads an empty list until
-  // /api/auth/me resolves, so gating on it alone hides the primary action on
+  // /api/me resolves, so gating on it alone hides the primary action on
   // first paint — and permanently if that request fails. Mirrors
   // `NewResourceButton`. The server still authorises the actual write.
   const mayWrite = permsLoading || can("dashboard:write");
@@ -73,7 +71,7 @@ export function DashboardsList() {
       key: "name",
       header: "Name",
       render: (d) => (
-        <Link href={`/dashboards/${encodeURIComponent(d.id)}`} className="text-text">
+        <Link href={`/dashboards/detail?id=${encodeURIComponent(d.id)}`} className="text-text">
           {d.name}
         </Link>
       ),

@@ -1,5 +1,3 @@
-"use client";
-
 import useSWR from "swr";
 import { Dropdown, Field, type DropdownOption } from "@/components/ui";
 

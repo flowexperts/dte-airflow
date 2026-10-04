@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { artifactAuthHeaders, artifactUrl } from "@/lib/api";
@@ -37,7 +35,7 @@ export function usePdfDocument(key: string | null) {
         // static import would break the server render of any page that
         // merely links to the inspector.
         const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs";
+        pdfjs.GlobalWorkerOptions.workerSrc = "/dte/ui/pdfjs/pdf.worker.min.mjs";
 
         const t = pdfjs.getDocument({
           url: artifactUrl(key),

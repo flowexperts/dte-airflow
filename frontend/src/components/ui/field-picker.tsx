@@ -1,7 +1,6 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "./portal-host";
 import { cn } from "@/lib/cn";
 import { Input } from "./form";
 import { FieldTreePicker } from "./field-tree-picker";
@@ -166,7 +165,7 @@ function FieldPickerFlat({
               </button>
             ))}
           </div>,
-          document.body,
+          portalHost(),
         )}
     </div>
   );

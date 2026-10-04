@@ -1,7 +1,6 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "./portal-host";
 import { cn } from "@/lib/cn";
 import { Input } from "./form";
 import { usePopoverPosition } from "./use-popover-position";
@@ -349,7 +348,7 @@ export function FieldTreePicker(props: Props) {
                       className={cn(
                         "inline-flex items-center justify-center size-3.5 border rounded-sm text-[10px] leading-none",
                         (isBranch ? state === "all" : isSelected)
-                          ? "border-accent bg-accent text-bg"
+                          ? "border-accent-solid bg-accent-solid text-accent-contrast"
                           : state === "partial"
                             ? "border-accent text-accent"
                             : "border-border",
@@ -382,7 +381,7 @@ export function FieldTreePicker(props: Props) {
               );
             })}
           </div>,
-          document.body,
+          portalHost(),
         )}
       {mounted && open && pos && rows.length === 0 &&
         createPortal(
@@ -395,7 +394,7 @@ export function FieldTreePicker(props: Props) {
               ? "Infer schema on the source to see fields."
               : "No matches."}
           </div>,
-          document.body,
+          portalHost(),
         )}
     </div>
   );

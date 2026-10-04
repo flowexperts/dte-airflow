@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import { CopyId, DataTable, type Column } from "@/components/ui";
 import { deleteEvalSet, type EvalSet } from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
@@ -147,7 +145,7 @@ export function EvalSetsTable({ rows }: { rows: EvalSet[] }) {
     <DataTable
       rows={rows}
       columns={columns}
-      onRowClick={(r) => router.push(`/eval-sets/${encodeURIComponent(r.id)}`)}
+      onRowClick={(r) => router.push(`/eval-sets/detail?id=${encodeURIComponent(r.id)}`)}
       emptyText="No eval sets yet. An eval set is a labeled corpus — it turns 'this prompt looks right' into a number you can compare."
     />
   );

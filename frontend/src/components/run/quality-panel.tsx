@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, type ReactNode } from "react";
 import { Panel, PanelHead, Pill } from "@/components/ui";
 import type { QualityCheckResult } from "@/lib/api";

@@ -1,24 +1,42 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 /**
- * Golden-path smoke: the app loads, the pipelines list route responds,
- * and health check passes. Deliberately shallow — the exhaustive per-op
- * coverage lives in backend scenario tests. This exists so main can't
- * merge if the frontend can't render or the API is down.
+ * Golden-path smoke against the compose stack: DTE renders natively inside
+ * Airflow (plan 066) — no iframe — and takes Airflow's theme and fonts.
  */
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 
-test("healthz is green", async ({ request }) => {
-  const api = process.env.E2E_API_URL ?? "http://localhost:8001";
-  const res = await request.get(`${api}/healthz`);
-  expect(res.status()).toBe(200);
-  expect(await res.json()).toMatchObject({ status: "ok" });
+async function login(page: Page) {
+  await page.goto(`${BASE}/`);
+  await page.getByLabel(/username/i).fill("admin");
+  await page.getByLabel(/password/i).fill("admin");
+  await page.getByRole("button", { name: /sign in|log in|login/i }).click();
+  await page.waitForURL((u) => !u.pathname.includes("login"));
+}
+
+test("DTE renders inside Airflow with Airflow's theme", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await login(page);
+  await page.goto(`${BASE}/plugin/dte`);
+  await expect(page).toHaveURL(/\/plugin\/dte\/pipelines$/);
+  const root = page.locator(".dte-root");
+  await expect(root).toBeVisible();
+  expect(await page.locator("iframe").count()).toBe(0);
+
+  const style = await root.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    const body = getComputedStyle(document.body);
+    return { font: cs.fontFamily, bodyFont: body.fontFamily, text: cs.color, bg: cs.getPropertyValue("--bg").trim() };
+  });
+  expect(style.font).toContain("Inter");
+  expect(style.bg).not.toBe("");
+  expect(errors).toEqual([]);
 });
 
-test("app shell renders and routes to /pipelines", async ({ page }) => {
-  await page.goto("/");
-  // Root serves the marketing landing page for anonymous visitors and
-  // redirects authenticated users to /pipelines; login lives at /login.
-  await expect(page).toHaveURL(/\/$|\/pipelines$|\/login/);
-  // The app shell (fonts, providers, theme) must mount without a client-side error.
-  await expect(page.locator("body")).toBeVisible();
+test("Admin entry opens the sources section", async ({ page }) => {
+  await login(page);
+  await page.goto(`${BASE}/plugin/dte-sources`);
+  await expect(page).toHaveURL(/\/plugin\/dte-sources\/sources$/);
+  await expect(page.locator(".dte-root")).toBeVisible();
 });

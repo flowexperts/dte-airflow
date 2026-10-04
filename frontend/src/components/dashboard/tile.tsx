@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * One tile: a pipeline's preview rows, drawn (plan 064).
  *

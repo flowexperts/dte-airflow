@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import useSWR from "swr";
 import { Panel, PanelHead, Pill } from "@/components/ui";
 import { listPipelineComparisons, type PipelineComparison } from "@/lib/api";
@@ -53,7 +51,7 @@ export function ComparisonsPanel({ pipelineId }: { pipelineId: string }) {
         {rows.map((c: PipelineComparison) => (
           <Link
             key={c.sweep_id}
-            href={`/pipelines/${encodeURIComponent(root)}/compare?sweep=${encodeURIComponent(c.sweep_id)}`}
+            href={`/pipelines/compare?id=${encodeURIComponent(root)}&sweep=${encodeURIComponent(c.sweep_id)}`}
             className="px-4 py-2.5 border-b border-border last:border-b-0 hover:bg-hover flex items-center gap-3"
           >
             <span className="text-[12.5px] text-text">

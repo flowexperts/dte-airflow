@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Drawing a tile (plan 064).
  *

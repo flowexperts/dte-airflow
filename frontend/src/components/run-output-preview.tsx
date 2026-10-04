@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Button, ErrorPanel, JsonCell, Panel, PanelHead, SectionHead } from "@/components/ui";
 import { getRunOutput, type PreviewResponse } from "@/lib/api";

@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import { CopyId, DataTable, type Column, type DataTableSelection } from "@/components/ui";
 import {
   bulkDeleteSources,
@@ -141,7 +139,7 @@ export function SourcesTable({ rows }: { rows: Source[] }) {
         selection={selection}
         onRowClick={
           canEdit
-            ? (r) => router.push(`/sources/${encodeURIComponent(r.id)}/edit`)
+            ? (r) => router.push(`/sources/edit?id=${encodeURIComponent(r.id)}`)
             : undefined
         }
         emptyText="No sources yet. Create one to reuse across pipelines."

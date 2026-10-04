@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * The tile grid (plan 064).
  *

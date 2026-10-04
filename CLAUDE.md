@@ -5,7 +5,7 @@ path-scoped `CLAUDE.md` files that load automatically when you touch that
 directory:
 
 ```
-frontend/CLAUDE.md            Next 16, design system, builder (+ DESIGN.md, AGENTS.md)
+frontend/CLAUDE.md            Airflow react_apps plugin, design system, builder (+ DESIGN.md)
 backend/CLAUDE.md             data flow, compiler, ibis, field refs, extract/structure
 backend/dte/api/CLAUDE.md     HTTP surface
 backend/dte/evals/CLAUDE.md   eval sets, sweeps, comparison, promote, matrix
@@ -19,7 +19,7 @@ docs/worktrees.md             worktree + compose setup (read before the first ru
 
 ```
 backend/       Python package `dte`, alembic, tests, Dockerfile
-frontend/      Next.js app
+frontend/      React UI, built as an Airflow react_apps plugin bundle
 docker-compose.yml   whole stack (postgres + backend + frontend)
 plans/         feature plans (numbered)
 marketing-plans/  go-to-market plans (numbered) — ICP, motion, pricing, content
@@ -30,24 +30,24 @@ All Python paths below are relative to `backend/`.
 ## Commands
 
 ```bash
-# Whole stack (postgres :5432, backend :8001, frontend :3000), hot reload
+# Whole stack: postgres :5432 + Airflow 3.3 (api-server :8080, scheduler,
+# dag-processor). Log in admin/admin; DTE UI at /plugin/dte, API at /dte/api.
 docker compose up -d --build
-docker compose logs -f backend
+docker compose logs -f airflow-apiserver
+# ./backend/dte is bind-mounted; restart to pick up Python changes:
+docker compose restart airflow-apiserver airflow-scheduler airflow-dag-processor
 
 # Backend
-cd backend && uv venv && uv pip install -e ".[dev]"
+cd backend && uv sync --all-extras
 uv run pytest                      # unit; scenarios excluded by default
 uv run pytest tests/scenarios -m scenario -v
 uv run pytest -m "not integration" # skip postgres tests
-uv run uvicorn dte.api.main:app --port 8001 --reload
-uv run alembic upgrade head        # needs sync DATABASE_URL
+dte db upgrade                     # migrate the `dte` schema (needs DATABASE_URL or Airflow config)
 
-# Frontend
-cd frontend && pnpm install && pnpm dev
-DTE_API_URL=http://localhost:8001 ./scripts/gen-api-types.sh   # regen types
+# Frontend (Airflow plugin bundle; rebuild the image to ship it)
+cd frontend && pnpm install && pnpm build
+DTE_API_URL=http://localhost:8080/dte ./scripts/gen-api-types.sh   # regen types
 ```
-
-Backend is on **:8001** (an unrelated Django server squats on :8000 here).
 
 ## Architecture in one paragraph
 
@@ -55,8 +55,13 @@ DTE is a batch data transformation engine. A **Pipeline** (Pydantic) names
 sources, ordered transform steps and an output. Sources load into a shared
 DuckDB connection as ibis tables (`dte/sources/loader.py`), the compiler
 (`dte/compiler/ibis_compiler.py`) folds steps over a named table registry, and
-`dte/engine/duckdb_engine.py` executes and writes. Persistence is
-Postgres-only (`dte/store/`); tests inject fakes. Details in
+`dte/engine/duckdb_engine.py` executes and writes. DTE runs as an **Airflow
+3.3 app** (plan 065, all in `dte/airflow/`): a plugin mounts the API at `/dte`
+and registers the UI as a native `react_apps` bundle (plan 066, no iframe), a DAG factory turns every pipeline (and enabled schedule) into a
+`dte__<id>` DAG, and `DtePipelineOperator` runs it via `dte/airflow/runner.py`.
+Airflow owns auth, connections, scheduling and run history; DTE's tables live
+in the `dte` schema of Airflow's metadata DB, with `run_results` holding the
+per-run outputs Airflow can't. Tests inject fake stores. Details in
 `.claude/rules/architecture.md`.
 
 ## Development workflow

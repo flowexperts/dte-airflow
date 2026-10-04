@@ -1,7 +1,6 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "@/components/ui/portal-host";
 import { Button, Dropdown } from "@/components/ui";
 import type { ParamType, PipelineParam } from "@/lib/api";
 import {
@@ -290,6 +289,6 @@ export function ParamsModal({
         </div>
       </div>
     </div>,
-    document.body,
+    portalHost(),
   );
 }

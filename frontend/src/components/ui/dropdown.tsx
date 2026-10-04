@@ -1,5 +1,3 @@
-"use client";
-
 import {
   useEffect,
   useMemo,
@@ -8,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { portalHost } from "./portal-host";
 import { cn } from "@/lib/cn";
 import { usePopoverPosition } from "./use-popover-position";
 
@@ -192,7 +191,7 @@ export function Dropdown<T extends string>({
               );
             })}
           </div>,
-          document.body,
+          portalHost(),
         )}
     </div>
   );

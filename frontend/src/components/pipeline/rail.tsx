@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import useSWR from "swr";
 import { Panel, PanelHead, Pill } from "@/components/ui";
 import { PipelinePreview } from "@/components/pipeline-preview";
@@ -124,7 +122,7 @@ function LiveRun({
 
           <div className="px-4 py-2.5 border-t border-border">
             <Link
-              href={`/runs/${encodeURIComponent(runId)}`}
+              href={`/runs/detail?id=${encodeURIComponent(runId)}`}
               className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent no-underline hover:text-accent-h"
             >
               Full run detail →
