@@ -1,27 +1,99 @@
+# DTE as an Airflow 3.3 app (plan 065). One image runs every Airflow component;
+# DTE is the plugin (API at /dte, UI at http://localhost:8080/plugin/dte) and the DAG
+# factory in ./dags. Log in at http://localhost:8080 as admin / admin.
+x-airflow: &airflow
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+    target: ${DTE_IMAGE_TARGET:-final}
+  image: dte-airflow:dev
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    # Airflow 3.3's cryptography (>=47) bundles an OpenSSL that probes ARM CPU
+    # features Docker's VM on Apple Silicon advertises but can't run: `import
+    # airflow` dies with SIGILL. 0 = generic code paths; x86 ignores it. Drop
+    # it on real ARM servers, where it only costs crypto speed.
+    OPENSSL_armcap: "0"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    # A paused DAG queues manual runs forever; DTE's DAGs must run on trigger.
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg=}
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-dev-only-jwt-secret-change-me}
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_JWT_SECRET:-dev-only-jwt-secret-change-me}
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/state/simple_auth_passwords.json
+    # New pipelines / schedules become DAGs on the next parse; keep it quick.
+    AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
+    AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: "5"
+    # DTE's own tables live in the `dte` schema of the same database.
+    DATABASE_URL: postgresql+asyncpg://airflow:airflow@postgres/airflow
+    DTE_AIRFLOW_URL: http://localhost:8080
+    DTE_ARTIFACT_DIR: /var/lib/dte/artifacts
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./backend/dte:/opt/dte/backend/dte
+    - ./backend/sample_data:/opt/dte/backend/sample_data:ro
+    - /tmp/dte-samples:/tmp/dte-samples
+    - artifacts:/var/lib/dte/artifacts
+    - airflow_state:/opt/airflow/state
+  depends_on:
+    airflow-init:
+      condition: service_completed_successfully
+
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: dte
-      POSTGRES_PASSWORD: dte
-      POSTGRES_DB: dte
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - airflow_pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dte -d dte"]
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
       interval: 3s
       timeout: 3s
       retries: 20
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
-        reservations:
-          cpus: "0.25"
-          memory: 256M
+
+  # Migrates Airflow's metadata DB, then DTE's `dte` schema, then seeds the login.
+  airflow-init:
+    <<: *airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate && dte db upgrade &&
+        echo '{"admin": "admin"}' > /opt/airflow/state/simple_auth_passwords.json
+    restart: "no"
+
+  airflow-apiserver:
+    <<: *airflow
+    command: api-server
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/api/v2/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  airflow-scheduler:
+    <<: *airflow
+    command: scheduler
+
+  airflow-dag-processor:
+    <<: *airflow
+    command: dag-processor
 
   # Demo warehouse — the database the recorded demos read from and write to.
   # Deliberately NOT a schema inside the `postgres` service above: that one
@@ -62,219 +134,11 @@ services:
           cpus: "0.25"
           memory: 256M
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql+asyncpg://dte:dte@postgres:5432/dte
-      DTE_CORS_ORIGINS: http://localhost:3000
-      # Any localhost / 127.0.0.1 port, so a second frontend (a worktree dev
-      # server on :3002, Vite on :5173) reaches the API without editing this
-      # file. Dev only — deployments should set DTE_CORS_ORIGINS explicitly
-      # and leave this unset, since it pairs with allow_credentials=True.
-      DTE_CORS_ORIGIN_REGEX: ^https?://(localhost|127\.0\.0\.1)(:\d+)?$
-      # Fernet key for Connection.credentials encryption at rest.
-      # Run `./scripts/bootstrap.sh` to generate. If unset, the backend
-      # falls back to EnvSecretResolver (dev-only) and logs a warning.
-      DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:-}
-      # JWT signing secret. Run `./scripts/bootstrap.sh` to generate. If
-      # unset, the backend uses an insecure dev fallback and logs a warning.
-      DTE_JWT_SECRET: ${DTE_JWT_SECRET:-}
-      # Allow the /api/auth/register endpoint. Plan 023 will move user
-      # creation into an admin flow — flip this off in prod when that lands.
-      DTE_ALLOW_REGISTRATION: "true"
-      # FastAdmin (plan 023 task 4). Off by default; flip on for /admin.
-      # Signing key for admin sessions — falls back to DTE_JWT_SECRET.
-      DTE_ADMIN_ENABLED: "true"
-      DTE_ADMIN_SECRET_KEY: ${DTE_ADMIN_SECRET_KEY:-${DTE_JWT_SECRET}}
-      # Force polling for uvicorn --reload's watchfiles. Native FS events
-      # are unstable in arm64 containers on Apple Silicon (SIGILL / exit 132
-      # on file change). Polling costs a bit of CPU but is rock solid.
-      WATCHFILES_FORCE_POLLING: "true"
-      # Distributed run execution (plan 046): trigger enqueues a
-      # procrastinate job instead of an in-process asyncio.create_task; the
-      # `worker` service below executes it. Both flags must agree with the
-      # worker's — see plan 046, "Sharp edge 1" for why shared_output_fs
-      # must be true when local_fs sources/destinations cross the two
-      # containers (the /tmp/dte-samples bind mount is what makes that true
-      # here; a real deployment needs an actual RWX volume).
-      DTE_JOB_QUEUE_ENABLED: "true"
-      DTE_SHARED_OUTPUT_FS: "true"
-      # Schedules (plan 047). The ticker itself runs on the worker; the API
-      # needs this on to expose the /schedules routes.
-      DTE_SCHEDULES_ENABLED: "true"
-      # Model-provider keys for the `structure` step (plan 050). Put them in
-      # .env. This is the ONLY safe place for them today: a key set via the
-      # step's `params.api_key` lands in the pipelines JSONB in plaintext.
-      # Plan 050 should grow an `anthropic`/`openai` Connection type so they
-      # go through EncryptedJSON like every other credential.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      # Extract/structure cache. MUST be a shared volume, not the default
-      # relative `.dte-artifacts`: that resolves to /app inside the container
-      # writable layer, so backend and worker each kept their own copy —
-      # previewing then triggering re-billed every model call, and any
-      # `up --build` started cold. Both services mount the same volume below.
-      DTE_ARTIFACT_DIR: /var/lib/dte/artifacts
-    command: >
-      sh -c "ALEMBIC_URL=$$(echo $$DATABASE_URL | sed 's|+asyncpg||') &&
-             DATABASE_URL=$$ALEMBIC_URL alembic upgrade head &&
-             exec uvicorn dte.api.main:app --host 0.0.0.0 --port 8001 --reload"
-    volumes:
-      - ./backend/dte:/app/dte
-      - ./backend/alembic:/app/alembic
-      - /tmp/dte-samples:/tmp/dte-samples
-      # Git-tracked fixtures (e.g. the eval-demo invoices) — read-only,
-      # regenerated by backend/scripts/generate_eval_demo_invoices.py.
-      # Deliberately not under /tmp: that directory gets swept (macOS, CI,
-      # a reboot) and previously took the eval-demo corpus with it, with no
-      # way to reproduce the exact files the DB's labels pointed at.
-      - ./backend/sample_data:/app/sample_data:ro
-      - artifacts:/var/lib/dte/artifacts
-    ports:
-      - "8001:8001"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      postgres-demo:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/healthz', timeout=2).status==200 else 1)\""]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 2G
-        reservations:
-          cpus: "0.5"
-          memory: 512M
-
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      args:
-        # Brings in watchmedo for the reloading command below. Prod builds
-        # leave this at 0 and get the same image as before.
-        INSTALL_DEV: "1"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://dte:dte@postgres:5432/dte
-      DTE_SECRETS_KEY: ${DTE_SECRETS_KEY:-}
-      DTE_JOB_QUEUE_ENABLED: "true"
-      DTE_SHARED_OUTPUT_FS: "true"
-      # The schedule ticker is a periodic task registered on this process.
-      # Without this the worker runs jobs but never fires schedules.
-      DTE_SCHEDULES_ENABLED: "true"
-      # Triggered runs execute here, not in `backend` — without these, Preview
-      # would work and Trigger would fail with an auth error.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      # Same volume as `backend` — a cache the two do not share is not a
-      # cache, it is two caches, and Trigger re-pays for what Preview bought.
-      DTE_ARTIFACT_DIR: /var/lib/dte/artifacts
-    # The worker is not uvicorn — it has no --reload. Without watchmedo it
-    # runs whatever it imported at boot while ./backend/dte says otherwise,
-    # so a compiler change appears to have no effect and nothing says why.
-    command: >
-      watchmedo auto-restart
-      --directory=/app/dte --pattern=*.py --recursive --signal SIGTERM
-      -- python -m dte.worker
-    # The image's own HEALTHCHECK probes :8001/healthz, which belongs to the
-    # API. This process serves no HTTP, so it inherited a probe it could never
-    # pass and sat permanently `unhealthy` — a red column everyone learns to
-    # ignore. Replaced with the thing that actually matters here: can it reach
-    # the queue.
-    healthcheck:
-      test: ["CMD", "python", "-m", "dte.worker.healthcheck"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    volumes:
-      - ./backend/dte:/app/dte
-      # Same bind mount as `backend` — this is what makes DTE_SHARED_OUTPUT_FS
-      # true in dev Compose; a k8s deployment needs a real RWX volume here.
-      - /tmp/dte-samples:/tmp/dte-samples
-      # Same git-tracked fixture mount as `backend` — see that mount's
-      # comment. Both services need it: Preview runs in `backend`, Trigger
-      # runs here.
-      - ./backend/sample_data:/app/sample_data:ro
-      - artifacts:/var/lib/dte/artifacts
-    depends_on:
-      # Waits for backend's healthcheck, not just postgres's, so migration
-      # 029 (procrastinate's own schema) has definitely run before the
-      # worker starts polling for jobs.
-      backend:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 2G
-        reservations:
-          cpus: "0.5"
-          memory: 512M
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8001
-      INTERNAL_API_URL: http://backend:8001
-      # Where the public /docs route reads markdown from.
-      DOCS_DIR: /docs/user
-    command: sh -c "CI=true pnpm install --prefer-offline && pnpm dev"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
-      - ./docs:/docs:ro
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 3G
-        reservations:
-          cpus: "0.25"
-          memory: 512M
-
-  site:
-    build:
-      context: ./site
-      dockerfile: Dockerfile.dev
-    environment:
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
-    command: sh -c "CI=true pnpm install --prefer-offline && pnpm dev"
-    volumes:
-      - ./site:/app
-      - /app/node_modules
-      - /app/.next
-    ports:
-      - "3001:3000"
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 1G
-        reservations:
-          cpus: "0.25"
-          memory: 256M
-
 volumes:
-  pgdata:
+  airflow_pgdata:
+  airflow_state:
   # Demo warehouse data. Dropping it is how you reseed — see the
   # postgres-demo service comment.
   demo_pgdata:
-  # Content-addressed extract/structure cache, shared by backend and worker.
-  # Survives `up --build`; deleting it only costs a re-parse and re-call.
+  # Content-addressed extract/structure cache.
   artifacts:

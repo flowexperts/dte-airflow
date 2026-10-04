@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import {
   Button,
   Field,
@@ -83,7 +81,7 @@ export function DestinationForm({
     <>
       <Topbar
         crumbs={[
-          { label: "Workspace", href: "/" },
+          { label: "Admin" },
           { label: "Destinations", href: "/destinations" },
           { label: mode === "create" ? "New" : `Edit · ${initial.id}` },
         ]}

@@ -10,46 +10,48 @@ dependencies = [
     # `mysql` intentionally omitted from core — pulls mysqlclient which needs
     # libmysqlclient at build time (breaks fresh installs on macOS/Docker).
     # Enable with the `mysql-source` extra when needed.
-    "ibis-framework[duckdb,postgres,sqlite]>=9.0,<12.0",
+    "ibis-framework[duckdb,postgres,sqlite]>=12.0,<13.0",
+    # ibis pins only `sqlglot>=23.4`, and sqlglot 30 changed how a Drop
+    # renders: ibis 11's _get_schema_using_query emits `DROP VIEW IF EXISTS`
+    # with no name, so every raw-SQL step (filter, map/expression) against a
+    # Postgres source dies with "syntax error at end of input". Drop the
+    # ceiling when ibis ships sqlglot-30 support.
+    "sqlglot>=23.4,<30",
     "fastapi>=0.115,<1.0",
     "uvicorn[standard]>=0.30,<1.0",
     "pydantic>=2.7,<3.0",
     "pydantic-settings>=2.4,<3.0",
     "dlt[duckdb]>=1.4,<2.0",
     "httpx>=0.27,<1.0",
+    # MongoDB sources (dte.sources.loader / pools.mongo).
+    "pymongo>=4.6,<5.0",
     "asyncpg>=0.29,<1.0",
     "sqlalchemy[asyncio]>=2.0,<3.0",
     "sqlmodel>=0.0.22,<0.1",
     "alembic>=1.13,<2.0",
-    # Pinned <43: 43+ switched to Rust bindings whose wheels SIGILL on
-    # Docker Desktop arm64 (Apple Silicon emulation).
-    "cryptography>=42.0,<43",
-    "bcrypt>=4.0,<5.0",
-    "email-validator>=2.1,<3.0",
-    "pyjwt>=2.8,<3.0",
     # Eval date comparators. Available transitively via pandas, but declared
     # explicitly because dte.evals imports it directly.
     "python-dateutil>=2.8,<3.0",
-    "fastadmin>=0.10,<1.0",
     "python-multipart>=0.0.9,<1.0",
     "opentelemetry-api>=1.27,<2.0",
     "opentelemetry-sdk>=1.27,<2.0",
-    "opentelemetry-instrumentation-fastapi>=0.48b0,<1.0",
-    "slowapi>=0.1.9,<1.0",
     "prometheus-client>=0.20,<1.0",
-    # Postgres-backed job queue (plan 046). Async connector needs psycopg
-    # (v3) — separate from the asyncpg driver SQLAlchemy uses for stores.
-    # [binary] avoids requiring libpq headers at install/build time, same
-    # rationale as the pinned cryptography version above.
-    "procrastinate>=3.0,<4.0",
-    "psycopg[binary,pool]>=3.1,<4.0",
-    # Cron scheduling (plan 047). Already a transitive dep of procrastinate
-    # (its @app.periodic uses it internally) — declared explicitly since
-    # dte.scheduling.cron imports it directly.
     "croniter>=2.0,<7.0",
 ]
 
+[project.scripts]
+dte = "dte.cli:main"
+
+[project.entry-points.apache_airflow_provider]
+provider_info = "dte.airflow.provider:get_provider_info"
+
+[project.entry-points."airflow.plugins"]
+dte = "dte.airflow.plugin:DtePlugin"
+
 [project.optional-dependencies]
+# Airflow 3.3 app (plan 065; 3.3 for plugin nav menus, plan 067). Inside the apache/airflow image Airflow is
+# already installed; this pins the range for anyone installing outside it.
+airflow = ["apache-airflow>=3.3,<3.4"]
 # Document extraction (plan 050). Kept out of core so a deployment that never
 # touches PDFs doesn't carry the dependency; dte.providers imports lazily and
 # reports a message naming this extra when it's absent.
@@ -94,12 +96,12 @@ snowflake-writer = ["dlt[snowflake]>=1.4,<2.0"]
 bigquery-writer = ["dlt[bigquery]>=1.4,<2.0"]
 # Trino engine — plan-034 distributed execution seam.
 # Install with: pip install "dte[trino]"
-trino = ["ibis-framework[trino]>=9.0,<12.0", "trino>=0.329,<1.0"]
+trino = ["ibis-framework[trino]>=12.0,<13.0", "trino>=0.329,<1.0"]
 # Native ibis backends kept optional to avoid heavy or system-level build
 # deps (mysqlclient, google-cloud-bigquery, snowflake-connector-python).
-mysql-source = ["ibis-framework[mysql]>=9.0,<12.0"]
-bigquery-source = ["ibis-framework[bigquery]>=9.0,<12.0"]
-snowflake-source = ["ibis-framework[snowflake]>=9.0,<12.0"]
+mysql-source = ["ibis-framework[mysql]>=12.0,<13.0"]
+bigquery-source = ["ibis-framework[bigquery]>=12.0,<13.0"]
+snowflake-source = ["ibis-framework[snowflake]>=12.0,<13.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["dte"]

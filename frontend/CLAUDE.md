@@ -1,45 +1,37 @@
-@AGENTS.md
-
 ## Frontend
 
-Next.js **16** (App Router, Turbopack) + Tailwind **v4** + React **19** + TypeScript. Package manager is **pnpm**. Read this section before opening frontend files — most non-obvious choices are captured here.
+An **Airflow `react_apps` plugin** (plan 066): React **19** + TypeScript + Tailwind **v4**, built by **Vite** into one UMD bundle, `dist/dte.umd.js`. Package manager is **pnpm**. There is no Next.js and no iframe — Airflow `import()`s the bundle and renders its default export inside Airflow's own page.
 
-### Ports and env
+### How it runs
 
-- Frontend dev on **`:3000`**.
-- Backend on **`:8001`** (an unrelated Django dev server squats on `:8000` in this dev environment). Start with `uvicorn dte.api.main:app --port 8001 --reload` from repo root.
-- `frontend/.env.local` sets `NEXT_PUBLIC_API_URL=http://localhost:8001`. `.env.local.example` is committed (`.gitignore` has `!.env.local.example`); actual `.env.local` isn't.
-- Backend CORS reads `DTE_CORS_ORIGINS` (default `http://localhost:3000`).
-- `NEXT_PUBLIC_*` values are inlined at build time — **restart `pnpm dev` after changing them**.
-- `Run` model has `started_at`/`finished_at` (iso strings). Frontend derives elapsed client-side.
+- `backend/dte/airflow/plugin.py` registers four `react_apps` entries (DTE + three under Admin), all pointing at `/dte/ui/dte.umd.js`, which the API serves from `backend/ui` (`Dockerfile.airflow` copies `dist/` there).
+- Airflow puts `React`, `ReactDOM`, `ReactJSXRuntime` and `ReactRouterDOM` on `globalThis`. `vite.config.ts` marks them external and maps them to those globals — **never bundle React**: a second copy breaks every hook. The `output.intro` `require` shim exists because bundled CJS deps (`use-sync-external-store`, via swr + recharts) keep a literal `require("react")`; without it the plugin fails with `require is not defined` and Airflow shows its 404 page (its loader falls back to that on any load error).
+- Dev loop: `pnpm dev` (= `vite build --watch`), then `docker cp dist/dte.umd.js dte-airflow-apiserver-1:/opt/dte/backend/ui/` and reload `/plugin/dte`. There is no standalone dev server — the bundle needs Airflow's globals.
+- Same origin as Airflow: `apiFetch` calls `/dte/api/...` with Airflow's session cookie.
 
-### Route structure (App Router)
+### Routing
 
-```
-src/app/
-  layout.tsx           # html + fonts + ThemeProvider + SwrProvider (client tree wrapper)
-  page.tsx             # redirect /  →  /pipelines
-  (app)/               # route group sharing the sidebar shell
-    layout.tsx         # grid: <AppSidebar/> + <main>
-    pipelines/{page, new, [id]/{page, edit}}.tsx
-    runs/[id]/page.tsx
-    preview/page.tsx   # component gallery ("/preview")
-```
-
-- `/runs` (no id) intentionally has **no page** — reach a run via its pipeline detail. The sidebar link was removed.
-- `AppSidebar` is a client component (`usePathname` for active state); everything above it in the tree stays server-render-eligible.
+- Airflow mounts plugins at `plugin/:page/*`. `src/plugin.tsx` holds the route table (paths relative to that base) and picks the landing section from `:page` (`dte` → pipelines, `dte-sources` → sources, …).
+- `src/lib/nav.tsx` gives Next-shaped `Link` / `useRouter` / `usePathname` / `useSearchParams` over react-router, adding and stripping the `/plugin/<page>` base — so page code writes app-absolute paths (`/pipelines/detail?id=x`). Use it; importing `react-router-dom` directly means handling the base yourself. `router.refresh()` revalidates every SWR key.
+- **No DTE sidebar** (plan 067): Airflow's rail is the only nav. Airflow 3.3 groups same-category plugin items under the rail's **Plugins** menu, so Transform (`dte`) and Quality Check (`dte-quality`, which just redirects to the filtered list) appear under Plugins ▸ DTE Pipelines. Sources, Destinations and Lookup tables are Admin-menu entries (`dte-sources`, …).
+- **Every entry shares one bundle.** Airflow 3.3 clears `globalThis.AirflowPlugin` before each `import()` and looks the component up at `globalThis[<react_app name>]`, and the browser runs the cached bundle only once, so `plugin.tsx` registers `DtePlugin` under every name in `ENTRY_NAMES`. A new entry in `plugin.py` needs its name added there (`test_plugin_names.py` fails otherwise). Keep `plugin.tsx`'s only export the default: a named export turns the UMD global into a module object. `nav.tsx` mounts an absolute href under the page that *owns* its section (`OWNED`), not the current page, so cross-section links move the rail highlight. A new owned section = a `plugin.py` entry + an `OWNED` prefix.
+- Pipeline types in the UI come from `PIPELINE_TYPE_TABS` (Transform, Quality Check), shared by the list toggle and the builder picker. Eval and Visualize are hidden, and so are eval sets and dashboards: their components remain but are unrouted. They are still in the API.
+- Pages live in `src/pages/` and route by query string (`detail?id=`), not path segments.
+- `window.history.replaceState` must pass `window.history.state`, not `null` — react-router keeps its index there and `null` breaks Back.
 
 ### Design system (portable)
 
-- `src/components/ui/` imports only from itself + `@/lib/cn.ts`. To port to another project: copy this folder + `src/app/globals.css` + the three Google fonts wired in `layout.tsx`. Anything in `src/components/builder/` is DTE-specific.
-- Tokens live in `globals.css` as CSS vars under `[data-theme="dark"]` and `[data-theme="light"]`, remapped into Tailwind's `@theme` (so `bg-surface`, `text-muted`, `border-border`, etc. work).
-- Theme is switched by setting `data-theme` on `<html>` via `ThemeProvider` (`useTheme()` hook; state persisted to localStorage).
-- Fonts: **Outfit** (all UI), **Space Mono** (paths / code / mono metadata), **Cormorant Garamond** — reserved for the `dt·e` wordmark only. Do not use Cormorant for headings or numerals; earlier attempts read as landing-page marketing, not product.
+- `src/components/ui/` imports only from itself + `@/lib/cn.ts`. Anything in `src/components/builder/` is DTE-specific.
+- **The theme is Airflow's.** Tokens in `src/dte.css` are scoped to `.dte-root` and defined as Airflow's Chakra variables (`--bg: var(--chakra-colors-bg)`, `--accent: var(--chakra-colors-brand-fg)`, …), remapped into Tailwind's `@theme` (so `bg-surface`, `text-muted`, `border-border` work). Chakra switches those variables on `html.dark`, so DTE follows Airflow's light/dark toggle and any configured theme with no JS. DTE has no theme toggle of its own.
+- **Nothing may style outside `.dte-root`.** The stylesheet is injected into Airflow's `<head>`: no Tailwind preflight, no `html`/`body` rules. Airflow's Chakra reset covers what preflight did.
+- `text-accent` is brand **fg** (readable text); filled controls use `bg-accent-solid text-accent-contrast` — Airflow's own solid-button pair. Don't put `text-white` on an accent fill.
+- Fonts are Airflow's: `font-ui` = `--chakra-fonts-body` (Inter), `font-mono` = `--chakra-fonts-mono`, `font-brand` (the `dt·e` wordmark only) = `--chakra-fonts-heading`.
+- The chart palette (`--chart-1..6`) is the one exception: DTE's own validated sets, light on `.dte-root`, dark on `.dark .dte-root`.
 - Every color the app uses (including status pills, run tones, code bg) comes from tokens. Don't hardcode hex values in components.
 
 ### Design vocabulary (`components/ui/`)
 
-`Button` (variants: default/primary/ghost × sm/md, optional `kbd`), `Pill` (`ok`/`running`/`failed`/`pending`), `Panel` + `PanelHead`, `PageHeader`, `SectionHead`, `Sidebar` (+ `Brand`, `NavSearch`, `NavItem`, `NavGroup`, `NavFooter`), `Topbar`, `DataTable<T>` (client), `StepRow`, `ExprCode`/`ExprToken`, `KV`/`KVItem`, `AddStep`, `Item`, `Tag`, `Metric` + `MetricRow`, `Timeline` + `TimelineRow` + `InlineCode`, `Field`/`Input`/`Textarea`/`Segmented`, `FieldPicker`, `FieldMultiSelect`, `ThemeToggle`. Re-exports through `components/ui/index.ts`.
+`Button` (variants: default/primary/ghost × sm/md, optional `kbd`), `Pill` (`ok`/`running`/`failed`/`pending`), `Panel` + `PanelHead`, `PageHeader`, `SectionHead`, `Topbar`, `DataTable<T>` (client), `StepRow`, `ExprCode`/`ExprToken`, `KV`/`KVItem`, `AddStep`, `Item`, `Tag`, `Metric` + `MetricRow`, `Timeline` + `TimelineRow` + `InlineCode`, `Field`/`Input`/`Textarea`/`Segmented`, `FieldPicker`, `FieldMultiSelect`. Re-exports through `components/ui/index.ts`.
 
 ### Information hierarchy rules
 
@@ -50,23 +42,9 @@ with the bug that produced it), and the checklist for new surfaces.
 
 ### API client + typegen
 
-- `src/lib/api-types.ts` is generated from the running backend's `/openapi.json`. Regen: **backend must be up on `:8001`**, then `pnpm gen:types` (script sets `DTE_API_URL=http://localhost:8001` if you export it, otherwise defaults to `:8000`). Fastest form: `DTE_API_URL=http://localhost:8001 ./scripts/gen-api-types.sh`.
+- `src/lib/api-types.ts` is generated from the running API's `/openapi.json`: `DTE_API_URL=http://localhost:8080/dte ./scripts/gen-api-types.sh`.
 - `src/lib/api.ts` is the hand-written wrapper: `apiFetch<T>`, named helpers (`listPipelines`, `getPipeline`, `createPipeline`, `updatePipeline`, `deletePipeline`, `triggerPipeline`, `previewPipeline`, `listPipelineRuns`, `getRun`, `inferSchema`), `Run` type (backend returns dict; typed here), `isTerminal`, `isJsonFileOutput` narrower.
 - SWR wired in `src/lib/swr-config.tsx` with `fetcher: (path) => apiFetch(path)`. `refreshInterval` on the run page uses `(latest) => isTerminal(latest?.status) ? 0 : 2000`.
-
-### Next 16 gotchas (breaking from earlier versions)
-
-- `params` and `searchParams` are `Promise`s. In server components: `const { id } = await params`. In client components: `const { id } = use(params)`.
-- Type helpers `PageProps<'/route'>` and `LayoutProps<'/route'>` are globally available — no import — generated during `next dev`/`build`/`typegen`.
-- `frontend/AGENTS.md` warns: "This is NOT the Next.js you know." When uncertain, read `frontend/node_modules/next/dist/docs/01-app/` before writing code.
-
-### Server vs client component discipline
-
-**The single most common bug in this codebase**: passing a function (event handler or a `render` fn in a `columns` array) from a server component into a client component. FastAPI-fed pages are server components by default. `DataTable` is `"use client"`. Any prop with a function payload — `onRowClick`, `columns[].render` — must originate inside a client component.
-
-Pattern used throughout: extract client sub-components (`PipelinesTable`, `RunsTable`, `TriggerButton`, `PipelinePreview`) that own the handlers; server pages compose them.
-
-Ref forwarding: React 19 lets `ref` ride as a normal prop. `Input` does this so `FieldPicker` can focus/blur it — do the same for any new form primitive.
 
 ### FieldPicker portal (do not remove)
 
@@ -132,7 +110,7 @@ own.
 ### When adding a new step op
 
 1. Backend: add `Xxx` Pydantic model in `dte/models/pipeline.py`, dispatch in `dte/compiler/ibis_compiler.py`, add compiler tests first.
-2. `pnpm gen:types` (backend up on `:8001`) — this refreshes `frontend/src/lib/api-types.ts`.
+2. Regenerate `frontend/src/lib/api-types.ts` (see *API client + typegen*).
 3. Frontend: extend `StepOp` + `STEP_OPS` + `emptyStep()` in `components/builder/steps/types.ts`.
 4. Write `XxxEditor` in `editors.tsx`; dispatch from `StepEditor` at the bottom. Use `useSchemas().allFields` for any field references.
 

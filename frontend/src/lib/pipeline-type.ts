@@ -22,8 +22,8 @@ export const PIPELINE_TYPE_TABS: ReadonlyArray<{
 }> = [
   { type: "transform", label: "Transform" },
   { type: "quality", label: "Quality Check" },
-  { type: "eval", label: "Eval" },
-  { type: "viz", label: "Visualize" },
+  // Eval and Visualize are hidden from the UI (plan 067): their eval-set and
+  // dashboard pages are gone. The types still exist in the API.
 ];
 
 /**

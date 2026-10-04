@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui";
 import { usePermissions } from "@/lib/use-permissions";
 
@@ -18,11 +16,10 @@ export function NewResourceButton({
   const { can, isLoading } = usePermissions();
 
   /* Render while permissions are still in flight. `can()` reads an empty
-   * permission list until /api/auth/me resolves, so gating on it alone hides
+   * permission list until /api/me resolves, so gating on it alone hides
    * the primary create action on first paint — and hides it permanently if
    * that request fails. The server still authorises the actual write; this
-   * button is a signpost, not the gate. Matches AppSidebar, which has always
-   * defaulted to showing nav items before the user loads. */
+   * button is a signpost, not the gate. */
   if (!isLoading && !can(perm)) return null;
 
   return (

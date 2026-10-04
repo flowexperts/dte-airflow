@@ -1,31 +1,39 @@
 # dte — map it once, run it forever
 
-Your domain expert maps the source — once, click by click. Your orchestrator runs it every day after.
+Your domain expert maps the source — once, click by click. Airflow runs it every day after.
 
-dte is a batch data transformation engine: a visual pipeline builder on top of a typed backend (DuckDB + ibis + dlt) that turns hand-drawn field mappings into reproducible runs.
+dte is a batch data transformation engine that runs as an Airflow 3 app: a visual pipeline builder on top of a typed backend (DuckDB + ibis + dlt) that turns hand-drawn field mappings into reproducible runs. Every pipeline is an Airflow DAG; Airflow owns login, connections, scheduling and run history.
 
 ## Quickstart
 
 ```bash
 git clone https://github.com/bhavaniravi/dte.git
 cd dte
-./scripts/bootstrap.sh     # writes .env with fresh secrets
 docker compose up -d --build
 ```
 
-Open http://localhost:3000. The first user to sign up becomes admin.
+Open http://localhost:8080 and log in as `admin` / `admin`. DTE is under **Plugins ▸ DTE Pipelines** in Airflow's left nav
+(Transform, Quality Check); sources, destinations and lookup tables are under **Admin**.
+The UI offers Transform and Quality Check pipelines. Eval and Visualize pipelines are API-only for now.
+
+1. Create a connection in Airflow (**Admin → Connections**). Supported types: `fs`,
+   `postgres`, `mysql`, `sqlite`, `snowflake`, `google_cloud_platform`, `aws`, `wasb`,
+   `mongo`, `http`.
+2. Under **Admin**, create a DTE source and destination that use it; then create a pipeline in **DTE Pipelines**.
+3. Click **Run**. The run is a dag run of `dte__<pipeline id>`, visible in both UIs.
 
 Ports:
 
-- `3000` — frontend (Next.js)
-- `8001` — backend API (FastAPI)
-- `5432` — postgres
+- `8080` — Airflow (UI, REST API, DTE at `/dte`)
+- `5432` — postgres (Airflow metadata; DTE tables in the `dte` schema)
+- `5433` — demo warehouse
 
 ## What's inside
 
 - `backend/` — Python package `dte` (FastAPI API, ibis compiler, DuckDB engine, alembic migrations, tests).
-- `frontend/` — Next.js 16 app (App Router, Tailwind v4, React 19) for the pipeline builder and run UI.
-- `packages/dte-sdk/` — standalone Python SDK for defining and running pipelines programmatically.
+- `frontend/` — React app built by Vite into an Airflow `react_apps` bundle; renders natively inside Airflow at `/plugin/dte` with Airflow's theme.
+- `backend/dte/airflow/` — the Airflow integration: plugin, DAG factory, operator, connection adapter.
+- `dags/dte_dags.py` — one line that turns every DTE pipeline and schedule into a DAG.
 - `plans/` — numbered feature plans documenting the architecture and each shipped change.
 
 ## Testing
@@ -124,14 +132,15 @@ Three tiers — run only what the change touches:
 | BigQuery | Available |
 | MongoDB | Available |
 | REST API | Available |
-| Connectivity test (`POST /api/connections/{id}/test`) | Available |
-| Credentials encrypted at rest (Fernet) | Available |
+| Connectivity test (`POST /dte/api/connections/{id}/test`) | Available |
+| Stored as Airflow Connections (encrypted by Airflow's Fernet key) | Available |
 
 ### Runtime & Pipeline Features
 
 | Feature | Status |
 |---------|--------|
-| Async pipeline execution — trigger returns immediately, caller polls | Available |
+| Runs execute as Airflow dag runs (`dte__<pipeline>`) | Available |
+| Schedules become Airflow cron DAGs | Available |
 | Preview / dry run (sample rows, compile-time errors surfaced) | Available |
 | Run history per pipeline | Available |
 | Run output peek (`GET /api/runs/{id}/output`) | Available |
@@ -140,7 +149,7 @@ Three tiers — run only what the change touches:
 | Schema inference from an in-flight source body | Available |
 | Nested struct fields via dot syntax (`order.amount`) | Available |
 | Lookup tables — CRUD + referenced by Map · Lookup step | Available |
-| Per-step run timeline events | Planned — frontend stub in place, backend not recording yet |
+| Per-step run timeline events | Available |
 
 ### Engines
 
@@ -153,15 +162,8 @@ Three tiers — run only what the change touches:
 
 | Feature | Status |
 |---------|--------|
-| Email/password login — first user becomes admin | Available |
-| Role-based permissions | Available |
-
-### Integrations & SDK
-
-| Feature | Status |
-|---------|--------|
-| Python SDK (`dte-sdk`) — define and run pipelines as Python objects | Available |
-| Orchestrator-ready SDK (Airflow, Prefect, Dagster operators) | Available |
+| Airflow login and auth manager | Available |
+| DTE permissions derived from Airflow DAG access | Available |
 
 ## Docs
 

@@ -1,0 +1,26 @@
+# DTE inside Airflow 3.3 (plans 065, 067). Build context: repo root.
+FROM node:22-alpine AS ui
+RUN corepack enable
+WORKDIR /app
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY frontend ./
+RUN pnpm build
+
+FROM apache/airflow:3.3.2-python3.12 AS base
+ARG AIRFLOW_CONSTRAINTS=https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt
+USER root
+# Owned by airflow so fresh named volumes mounted here are writable.
+RUN mkdir -p /opt/airflow/state /var/lib/dte/artifacts && chown -R airflow:root /opt/airflow/state /var/lib/dte
+USER airflow
+COPY --chown=airflow:root backend /opt/dte/backend
+# Airflow's constraints pin sqlglot 30, which nothing in the image uses but
+# which breaks ibis raw SQL on Postgres (see pyproject). Drop that one pin;
+# DTE's own `sqlglot<30` then decides.
+RUN curl -fsSL ${AIRFLOW_CONSTRAINTS} | grep -v '^sqlglot==' > /tmp/constraints.txt && \
+    pip install --no-cache-dir --constraint /tmp/constraints.txt \
+    -e "/opt/dte/backend[unstructured,models,mysql-writer]"
+
+# UI plugin bundle (plan 066); served at /dte/ui, loaded by Airflow as a react_app.
+FROM base AS final
+COPY --from=ui --chown=airflow:root /app/dist /opt/dte/backend/ui

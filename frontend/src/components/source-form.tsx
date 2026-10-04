@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
 import { Button, InlineError, PageHeader, Panel, Topbar } from "@/components/ui";
 import { createSource, updateSource, type Source } from "@/lib/api";
 import { SourceEditor } from "@/components/builder/sources/SourceEditor";
@@ -52,7 +50,7 @@ export function SourceForm({
     <SchemaProvider>
       <Topbar
         crumbs={[
-          { label: "Workspace", href: "/" },
+          { label: "Admin" },
           { label: "Sources", href: "/sources" },
           { label: mode === "create" ? "New" : `Edit · ${initial.id}` },
         ]}

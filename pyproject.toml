@@ -1,11 +1,9 @@
 [project]
 name = "dte-workspace"
 version = "0"
-description = "DTE monorepo — dte-sdk (open source) + backend app"
+description = "DTE monorepo"
 requires-python = ">=3.12"
 
 [tool.uv.workspace]
-members = ["backend", "packages/dte-sdk"]
+members = ["backend"]
 
-[tool.uv.sources]
-dte-sdk = { workspace = true }

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import useSWR from "swr";
 import {
@@ -237,7 +235,7 @@ export function LookupTablesTable() {
   return (
     <>
       <Topbar
-        crumbs={[{ label: "Workspace", href: "/" }, { label: "Lookup tables" }]}
+        crumbs={[{ label: "Admin" }, { label: "Lookup tables" }]}
         actions={
           !editing && canWrite ? (
             <Button variant="primary" size="sm" kbd="N" onClick={openNew}>

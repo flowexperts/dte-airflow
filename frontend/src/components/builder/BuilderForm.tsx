@@ -1,7 +1,6 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/nav";
+import { PIPELINE_TYPE_TABS } from "@/lib/pipeline-type";
 import { Button, Field, Input, PageHeader, Segmented, Topbar } from "@/components/ui";
 import {
   ApiError,
@@ -154,7 +153,7 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
       // placeholder empty id so the backend's default_factory fires.
       const { id: _drop, ...body } = pipeline;
       const created = await createPipeline(body as Pipeline);
-      router.push(`/pipelines/${encodeURIComponent(created.id)}`);
+      router.push(`/pipelines/detail?id=${encodeURIComponent(created.id)}`);
     } catch (e) {
       setSubmitErr(formatSaveError(e));
       setSaving(false);
@@ -179,15 +178,11 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
       </div>
       <Field
         label="Pipeline type"
-        hint="Transform writes output data; Quality asserts conditions on it; Eval scores extraction against a labeled corpus; Visualize feeds a dashboard tile and writes nothing."
+        hint="Transform writes output data; Quality Check asserts conditions on it."
       >
+        {/* Same list as the Pipelines page toggle, so the two cannot drift. */}
         <Segmented<"transform" | "quality" | "eval" | "viz">
-          options={[
-            { value: "transform", label: "Transform" },
-            { value: "quality", label: "Quality" },
-            { value: "eval", label: "Eval" },
-            { value: "viz", label: "Visualize" },
-          ]}
+          options={PIPELINE_TYPE_TABS.map(({ type, label }) => ({ value: type, label }))}
           value={pipeline.pipeline_type ?? "transform"}
           onChange={(v) =>
             setPipeline((p: Pipeline) => ({ ...p, pipeline_type: v }))
@@ -204,8 +199,7 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
       <AutoStepSchemas pipeline={pipeline} />
       <Topbar
         crumbs={[
-          { label: "Workspace", href: "/" },
-          { label: "Pipelines", href: "/pipelines" },
+          { label: "DTE Pipelines", href: "/pipelines" },
           { label: "New" },
         ]}
         actions={

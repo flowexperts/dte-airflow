@@ -36,16 +36,11 @@ describe("parsePipelineType", () => {
 });
 
 describe("PIPELINE_TYPE_TABS", () => {
-  it("gives every pipeline type a nav entry", () => {
-    // A type that can be created and then not found is worse than one that
-    // cannot be created. Every value the builder offers needs a way back to
-    // it.
-    expect(PIPELINE_TYPE_TABS.map((t) => t.type)).toEqual([
-      "transform",
-      "quality",
-      "eval",
-      "viz",
-    ]);
+  it("offers only the types the UI supports", () => {
+    // The builder's type picker and the Pipelines toggle both read this list,
+    // so a type the builder offers always has a way back to it. Eval and
+    // Visualize are hidden from the UI (plan 067).
+    expect(PIPELINE_TYPE_TABS.map((t) => t.type)).toEqual(["transform", "quality"]);
   });
 });
 

@@ -5,15 +5,6 @@ export { ErrorPanel, InlineError } from "./error-panel";
 export { PageHeader, SectionHead } from "./headers";
 export { Topbar } from "./topbar";
 export type { Crumb } from "./topbar";
-export {
-  Sidebar,
-  Brand,
-  NavSearch,
-  NavSections,
-  NavGroup,
-  NavItem,
-  NavFooter,
-} from "./sidebar";
 export { DataTable } from "./data-table";
 export { CopyId } from "./CopyId";
 export type { Column, DataTableSelection } from "./data-table";
