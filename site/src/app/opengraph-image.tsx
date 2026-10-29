@@ -54,7 +54,7 @@ export default function Image() {
             maxWidth: 900,
           }}
         >
-          Build data pipelines without burning tokens or developer time.
+          Open source. Runs as an Apache Airflow 3 plugin — every pipeline is a DAG.
         </div>
       </div>
     ),

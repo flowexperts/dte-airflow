@@ -2,7 +2,7 @@ import Script from "next/script";
 import type { Metadata } from "next";
 import { Outfit, Space_Mono, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
-import { SITE_URL, SITE_NAME, SITE_TITLE, SITE_DESCRIPTION } from "@/lib/site";
+import { SITE_URL, SITE_NAME, SITE_TITLE, SITE_DESCRIPTION, REPO_URL } from "@/lib/site";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -32,6 +32,10 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   keywords: [
     "data transformation engine",
+    "Apache Airflow",
+    "Airflow plugin",
+    "Airflow 3",
+    "open source",
     "ETL",
     "ELT",
     "data pipeline builder",
@@ -66,17 +70,22 @@ const jsonLd = {
   name: SITE_NAME,
   alternateName: "Data Transformation Engine",
   applicationCategory: "DataTransformationApplication",
-  operatingSystem: "Any (self-hosted / cloud)",
+  operatingSystem: "Any (self-hosted on Apache Airflow 3)",
+  license: "https://www.apache.org/licenses/LICENSE-2.0",
+  isAccessibleForFree: true,
   description: SITE_DESCRIPTION,
   url: SITE_URL,
+  sameAs: [REPO_URL],
   offers: {
     "@type": "Offer",
-    availability: "https://schema.org/InStock",
-    url: `${SITE_URL}/#book`,
+    price: "0",
+    priceCurrency: "USD",
+    url: REPO_URL,
   },
   featureList: [
-    "Sources: S3, GCS, Azure Blob, Postgres, MongoDB, REST APIs, local filesystem",
-    "Destinations: Postgres, SQL databases, Parquet on S3, JSON/CSV/Excel files, REST endpoint",
+    "Runs as an Apache Airflow 3 plugin: every pipeline is an Airflow DAG",
+    "Sources: local files, S3, GCS, Azure Blob, SFTP, Postgres, MySQL, SQL Server, Snowflake, BigQuery, MongoDB, REST APIs, PDFs",
+    "Destinations: Postgres, MySQL, SQL Server, Snowflake, BigQuery, Parquet/JSON/CSV/Excel files locally or in object storage",
     "No-code pipeline builder: filter, rename, retype, lookup, aggregate, join, pivot, select/drop",
     "Data quality: check, profile, and dry-run preview before every run",
   ],
