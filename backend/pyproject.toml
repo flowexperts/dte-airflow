@@ -3,7 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "dte"
+# `dte` is taken on PyPI. The import package and the CLI are still `dte`.
+name = "dte-airflow"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -11,12 +12,13 @@ dependencies = [
     # libmysqlclient at build time (breaks fresh installs on macOS/Docker).
     # Enable with the `mysql-source` extra when needed.
     "ibis-framework[duckdb,postgres,sqlite]>=12.0,<13.0",
-    # ibis pins only `sqlglot>=23.4`, and sqlglot 30 changed how a Drop
-    # renders: ibis 11's _get_schema_using_query emits `DROP VIEW IF EXISTS`
-    # with no name, so every raw-SQL step (filter, map/expression) against a
-    # Postgres source dies with "syntax error at end of input". Drop the
-    # ceiling when ibis ships sqlglot-30 support.
-    "sqlglot>=23.4,<30",
+    # No ceiling: Airflow 3.3 pins sqlglot 30. dte/__init__.py adapts ibis
+    # to it (plan 073).
+    "sqlglot>=23.4",
+    # duckdb 2 dropped `fetch_arrow_table`, which ibis 12's duckdb backend
+    # calls on every execute. The lockfile hides this; a plain `pip install
+    # dte-airflow` doesn't (plan 073). Lift with the ibis upgrade.
+    "duckdb>=1.1,<2",
     "fastapi>=0.115,<1.0",
     "uvicorn[standard]>=0.30,<1.0",
     "pydantic>=2.7,<3.0",
@@ -51,7 +53,7 @@ dte = "dte.airflow.plugin:DtePlugin"
 [project.optional-dependencies]
 # Airflow 3.3 app (plan 065; 3.3 for plugin nav menus, plan 067). Inside the apache/airflow image Airflow is
 # already installed; this pins the range for anyone installing outside it.
-airflow = ["apache-airflow>=3.3,<3.4"]
+airflow = ["apache-airflow>=3.3"]
 # Document extraction (plan 050). Kept out of core so a deployment that never
 # touches PDFs doesn't carry the dependency; dte.providers imports lazily and
 # reports a message naming this extra when it's absent.
@@ -82,12 +84,18 @@ dev = [
     "ruff>=0.6,<1.0",
     "hypothesis>=6.100,<7.0",
     "mutmut>=2.5,<4.0",
-    "azure-storage-blob>=12.0,<13.0",
-    "s3fs>=2024.6,<2026.0",
-    "pyarrow>=15,<20",
+    "pyarrow>=15",
 ]
-parquet = ["pyarrow>=15,<20", "fsspec>=2024.6,<2026.0"]
-s3 = ["s3fs>=2024.6,<2026.0"]
+# No ceilings on packages Airflow's constraints pin (pyarrow, fsspec, s3fs,
+# sqlglot): Airflow picks the version, DTE follows (plan 073).
+parquet = ["pyarrow>=15", "fsspec>=2024.6"]
+# Object storage and SQL auth belong to Airflow's providers (plan 074): these
+# extras only name the provider (and the fsspec package its filesystem needs).
+amazon = ["apache-airflow-providers-amazon[s3fs]"]
+google = ["apache-airflow-providers-google"]
+azure = ["apache-airflow-providers-microsoft-azure"]
+sftp = ["apache-airflow-providers-sftp", "sshfs"]
+mongo = ["apache-airflow-providers-mongo"]
 postgres-writer = ["dlt[postgres]>=1.4,<2.0", "psycopg[binary]>=3.1,<4.0"]
 # dlt ships no `mysql` extra (`dlt[mysql]` silently resolved to plain dlt).
 # pymysql, not mysqlclient: pure Python, so the image needs no C toolchain.
@@ -102,12 +110,20 @@ trino = ["ibis-framework[trino]>=12.0,<13.0", "trino>=0.329,<1.0"]
 mysql-source = ["ibis-framework[mysql]>=12.0,<13.0"]
 # SQL Server, read and write (plan 069). Both sides go through pyodbc, which
 # needs Microsoft's ODBC Driver 18 installed on the host (Dockerfile.airflow).
-mssql = ["ibis-framework[mssql]>=12.0,<13.0", "dlt[mssql]>=1.4,<2.0"]
+mssql = ["apache-airflow-providers-microsoft-mssql", "ibis-framework[mssql]>=12.0,<13.0", "dlt[mssql]>=1.4,<2.0"]
 bigquery-source = ["ibis-framework[bigquery]>=12.0,<13.0"]
 snowflake-source = ["ibis-framework[snowflake]>=12.0,<13.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["dte"]
+# The Vite UI bundle (gitignored; the release workflow copies frontend/dist
+# here). `artifacts` so a dev build without it still works.
+artifacts = ["dte/ui/**"]
+
+# `dte db upgrade` runs these from inside the installed package (plan 073).
+[tool.hatch.build.targets.wheel.force-include]
+"alembic.ini" = "dte/migrations/alembic.ini"
+"alembic" = "dte/migrations/alembic"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

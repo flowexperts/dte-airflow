@@ -67,6 +67,8 @@ class _UiFiles(StaticFiles):
         return resp
 
 
-_ui = Path(__file__).resolve().parents[2] / "ui"
-if _ui.is_dir():
+# Installed wheel: dte/ui. Dockerfile.airflow: backend/ui, beside the package.
+_ui = next((d for d in (Path(__file__).resolve().parents[1] / "ui",
+                         Path(__file__).resolve().parents[2] / "ui") if d.is_dir()), None)
+if _ui:
     app.mount("/ui", _UiFiles(directory=_ui, html=True), name="ui")

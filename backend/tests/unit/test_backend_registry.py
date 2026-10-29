@@ -111,3 +111,19 @@ def test_open_unknown_connection_type_raises():
     conn = _conn("mystery", "mongodb", {})
     with pytest.raises(NotImplementedError, match="No native ibis backend"):
         br._open_ibis_backend(conn, {})
+
+
+def test_bigquery_authenticates_with_the_airflow_providers_credentials(monkeypatch):
+    import sys
+    from types import ModuleType
+    from types import SimpleNamespace as NS
+
+    from dte.engine import backend_registry as br
+
+    for m in ("google", "google.cloud", "google.cloud.bigquery"):  # the import guard
+        monkeypatch.setitem(sys.modules, m, sys.modules.get(m) or ModuleType(m))
+    seen = {}
+    monkeypatch.setattr(br, "_gcp_credentials", lambda conn_id: f"creds-of-{conn_id}")
+    monkeypatch.setattr(br, "ibis", NS(bigquery=NS(connect=lambda **kw: seen.update(kw) or "con")))
+    br._open_bigquery({"url": "bigquery://prj/ds", "conn_id": "gcp"})
+    assert seen == {"project_id": "prj", "dataset_id": "ds", "credentials": "creds-of-gcp"}

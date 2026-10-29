@@ -27,7 +27,7 @@ from dte.providers.schema import coerce_row, json_schema_for
 # to install a package that does not fix their error.
 _MISSING_DEP = (
     "the {pkg} SDK is not installed — the {lib} provider needs it. "
-    'Install the optional extra with `pip install "dte[models]"`'
+    'Install the optional extra with `pip install "dte-airflow[models]"`'
 )
 
 # Default models. Both are the current flagship for their provider; callers

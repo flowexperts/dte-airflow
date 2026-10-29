@@ -48,6 +48,9 @@ def build_dags() -> dict:
             params=dict(sc.get("params") or {}),
             tags=["dte", f"dte-pipeline:{pid}", f"dte-type:{ptype}", revision_tag(rev.id)],
             dag_display_name=p.get("name") or pid,
+            # A paused DAG queues manual runs forever. Per DAG, so an existing
+            # Airflow needn't change its global default (plan 073).
+            is_paused_upon_creation=False,
         ) as dag:
             DtePipelineOperator(task_id="run", pipeline_id=pid, revision_id=rev.id,
                                 eval_set_id=sc.get("eval_set_id"))

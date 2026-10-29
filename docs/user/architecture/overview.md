@@ -16,15 +16,15 @@ Pipelines run inside the backend process. The stack, top to bottom:
 - **DuckDB** — the query engine. All transforms compile to DuckDB SQL and execute in-process.
 - **ibis** — the compiler DSL. Each step in a pipeline maps to an ibis operation; the compiler stitches them into one DuckDB query.
 
-Filesystem, S3, GCS, Azure, and SQL sources all read directly via DuckDB's extensions (`httpfs`, `azure`, `sqlite`, `postgres_scanner`, etc.) — no dlt in the hot path for these.
+Local files are read by DuckDB directly. S3, GCS, Azure and SFTP files are read and written by DuckDB through the Airflow provider's fsspec filesystem (`ObjectStoragePath`), so the provider does the auth. SQL sources open the database with ibis, using the URL from the provider hook. No dlt in the hot path for these.
 
 ## Where credentials live
 
-Credentials sit on `Connection` rows, encrypted with a column-level `EncryptedJSON` type. Sources and destinations reference a connection by id and hold only the "where inside" bits (bucket, table, path). See [Secrets & environment](../self-hosting/secrets.md) for the resolver details.
+In Airflow. Connections are Airflow connections (metadata DB, `AIRFLOW_CONN_*` variables or a secrets backend); dte resolves them at run time through `BaseHook.get_connection` and the provider. Sources and destinations reference a connection by id and hold only the "where inside" bits (bucket, table, path). See [Secrets & environment](../self-hosting/secrets.md).
 
 ## Storage layout
 
-- **Postgres** — all metadata: `pipelines`, `sources`, `destinations`, `connections`, `lookup_tables`, `runs`, `users`.
+- **Postgres** — Airflow's metadata database. dte's tables (`pipelines`, `sources`, `destinations`, `lookup_tables`, `run_results`, …) are in its `dte` schema; connections, users and run history are Airflow's own tables.
 - **`/data` volume** — files served by the **Local files** connection.
 - **In-process** — an ephemeral DuckDB connection per pipeline run. Nothing persists here.
 

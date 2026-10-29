@@ -1,9 +1,9 @@
 """One COPY path for every file format and every storage backend.
 
 DuckDB's `COPY … TO '<uri>'` writes local paths and object-store URIs
-identically, provided the right extension is loaded and a SECRET exists.
-That makes format and location independent: the format decides the
-`(FORMAT …)` clause, the URI scheme decides the extension + secret.
+identically once the destination connection's provider filesystem is
+registered (plan 074). The format decides the `(FORMAT …)` clause; the
+connection decides where and how bytes land.
 
 Streaming stays inside DuckDB — nothing is buffered through Python, which
 is what lets multi-GB results write without blowing up memory.
@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import ibis
 
-from dte.sources.duckdb_secrets import backend_for_uri, prepare_object_store
+from dte.sources.object_store import register
 
-__all__ = ["backend_for_uri", "copy_to"]
+__all__ = ["copy_to"]
 
 _SEQ = iter(range(1, 1 << 30))
 
@@ -91,10 +91,15 @@ def _copy_from_duckdb(
 ) -> dict:
     raw = backend.con
 
-    # Object-store URIs need their extension + SECRET before COPY runs.
-    # Local paths no-op; an unrecognised scheme raises rather than silently
-    # creating a file named after the URI.
-    prepare_object_store(raw, path, credentials, f"dte_dst_{next(_SEQ)}")
+    # A remote URI writes through the destination connection's provider
+    # filesystem. Local paths come back unchanged.
+    target = path
+    if "://" in path and not path.startswith("file://"):
+        conn_id = (credentials or {}).get("conn_id")
+        if not conn_id:
+            raise ValueError(f"destination '{path}' is remote but its connection is not an "
+                             "Airflow storage connection (aws, google_cloud_platform, wasb, sftp, …)")
+        target = register(raw, path, conn_id)
 
     if extension:
         from dte.sources.duckdb_secrets import _ensure_ext
@@ -109,7 +114,7 @@ def _copy_from_duckdb(
     try:
         (rows,) = raw.execute(f"SELECT COUNT(*) FROM {_sql_ident(view_name)}").fetchone()
         raw.execute(
-            f"COPY (SELECT * FROM {_sql_ident(view_name)}) TO {_sql_str(path)} ({format_clause})"
+            f"COPY (SELECT * FROM {_sql_ident(view_name)}) TO {_sql_str(target)} ({format_clause})"
         )
     finally:
         if created_view:

@@ -5,9 +5,6 @@ Use `dte.sources.loader` instead. This module will be removed after Task 7.
 from dte.sources.loader import *  # noqa: F401, F403
 from dte.sources.loader import (  # noqa: F401
     LOADERS,
-    _build_azure_secret_sql,
-    _build_gcs_secret_sql,
-    _build_s3_secret_sql,
     _mongo_client,
     load_source,
     resolve_secret,

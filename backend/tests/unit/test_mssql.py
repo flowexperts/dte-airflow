@@ -8,7 +8,6 @@ import types
 
 import ibis
 import pandas as pd
-import pytest
 
 from dte.engine.writers import write
 from dte.models.pipeline import (
@@ -95,17 +94,3 @@ def test_writer_uses_dlt_mssql_destination(monkeypatch):
     )
     assert seen["credentials"] == URL
     assert seen["naming_convention"] == "direct"
-
-
-def test_probe_rewrites_url_to_pyodbc(monkeypatch):
-    from dte.sources import connection_test as ct
-
-    seen: dict = {}
-    monkeypatch.setattr(ct, "_probe_sql_url", lambda creds: seen.update(creds) or {})
-    ct.probe_connection(
-        Connection(id="m", connection_type="mssql", credentials={"url": URL})
-    )
-    assert seen["url"] == (
-        "mssql+pyodbc://sa:p%40ss@db.local:14330/sales"
-        "?TrustServerCertificate=yes&driver=ODBC+Driver+18+for+SQL+Server"
-    )

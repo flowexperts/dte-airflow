@@ -1,5 +1,6 @@
-import { Dropdown, Field, Input } from "@/components/ui";
-import type { Source } from "@/lib/api";
+import useSWR from "swr";
+import { Dropdown, Field, Input, type DropdownOption } from "@/components/ui";
+import type { Capabilities, Source } from "@/lib/api";
 import { SOURCE_KINDS, SOURCE_CONNECTION_COMPAT, type SourceKind } from "./types";
 import { FilesystemSourceEditor } from "./FilesystemSourceEditor";
 import { SqlSourceEditor } from "./SqlSourceEditor";
@@ -14,10 +15,24 @@ const CONFIG_TEMPLATES: Record<SourceKind, Record<string, unknown>> = {
   s3:           { bucket_url: "", file_glob: "*.json" },
   gcs:          { bucket_url: "", file_glob: "*.json" },
   azure:        { bucket_url: "", file_glob: "*.json" },
+  sftp:         { bucket_url: "", file_glob: "*.json" },
   sql_database: {},
   mongodb:      { database: "", collection: "" },
   rest_api:     { client: {}, resources: [] },
 };
+
+/** A kind is offered only when an installed Airflow provider can serve it;
+ *  otherwise it shows what to install (plan 074). Before capabilities load,
+ *  everything is offered. */
+function kindOptions(caps: Capabilities | undefined): DropdownOption<SourceKind>[] {
+  return SOURCE_KINDS.map(({ value, label }) => {
+    if (!caps || caps.source_kinds[value] !== false) return { value, label };
+    const install = SOURCE_CONNECTION_COMPAT[value]
+      .map((k) => caps.connection_kinds[k]?.install)
+      .find(Boolean);
+    return { value, label, disabled: true, meta: install ? `install ${install}` : "not available" };
+  });
+}
 
 export function SourceEditor({
   source,
@@ -30,6 +45,7 @@ export function SourceEditor({
 }) {
   const kind = (source.source_type as SourceKind) ?? "filesystem";
   const config = (source.config ?? {}) as Record<string, unknown>;
+  const { data: caps } = useSWR<Capabilities>("/api/capabilities");
 
   const setKind = (k: SourceKind) => {
     onChange({
@@ -87,7 +103,7 @@ export function SourceEditor({
           <Dropdown<SourceKind>
             value={kind}
             onChange={setKind}
-            options={SOURCE_KINDS}
+            options={kindOptions(caps)}
           />
         </Field>
       </div>
@@ -101,7 +117,7 @@ export function SourceEditor({
         allowedTypes={SOURCE_CONNECTION_COMPAT[kind]}
       />
 
-      {(kind === "filesystem" || kind === "s3" || kind === "gcs" || kind === "azure") && (
+      {(kind === "filesystem" || kind === "s3" || kind === "gcs" || kind === "azure" || kind === "sftp") && (
         <FilesystemSourceEditor
           config={config}
           onChange={setConfig}

@@ -6,12 +6,14 @@ A destination is *where a pipeline's result lands*. Six shapes today.
 
 | Type | Writes to | What you fill in |
 | ---- | --------- | ---------------- |
-| **JSON file** | A local `.json`, `.jsonl`, or `.ndjson` file | Path, optional field list |
-| **CSV file** | A local `.csv` or `.tsv` | Path, optional field list |
-| **Excel file** | A local `.xlsx` (first sheet) | Path, optional field list |
-| **Parquet on S3** | A Parquet file in an S3 bucket | Bucket URL |
+| **JSON file** | A `.json`, `.jsonl`, or `.ndjson` file | Path, optional field list |
+| **CSV file** | A `.csv` or `.tsv` | Path, optional field list |
+| **Excel file** | An `.xlsx` (first sheet) | Path, optional field list |
+| **Parquet file** | A `.parquet` file | Path |
 | **PostgreSQL** | A Postgres table | Schema, table, write mode |
-| **SQL database** | A table in MySQL, Snowflake, or BigQuery | Dialect, schema, table, write mode |
+| **SQL database** | A table in MySQL, SQL Server, Snowflake, or BigQuery | Dialect, schema, table, write mode |
+
+File destinations write locally (an `fs` connection) or to object storage: a path like `s3://bucket/out/orders.parquet`, `gs://…`, `az://…` or `sftp:///path/…` with a matching `aws`, `google_cloud_platform`, `wasb`/`adls` or `sftp` connection. The provider's filesystem does the write.
 
 ## Path has to match the type
 

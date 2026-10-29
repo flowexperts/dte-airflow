@@ -1,6 +1,6 @@
 # Sign in
 
-Open dte in your browser. If your team hosts it, you have a URL — something like `dte.your-company.com`. If you're running your own copy, see [Self-hosting → Install](../self-hosting/install.md).
+Open dte in your browser. If your team hosts it, you have a URL — something like `dte.your-company.com`. If you're running your own copy, see [Install into your own Airflow](../self-hosting/install-plugin.md).
 
 ## First time
 

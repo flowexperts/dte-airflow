@@ -23,10 +23,10 @@ import { humanizeError, type HumanError } from "@/lib/errors";
 /** Which connection_types a given destination `config.type` may bind to.
  *  Mirrors backend's DESTINATION_CONNECTION_COMPAT. */
 const DESTINATION_CONNECTION_COMPAT: Record<string, ConnectionType[]> = {
-  json:    ["local_fs", "s3", "gcs", "azure"],
-  csv:     ["local_fs", "s3", "gcs", "azure"],
-  excel:   ["local_fs", "s3", "gcs", "azure"],
-  parquet: ["local_fs", "s3", "gcs", "azure"],
+  json:    ["local_fs", "s3", "gcs", "azure", "sftp"],
+  csv:     ["local_fs", "s3", "gcs", "azure", "sftp"],
+  excel:   ["local_fs", "s3", "gcs", "azure", "sftp"],
+  parquet: ["local_fs", "s3", "gcs", "azure", "sftp"],
   postgres:     ["postgres"],
   sql_database: ["mysql", "mssql", "snowflake", "bigquery"],
 };
