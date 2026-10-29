@@ -40,7 +40,6 @@ dev key.
 
 ## Manual, after the repo is created
 
-- Set the Code of Conduct contact (`TODO-CONDUCT-EMAIL`).
 - Enable private vulnerability reporting and Discussions; protect `main` with
   required CI + CODEOWNERS review and no force-push.
 - `deploy-site.yml` needs the `CLOUDFLARE_*` secrets, or remove `site/`.
