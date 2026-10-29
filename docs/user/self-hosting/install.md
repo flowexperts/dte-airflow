@@ -1,8 +1,9 @@
-# Install
+# Try it with Docker Compose
 
-dte ships as an Airflow 3.3 app. The Docker Compose stack runs Postgres plus
-the Airflow api-server, scheduler and dag-processor, with DTE installed as a
-plugin.
+dte is an Airflow 3.3+ plugin. If you already run Airflow, install it there
+instead: [Install into your own Airflow](install-plugin.md). This page is for
+trying dte without one. The Docker Compose stack runs Postgres plus the Airflow
+api-server, scheduler and dag-processor, with dte installed as a plugin.
 
 ## Prerequisites
 

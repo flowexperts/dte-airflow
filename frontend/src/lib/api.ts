@@ -207,10 +207,18 @@ export type DltSource = Source;
 
 export type ConnectionType =
   | "local_fs"
-  | "s3" | "gcs" | "azure"
+  | "s3" | "gcs" | "azure" | "sftp"
   | "postgres" | "mysql" | "mssql" | "sqlite"
   | "mongodb" | "rest_api"
   | "snowflake" | "bigquery";
+
+/** What this deployment can read and write, from the Airflow providers
+ *  installed alongside DTE (`GET /api/capabilities`, plan 074). */
+export interface Capabilities {
+  connection_kinds: Record<ConnectionType, { available: boolean; install: string | null }>;
+  source_kinds: Record<string, boolean>;
+  destination_types: Record<string, boolean>;
+}
 
 export interface Connection {
   /** Opaque, server-generated. Never edited after creation. */

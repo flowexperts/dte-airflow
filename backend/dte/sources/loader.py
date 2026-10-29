@@ -12,9 +12,6 @@ from dte.models.pipeline import Source
 # Re-exported here because `dlt_loader`, `backend_registry` and the unit tests
 # import these names from `loader`.
 from dte.sources.duckdb_secrets import (  # noqa: F401
-    _build_azure_secret_sql,
-    _build_gcs_secret_sql,
-    _build_s3_secret_sql,
     _ensure_ext,
     _secret_kv,
     _sql_ident,
@@ -127,30 +124,26 @@ def _glob_local(bucket_url: str, file_glob: str) -> list[str]:
     return sorted(_glob.glob(pattern, recursive=True))
 
 
-def _load_remote_via_duckdb(
+def _load_object_store(
     source: Source,
     registry: "BackendRegistry",
-    extension: str,
-    secret_sql: str,
+    connection: "Connection",
+    credentials: dict,
 ) -> ibis.Table:
-    """Install the required DuckDB extension, register a scoped SECRET, and
-    materialise `bucket_url + file_glob` as a view over `read_*_auto`."""
+    """s3 / gcs / azure / sftp: read `bucket_url + file_glob` through the
+    filesystem the connection's Airflow provider builds (plan 074), as a
+    view over DuckDB's readers. Auth is entirely the provider's."""
+    from dte.sources.object_store import register
+
     con = registry.duckdb()
-    raw_con = con.con
     config = source.config
-    bucket_url = config["bucket_url"].rstrip("/")
-    file_glob = config.get("file_glob", "**/*.json")
-
-    _ensure_ext(raw_con, extension)
-    raw_con.execute(secret_sql)
-
-    remote_pattern = f"{bucket_url}/{file_glob}"
-    fmt = _detect_format(file_glob, source.format)
-    _ensure_format_ext(raw_con, fmt)
-    reader_sql = _duckdb_reader_call([remote_pattern], fmt)
-    raw_con.execute(
+    pattern = f"{config['bucket_url'].strip().rstrip('/')}/{config.get('file_glob', '**/*.json').strip()}"
+    url = register(con.con, pattern, connection.id)
+    fmt = _detect_format(pattern, source.format)
+    _ensure_format_ext(con.con, fmt)
+    con.con.execute(
         f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} "
-        f"AS SELECT * FROM {reader_sql}"
+        f"AS SELECT * FROM {_duckdb_reader_call([url], fmt)}"
     )
     return con.table(source.table)
 
@@ -188,42 +181,6 @@ def _load_filesystem(
     )
     con.con.execute(view_sql)
     return con.table(source.table)
-
-
-def _load_s3(
-    source: Source,
-    registry: "BackendRegistry",
-    connection: "Connection",
-    credentials: dict,
-) -> ibis.Table:
-    secret_name = f"dte_src_{source.id}_s3"
-    return _load_remote_via_duckdb(
-        source, registry, "httpfs", _build_s3_secret_sql(credentials, secret_name)
-    )
-
-
-def _load_gcs(
-    source: Source,
-    registry: "BackendRegistry",
-    connection: "Connection",
-    credentials: dict,
-) -> ibis.Table:
-    secret_name = f"dte_src_{source.id}_gcs"
-    return _load_remote_via_duckdb(
-        source, registry, "httpfs", _build_gcs_secret_sql(credentials, secret_name)
-    )
-
-
-def _load_azure(
-    source: Source,
-    registry: "BackendRegistry",
-    connection: "Connection",
-    credentials: dict,
-) -> ibis.Table:
-    secret_name = f"dte_src_{source.id}_azure"
-    return _load_remote_via_duckdb(
-        source, registry, "azure", _build_azure_secret_sql(credentials, secret_name)
-    )
 
 
 def _load_sql_database(
@@ -452,9 +409,10 @@ def _load_documents(
 LOADERS: dict[str, LoaderFn] = {
     "filesystem": _load_filesystem,
     "documents": _load_documents,
-    "s3": _load_s3,
-    "gcs": _load_gcs,
-    "azure": _load_azure,
+    "s3": _load_object_store,
+    "gcs": _load_object_store,
+    "azure": _load_object_store,
+    "sftp": _load_object_store,
     "sql_database": _load_sql_database,
     "mongodb": _load_mongodb,
     "rest_api": _load_rest_api,

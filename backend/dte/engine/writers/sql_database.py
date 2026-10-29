@@ -7,6 +7,19 @@ import ibis
 from dte.models.pipeline import SqlDatabaseTarget
 
 
+def _bigquery_credentials(creds: dict):
+    """The google provider's credentials when dlt can take them natively
+    (service account, OAuth user); otherwise the URL, and dlt falls back to
+    the environment's default credentials."""
+    if creds.get("conn_id"):
+        from dte.engine.backend_registry import _gcp_credentials
+
+        native = _gcp_credentials(creds["conn_id"])
+        if hasattr(native, "service_account_email") or hasattr(native, "refresh_token"):
+            return native
+    return creds["url"]
+
+
 def write(
     table: ibis.Table,
     target: SqlDatabaseTarget,
@@ -56,7 +69,7 @@ def write(
             credentials=url, naming_convention="direct"
         ),
         "bigquery": lambda: dlt.destinations.bigquery(
-            credentials=url, naming_convention="direct"
+            credentials=_bigquery_credentials(creds), naming_convention="direct"
         ),
     }[target.dialect]
 

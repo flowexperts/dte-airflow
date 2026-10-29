@@ -25,7 +25,6 @@ from dte.models.pipeline import (
     OutputTarget,
     ParquetTarget,
 )
-from dte.sources.duckdb_secrets import backend_for_uri
 
 _adapter = TypeAdapter(OutputTarget)
 
@@ -147,27 +146,21 @@ def test_write_from_non_duckdb_backend(tmp_path):
     assert out.exists()
 
 
-# ─── URI → storage backend routing ───────────────────────────────────────────
+# ─── remote destinations write through the provider filesystem (plan 074) ──
 
-@pytest.mark.parametrize("uri,expected", [
-    ("s3://b/k.parquet", "s3"),
-    ("gcs://b/k.parquet", "gcs"),
-    ("gs://b/k.parquet", "gcs"),
-    ("az://b/k.parquet", "azure"),
-    ("azure://b/k.parquet", "azure"),
-    ("S3://b/k.parquet", "s3"),
-    ("/tmp/out.parquet", None),
-    ("file:///tmp/out.parquet", None),
-    ("relative/out.parquet", None),
-])
-def test_backend_for_uri(uri, expected):
-    assert backend_for_uri(uri) == expected
+@pytest.mark.parametrize("type_name,ext", [("json", "json"), ("csv", "csv"), ("parquet", "parquet")])
+def test_remote_write_lands_through_the_connections_filesystem(monkeypatch, sample_table, type_name, ext):
+    import fsspec
 
+    from dte.engine.writers import write
+    from dte.sources import object_store
 
-def test_abfss_not_routed():
-    """DuckDB's azure extension rejects abfss:// under connection-string auth
-    (the form Azurite needs), so it must not be advertised as supported."""
-    assert backend_for_uri("abfss://container/k.parquet") is None
+    fs = fsspec.filesystem("memory", skip_instance_cache=True)
+    fs.store.clear()
+    monkeypatch.setattr(object_store, "_provider_fs", lambda url, conn_id: fs)
+    target = _adapter.validate_python({"type": type_name, "path": f"s3://b/out.{ext}"})
+    assert write(sample_table, target, credentials={"conn_id": "aws_prod"})["rows_written"] == 2
+    assert fs.exists(f"/b/out.{ext}")
 
 
 # ─── writers round-trip locally for every format ─────────────────────────────
@@ -242,10 +235,26 @@ def test_missing_home_survives_a_second_connection(monkeypatch, tmp_path, sample
         assert write(con.table("t"), target)["rows_written"] == 2
 
 
-def test_unknown_scheme_is_rejected(sample_table):
-    """A typo'd scheme must not silently create a local file named 'ftp:/...'."""
+def test_remote_path_needs_a_storage_connection(sample_table):
+    """A remote path on a local_fs (credential-less) connection must not
+    silently create a local file named 's3:/...'."""
     from dte.engine.writers import write
 
-    target = _adapter.validate_python({"type": "json", "path": "ftp://host/out.json"})
-    with pytest.raises(ValueError, match="unsupported scheme"):
-        write(sample_table, target)
+    target = _adapter.validate_python({"type": "json", "path": "s3://b/out.json"})
+    with pytest.raises(ValueError, match="storage connection"):
+        write(sample_table, target, credentials={})
+
+
+def test_bigquery_writes_with_the_providers_credentials_when_dlt_can_take_them(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from dte.engine import backend_registry
+    from dte.engine.writers.sql_database import _bigquery_credentials
+
+    sa = NS(service_account_email="sa@prj.iam", project_id="prj")
+    monkeypatch.setattr(backend_registry, "_gcp_credentials", lambda conn_id: sa)
+    assert _bigquery_credentials({"url": "bigquery://prj", "conn_id": "gcp"}) is sa
+    # Credentials dlt can't serialise (metadata server, ADC) fall back to the URL.
+    monkeypatch.setattr(backend_registry, "_gcp_credentials", lambda conn_id: NS(token=None))
+    assert _bigquery_credentials({"url": "bigquery://prj", "conn_id": "gcp"}) == "bigquery://prj"
+    assert _bigquery_credentials({"url": "bigquery://prj"}) == "bigquery://prj"

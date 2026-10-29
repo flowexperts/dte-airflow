@@ -25,7 +25,7 @@ PDF_MEDIA_TYPES = {"application/pdf", "application/x-pdf"}
 _GRANULARITIES = {"page", "document"}
 _MISSING_DEP = (
     "{lib} is not installed — install the optional extra with "
-    '`pip install "dte[unstructured]"`'
+    '`pip install "dte-airflow[unstructured]"`'
 )
 
 

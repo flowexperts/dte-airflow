@@ -12,7 +12,9 @@ def db_upgrade() -> None:
 
     from dte.airflow.db import sync_url
 
-    root = Path(os.getenv("DTE_ALEMBIC_DIR") or Path(__file__).resolve().parents[1])
+    # Installed wheel: dte/migrations. Repo checkout and the image: backend/.
+    packaged = Path(__file__).resolve().parent / "migrations"
+    root = Path(os.getenv("DTE_ALEMBIC_DIR") or (packaged if packaged.is_dir() else Path(__file__).resolve().parents[1]))
     # alembic/env.py reads DATABASE_URL as a *sync* URL.
     os.environ["DATABASE_URL"] = sync_url()
     command.upgrade(Config(str(root / "alembic.ini")), "head")

@@ -154,6 +154,14 @@ def _open_sqlite(credentials: dict) -> ibis.BaseBackend:
     return ibis.sqlite.connect(path)
 
 
+def _gcp_credentials(conn_id: str):
+    """The google provider's credentials for an Airflow connection: service
+    account, workload identity, impersonation — whatever the hook resolves."""
+    from airflow.providers.google.common.hooks.base_google import GoogleBaseHook
+
+    return GoogleBaseHook(gcp_conn_id=conn_id).get_credentials()
+
+
 def _open_bigquery(credentials: dict) -> ibis.BaseBackend:
     # dlt's ConnectionStringCredentials collapses BigQuery creds to a URL like
     # `bigquery://<project>/<dataset>` when possible.  For richer auth
@@ -170,7 +178,8 @@ def _open_bigquery(credentials: dict) -> ibis.BaseBackend:
         parsed = urlparse(url)
         project = parsed.hostname
         dataset = (parsed.path or "").lstrip("/") or None
-        return ibis.bigquery.connect(project_id=project, dataset_id=dataset)
+        extra = {"credentials": _gcp_credentials(credentials["conn_id"])} if credentials.get("conn_id") else {}
+        return ibis.bigquery.connect(project_id=project, dataset_id=dataset, **extra)
     project = resolve_secret(credentials["project_id"])
     dataset = resolve_secret(credentials.get("dataset_id")) if credentials.get("dataset_id") else None
     return ibis.bigquery.connect(project_id=project, dataset_id=dataset)

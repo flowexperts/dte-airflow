@@ -12,6 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine
 
 SEARCH_PATH = "dte,public"
+_PG = re.compile(r"^postgres(ql)?(\+\w+)?://")
 
 
 def _base_url() -> str:
@@ -20,15 +21,20 @@ def _base_url() -> str:
         from airflow.configuration import conf
 
         url = conf.get("database", "sql_alchemy_conn")
+    if not _PG.match(url):
+        # Airflow 3 blanks its metadata DB URL in DAG parsing and task
+        # processes, which is exactly where DTE reads its schema (plan 073).
+        raise RuntimeError("DTE needs DATABASE_URL (the Postgres metadata DB) set on every Airflow "
+                           "component; Airflow hides its own URL from DAG parsing and tasks")
     return url
 
 
 def sync_url() -> str:
-    return re.sub(r"^postgres(ql)?(\+\w+)?://", "postgresql+psycopg2://", _base_url())
+    return _PG.sub("postgresql+psycopg2://", _base_url())
 
 
 def async_url() -> str:
-    return re.sub(r"^postgres(ql)?(\+\w+)?://", "postgresql+asyncpg://", _base_url())
+    return _PG.sub("postgresql+asyncpg://", _base_url())
 
 
 def sync_engine():

@@ -23,6 +23,22 @@ def _mask(c: Connection) -> dict:
     }
 
 
+@router.get("/capabilities", dependencies=[Depends(requires("connection:read"))])
+async def capabilities():
+    """What this deployment can read and write, from the installed Airflow
+    providers (plan 074). Unavailable connection kinds name what to install."""
+    from dte.airflow import connections as ac
+    from dte.models.pipeline import DESTINATION_CONNECTION_COMPAT, SOURCE_CONNECTION_COMPAT
+
+    have = ac.available_kinds()
+    return {
+        "connection_kinds": {k: {"available": k in have, "install": None if k in have else hint}
+                             for k, (_, hint) in ac.KINDS.items()},
+        "source_kinds": {k: bool(v & have) for k, v in SOURCE_CONNECTION_COMPAT.items()},
+        "destination_types": {k: bool(v & have) for k, v in DESTINATION_CONNECTION_COMPAT.items()},
+    }
+
+
 @router.get("/connections", dependencies=[Depends(requires("connection:read"))])
 async def list_connections(
     limit: int = 50,

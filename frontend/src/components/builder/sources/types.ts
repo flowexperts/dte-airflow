@@ -3,7 +3,7 @@ import type { Source, ConnectionType } from "@/lib/api";
 export type SourceKind =
   | "filesystem"
   | "documents"
-  | "s3" | "gcs" | "azure"
+  | "s3" | "gcs" | "azure" | "sftp"
   | "sql_database"
   | "mongodb"
   | "rest_api";
@@ -14,6 +14,7 @@ export const SOURCE_KINDS: { value: SourceKind; label: string }[] = [
   { value: "s3",           label: "Amazon S3" },
   { value: "gcs",          label: "Google Cloud Storage" },
   { value: "azure",        label: "Azure Blob" },
+  { value: "sftp",         label: "SFTP" },
   { value: "sql_database", label: "SQL database" },
   { value: "mongodb",      label: "MongoDB" },
   { value: "rest_api",     label: "REST API" },
@@ -29,6 +30,7 @@ export const SOURCE_CONNECTION_COMPAT: Record<SourceKind, ConnectionType[]> = {
   s3:           ["s3"],
   gcs:          ["gcs"],
   azure:        ["azure"],
+  sftp:         ["sftp"],
   sql_database: ["postgres", "mysql", "mssql", "sqlite", "bigquery", "snowflake"],
   mongodb:      ["mongodb"],
   rest_api:     ["rest_api"],

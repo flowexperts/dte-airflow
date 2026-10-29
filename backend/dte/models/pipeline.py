@@ -15,7 +15,7 @@ from sqlmodel import SQLModel
 
 ConnectionType = Literal[
     "local_fs",
-    "s3", "gcs", "azure",
+    "s3", "gcs", "azure", "sftp",
     "postgres", "mysql", "sqlite", "mssql",
     "mongodb", "rest_api",
     "snowflake", "bigquery",
@@ -108,6 +108,7 @@ _DLT_CRED_CLASS: dict[str, type | None] = {
     "s3": _DltAws,
     "gcs": _GcsHmacSpec,
     "azure": _AzureSpec,
+    "sftp": None,  # auth is the Airflow sftp provider's (plan 074)
     "postgres": _DltConnStr,
     "mysql": _DltConnStr,
     "mssql": _DltConnStr,
@@ -263,7 +264,7 @@ ConnectionCreate = ConnectionBase
 # ─── Source configs (per source_type) ─────────────────────────────────────
 
 SourceKind = Literal[
-    "filesystem", "s3", "gcs", "azure", "sql_database", "mongodb", "rest_api",
+    "filesystem", "s3", "gcs", "azure", "sftp", "sql_database", "mongodb", "rest_api",
     "documents",
 ]
 _FileFormat = Literal["json", "jsonl", "ndjson", "csv", "parquet", "excel"]
@@ -294,6 +295,10 @@ class GcsSourceConfig(_BucketSourceConfig):
 
 
 class AzureSourceConfig(_BucketSourceConfig):
+    pass
+
+
+class SftpSourceConfig(_BucketSourceConfig):
     pass
 
 
@@ -340,6 +345,7 @@ _SOURCE_CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "s3": S3SourceConfig,
     "gcs": GcsSourceConfig,
     "azure": AzureSourceConfig,
+    "sftp": SftpSourceConfig,
     "sql_database": SqlDatabaseSourceConfig,
     "mongodb": MongoDBSourceConfig,
     "rest_api": RestApiSourceConfig,
@@ -347,7 +353,7 @@ _SOURCE_CONFIG_MODELS: dict[str, type[BaseModel]] = {
 }
 
 
-_FILESYSTEM_KINDS = {"filesystem", "s3", "gcs", "azure"}
+_FILESYSTEM_KINDS = {"filesystem", "s3", "gcs", "azure", "sftp"}
 
 # Family the extension belongs to. Format ↔ extension pairs are OK as
 # long as they land in the same family. This tolerates the real-world
@@ -1700,6 +1706,7 @@ SOURCE_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "s3": {"s3"},
     "gcs": {"gcs"},
     "azure": {"azure"},
+    "sftp": {"sftp"},
     "sql_database": {"postgres", "mysql", "mssql", "sqlite", "snowflake", "bigquery"},
     "mongodb": {"mongodb"},
     "rest_api": {"rest_api"},
@@ -1711,7 +1718,7 @@ SOURCE_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
 
 # File formats are location-agnostic: each writes to a local path or to any
 # object store, so they bind to any file-shaped connection.
-_FILE_DEST_CONNECTIONS: set[ConnectionType] = {"local_fs", "s3", "gcs", "azure"}
+_FILE_DEST_CONNECTIONS: set[ConnectionType] = {"local_fs", "s3", "gcs", "azure", "sftp"}
 
 DESTINATION_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "json": _FILE_DEST_CONNECTIONS,
@@ -1746,7 +1753,7 @@ EngineName = Literal[
 ]
 
 ENGINE_READ_SUPPORT: dict[EngineName, set[ConnectionType]] = {
-    "duckdb":    {"local_fs", "s3", "gcs", "azure", "mongodb", "rest_api"},
+    "duckdb":    {"local_fs", "s3", "gcs", "azure", "sftp", "mongodb", "rest_api"},
     "postgres":  {"postgres"},
     "mysql":     {"mysql"},
     "mssql":     {"mssql"},
@@ -1758,16 +1765,16 @@ ENGINE_READ_SUPPORT: dict[EngineName, set[ConnectionType]] = {
 }
 
 # Writers currently implemented in `dte/engine/writers/*.py`:
-# - local_fs / s3 / gcs / azure: json, csv, excel, parquet — all four formats
-#   go through DuckDB's native `COPY … TO`, which writes object-store URIs
-#   once the extension + SECRET are loaded (see `writers/_copy.py`).
+# - local_fs / s3 / gcs / azure / sftp: json, csv, excel, parquet — all four
+#   formats go through DuckDB's `COPY … TO`, writing object-store URIs through
+#   the connection's Airflow provider filesystem (see `writers/_copy.py`).
 # - postgres: postgres writer (via dlt[postgres])
 # - mysql / snowflake / bigquery: dlt writer extras (optional)
 #
 # Every engine can reach every file target: `writers/_copy.py` streams a
 # non-DuckDB result through Arrow into a scratch DuckDB connection before
 # COPY, so file/object-store outputs are not limited to DuckDB pipelines.
-_FILE_WRITE_TARGETS: set[ConnectionType] = {"local_fs", "s3", "gcs", "azure"}
+_FILE_WRITE_TARGETS: set[ConnectionType] = {"local_fs", "s3", "gcs", "azure", "sftp"}
 
 ENGINE_WRITE_SUPPORT: dict[EngineName, set[ConnectionType]] = {
     "duckdb":    _FILE_WRITE_TARGETS | {"postgres", "mysql", "mssql"},
