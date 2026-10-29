@@ -1,0 +1,25 @@
+name: PR gate
+
+# Beta: only collaborators may open PRs (CONTRIBUTING.md). pull_request_target
+# runs with a write token, so this workflow must never check out PR code.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close-outside-prs:
+    if: >-
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+      github.event.pull_request.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close with a pointer to Discussions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr close "$PR" --repo "$REPO" --comment "Thanks for the PR! DTE is in beta and only accepts PRs from approved collaborators for now. Please start a Discussion about the change: https://github.com/$REPO/discussions. If it's a fit, we'll add you as a collaborator. See CONTRIBUTING.md."

@@ -15,11 +15,11 @@ cd ../backend && uv venv && uv pip install -e ".[dev]"   # 4
 ```
 
 1. **`.env` is gitignored, so a new worktree has none.** Compose reads `.env`
-   from the directory you invoke it in — not from the repo root — so a stack
-   started in a fresh worktree comes up with nothing set and the backend dies
-   on `RuntimeError: DTE_JWT_SECRET must be set when DATABASE_URL is set
-   (production)`. The message describes the symptom, not the cause: the file
-   is simply absent. `.env.example` is committed; the real one is not.
+   from the directory you invoke it in — not from the repo root — so in a
+   fresh worktree compose refuses to start with `required variable
+   AIRFLOW_JWT_SECRET is missing a value: run scripts/bootstrap.sh`. Copy the
+   existing `.env` rather than re-running bootstrap: a new Fernet key can't
+   decrypt Connections already stored in the shared `dte` volume. `.env.example` is committed; the real one is not.
    Copy it, and never commit the copy — `.gitignore:13` covers `.env` but
    **not** `.env.*`, so a `.env.bak` is a secrets file git can see.
 2. Missing `node_modules` surfaces as `Cannot find module 'pdfjs-dist'` from

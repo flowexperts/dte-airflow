@@ -1,5 +1,7 @@
 # dte — map it once, run it forever
 
+> **Beta.** Interfaces and the `dte` schema may change between releases. Don't run it on production data without backups. Issues welcome; PRs from approved collaborators only (see [CONTRIBUTING](./CONTRIBUTING.md)).
+
 Your domain expert maps the source — once, click by click. Airflow runs it every day after.
 
 dte is a batch data transformation engine that runs as an Airflow 3 app: a visual pipeline builder on top of a typed backend (DuckDB + ibis + dlt) that turns hand-drawn field mappings into reproducible runs. Every pipeline is an Airflow DAG; Airflow owns login, connections, scheduling and run history.
@@ -7,12 +9,13 @@ dte is a batch data transformation engine that runs as an Airflow 3 app: a visua
 ## Quickstart
 
 ```bash
-git clone https://github.com/bhavaniravi/dte.git
-cd dte
+git clone https://github.com/flowexperts/dte-airflow.git
+cd dte-airflow
+scripts/bootstrap.sh          # writes .env: fresh secrets + admin password
 docker compose up -d --build
 ```
 
-Open http://localhost:8080 and log in as `admin` / `admin`. DTE is under **Plugins ▸ DTE Pipelines** in Airflow's left nav
+Open http://localhost:8080 and log in as `admin` with the password `bootstrap.sh` printed (it's also in `.env`). The stack listens on localhost only and is meant for local use, not a server. DTE is under **Plugins ▸ DTE Pipelines** in Airflow's left nav
 (Transform, Quality Check); sources, destinations and lookup tables are under **Admin**.
 The UI offers Transform and Quality Check pipelines. Eval and Visualize pipelines are API-only for now.
 
@@ -171,6 +174,12 @@ Three tiers — run only what the change touches:
 - **[Self-hosting](./docs/user/self-hosting/install.md)** — running your own instance.
 - **[Architecture](./docs/user/architecture/overview.md)** — how it fits together.
 
+## Contributing and security
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md) and the [Code of Conduct](./CODE_OF_CONDUCT.md).
+
 ## License
 
 Apache-2.0 — see [LICENSE](./LICENSE).
+
+Apache Airflow, Airflow and the Airflow logo are trademarks of the Apache Software Foundation. DTE is an independent project, not affiliated with or endorsed by the ASF.
