@@ -1,33 +1,40 @@
-# DTE — Data Transformation Engine
+# DTE — Data Transformation Engine for Apache Airflow
 
-> DTE is a batch data transformation engine. Connect a source, map fields once
-> with a no-code pipeline builder, and write to any destination — no one-off
-> scripts, no glue code.
+> DTE is an open-source (Apache-2.0, beta) batch data transformation engine
+> that runs as an Apache Airflow 3 plugin. Map a source once in a visual
+> pipeline builder; every pipeline becomes an Airflow DAG that Airflow
+> schedules, runs and records.
 
 ## What it does
 
-- **Sources**: Amazon S3, Google Cloud Storage, Azure Blob, Postgres, MongoDB,
-  REST APIs (paginated), local filesystem (JSON/CSV/Parquet/Excel).
-- **Transform steps**: filter (SQL WHERE), rename, retype, map/lookup, map/expression,
-  sort, aggregate (group-by with sum/count/avg/min/max), join (inner/left/right/outer),
-  pivot, select/drop fields.
+- **Runs inside Airflow 3.3**: the UI is a native Airflow `react_apps` plugin,
+  each pipeline is a `dte__<id>` DAG, and Airflow owns login, connections,
+  scheduling and run history.
+- **Sources**: local files (JSON/JSONL/CSV/Parquet/Excel), Amazon S3, Google
+  Cloud Storage, Azure Blob, Postgres, MySQL, SQL Server, SQLite, Snowflake,
+  BigQuery, MongoDB, REST APIs (paginated), PDF documents.
+- **Transform steps**: filter, rename, retype, map/lookup, map/expression, sort,
+  aggregate, join, pivot, select/drop fields, PDF extract and structure.
 - **Data quality**: check (assert a SQL rule, fail or warn), profile (null %,
   distinct count, min/max), and a dry-run preview before every run.
-- **Destinations**: Postgres (upsert), SQL databases, Parquet on S3, JSON/CSV/Excel
-  files, REST endpoint.
-- Pipelines are mapped once and triggered on a schedule or on demand via API —
-  the pipeline is the same asset whether it runs manually or from an orchestrator.
+- **Destinations**: Postgres, MySQL, SQL Server, Snowflake, BigQuery, Parquet on
+  S3, JSON/CSV/Excel files.
+- Engine: DuckDB + ibis, with dlt loaders.
 
-## Who it's for
+## Quickstart
 
-Teams who need to move and reshape data between systems (source system →
-warehouse, API → database, files → warehouse) without hand-writing and
-maintaining one-off Python/SQL scripts for every integration.
+    git clone https://github.com/flowexperts/dte-airflow.git
+    cd dte-airflow
+    scripts/bootstrap.sh
+    docker compose up -d --build
 
-## Learn more / talk to us
+Then open http://localhost:8080; DTE is under Plugins ▸ DTE Pipelines.
 
-- Landing page: /
-- Book a discovery call: /#book (30 minutes, bring one real data source)
+## Links
 
-This file follows the emerging llms.txt convention to help AI assistants and
-answer engines accurately summarize what DTE is and does.
+- Source: https://github.com/flowexperts/dte-airflow
+- Docs: https://github.com/flowexperts/dte-airflow/tree/main/docs/user
+- Help running it in production: /#book (30-minute call)
+
+Apache Airflow and Airflow are trademarks of the Apache Software Foundation.
+DTE is an independent project, not affiliated with or endorsed by the ASF.

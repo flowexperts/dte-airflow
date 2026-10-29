@@ -16,8 +16,8 @@ export function UseCasePage({ uc }: { uc: UseCase }) {
             <h1 className="h-gap-lg">{uc.headline}</h1>
             <p className="lede">{uc.lede}</p>
             <div className="hero-ctas">
-              <Link href="/#book" className="btn primary">
-                Request access <span className="kbd">↵</span>
+              <Link href="/#quickstart" className="btn primary">
+                Quickstart <span className="kbd">↵</span>
               </Link>
               <Link href="/#demo" className="btn ghost">See the builder</Link>
             </div>
@@ -99,7 +99,7 @@ export function UseCasePage({ uc }: { uc: UseCase }) {
         <section className="book">
           <div className="wrap">
             <div className="book-copy">
-              <span className="section-eyebrow">Request access</span>
+              <span className="section-eyebrow">Production help</span>
               <h2 className="h-gap-md">See this pipeline on your own files.</h2>
               <ul className="bullets">
                 <li>No sales pitch. Zero slides.</li>

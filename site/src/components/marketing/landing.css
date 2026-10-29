@@ -815,6 +815,30 @@
 .mkt-root footer .right { display: flex; align-items: center; gap: 22px; }
 .mkt-root footer .right a { color: var(--muted); font-size: 13px; }
 .mkt-root footer .right a:hover { color: var(--text); }
+.mkt-root footer .wrap + .wrap { margin-top: 16px; }
+
+/* Quickstart ---------------------------------------------------- */
+.mkt-root .qs-panel { max-width: 720px; }
+.mkt-root .qs-code {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  overflow-x: auto;
+}
+.mkt-root .qs-prompt { color: var(--accent); user-select: none; }
+.mkt-root .qs-note {
+  margin-top: 20px;
+  max-width: 64ch;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.mkt-root .qs-note code { font-family: var(--font-mono); font-size: 13px; color: var(--text); }
+.mkt-root #quickstart .hero-ctas { margin-top: 24px; }
 
 /* Demo video ---------------------------------------------------- */
 .mkt-root .demo {

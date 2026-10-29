@@ -5,6 +5,7 @@ import { CalEmbed } from "./cal-embed";
 import { DemoPlayer } from "./demo-player";
 import { SiteFooter, TopNav } from "./site-chrome";
 import { UseCaseCards } from "./use-case-cards";
+import { DOCS_URL, INSTALL_URL, REPO_URL } from "@/lib/site";
 import "./landing.css";
 
 type PillState = "pending" | "running" | "ok";
@@ -23,26 +24,34 @@ const HERO_STEPS = [
   { num: "06", op: "Destination", expr: "postgres://warehouse.public.orders", tag: "postgres", cls: "dest" },
 ] as const;
 
+// What ships in dte-airflow today — keep in step with the README's feature
+// tables. No tile without a loader behind it.
 const SOURCE_TILES = [
-  { mono: "GS", name: "Google Sheets", sub: "tabs · ranges" },
-  { mono: "XL", name: "Excel", sub: "xlsx · csv" },
-  { mono: "HS", name: "HubSpot", sub: "deals · contacts" },
-  { mono: "SF", name: "Salesforce", sub: "objects · reports" },
-  { mono: "ERP", name: "ERP / NetSuite", sub: "orders · invoices" },
-  { mono: "GA", name: "Analytics", sub: "GA4 · ad platforms" },
-  { mono: "DB", name: "Your database", sub: "postgres · s3 · api" },
-  { mono: "FTP", name: "FTP / cloud storage", sub: "sftp · drive · s3" },
+  { mono: "FS", name: "Local files", sub: "json · csv · parquet · xlsx" },
+  { mono: "S3", name: "Object storage", sub: "s3 · gcs · azure blob" },
+  { mono: "PG", name: "Postgres", sub: "tables · queries" },
+  { mono: "SQL", name: "SQL databases", sub: "mysql · sql server · sqlite" },
+  { mono: "DW", name: "Warehouses", sub: "snowflake · bigquery" },
+  { mono: "MDB", name: "MongoDB", sub: "collections" },
+  { mono: "API", name: "REST APIs", sub: "paginated · json" },
+  { mono: "PDF", name: "PDF documents", sub: "extract · structure" },
 ];
 
 const DEST_TILES = [
-  { mono: "GS", name: "Google Sheets", sub: "live tabs" },
-  { mono: "XL", name: "Excel", sub: "xlsx · formatted" },
-  { mono: "BI", name: "BI dashboards", sub: "looker · power bi" },
-  { mono: "HS", name: "HubSpot", sub: "records · fields" },
-  { mono: "ERP", name: "ERP / NetSuite", sub: "journal · invoices" },
-  { mono: "CS", name: "CSV export", sub: "for finance · ops" },
-  { mono: "DW", name: "Your warehouse", sub: "postgres · s3" },
-  { mono: "FTP", name: "FTP / cloud storage", sub: "sftp · drive · s3" },
+  { mono: "PG", name: "Postgres", sub: "insert · upsert" },
+  { mono: "SQL", name: "SQL databases", sub: "mysql · sql server" },
+  { mono: "DW", name: "Warehouses", sub: "snowflake · bigquery" },
+  { mono: "PQ", name: "Parquet on S3", sub: "data lake" },
+  { mono: "CSV", name: "CSV files", sub: "for finance · ops" },
+  { mono: "XL", name: "Excel", sub: "xlsx" },
+  { mono: "JS", name: "JSON files", sub: "json · jsonl" },
+];
+
+const QUICKSTART = [
+  "git clone https://github.com/flowexperts/dte-airflow.git",
+  "cd dte-airflow",
+  "scripts/bootstrap.sh",
+  "docker compose up -d --build",
 ];
 
 const LOGIC_STEPS = [
@@ -127,19 +136,20 @@ export function LandingPage() {
       <section className="hero">
         <div className="wrap hero-grid">
           <div>
-            <span className="eyebrow">DTE</span>
+            <span className="eyebrow">Open source · Apache Airflow 3</span>
             <h1 className="h-gap-lg">
               Data&nbsp;Transformation<br />Engine.
             </h1>
             <p className="lede lede-hero">
               Build data pipelines without{" "}
               <em>burning tokens</em> or <em>developer time</em>.
+              Every pipeline runs as an Airflow DAG.
             </p>
             <div className="hero-ctas">
-              <a href="#book" className="btn primary">
-                Request access <span className="kbd">↵</span>
+              <a href="#quickstart" className="btn primary">
+                Quickstart <span className="kbd">↵</span>
               </a>
-              <a href="#use-cases" className="btn ghost">Use Cases</a>
+              <a href={DOCS_URL} className="btn ghost">Docs</a>
             </div>
           </div>
 
@@ -174,7 +184,7 @@ export function LandingPage() {
 
               <div className="viz-foot">
                 <span>
-                  mapped once · <b>runs on your schedule</b>
+                  mapped once · <b>runs as an Airflow DAG</b>
                 </span>
                 <span>1,284 rows · 342 ms</span>
               </div>
@@ -213,13 +223,6 @@ export function LandingPage() {
                     </div>
                   </div>
                 ))}
-                <div className="tile more">
-                  <div className="mono">···</div>
-                  <div className="lbl">
-                    <span className="name">More on request</span>
-                    <span className="sub">bring your own</span>
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -270,13 +273,6 @@ export function LandingPage() {
                     </div>
                   </div>
                 ))}
-                <div className="tile more">
-                  <div className="mono">···</div>
-                  <div className="lbl">
-                    <span className="name">More on request</span>
-                    <span className="sub">bring your own</span>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -299,6 +295,44 @@ export function LandingPage() {
           </div>
           <div className="demo-frame">
             <DemoPlayer />
+          </div>
+        </div>
+      </section>
+
+      <section id="quickstart" className="steps-section">
+        <div className="wrap">
+          <div className="section-head">
+            <div className="section-head-copy">
+              <span className="section-eyebrow">Quickstart</span>
+              <h2>
+                Four commands.{" "}<br className="brk" />
+                <span className="h2-accent">Airflow with DTE inside.</span>
+              </h2>
+            </div>
+          </div>
+          <div className="logic-panel qs-panel">
+            <div className="logic-head">
+              <span className="dots"><i /><i /><i /></span>
+              terminal
+            </div>
+            <pre className="qs-code">
+              {QUICKSTART.map((line) => (
+                <code key={line}>
+                  <span className="qs-prompt">$ </span>
+                  {line}
+                </code>
+              ))}
+            </pre>
+          </div>
+          <p className="qs-note">
+            Open <code>localhost:8080</code>, log in as <code>admin</code> with the password{" "}
+            <code>bootstrap.sh</code> printed, and find DTE under <b>Plugins ▸ DTE Pipelines</b>.
+            Beta, Apache-2.0.
+          </p>
+          <div className="hero-ctas">
+            <a href={INSTALL_URL} className="btn primary">Install guide</a>
+            <a href={DOCS_URL} className="btn ghost">Docs</a>
+            <a href={REPO_URL} className="btn ghost">GitHub</a>
           </div>
         </div>
       </section>
@@ -408,9 +442,10 @@ export function LandingPage() {
         <div className="wrap">
           <div className="book-grid">
             <div className="book-copy">
-              <span className="section-eyebrow">Request access</span>
-              <h2 className="h-gap-md">See DTE in action.</h2>
+              <span className="section-eyebrow">Production help</span>
+              <h2 className="h-gap-md">Want help in production?</h2>
               <ul className="bullets">
+                <li>Deploying DTE on your Airflow, sizing, and your first real pipelines.</li>
                 <li>No sales pitch. Zero slides.</li>
               </ul>
             </div>
