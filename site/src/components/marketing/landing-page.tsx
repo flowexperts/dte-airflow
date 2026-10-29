@@ -28,7 +28,7 @@ const HERO_STEPS = [
 // tables. No tile without a loader behind it.
 const SOURCE_TILES = [
   { mono: "FS", name: "Local files", sub: "json · csv · parquet · xlsx" },
-  { mono: "S3", name: "Object storage", sub: "s3 · gcs · azure blob" },
+  { mono: "S3", name: "Object storage", sub: "s3 · gcs · azure · sftp" },
   { mono: "PG", name: "Postgres", sub: "tables · queries" },
   { mono: "SQL", name: "SQL databases", sub: "mysql · sql server · sqlite" },
   { mono: "DW", name: "Warehouses", sub: "snowflake · bigquery" },
@@ -41,17 +41,18 @@ const DEST_TILES = [
   { mono: "PG", name: "Postgres", sub: "insert · upsert" },
   { mono: "SQL", name: "SQL databases", sub: "mysql · sql server" },
   { mono: "DW", name: "Warehouses", sub: "snowflake · bigquery" },
-  { mono: "PQ", name: "Parquet on S3", sub: "data lake" },
+  { mono: "PQ", name: "Parquet", sub: "s3 · gcs · azure · sftp" },
   { mono: "CSV", name: "CSV files", sub: "for finance · ops" },
   { mono: "XL", name: "Excel", sub: "xlsx" },
   { mono: "JS", name: "JSON files", sub: "json · jsonl" },
 ];
 
+// Install into an existing Airflow 3.3+, with Airflow's constraints unmodified.
 const QUICKSTART = [
-  "git clone https://github.com/flowexperts/dte-airflow.git",
-  "cd dte-airflow",
-  "scripts/bootstrap.sh",
-  "docker compose up -d --build",
+  "curl -fsSLo constraints.txt https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt",
+  "pip install dte-airflow --constraint constraints.txt",
+  "export DATABASE_URL=postgresql://user:pass@host/airflow",
+  "dte db upgrade",
 ];
 
 const LOGIC_STEPS = [
@@ -305,8 +306,8 @@ export function LandingPage() {
             <div className="section-head-copy">
               <span className="section-eyebrow">Quickstart</span>
               <h2>
-                Four commands.{" "}<br className="brk" />
-                <span className="h2-accent">Airflow with DTE inside.</span>
+                One pip install.{" "}<br className="brk" />
+                <span className="h2-accent">Into the Airflow you already run.</span>
               </h2>
             </div>
           </div>
@@ -325,9 +326,9 @@ export function LandingPage() {
             </pre>
           </div>
           <p className="qs-note">
-            Open <code>localhost:8080</code>, log in as <code>admin</code> with the password{" "}
-            <code>bootstrap.sh</code> printed, and find DTE under <b>Plugins ▸ DTE Pipelines</b>.
-            Beta, Apache-2.0.
+            Add the one-line DAG file, restart Airflow, and find DTE under{" "}
+            <b>Plugins ▸ DTE Pipelines</b>. It uses the connections you already have: whatever
+            Airflow provider is installed, DTE supports it. Airflow 3.3+, beta, Apache-2.0.
           </p>
           <div className="hero-ctas">
             <a href={INSTALL_URL} className="btn primary">Install guide</a>

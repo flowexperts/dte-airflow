@@ -84,8 +84,8 @@ const jsonLd = {
   },
   featureList: [
     "Runs as an Apache Airflow 3 plugin: every pipeline is an Airflow DAG",
-    "Sources: local files, S3, GCS, Azure Blob, Postgres, MySQL, SQL Server, Snowflake, BigQuery, MongoDB, REST APIs, PDFs",
-    "Destinations: Postgres, MySQL, SQL Server, Snowflake, BigQuery, Parquet on S3, JSON/CSV/Excel files",
+    "Sources: local files, S3, GCS, Azure Blob, SFTP, Postgres, MySQL, SQL Server, Snowflake, BigQuery, MongoDB, REST APIs, PDFs",
+    "Destinations: Postgres, MySQL, SQL Server, Snowflake, BigQuery, Parquet/JSON/CSV/Excel files locally or in object storage",
     "No-code pipeline builder: filter, rename, retype, lookup, aggregate, join, pivot, select/drop",
     "Data quality: check, profile, and dry-run preview before every run",
   ],

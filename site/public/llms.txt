@@ -7,28 +7,35 @@
 
 ## What it does
 
-- **Runs inside Airflow 3.3**: the UI is a native Airflow `react_apps` plugin,
+- **Runs inside Airflow 3.3+**, installed with pip into an existing deployment: the UI is a native Airflow `react_apps` plugin,
   each pipeline is a `dte__<id>` DAG, and Airflow owns login, connections,
   scheduling and run history.
 - **Sources**: local files (JSON/JSONL/CSV/Parquet/Excel), Amazon S3, Google
-  Cloud Storage, Azure Blob, Postgres, MySQL, SQL Server, SQLite, Snowflake,
+  Cloud Storage, Azure Blob / ADLS, SFTP, Postgres, MySQL, SQL Server, SQLite, Snowflake,
   BigQuery, MongoDB, REST APIs (paginated), PDF documents.
 - **Transform steps**: filter, rename, retype, map/lookup, map/expression, sort,
   aggregate, join, pivot, select/drop fields, PDF extract and structure.
 - **Data quality**: check (assert a SQL rule, fail or warn), profile (null %,
   distinct count, min/max), and a dry-run preview before every run.
-- **Destinations**: Postgres, MySQL, SQL Server, Snowflake, BigQuery, Parquet on
-  S3, JSON/CSV/Excel files.
+- **Destinations**: Postgres, MySQL, SQL Server, Snowflake, BigQuery, and
+  Parquet/JSON/CSV/Excel files locally or on S3, GCS, Azure or SFTP.
+- **Connections**: Airflow connections. Whatever Airflow provider is installed
+  (amazon, google, microsoft-azure, sftp, postgres, mysql, mssql, snowflake,
+  mongo, http), DTE supports that connection; the provider does the auth.
 - Engine: DuckDB + ibis, with dlt loaders.
 
 ## Quickstart
 
-    git clone https://github.com/flowexperts/dte-airflow.git
-    cd dte-airflow
-    scripts/bootstrap.sh
-    docker compose up -d --build
+Into an existing Airflow 3.3+, with Airflow's constraints file unmodified:
 
-Then open http://localhost:8080; DTE is under Plugins ▸ DTE Pipelines.
+    curl -fsSLo constraints.txt https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt
+    pip install dte-airflow --constraint constraints.txt
+    export DATABASE_URL=postgresql://user:pass@host/airflow   # Airflow's metadata DB
+    dte db upgrade
+
+Add the one-line DAG file (`from dte.airflow.dag_factory import build_dags;
+globals().update(build_dags())`), restart Airflow; DTE is under Plugins ▸ DTE
+Pipelines. Guide: https://github.com/flowexperts/dte-airflow/blob/main/docs/user/self-hosting/install-plugin.md
 
 ## Links
 
