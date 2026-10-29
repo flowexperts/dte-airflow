@@ -72,7 +72,7 @@ docker run -d --name "$NAME-af" --network "$NAME" -p "127.0.0.1:$PORT:8080" \
   -e AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE=/smoke/passwords.json \
   -e AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5 \
   -e "AIRFLOW_CONN_MINIO=$MINIO_CONN" \
-  -e DATABASE_URL=postgresql://airflow:airflow@$NAME-pg/airflow \
+  -e DTE_DATABASE_URL=postgresql://airflow:airflow@$NAME-pg/airflow \
   -e DTE_ARTIFACT_DIR=/tmp/dte-artifacts \
   "apache/airflow:$AIRFLOW-python$PY" bash -c "
     set -e

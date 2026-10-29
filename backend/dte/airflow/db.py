@@ -1,6 +1,6 @@
 """Engines for DTE's `dte` schema inside Airflow's metadata DB (plan 065).
 
-URL: `DATABASE_URL` (as before), else Airflow's `sql_alchemy_conn`. Airflow's
+URL: `DTE_DATABASE_URL`, else Airflow's `sql_alchemy_conn`. Airflow's
 own tables stay reachable on the search_path so run reads can join `dag_run`.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ _PG = re.compile(r"^postgres(ql)?(\+\w+)?://")
 
 
 def _base_url() -> str:
-    url = os.getenv("DATABASE_URL")
+    url = os.getenv("DTE_DATABASE_URL")
     if not url:
         from airflow.configuration import conf
 
@@ -24,7 +24,7 @@ def _base_url() -> str:
     if not _PG.match(url):
         # Airflow 3 blanks its metadata DB URL in DAG parsing and task
         # processes, which is exactly where DTE reads its schema (plan 073).
-        raise RuntimeError("DTE needs DATABASE_URL (the Postgres metadata DB) set on every Airflow "
+        raise RuntimeError("DTE needs DTE_DATABASE_URL (the Postgres metadata DB) set on every Airflow "
                            "component; Airflow hides its own URL from DAG parsing and tasks")
     return url
 

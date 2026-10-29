@@ -52,17 +52,17 @@ On a slimmer Airflow build without those drivers, the `postgres-writer`,
 In a Dockerfile built `FROM apache/airflow:3.3.2-python3.12`, run the same
 lines as `RUN` steps.
 
-## 2. Set `DATABASE_URL`
+## 2. Set `DTE_DATABASE_URL`
 
 Set it on every component, pointing at the metadata database:
 
 ```bash
-DATABASE_URL=postgresql://user:pass@host:5432/airflow
+DTE_DATABASE_URL=postgresql://user:pass@host:5432/airflow
 ```
 
 Airflow 3 hides its own database URL from DAG parsing and tasks. DTE reads its
 pipelines there, so it needs the URL passed explicitly. Without it, the DAG
-file fails to import with an error that names `DATABASE_URL`.
+file fails to import with an error that names `DTE_DATABASE_URL`.
 
 Optional:
 
@@ -73,7 +73,7 @@ Optional:
 
 ## 3. Migrate
 
-Once per install and after every upgrade, with `DATABASE_URL` set:
+Once per install and after every upgrade, with `DTE_DATABASE_URL` set:
 
 ```bash
 dte db upgrade

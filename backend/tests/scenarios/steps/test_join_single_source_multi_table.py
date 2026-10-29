@@ -26,9 +26,9 @@ pytest.importorskip("psycopg", reason="native postgres ibis backend needs psycop
 
 def _pg_url() -> str | None:
     """A plain `postgresql://` URL for the reachable dev Postgres, derived
-    from `DATABASE_URL` (which may carry a `+asyncpg` driver suffix ibis's
+    from `DTE_DATABASE_URL` (which may carry a `+asyncpg` driver suffix ibis's
     sync backend doesn't understand). `None` when unset — callers skip."""
-    raw = os.environ.get("DATABASE_URL")
+    raw = os.environ.get("DTE_DATABASE_URL")
     if not raw:
         return None
     return raw.replace("postgresql+asyncpg://", "postgresql://")
@@ -52,7 +52,7 @@ def pg_tables(scenario_ids):
     Postgres, prefixed uniquely per test, and drop them at teardown."""
     url = _pg_url()
     if not url:
-        pytest.skip("DATABASE_URL not set — no Postgres to test the native backend against")
+        pytest.skip("DTE_DATABASE_URL not set — no Postgres to test the native backend against")
     con = _sync_ibis_connect(url)
 
     prefix = scenario_ids("source", "").rstrip("_")

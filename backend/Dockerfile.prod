@@ -1,7 +1,7 @@
 # Distroless production image for the DTE backend.
 #
 # Build:  docker build -f Dockerfile.prod -t dte-backend:prod ./backend
-# Run:    docker run -e DATABASE_URL=... -p 8001:8001 dte-backend:prod
+# Run:    docker run -e DTE_DATABASE_URL=... -p 8001:8001 dte-backend:prod
 #
 # Design decisions:
 # - Builder: python:3.12-slim-bookworm (Debian 12, GLIBC 2.36) — the version suffix

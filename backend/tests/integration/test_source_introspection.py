@@ -9,7 +9,7 @@ import pytest
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="requires DATABASE_URL"),
+    pytest.mark.skipif(not os.getenv("DTE_DATABASE_URL"), reason="requires DTE_DATABASE_URL"),
 ]
 
 from dte.models.pipeline import Connection
@@ -17,7 +17,7 @@ from dte.sources.loader import list_schemas, list_tables
 
 
 def _pg_url() -> str:
-    return os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://")
+    return os.environ["DTE_DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://")
 
 
 @pytest.fixture

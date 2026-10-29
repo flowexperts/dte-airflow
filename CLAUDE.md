@@ -43,7 +43,7 @@ cd backend && uv sync --all-extras
 uv run pytest                      # unit; scenarios excluded by default
 uv run pytest tests/scenarios -m scenario -v
 uv run pytest -m "not integration" # skip postgres tests
-dte db upgrade                     # migrate the `dte` schema (needs DATABASE_URL or Airflow config)
+dte db upgrade                     # migrate the `dte` schema (needs DTE_DATABASE_URL or Airflow config)
 
 # Frontend (Airflow plugin bundle; rebuild the image to ship it)
 cd frontend && pnpm install && pnpm build

@@ -33,7 +33,7 @@ Pipeline (references source ids + destination id)
 `get_secret_resolver()` in `dte/secrets/__init__.py` picks:
 1. `DTE_SECRETS_BACKEND=env|fernet` — explicit override.
 2. `DTE_SECRETS_KEY` set → Fernet.
-3. else → Env resolver, with a startup warning if `DATABASE_URL` is also set (prod signal).
+3. else → Env resolver, with a startup warning if `DTE_DATABASE_URL` is also set (prod signal).
 
 External adapters (Vault, AWS SM, GCP SM) plug in as new resolvers without touching loaders or writers.
 

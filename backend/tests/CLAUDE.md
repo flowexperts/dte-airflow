@@ -3,7 +3,7 @@
 Three tiers, each with a distinct purpose. Run only what the change touches.
 
 - **Unit** (`backend/tests/unit/`) — compiler + model tests, no HTTP, no I/O. Fast. Collected by default `pytest`.
-- **Integration** (`backend/tests/integration/`) — hits real Postgres via `DATABASE_URL`; auto-skips when unset. Marker: `integration`.
+- **Integration** (`backend/tests/integration/`) — hits real Postgres via `DTE_DATABASE_URL`; auto-skips when unset. Marker: `integration`.
 - **Scenarios** (`backend/tests/scenarios/`) — end-to-end user flows over the real HTTP API using `httpx.AsyncClient(ASGITransport)`. One file per step op under `steps/`, plus `test_error_paths.py`, `test_nested_fields.py`, `test_preview_endpoint.py`. Marker: `scenario`. **Excluded from the default `pytest` run** via `addopts = "--ignore=tests/scenarios"` in `pyproject.toml` — opt-in with `pytest tests/scenarios -m scenario`.
 
 Scenario suite conventions:

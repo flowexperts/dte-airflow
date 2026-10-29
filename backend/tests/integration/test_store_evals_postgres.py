@@ -12,7 +12,7 @@ import pytest
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="requires DATABASE_URL"),
+    pytest.mark.skipif(not os.getenv("DTE_DATABASE_URL"), reason="requires DTE_DATABASE_URL"),
 ]
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -32,7 +32,7 @@ KEY_B = "b" * 64
 
 @pytest.fixture
 async def session_factory():
-    engine = create_async_engine(os.environ["DATABASE_URL"])
+    engine = create_async_engine(os.environ["DTE_DATABASE_URL"])
     factory = async_sessionmaker(engine, expire_on_commit=False)
     yield factory
     await engine.dispose()

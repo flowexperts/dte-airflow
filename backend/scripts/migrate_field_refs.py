@@ -9,7 +9,7 @@ Usage:
     uv run python scripts/migrate_field_refs.py           # dry run
     uv run python scripts/migrate_field_refs.py --write   # actually save
 
-Picks the active store off `DATABASE_URL` — same rule as `dte.api.deps`.
+Picks the active store off `DTE_DATABASE_URL` — same rule as `dte.api.deps`.
 """
 from __future__ import annotations
 

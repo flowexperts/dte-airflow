@@ -17,7 +17,7 @@ pytest.importorskip("psycopg", reason="native postgres ibis backend needs psycop
 
 
 def _pg_url() -> str | None:
-    raw = os.environ.get("DATABASE_URL")
+    raw = os.environ.get("DTE_DATABASE_URL")
     if not raw:
         return None
     return raw.replace("postgresql+asyncpg://", "postgresql://")
@@ -29,7 +29,7 @@ def pg_people(scenario_ids):
     native postgres backend rather than DuckDB."""
     url = _pg_url()
     if not url:
-        pytest.skip("DATABASE_URL not set — no Postgres to bind against")
+        pytest.skip("DTE_DATABASE_URL not set — no Postgres to bind against")
     import ibis
     p = urlparse(url)
     con = ibis.postgres.connect(
