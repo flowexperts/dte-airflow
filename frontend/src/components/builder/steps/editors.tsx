@@ -14,7 +14,8 @@ import {
 } from "@/components/ui";
 import { usePopoverPosition } from "@/components/ui/use-popover-position";
 import { useStepFields, useJoinOperands, useStepFeedback } from "../schema-context";
-import type { SchemaField } from "@/lib/api";
+import { getStructureProviderStatus, type SchemaField } from "@/lib/api";
+import useSWR from "swr";
 import { usePipelineParams } from "../params-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -2173,6 +2174,12 @@ const STRUCTURE_PROVIDERS: DropdownOption<string>[] = [
   { value: "regex", label: "Regex", meta: "deterministic · free" },
 ];
 
+// Airflow conn id a step reads when `connection_id` is unset (plan 072).
+const DEFAULT_MODEL_CONN: Record<string, string> = {
+  claude: "anthropic_default",
+  openai: "openai_default",
+};
+
 const FIELD_TYPES: DropdownOption<string>[] = [
   { value: "string", label: "string" },
   { value: "int", label: "int" },
@@ -2200,6 +2207,14 @@ function StructureEditor({ step, set }: StepEditorProps) {
   const fields = model.fields ?? [];
   const provider = (step.provider as string) ?? "claude";
   const params = (step.params as Record<string, unknown>) ?? {};
+  const { data: status } = useSWR("provider-status", getStructureProviderStatus);
+  const defaultConn = DEFAULT_MODEL_CONN[provider] ?? "";
+  const connOptions: DropdownOption<string>[] = [
+    { value: "", label: `default (${defaultConn})` },
+    ...(status?.providers[provider]?.connections ?? [])
+      .filter((c) => c !== defaultConn)
+      .map((c) => ({ value: c, label: c })),
+  ];
 
   const setModel = (patch: Partial<{ fields: DataModelField[]; instructions: string }>) =>
     set({ ...step, model: { ...model, ...patch } });
@@ -2230,7 +2245,12 @@ function StructureEditor({ step, set }: StepEditorProps) {
         >
           <Dropdown<string>
             value={provider}
-            onChange={(v) => set({ ...step, provider: v })}
+            onChange={(v) => {
+              // A connection belongs to one provider's conn type.
+              const next: StepShape = { ...step, provider: v };
+              delete next.connection_id;
+              set(next);
+            }}
             options={STRUCTURE_PROVIDERS}
           />
         </Field>
@@ -2250,6 +2270,24 @@ function StructureEditor({ step, set }: StepEditorProps) {
               set({ ...step, params: next });
             }}
             placeholder="claude-opus-5"
+          />
+        </Field>
+      )}
+
+      {provider !== "regex" && (
+        <Field
+          label="Connection"
+          hint="the Airflow connection holding the API key — manage them in Airflow → Admin → Connections"
+        >
+          <Dropdown<string>
+            value={(step.connection_id as string) ?? ""}
+            onChange={(v) => {
+              const next = { ...step };
+              if (v) next.connection_id = v;
+              else delete next.connection_id;
+              set(next);
+            }}
+            options={connOptions}
           />
         </Field>
       )}

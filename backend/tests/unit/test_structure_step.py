@@ -215,6 +215,31 @@ def test_structure_step_rejects_temperature_in_params():
     assert "temperature" in str(exc.value)
 
 
+def test_structure_step_rejects_api_key_in_params():
+    """Step params are plaintext JSONB copied into every revision. Keys are
+    Airflow connections (plan 072)."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc:
+        StructureStep(
+            op="structure", provider="claude",
+            model={"fields": [{"name": "x", "type": "string"}]},
+            params={"api_key": "sk-ant-x"},
+        )
+    assert "connection_id" in str(exc.value)
+
+
+def test_structure_step_carries_a_connection_id():
+    step = StructureStep(
+        op="structure", provider="claude", connection_id="anthropic_billing",
+        model={"fields": [{"name": "x", "type": "string"}]},
+    )
+    assert step.connection_id == "anthropic_billing"
+    assert StructureStep(
+        op="structure", model={"fields": [{"name": "x", "type": "string"}]},
+    ).connection_id is None
+
+
 # ── end to end through the compiler ─────────────────────────────────────────
 
 
@@ -373,3 +398,82 @@ def test_downstream_steps_work_on_structured_columns(engine):
         {"s": table}, engine=engine,
     ).execute()
     assert len(df) == 1 and df.iloc[0]["vendor"] == "B"
+
+
+# ── model clients come from Airflow connections (plan 072) ──────────────────
+
+
+class _StubModelProvider:
+    """Stands in for claude: records the client it was handed."""
+
+    name = "claude"
+    _default_model = "stub"
+
+    def __init__(self):
+        self.clients = []
+
+    def structure(self, blocks, model, params, client=None):
+        from dte.providers.base import StructureResult
+
+        self.clients.append(client)
+        return StructureResult(
+            values={"total": 1.0}, provenance={"total": None}, provider="claude",
+            blocks_text=blocks[0].text,
+        )
+
+
+CLAUDE_STEP = {
+    "op": "structure", "provider": "claude", "connection_id": "anthropic_billing",
+    "model": {"fields": [{"name": "total", "type": "float"}]},
+}
+
+
+def _claude_rows(engine, texts):
+    from dte.compiler.ibis_compiler import compile_pipeline
+
+    table = _bind(engine, [{"content": t, "doc": i} for i, t in enumerate(texts)])
+    return compile_pipeline(
+        _pipeline([CLAUDE_STEP]), {"s": table}, engine=engine
+    ).execute()
+
+
+def test_model_client_is_resolved_once_per_step_and_injected(engine, monkeypatch):
+    provider = _StubModelProvider()
+    resolved = []
+    client = object()
+
+    def _client(name, conn_id):
+        resolved.append((name, conn_id))
+        return client
+
+    monkeypatch.setattr("dte.providers.structure_provider", lambda name: provider)
+    monkeypatch.setattr("dte.airflow.connections.model_client", _client)
+
+    _claude_rows(engine, ["a", "b", "c"])
+    assert resolved == [("claude", "anthropic_billing")]
+    assert provider.clients == [client, client, client]
+
+
+def test_missing_model_connection_fails_before_any_row(engine, monkeypatch):
+    from dte.airflow.connections import ModelConnectionMissing
+    from dte.compiler.ibis_compiler import CompilerError
+
+    provider = _StubModelProvider()
+
+    def _missing(name, conn_id):
+        raise ModelConnectionMissing(f"airflow connection {conn_id!r} not found")
+
+    monkeypatch.setattr("dte.providers.structure_provider", lambda name: provider)
+    monkeypatch.setattr("dte.airflow.connections.model_client", _missing)
+
+    with pytest.raises(CompilerError, match="anthropic_billing"):
+        _claude_rows(engine, ["a"])
+    assert provider.clients == []
+
+
+def test_regex_never_touches_airflow(engine, monkeypatch):
+    monkeypatch.setattr(
+        "dte.airflow.connections.model_client",
+        lambda *a: pytest.fail("regex resolved a model connection"),
+    )
+    _rows(engine, ["Total: $1.00"])

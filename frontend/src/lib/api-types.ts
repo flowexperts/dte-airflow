@@ -1559,7 +1559,7 @@ export interface components {
              * @default auto
              * @enum {string}
              */
-            engine: "auto" | "duckdb" | "postgres" | "mysql" | "sqlite" | "bigquery" | "snowflake" | "trino";
+            engine: "auto" | "duckdb" | "postgres" | "mysql" | "mssql" | "sqlite" | "bigquery" | "snowflake" | "trino";
             /**
              * Pipeline Type
              * @default transform

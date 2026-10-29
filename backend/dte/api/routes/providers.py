@@ -10,17 +10,19 @@ the model is bad at the task rather than absent.
 Same shape as the regex-needs-a-pattern gate: a provider that cannot
 succeed should not be offered, and the reason should name the fix.
 
+Keys are Airflow connections (plan 072): `anthropic_default` /
+`openai_default`, or whichever connection a step names.
+
 **Configuration, not validity.** A present-but-expired key still has to
 fail at call time. Proving a key works needs a billable request, and the
 answer would be stale the moment it is revoked — so this reports only
-whether anything was supplied, and says so.
+whether a connection exists, and says so.
 
-**The value is never returned.** A readiness probe that echoes the secret
-turns a convenience into a disclosure on every page load.
+**No secret is returned.** Only conn ids cross the wire.
 """
 from __future__ import annotations
 
-import os
+import asyncio
 
 from fastapi import APIRouter, Depends
 
@@ -28,20 +30,21 @@ from dte.security.permissions import requires
 
 router = APIRouter()
 
-# Provider → the environment variable its SDK reads. `regex` is absent
-# because it needs nothing; it is what makes a free comparison possible and
-# must never gate.
-_REQUIRED_ENV: dict[str, str] = {
-    "claude": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
+# Provider → its Airflow default conn id. `regex` is absent because it needs
+# nothing; it is what makes a free comparison possible and must never gate.
+_DEFAULT_CONN: dict[str, str] = {
+    "claude": "anthropic_default",
+    "openai": "openai_default",
 }
 
 
-def _configured(var: str) -> bool:
-    # Compose writes `ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}`, so the
-    # variable exists and is empty when nothing supplied it. Presence is not
-    # the test — a non-blank value is.
-    return bool((os.environ.get(var) or "").strip())
+def _connections(provider: str) -> list[str]:
+    from dte.airflow import connections
+
+    try:
+        return connections.model_connections(provider)
+    except ImportError:  # the Airflow provider package isn't installed
+        return []
 
 
 @router.get("/providers/structure", dependencies=[Depends(requires("pipeline:read"))])
@@ -52,16 +55,19 @@ async def structure_provider_status():
     declared = StructureStep.model_fields["provider"].annotation.__args__
     providers: dict[str, dict] = {}
     for name in declared:
-        var = _REQUIRED_ENV.get(name)
-        if var is None:
-            providers[name] = {"configured": True, "reason": None}
+        default = _DEFAULT_CONN.get(name)
+        if default is None:
+            providers[name] = {"configured": True, "reason": None, "connections": []}
             continue
-        ok = _configured(var)
+        conns = await asyncio.to_thread(_connections, name)
+        ok = default in conns
         providers[name] = {
             "configured": ok,
             "reason": None if ok else (
-                f"{var} is not set on the server. Add it to the environment "
-                f"and restart, or compare against regex, which needs no key."
+                f"Airflow connection {default!r} does not exist. Create it in "
+                f"Airflow → Admin → Connections with the API key as password, "
+                f"or compare against regex, which needs no key."
             ),
+            "connections": conns,
         }
     return {"providers": providers}

@@ -920,12 +920,21 @@ class StructureStep(BaseModel):
     op: Literal["structure"]
     input_field: str = "content"
     provider: Literal["claude", "openai", "regex"] = "claude"
+    # Airflow connection holding the model key; None → the provider's default
+    # (`anthropic_default` / `openai_default`). Ignored by regex.
+    connection_id: str | None = None
     model: DataModelSpec
     params: dict = Field(default_factory=dict)
     on_error: Literal["null", "fail"] = "null"
 
     @model_validator(mode="after")
     def _reject_sampling_params(self) -> StructureStep:
+        if "api_key" in self.params:
+            raise ValueError(
+                "api_key cannot be set in step params — they are stored "
+                "unencrypted. Put the key in an Airflow connection and set "
+                "connection_id instead"
+            )
         bad = _REJECTED_PARAMS & set(self.params)
         if bad:
             raise ValueError(

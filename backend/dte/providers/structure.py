@@ -22,14 +22,6 @@ from typing import Any
 from dte.providers.base import Block, DataModel, StructureResult
 from dte.providers.schema import coerce_row, json_schema_for
 
-# Named per provider: the SDKs live in the `models` extra, not `unstructured`
-# (which is pypdf/pdfplumber). A message naming the wrong extra sends people
-# to install a package that does not fix their error.
-_MISSING_DEP = (
-    "the {pkg} SDK is not installed — the {lib} provider needs it. "
-    'Install the optional extra with `pip install "dte[models]"`'
-)
-
 # Default models. Both are the current flagship for their provider; callers
 # override per step via `params["model"]`.
 DEFAULT_CLAUDE_MODEL = "claude-opus-5"
@@ -74,7 +66,7 @@ class RegexStructureProvider:
     name = "regex"
 
     def structure(
-        self, blocks: list[Block], model: DataModel, params: dict
+        self, blocks: list[Block], model: DataModel, params: dict, client=None
     ) -> StructureResult:
         started = time.perf_counter()
         text = _joined(blocks)
@@ -131,14 +123,15 @@ class _ModelStructureProvider:
 
     name = ""
     _default_model = ""
-    _sdk_package = ""
 
-    def _call(self, prompt: str, schema: dict, params: dict) -> tuple[dict, int, int]:
+    def _call(self, prompt: str, schema: dict, params: dict, client) -> tuple[dict, int, int]:
         raise NotImplementedError
 
     def structure(
-        self, blocks: list[Block], model: DataModel, params: dict
+        self, blocks: list[Block], model: DataModel, params: dict, client=None
     ) -> StructureResult:
+        """`client` is the SDK client built from the step's Airflow
+        connection (`dte.airflow.connections.model_client`)."""
         started = time.perf_counter()
         text = _joined(blocks)
         empty = {s.name: None for s in model.fields}
@@ -164,13 +157,7 @@ class _ModelStructureProvider:
         )
 
         try:
-            raw, in_tok, out_tok = self._call(prompt, json_schema_for(model), params)
-        except ImportError:
-            return done(
-                empty,
-                dict.fromkeys(empty),
-                _MISSING_DEP.format(pkg=self._sdk_package, lib=self.name),
-            )
+            raw, in_tok, out_tok = self._call(prompt, json_schema_for(model), params, client)
         except Exception as exc:  # noqa: BLE001 — one bad document is one bad row
             return done(empty, dict.fromkeys(empty), f"{self.name}: {exc}")
 
@@ -205,12 +192,8 @@ def _locate(text: str, blocks: list[Block], value: Any) -> dict | None:
 class ClaudeStructureProvider(_ModelStructureProvider):
     name = "claude"
     _default_model = DEFAULT_CLAUDE_MODEL
-    _sdk_package = "anthropic"
 
-    def _call(self, prompt: str, schema: dict, params: dict):
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=params.get("api_key") or None)
+    def _call(self, prompt: str, schema: dict, params: dict, client):
         response = client.messages.create(
             model=params.get("model", self._default_model),
             max_tokens=params.get("max_tokens", 4096),
@@ -234,12 +217,8 @@ class ClaudeStructureProvider(_ModelStructureProvider):
 class OpenAIStructureProvider(_ModelStructureProvider):
     name = "openai"
     _default_model = DEFAULT_OPENAI_MODEL
-    _sdk_package = "openai"
 
-    def _call(self, prompt: str, schema: dict, params: dict):
-        import openai
-
-        client = openai.OpenAI(api_key=params.get("api_key") or None)
+    def _call(self, prompt: str, schema: dict, params: dict, client):
         response = client.chat.completions.create(
             model=params.get("model", self._default_model),
             messages=[{"role": "user", "content": prompt}],

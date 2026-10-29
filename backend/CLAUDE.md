@@ -213,11 +213,17 @@ downloads, which still works and so never surfaces as an error.
 anthropic + openai SDKs. Both are lazy imports, so a missing extra surfaces
 only on a real run, never in tests.
 
-**API keys** currently come from `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in the
-environment, wired to every Airflow container. Do **not** put a key in the
-step's `params.api_key`: step params are stored unencrypted in
-`pipelines.steps` JSONB and copied into every revision. See
-`plans/052-model-provider-connections.md`.
+**API keys are Airflow connections** (plan 072), resolved through the
+official providers' hooks in `dte/airflow/connections.py`: `claude` →
+`AnthropicHook` (type `anthropic`, default `anthropic_default`), `openai` →
+`OpenAIHook` (type `openai`, default `openai_default`). A step's
+`connection_id` overrides the default. The hook builds the SDK client
+(password = key, host = base_url, Bedrock/Vertex via extras); `_apply_structure`
+builds it **once per step** and a missing connection is a `CompilerError`
+before any row runs. There is no env-var path, and `params.api_key` is
+rejected at validation — step params are plaintext JSONB copied into every
+revision. `apache-airflow-providers-anthropic` is capped `<1.2`: 1.2 needs
+`common-compat>=1.21`, and the Airflow 3.3.2 constraints pin 1.19.
 
 ### Automap: source schema → destination schema (plan 057)
 
@@ -242,8 +248,9 @@ Three passes, and the order is the point:
 2. **fuzzy** via `difflib.SequenceMatcher`, cutoff `0.8`, greedy best-first
    so the strongest pair claims a column before a weaker one takes it.
    stdlib — deterministic, free, and the only pass CI can run.
-3. **llm** over the leftovers only, one Claude call gated on
-   `ANTHROPIC_API_KEY` (`DTE_AUTOMAP_MODEL` overrides the model). Semantic
+3. **llm** over the leftovers only, one Claude call through the
+   `anthropic_default` Airflow connection (`DTE_AUTOMAP_MODEL` overrides the
+   model). Semantic
    renames (`dob` → `birth_date`) are the only reason it exists.
 
 - **A failed model pass is `llm_error`, never a failed request.** The

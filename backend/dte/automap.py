@@ -175,12 +175,7 @@ Rules:
 def _llm_match(sources: list[Field], dests: list[Field]) -> dict[str, str | None]:
     """One Claude call over the leftovers. Raises on anything at all — the
     caller turns that into `llm_error` and keeps the heuristic result."""
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError(
-            "ANTHROPIC_API_KEY is not set — the LLM pass needs it. "
-            "The heuristic passes ran regardless."
-        )
-    import anthropic  # lazy: lives in the `[models]` extra
+    from dte.airflow import connections  # the `anthropic_default` connection
 
     schema = {
         "type": "object",
@@ -194,7 +189,7 @@ def _llm_match(sources: list[Field], dests: list[Field]) -> dict[str, str | None
         source="\n".join(f"- {f.name} ({f.type})" for f in sources),
         dest="\n".join(f"- {f.name} ({f.type})" for f in dests),
     )
-    client = anthropic.Anthropic()
+    client = connections.model_client("claude", None)
     response = client.messages.create(
         model=os.environ.get("DTE_AUTOMAP_MODEL", DEFAULT_MODEL),
         max_tokens=2048,

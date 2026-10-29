@@ -312,6 +312,22 @@ def _apply_structure(
     provider = structure_provider(step.provider)
     store = get_artifact_store()
 
+    # One client per step, from the step's Airflow connection (plan 072). A
+    # missing connection fails here, before any row, not once per row.
+    client = None
+    if step.provider != "regex":
+        from dte.airflow import connections as model_conns
+
+        try:
+            client = model_conns.model_client(step.provider, step.connection_id)
+        except model_conns.ModelConnectionMissing as exc:
+            raise CompilerError(str(exc)) from None
+        except ImportError as exc:
+            raise CompilerError(
+                f"the {step.provider} structure provider needs the Airflow "
+                f"anthropic/openai providers and SDKs installed: {exc}"
+            ) from None
+
     data_model = DataModel(
         fields=[FieldSpec(**f.model_dump()) for f in step.model.fields],
         instructions=step.model.instructions,
@@ -365,7 +381,7 @@ def _apply_structure(
 
         result = provider.structure(
             [Block(text=str(text), index=0, page=row.get("page"))],
-            data_model, step.params,
+            data_model, step.params, client,
         )
         stats["calls"] += 1
         stats["input_tokens"] += result.input_tokens

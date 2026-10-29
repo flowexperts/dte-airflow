@@ -27,7 +27,7 @@ COPY --chown=airflow:root backend /opt/dte/backend
 # DTE's own `sqlglot<30` then decides.
 RUN curl -fsSL ${AIRFLOW_CONSTRAINTS} | grep -v '^sqlglot==' > /tmp/constraints.txt && \
     pip install --no-cache-dir --constraint /tmp/constraints.txt \
-    -e "/opt/dte/backend[unstructured,models,mysql-writer,mssql]"
+    -e "/opt/dte/backend[airflow,unstructured,models,mysql-writer,mssql]"
 
 # UI plugin bundle (plan 066); served at /dte/ui, loaded by Airflow as a react_app.
 FROM base AS final

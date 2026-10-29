@@ -28,7 +28,7 @@ half-built sources never show up on camera. It then runs all four pipelines
 tiles can draw, and prints what Auto-map actually returns. It is the only thing standing between you
 and discovering a dead beat with the camera rolling.
 
-`ANTHROPIC_API_KEY` must be in `.env` — the `structure` step in
+An `anthropic_default` Airflow connection must exist — the `structure` step in
 `record-unstructured.mjs` is a real model call, and Auto-map's third pass is
 too. Without it Auto-map degrades to name matching and shows a gold
 "the model pass did not run" banner, which reads as broken on camera.
