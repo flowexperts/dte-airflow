@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -97,32 +100,3 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm format:check
-
-  e2e:
-    runs-on: ubuntu-latest
-    needs: [backend, integration, frontend]
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Boot stack
-        run: docker compose up -d --build
-      - name: Wait for backend
-        run: |
-          for i in {1..40}; do
-            curl -sf http://localhost:8001/healthz && break
-            sleep 2
-          done
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.26.1
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - working-directory: frontend
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm test:e2e:install
-          pnpm test:e2e
-      - name: Dump logs on failure
-        if: failure()
-        run: docker compose logs backend frontend

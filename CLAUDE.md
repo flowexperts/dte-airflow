@@ -20,9 +20,8 @@ docs/worktrees.md             worktree + compose setup (read before the first ru
 ```
 backend/       Python package `dte`, alembic, tests, Dockerfile
 frontend/      React UI, built as an Airflow react_apps plugin bundle
-docker-compose.yml   whole stack (postgres + backend + frontend)
+docker-compose.yml   whole stack (postgres + Airflow with DTE as a plugin)
 plans/         feature plans (numbered)
-marketing-plans/  go-to-market plans (numbered) — ICP, motion, pricing, content
 ```
 
 All Python paths below are relative to `backend/`.
@@ -31,7 +30,9 @@ All Python paths below are relative to `backend/`.
 
 ```bash
 # Whole stack: postgres :5432 + Airflow 3.3 (api-server :8080, scheduler,
-# dag-processor). Log in admin/admin; DTE UI at /plugin/dte, API at /dte/api.
+# dag-processor). scripts/bootstrap.sh writes .env (secrets + admin password);
+# compose refuses to start without it. DTE UI at /plugin/dte, API at /dte/api.
+scripts/bootstrap.sh
 docker compose up -d --build
 docker compose logs -f airflow-apiserver
 # ./backend/dte is bind-mounted; restart to pick up Python changes:
@@ -68,8 +69,7 @@ per-run outputs Airflow can't. Tests inject fake stores. Details in
 
 **Before implementing any feature**, write a plan to
 `plans/<NNN>-<feature-name>.md`: problem statement, architecture change,
-explicit task list with branch names, files changed/deleted. Go-to-market
-plans go in `marketing-plans/` instead (no branch names or task lists).
+explicit task list with branch names, files changed/deleted.
 
 **Every non-trivial change gets its own worktree. Do not develop on `main`.**
 

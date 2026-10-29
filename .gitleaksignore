@@ -1,0 +1,7 @@
+# Azurite's public, documented dev-storage AccountKey (devstoreaccount1), not a secret.
+497f6100256d08cc66cfbaf29dd8501dd54b70d7:backend/tests/unit/test_loader.py:generic-api-key:330
+497f6100256d08cc66cfbaf29dd8501dd54b70d7:scripts/test-cloud-storage.sh:generic-api-key:11
+497f6100256d08cc66cfbaf29dd8501dd54b70d7:backend/tests/integration/test_cloud_storage.py:generic-api-key:37
+497f6100256d08cc66cfbaf29dd8501dd54b70d7:plans/044-cloud-storage-integration-tests.md:generic-api-key:88
+497f6100256d08cc66cfbaf29dd8501dd54b70d7:plans/044-cloud-storage-integration-tests.md:generic-api-key:166
+497f6100256d08cc66cfbaf29dd8501dd54b70d7:plans/044-cloud-storage-integration-tests.md:generic-api-key:297
