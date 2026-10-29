@@ -14,7 +14,7 @@
  * PDFs per invoice number and the INV-1004 / INV-1005 pairs carry different
  * totals ($340.00 vs $412.75, $2,050.00 vs $12,000.00).
  *
- * Needs ANTHROPIC_API_KEY in .env — the structure step is a real model call.
+ * Needs the anthropic_default Airflow connection — the structure step is a real model call.
  *
  *   ./scripts/demo/verify.sh
  *   cd scripts/demo && node record-unstructured.mjs

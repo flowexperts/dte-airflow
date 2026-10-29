@@ -58,7 +58,7 @@ class _FlakyProvider:
     def __init__(self):
         self.calls = 0
 
-    def structure(self, blocks, model, params):
+    def structure(self, blocks, model, params, client=None):
         self.calls += 1
         if self.calls == 1:
             return StructureResult(

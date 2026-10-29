@@ -113,5 +113,5 @@ class StructureProvider(Protocol):
     name: str
 
     def structure(
-        self, blocks: list[Block], model: DataModel, params: dict
+        self, blocks: list[Block], model: DataModel, params: dict, client=None
     ) -> StructureResult: ...

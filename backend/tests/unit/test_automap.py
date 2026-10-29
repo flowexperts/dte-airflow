@@ -51,7 +51,6 @@ def test_a_source_column_is_claimed_once():
 
 
 def test_use_llm_false_makes_no_network_call(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-never-be-read")
     monkeypatch.setattr(
         "dte.automap._llm_match",
         lambda *a, **k: pytest.fail("LLM pass ran with use_llm=False"),
@@ -62,12 +61,17 @@ def test_use_llm_false_makes_no_network_call(monkeypatch):
 
 
 def test_llm_failure_keeps_the_heuristic_result(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    from dte.airflow.connections import ModelConnectionMissing
+
+    def _missing(provider, conn_id):
+        raise ModelConnectionMissing("airflow connection 'anthropic_default' not found")
+
+    monkeypatch.setattr("dte.airflow.connections.model_client", _missing)
     r = automap(
         [Field("customer_id", "int64"), Field("dob", "date")],
         [Field("CustomerID", "int64"), Field("birth_date", "date")],
     )
-    assert "ANTHROPIC_API_KEY" in r.llm_error
+    assert "anthropic_default" in r.llm_error
     assert _by_dest(r)["CustomerID"].source == "customer_id"
 
 

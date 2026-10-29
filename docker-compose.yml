@@ -33,8 +33,6 @@ x-airflow: &airflow
     DATABASE_URL: postgresql+asyncpg://airflow:airflow@postgres/airflow
     DTE_AIRFLOW_URL: http://localhost:8080
     DTE_ARTIFACT_DIR: /var/lib/dte/artifacts
-    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     DTE_ADMIN_PASSWORD: ${DTE_ADMIN_PASSWORD:?run scripts/bootstrap.sh}
   volumes:
     - ./dags:/opt/airflow/dags
