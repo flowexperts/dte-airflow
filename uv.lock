@@ -283,21 +283,21 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "0.121.0"
+version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "distro" },
     { name = "docstring-parser" },
-    { name = "httpx" },
+    { name = "httpx2" },
     { name = "jiter" },
+    { name = "opentelemetry-api" },
     { name = "pydantic" },
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0f/ca/3cb2c20ee729736fbd4546d5d8b67e818288529fe70cb7a80dbf80aef70b/anthropic-0.121.0.tar.gz", hash = "sha256:e79d6e08ab3376602fc9a70d4d5ea3540817c76cf7e16658bed790834e1833d6", size = 1013292, upload-time = "2026-08-07T17:11:07.241Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/66/4ec271f7607460005276bb09b0d1c749a9ed0cead35a488a8676f15ed6d5/anthropic-1.17.0.tar.gz", hash = "sha256:dcf77a74dde89a9fd12405fca798b012725a107f7c9488454234a74e275c2163", size = 1756371, upload-time = "2026-10-20T22:13:35.117Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fa/91/b3d41643f1f639927e8c5fb02c3bd8bffe6f1f29e219b3bd4c61e267b15c/anthropic-0.121.0-py3-none-any.whl", hash = "sha256:6048713fa441e59e1cba8363171cd2a86273b25bd213e9c7ac70a523af88b011", size = 1035493, upload-time = "2026-08-07T17:11:08.508Z" },
+    { url = "https://files.pythonhosted.org/packages/98/9d/b4d4e46ec05bf19bcfd46c1417337e7cf42b9ecb95c3c63f295e2e9fee4b/anthropic-1.17.0-py3-none-any.whl", hash = "sha256:ccb98b85e1a14f81cf1e2ba348393f341f342bad9e07e014f96c9b69f853aaa7", size = 2094718, upload-time = "2026-10-20T22:13:32.585Z" },
 ]
 
 [[package]]
@@ -432,6 +432,20 @@ wheels = [
 [package.optional-dependencies]
 s3fs = [
     { name = "s3fs" },
+]
+
+[[package]]
+name = "apache-airflow-providers-anthropic"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anthropic" },
+    { name = "apache-airflow" },
+    { name = "apache-airflow-providers-common-compat" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9e/ab/f26bb7c56166934ba5d7471122dee937fc2594e783c72de32874e6d14c61/apache_airflow_providers_anthropic-1.1.0.tar.gz", hash = "sha256:64ac915d75d4504a8dcb91993c23bd8c62b50eb3b71eab09752f97cbaf860e03", size = 73775, upload-time = "2026-09-29T06:55:01.941Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/6d/77e0f106bc70069da61c38eb42dfdba3a8600c621c237999ba86e97b2030/apache_airflow_providers_anthropic-1.1.0-py3-none-any.whl", hash = "sha256:0eee60d9a68563a804273038b2c9157b851103f85a8b04250803fffb2113d408", size = 45683, upload-time = "2026-09-29T06:39:29.969Z" },
 ]
 
 [[package]]
@@ -650,6 +664,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d5/3b/708056bc7e7a9fcb4d4268812e54c760550156a462e858028c1ab6f95338/apache_airflow_providers_mongo-5.5.1.tar.gz", hash = "sha256:d4e48a52b31920fb80b14e68764d4332d68745d1b3f5bc889439551aa9dbd49f", size = 36221, upload-time = "2026-10-13T11:03:48.301Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/97/29/03b371ca7689f084f0c366ccc80155acc9a0d8b08ba7334e69b53046bcc7/apache_airflow_providers_mongo-5.5.1-py3-none-any.whl", hash = "sha256:0418ae95bf69857ca55afd258179868bba8af4114c02abfaa5d7ae3d15ef0551", size = 20050, upload-time = "2026-10-13T11:02:07.09Z" },
+]
+
+[[package]]
+name = "apache-airflow-providers-openai"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "apache-airflow" },
+    { name = "apache-airflow-providers-common-compat" },
+    { name = "openai" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fd/88/d7561a8105afbd929ffcdb12bc8a2c5e7c64f9a2c6effd45fc115ea1c24a/apache_airflow_providers_openai-2.2.0.tar.gz", hash = "sha256:33502653a269089c7b842db90d058fd148083e7127768a5e4797e3502875c9ae", size = 79488, upload-time = "2026-10-24T18:48:54.878Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/91/c28eadd6ab141b7a564cf6dfc50ee0194ae989632458f5f38b8e3cbf872b/apache_airflow_providers_openai-2.2.0-py3-none-any.whl", hash = "sha256:365cd2577ed2d7bd293f61d887f7c16166330b58bc79739679b8170d12c0371d", size = 41481, upload-time = "2026-10-24T18:48:27.955Z" },
 ]
 
 [[package]]
@@ -2036,6 +2064,8 @@ dependencies = [
 [package.optional-dependencies]
 airflow = [
     { name = "apache-airflow" },
+    { name = "apache-airflow-providers-anthropic" },
+    { name = "apache-airflow-providers-openai" },
 ]
 amazon = [
     { name = "apache-airflow-providers-amazon", extra = ["s3fs"] },
@@ -2071,8 +2101,8 @@ google = [
     { name = "apache-airflow-providers-google" },
 ]
 models = [
-    { name = "anthropic" },
-    { name = "openai" },
+    { name = "apache-airflow-providers-anthropic" },
+    { name = "apache-airflow-providers-openai" },
 ]
 mongo = [
     { name = "apache-airflow-providers-mongo" },
@@ -2124,14 +2154,17 @@ unstructured = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13,<2.0" },
-    { name = "anthropic", marker = "extra == 'dev'", specifier = ">=0.40,<1.0" },
-    { name = "anthropic", marker = "extra == 'models'", specifier = ">=0.40,<1.0" },
+    { name = "anthropic", marker = "extra == 'dev'", specifier = ">=1.0,<2.0" },
     { name = "apache-airflow", marker = "extra == 'airflow'", specifier = ">=3.3" },
     { name = "apache-airflow-providers-amazon", extras = ["s3fs"], marker = "extra == 'amazon'" },
+    { name = "apache-airflow-providers-anthropic", marker = "extra == 'airflow'", specifier = ">=1.1" },
+    { name = "apache-airflow-providers-anthropic", marker = "extra == 'models'", specifier = ">=1.1" },
     { name = "apache-airflow-providers-google", marker = "extra == 'google'" },
     { name = "apache-airflow-providers-microsoft-azure", marker = "extra == 'azure'" },
     { name = "apache-airflow-providers-microsoft-mssql", marker = "extra == 'mssql'" },
     { name = "apache-airflow-providers-mongo", marker = "extra == 'mongo'" },
+    { name = "apache-airflow-providers-openai", marker = "extra == 'airflow'", specifier = ">=1.8" },
+    { name = "apache-airflow-providers-openai", marker = "extra == 'models'", specifier = ">=1.8" },
     { name = "apache-airflow-providers-sftp", marker = "extra == 'sftp'" },
     { name = "asyncpg", specifier = ">=0.29,<1.0" },
     { name = "croniter", specifier = ">=2.0,<7.0" },
@@ -2156,7 +2189,6 @@ requires-dist = [
     { name = "mongomock", marker = "extra == 'dev'", specifier = ">=4.1,<5.0" },
     { name = "mutmut", marker = "extra == 'dev'", specifier = ">=2.5,<4.0" },
     { name = "openai", marker = "extra == 'dev'", specifier = ">=1.50,<3.0" },
-    { name = "openai", marker = "extra == 'models'", specifier = ">=1.50,<3.0" },
     { name = "opentelemetry-api", specifier = ">=1.27,<2.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.27,<2.0" },
     { name = "pdfplumber", marker = "extra == 'dev'", specifier = ">=0.11,<1.0" },
@@ -3844,7 +3876,7 @@ wheels = [
 
 [[package]]
 name = "huggingface-hub"
-version = "2.3.0"
+version = "2.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -3857,9 +3889,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/46/dd/585639d95f6a987c0bdfb9045f050f4ad67240775644ba7a4fdc5aca3a3b/huggingface_hub-2.3.0.tar.gz", hash = "sha256:0b783b37f200f1d25bef2344a997c7d410f4437fbe9d8fd965f958e75cec7aef", size = 1063410, upload-time = "2026-10-23T08:52:06.594Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/3b/2fcef1eabe52aec90fc8cd253cc154da1d02a446d7bbcdec59b4a51d4be7/huggingface_hub-2.4.0.tar.gz", hash = "sha256:13a6158b9e3393d9d3f248ce99074d50c2a0a1449fb9d8e2f710751e2084c188", size = 1066194, upload-time = "2026-10-29T15:30:12.321Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c7/89/5f6ef1162d0323f167b6baab04d1b4bd6a946161a8af6d86f622d9d79aa1/huggingface_hub-2.3.0-py3-none-any.whl", hash = "sha256:5da369600233568a126eb5578754935b2add9446b42d9e2fc0927d56840ac1a5", size = 855161, upload-time = "2026-10-23T08:52:04.78Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/55/ff47f1b082ecf5f43f4bc1e3b932d68eead171dabbbd1a92666c686301d7/huggingface_hub-2.4.0-py3-none-any.whl", hash = "sha256:42ecfd93ede47bdd333daebbf66a32d7bfe2e18752754fe4d2d4f98a0179d801", size = 857021, upload-time = "2026-10-29T15:30:10.421Z" },
 ]
 
 [[package]]
@@ -7786,14 +7818,14 @@ wheels = [
 
 [[package]]
 name = "smart-open"
-version = "9.0.0"
+version = "9.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/05/87/d1d2e4504adf3c2f2da52f867d4aa25a8cc528d79b77b75955f1feb48809/smart_open-9.0.0.tar.gz", hash = "sha256:317d2e3b5491673dd30d4bd38120b91e0846451fe361fdf9273fcb2278594be3", size = 64866, upload-time = "2026-10-28T07:35:45.266Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/fb/19b6597c88ed450aa48e903b0043cdfd8e1d483b1dd78fb2a7b10897cf94/smart_open-9.0.1.tar.gz", hash = "sha256:9dd0de10c98c7dfc6c05096fb8bc5ef3ed280c994ec2aa8fb747ab14bd528804", size = 65045, upload-time = "2026-10-29T20:08:21.912Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/b9/467fc6084d3a49cbff184a6e48960bad873f69d729e84a8d0e104ddfcb72/smart_open-9.0.0-py3-none-any.whl", hash = "sha256:48bdc5e5daba5e52c3a45f108aeab22de3e6c594c593d6dea1134be3f14ad4b4", size = 75791, upload-time = "2026-10-28T07:35:43.713Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/71/9cc12b1b8d5483696cc536ac7f9e113a4b0971d3a284cd6e74314e4236b4/smart_open-9.0.1-py3-none-any.whl", hash = "sha256:0d5fdbc8b90c90e57651bd369028afecbcf89273e3ff9cd5f66ddfee78a8302a", size = 76007, upload-time = "2026-10-29T20:08:20.294Z" },
 ]
 
 [[package]]

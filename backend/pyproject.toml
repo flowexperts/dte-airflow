@@ -53,7 +53,14 @@ dte = "dte.airflow.plugin:DtePlugin"
 [project.optional-dependencies]
 # Airflow 3.3 app (plan 065; 3.3 for plugin nav menus, plan 067). Inside the apache/airflow image Airflow is
 # already installed; this pins the range for anyone installing outside it.
-airflow = ["apache-airflow>=3.3"]
+# The anthropic/openai providers own the model-key connections (plan 072).
+# No ceilings (plan 073): with Airflow's constraints pip picks the provider
+# release that fits the pinned common-compat.
+airflow = [
+    "apache-airflow>=3.3",
+    "apache-airflow-providers-anthropic>=1.1",
+    "apache-airflow-providers-openai>=1.8",
+]
 # Document extraction (plan 050). Kept out of core so a deployment that never
 # touches PDFs doesn't carry the dependency; dte.providers imports lazily and
 # reports a message naming this extra when it's absent.
@@ -67,13 +74,14 @@ unstructured = [
 # uses it should not carry them.
 # Install with: pip install "dte[models]"
 models = [
-    "anthropic>=0.40,<1.0",
-    "openai>=1.50,<3.0",
+    # The providers own the model-key connections (plan 072) and bring the SDKs.
+    "apache-airflow-providers-anthropic>=1.1",
+    "apache-airflow-providers-openai>=1.8",
 ]
 dev = [
     "pypdf>=5.0,<7.0",
     "pdfplumber>=0.11,<1.0",
-    "anthropic>=0.40,<1.0",
+    "anthropic>=1.0,<2.0",
     "openai>=1.50,<3.0",
     "pytest>=8.0,<9.0",
     "pytest-asyncio>=0.23,<1.0",

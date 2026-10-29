@@ -108,3 +108,62 @@ def to_dte(conn_id: str) -> tuple[Connection, dict]:
 
     conn = from_airflow(BaseHook.get_connection(conn_id))
     return conn, conn.credentials
+
+
+# Model keys (plan 072). The official providers' hooks own the conn type, the
+# default conn id and client construction (password = key, host = base_url,
+# Bedrock/Vertex via extras); DTE only picks the hook.
+_MODEL_HOOKS = {
+    "claude": ("airflow.providers.anthropic.hooks.anthropic", "AnthropicHook"),
+    "openai": ("airflow.providers.openai.hooks.openai", "OpenAIHook"),
+}
+
+
+class ModelConnectionMissing(RuntimeError):
+    """The step's model connection does not exist in Airflow."""
+
+
+def _hook_class(provider: str):
+    import importlib
+
+    module, name = _MODEL_HOOKS[provider]
+    return getattr(importlib.import_module(module), name)
+
+
+def model_client(provider: str, conn_id: str | None):
+    """The SDK client for `provider`, built from an Airflow connection."""
+    from airflow.exceptions import AirflowNotFoundException
+
+    hook_cls = _hook_class(provider)
+    conn_id = conn_id or hook_cls.default_conn_name
+    try:
+        return hook_cls(conn_id=conn_id).get_conn()
+    except AirflowNotFoundException:
+        raise ModelConnectionMissing(
+            f"airflow connection {conn_id!r} not found — create it in Airflow → "
+            f"Admin → Connections (type {hook_cls.conn_type!r}, API key as password)"
+        ) from None
+
+
+def model_connections(provider: str) -> list[str]:
+    """Conn ids usable by `provider`: every DB connection of its type, plus the
+    default when it resolves elsewhere (env var or secrets backend)."""
+    from sqlalchemy import select
+
+    from airflow.exceptions import AirflowNotFoundException
+    from airflow.hooks.base import BaseHook
+    from airflow.models.connection import Connection as AConn
+    from airflow.utils.session import create_session
+
+    hook_cls = _hook_class(provider)
+    with create_session() as s:
+        ids = list(s.scalars(
+            select(AConn.conn_id).where(AConn.conn_type == hook_cls.conn_type).order_by(AConn.conn_id)
+        ))
+    if hook_cls.default_conn_name not in ids:
+        try:
+            BaseHook.get_connection(hook_cls.default_conn_name)
+            ids.insert(0, hook_cls.default_conn_name)
+        except AirflowNotFoundException:
+            pass
+    return ids

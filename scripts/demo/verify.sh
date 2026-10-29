@@ -230,7 +230,7 @@ r = json.load(urllib.request.urlopen(req, timeout=90))
 if r.get("llm_error"):
     print(f"  \033[31m✗\033[0m automap llm pass failed: {r['llm_error']}")
     print("     The dialog shows a gold error banner, which reads as broken on")
-    print("     camera. Check ANTHROPIC_API_KEY before recording.")
+    print("     camera. Check the anthropic_default Airflow connection before recording.")
     sys.exit(1)
 
 exact = [m for m in r["matches"] if m.get("confidence", 0) >= 0.9]

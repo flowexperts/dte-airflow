@@ -80,7 +80,7 @@ docker run -d --name "$NAME-af" --network "$NAME" -p "127.0.0.1:$PORT:8080" \
     curl -fsSL https://raw.githubusercontent.com/apache/airflow/constraints-$AIRFLOW/constraints-$PY.txt -o /tmp/constraints.txt
     # Flaky networks surface as pip 'ResolutionImpossible'; retry the install.
     for i in 1 2 3; do
-      pip install -q --retries 10 --timeout 60 --constraint /tmp/constraints.txt '/smoke/$WHEEL[amazon,sftp]' && break
+      pip install -q --retries 10 --timeout 60 --constraint /tmp/constraints.txt '/smoke/$WHEEL[amazon,sftp,models]' && break
       [ \$i = 3 ] && exit 1; sleep 5
     done
     airflow db migrate

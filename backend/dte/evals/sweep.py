@@ -55,7 +55,6 @@ _VARIANT_SUFFIX = re.compile(r"[0-9a-f]{12}")
 _CREATABLE_AXES = frozenset({
     "params.model",
     "params.max_tokens",
-    "params.api_key",
     "model.instructions",
 })
 
@@ -176,7 +175,7 @@ def validate_matrix_axes(steps: list, matrix: Mapping[str, Any]) -> None:
 # provider produces cells that differ on paper and are identical in fact.
 _IGNORED_AXES: dict[str, frozenset[str]] = {
     "regex": frozenset({
-        "params.model", "params.max_tokens", "params.api_key", "model.instructions",
+        "params.model", "params.max_tokens", "model.instructions",
     }),
 }
 

@@ -37,7 +37,8 @@ connection type. Add the ones your Airflow doesn't already have:
 | `sftp` | SFTP (`apache-airflow-providers-sftp` + `sshfs`) |
 | `mongo` | MongoDB (`apache-airflow-providers-mongo`) |
 | `mssql` | SQL Server (provider + ODBC; needs Microsoft ODBC Driver 18 on the host) |
-| `unstructured`, `models` | PDF extraction; Claude/OpenAI `structure` |
+| `unstructured` | PDF extraction |
+| `models` | Claude/OpenAI `structure` steps (`apache-airflow-providers-anthropic`, `-openai`); the API key is an `anthropic` / `openai` Airflow connection |
 
 For example: `pip install "dte-airflow[amazon,unstructured]" --constraint constraints.txt`.
 
@@ -69,7 +70,6 @@ Optional:
 |---|---|---|
 | `DTE_ARTIFACT_DIR` | `.dte-artifacts` (relative to the process) | Run artifacts. Use a path every component shares. |
 | `DTE_AIRFLOW_URL` | `http://localhost:8080` | How the api-server reaches Airflow's REST API to trigger runs. |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | | For model-backed `structure` steps. |
 
 ## 3. Migrate
 

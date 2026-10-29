@@ -1234,9 +1234,12 @@ export interface SweepComparison {
 }
 
 export interface ProviderStatus {
+  /** The provider's default Airflow connection exists. */
   configured: boolean;
-  /** Names the environment variable to set. Never carries the value. */
+  /** Names the Airflow connection to create. Never carries a key. */
   reason: string | null;
+  /** Airflow conn ids a structure step can pick. */
+  connections: string[];
 }
 
 /**
