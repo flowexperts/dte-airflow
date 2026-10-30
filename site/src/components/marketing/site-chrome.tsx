@@ -20,7 +20,7 @@ export function TopNav({ current }: { current?: "use-cases" | "integrations" }) 
   return (
     <nav className="nav">
       <div className="in">
-        <Link href="/" className="logo" aria-label="dte home"><i />dte</Link>
+        <Link href="/" className="logo" aria-label="dte home">dt<span className="e">e</span></Link>
         <span className="sp" />
         <span className="links">
           <Link className="hide" href="/use-cases/" {...here("use-cases")}>Use cases</Link>
@@ -63,7 +63,7 @@ export function SiteFooter() {
     <footer>
       <div className="in">
         <div>
-          <Link href="/" className="logo"><i style={{ background: "var(--paper)" }} />dte</Link>
+          <Link href="/" className="logo">dt<span className="e">e</span></Link>
           <p className="pw">Built and maintained by <b>flowexperts.ai</b></p>
         </div>
         <div>

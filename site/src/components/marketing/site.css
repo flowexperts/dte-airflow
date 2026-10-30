@@ -17,8 +17,9 @@
 .site .nav .links { display: flex; gap: 22px; min-width: 0; }
 .site .nav a[aria-current="page"] { opacity: 1; text-decoration: underline; text-underline-offset: 6px; text-decoration-color: var(--hi); }
 .site .nav .btn { padding: 8px 12px; font-size: 12px; white-space: nowrap; }
-.site .logo { font-family: var(--display); font-weight: 700; font-size: 20px; letter-spacing: -0.02em; margin-right: 8px; display: flex; align-items: center; gap: 8px; }
-.site .logo i { width: 18px; height: 22px; background: var(--head); clip-path: polygon(0 0, 70% 0, 100% 25%, 100% 100%, 0 100%); display: inline-block; }
+/* The dte wordmark: flowexperts' Cormorant italic, the e in ember. */
+.site .logo, .site .nav .logo { opacity: 1; font-family: var(--font-cormorant), Georgia, serif; font-style: italic; font-weight: 500; font-size: 30px; line-height: 1; letter-spacing: 0.005em; text-decoration: none; display: flex; justify-content: inherit; }
+.site .logo .e { color: var(--hi); }
 .site .nav a { font-family: var(--display); font-size: 13px; color: inherit; text-decoration: none; opacity: .9; }
 .site .nav .sp { margin-left: auto; }
 .site .star { font-family: var(--display); font-size: 12px; border: 1px solid rgba(255,255,255,.35); padding: 6px 10px; border-radius: 4px; }
@@ -135,7 +136,7 @@
 .site .chips span { font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; }
 .site .wire { border-top: 3px dashed var(--accent-on-paper); height: 0; }
 .site .core { background: var(--hero); color: var(--head); border-radius: 8px; padding: 24px 18px; text-align: center; box-shadow: 6px 6px 0 var(--ink); }
-.site .core .logo { justify-content: center; font-size: 26px; margin: 0 0 8px; }
+.site .core .logo { justify-content: center; font-size: 36px; margin: 0 0 8px; }
 .site .core small { font-family: var(--display); font-size: 11px; opacity: .85; display: block; }
 .site .cards.c3 { grid-template-columns: repeat(3, 1fr); }
 .site .how { list-style: none; counter-reset: h; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }

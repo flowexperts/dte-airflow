@@ -26,7 +26,7 @@ export default function Page() {
         <div className="grp"><b>Warehouses + APIs</b><div className="chips"><span>Snowflake</span><span>BigQuery</span><span>REST</span></div></div>
       </div>
       <div className="wire"></div>
-      <div className="core"><span className="logo"><i />dte</span><small>inside Apache Airflow 3</small></div>
+      <div className="core"><span className="logo">dt<span className="e">e</span></span><small>inside Apache Airflow 3</small></div>
       <div className="wire"></div>
       <div className="col"><span className="hd">Destinations</span>
         <div className="grp"><b>Databases</b><div className="chips"><span>Postgres</span><span>MySQL</span><span>SQL Server</span></div></div>

@@ -23,7 +23,7 @@ export default defineConfig({
   sitemap: { hostname: "https://dte.flowexperts.ai/docs/" },
   head: [
     ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
-    ["link", { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Geist+Mono:wght@400;700&display=swap" }],
+    ["link", { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Geist+Mono:wght@400;700&display=swap" }],
   ],
   // The Markdown lives outside site/, so Vue must resolve from here, not from docs/user.
   vite: { resolve: { alias: [{ find: /^vue($|\/)/, replacement: `${vueDir}$1` }] } },
@@ -35,7 +35,7 @@ export default defineConfig({
     },
   },
   themeConfig: {
-    siteTitle: "dte docs",
+    siteTitle: 'dt<span class="e">e</span> <small>docs</small>',
     nav: [
       { text: "Use cases", link: "https://dte.flowexperts.ai/use-cases/", target: "_self" },
       { text: "Integrations", link: "https://dte.flowexperts.ai/integrations/", target: "_self" },

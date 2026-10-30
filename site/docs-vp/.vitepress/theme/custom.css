@@ -43,8 +43,10 @@
 .VPNavBar .title, .VPNavBarMenuLink, .VPNavBar .VPSocialLink, .VPNavBarSearch .DocSearch-Button-Placeholder { color: var(--dte-paper) !important; }
 .VPNavBarMenuLink.active, .VPNavBarMenuLink:hover { color: var(--dte-ember) !important; }
 .VPNavBar.has-sidebar .title { border-bottom-color: transparent; }
-.VPNavBar .title { font-weight: 800; letter-spacing: -0.02em; font-size: 18px; }
-.VPNavBar .title::before { content: ""; width: 15px; height: 19px; margin-right: 9px; background: var(--dte-paper); clip-path: polygon(0 0, 70% 0, 100% 25%, 100% 100%, 0 100%); }
+/* The dte wordmark, as on the site: Cormorant italic, the e in ember. */
+.VPNavBar .title span { font-family: "Cormorant Garamond", Georgia, serif; font-style: italic; font-weight: 500; font-size: 30px; }
+.VPNavBar .title .e { color: var(--dte-ember); }
+.VPNavBar .title small { font-family: var(--vp-font-family-base); font-style: normal; font-size: 14px; font-weight: 600; opacity: .7; margin-left: 4px; }
 .VPNavBarSearch .DocSearch-Button { background: rgba(255, 255, 255, 0.08); }
 .VPNavBar .VPSwitchAppearance { background: rgba(255, 255, 255, 0.12); }
 
