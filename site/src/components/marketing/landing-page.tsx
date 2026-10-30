@@ -1,3 +1,4 @@
+import { DemoVideo } from "./demo-video";
 import { HeroDemo } from "./hero-demo";
 import { CAL_LINK, InstallBox, SiteFooter, TopNav } from "./site-chrome";
 import { INSTALL_URL, REPO_URL } from "@/lib/site";
@@ -57,10 +58,7 @@ export function LandingPage() {
             <li><b>Hand over the mapping</b><span>Finance, ops or whoever owns the data builds the pipeline in the browser and previews real rows before saving.</span></li>
             <li><b>Airflow runs it</b><span>Each pipeline is a <code>dte__</code> DAG. Schedules, retries, alerts and run history work the way they already do.</span></li>
           </ol>
-          <video className="video" controls muted playsInline preload="metadata" poster="/demo/dte-airflow-poster.jpg">
-            <source src="/demo/dte-airflow.mp4" type="video/mp4" />
-            <source src="/demo/dte-airflow.webm" type="video/webm" />
-          </video>
+          <DemoVideo />
         </div></section>
 
         <section className="s" id="install"><div className="in">
