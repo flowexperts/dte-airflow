@@ -45,7 +45,12 @@ export function SchedulePanel({
     act(() => putSchedule(pipelineId, { ...s, enabled: !s.enabled }));
 
   const remove = (s: Schedule) => {
-    if (!window.confirm(`Remove schedule ${s.cron_expr} (${s.timezone})?`)) return;
+    // Retries and the timeout live on the schedule and cover manual runs too,
+    // so removing it switches them off as well (plan 070). Notifications don't.
+    const alsoLost = s.retries > 0 || s.timeout_s != null
+      ? "\n\nThis also turns off retries and the timeout, for manual runs too."
+      : "";
+    if (!window.confirm(`Remove schedule ${s.cron_expr} (${s.timezone})?${alsoLost}`)) return;
     act(async () => {
       await deleteSchedule(pipelineId);
       return null;
@@ -79,6 +84,9 @@ export function SchedulePanel({
             </div>
             <div className="mt-1 font-mono text-[11px] text-subtle">
               Next run: {formatNextRun(schedule.next_run_at)}
+            </div>
+            <div className="mt-0.5 font-mono text-[11px] text-subtle">
+              On failure: {failureSummary(schedule)}
             </div>
           </div>
           {canWrite && (
@@ -116,4 +124,12 @@ export function SchedulePanel({
       />
     </Panel>
   );
+}
+
+function failureSummary(s: Schedule): string {
+  const parts = [
+    s.retries > 0 ? `retry ${s.retries}× after ${s.retry_delay_s}s` : "no retries",
+    ...(s.timeout_s != null ? [`timeout ${Math.round(s.timeout_s / 60)} min`] : []),
+  ];
+  return parts.join(" · ");
 }

@@ -10,6 +10,8 @@ PUT    /api/pipelines/{id}                update pipeline
 DELETE /api/pipelines/{id}                delete pipeline
 POST   /api/pipelines/{id}/trigger        validate, then start an Airflow dag run of the latest revision → {run_id}
 GET/PUT/DELETE /api/pipelines/{id}/schedule  the pipeline's one schedule; each change is a revision
+GET/PUT /api/pipelines/{id}/notifications    Airflow provider notifiers on run events (manual + scheduled); each change is a revision
+GET    /api/notifiers                     installed provider notifiers + their constructor params
 POST   /api/runs/{run_id}/cancel           mark the dag run failed
 GET    /api/me                            Airflow user + derived DTE permissions
 GET    /api/pipelines/{id}/preview?limit  compile + execute on sample rows

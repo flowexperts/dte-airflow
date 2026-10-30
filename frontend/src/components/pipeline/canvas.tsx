@@ -19,6 +19,7 @@ import { SourcesPanel } from "@/components/builder/sources";
 import { DestinationPicker } from "@/components/builder/DestinationPicker";
 import { InputsPanel } from "@/components/builder/InputsPanel";
 import { SchedulePanel } from "@/components/builder/schedules/SchedulePanel";
+import { NotificationsPanel } from "@/components/builder/notifications/NotificationsPanel";
 import type { StepShape } from "@/components/builder/steps/types";
 import {
   updatePipeline,
@@ -347,11 +348,16 @@ export function PipelineCanvas({
    * Hidden on a revision: the panel edits the *current* schedule, and a
    * historical spec's schedule lives in that revision's own config. */
   const scheduleBlock = revision ? null : (
-    <SchedulePanel
-      pipelineId={pipeline.id}
-      pipelineParams={pipeline.params}
-      pipelineType={pipeline.pipeline_type}
-    />
+    <>
+      <SchedulePanel
+        pipelineId={pipeline.id}
+        pipelineParams={pipeline.params}
+        pipelineType={pipeline.pipeline_type}
+      />
+      {/* Who hears about a run — its own panel, not part of the schedule:
+          manual runs notify too (plan 070). */}
+      <NotificationsPanel pipelineId={pipeline.id} />
+    </>
   );
 
   /* No rail on a revision. Preview compiles the *saved* pipeline, so showing

@@ -65,6 +65,7 @@ from dte.models.pipeline import (
     Pipeline,
     PipelineBase,
     PipelineRevisionBase,
+    PipelineNotification,
     PipelineSchedule,
     Source,
     SourceTableRef,
@@ -299,11 +300,13 @@ async def create_pipeline(
     user: User = Depends(get_current_user),
     es_store: EvalSetStore = Depends(get_eval_set_store),
 ):
+    from dte.api.routes.notifications import validate_notifications
     from dte.api.routes.schedules import validate_schedule
 
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
-    await validate_schedule(pipeline, es_store)
+    await validate_schedule(pipeline, es_store, d_store)
+    await validate_notifications(pipeline.notifications)
     try:
         await store.save(Pipeline(**pipeline.model_dump()))
     except ValueError as e:  # name collision on UNIQUE(tenant_id, name)
@@ -337,6 +340,7 @@ async def update_pipeline(
     user: User = Depends(get_current_user),
     es_store: EvalSetStore = Depends(get_eval_set_store),
 ) -> Pipeline:
+    from dte.api.routes.notifications import validate_notifications
     from dte.api.routes.schedules import validate_schedule
 
     if pipeline.id != pipeline_id:
@@ -348,9 +352,12 @@ async def update_pipeline(
     # keeps it; an explicit `null` removes it.
     if "schedule" not in pipeline.model_fields_set and existing.schedule:
         pipeline.schedule = PipelineSchedule.model_validate(existing.schedule)
+    if "notifications" not in pipeline.model_fields_set:
+        pipeline.notifications = [PipelineNotification.model_validate(n) for n in existing.notifications or []]
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
-    await validate_schedule(pipeline, es_store)
+    await validate_schedule(pipeline, es_store, d_store)
+    await validate_notifications(pipeline.notifications)
     row = Pipeline(**pipeline.model_dump())
     try:
         await store.save(row)

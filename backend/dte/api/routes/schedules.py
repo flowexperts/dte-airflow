@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from dte.api.deps import get_current_user, get_eval_set_store, get_pipeline_revision_store, get_pipeline_store
+from dte.api.deps import get_current_user, get_destination_store, get_eval_set_store, get_pipeline_revision_store, get_pipeline_store
 from dte.compiler.interpolate import ParamValidationError, resolve_context
 from dte.models.pipeline import Pipeline, PipelineBase, PipelineSchedule
 from dte.models.user import User
@@ -42,7 +42,7 @@ def _next_run_at(sc: PipelineSchedule) -> datetime | None:
         raise HTTPException(status_code=422, detail={"code": "invalid_timezone", "message": str(e)}) from e
 
 
-async def validate_schedule(pipeline: PipelineBase, es_store) -> None:
+async def validate_schedule(pipeline: PipelineBase, es_store, d_store) -> None:
     """422 unless `pipeline.schedule` (if any) can actually fire."""
     sc = pipeline.schedule
     if sc is None:
@@ -61,6 +61,16 @@ async def validate_schedule(pipeline: PipelineBase, es_store) -> None:
                             detail=f"eval_set_id is only valid for eval pipelines (this one is {ptype!r})")
     if sc.eval_set_id and not await es_store.get(sc.eval_set_id):
         raise HTTPException(status_code=422, detail=f"eval set not found: {sc.eval_set_id}")
+    # ponytail: checked at schedule save only; switching the destination to
+    # append later isn't re-checked. Move to the operator if that bites.
+    if sc.retries and pipeline.output_id:
+        dest = await d_store.get(pipeline.output_id)
+        cfg = dest.config if dest else None  # a dict or an already-narrowed target model
+        wd = cfg.get("write_disposition") if isinstance(cfg, dict) else getattr(cfg, "write_disposition", None)
+        if wd == "append":
+            raise HTTPException(status_code=422, detail={
+                "code": "retries_on_append",
+                "message": "retries are off for append destinations: a retry after a partial write duplicates rows"})
 
 
 def _out(sc: PipelineSchedule | None) -> dict | None:
@@ -99,11 +109,12 @@ async def put_schedule(
     p_store: PipelineStore = Depends(get_pipeline_store),
     rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
     es_store=Depends(get_eval_set_store),
+    d_store=Depends(get_destination_store),
     user: User = Depends(get_current_user),
 ):
     pipeline = await _load(pipeline_id, p_store)
     pipeline.schedule = body
-    await validate_schedule(pipeline, es_store)
+    await validate_schedule(pipeline, es_store, d_store)
     await _save(pipeline, p_store, rev_store, user)
     return _out(body)
 

@@ -209,3 +209,16 @@ async def test_postgres_pipeline_update_preserves_pipeline_type(session_factory)
     assert reloaded.matrix == {"provider": ["claude", "regex"]}
     assert reloaded.output_id is None
     await store.delete("pg-ptype")
+
+
+async def test_postgres_pipeline_notifications_round_trip(session_factory):
+    """Plan 070: `pipelines.notifications` JSONB (migration 041)."""
+    store = PostgresPipelineStore(session_factory)
+    p = _pipeline("pg-notify", "notify a")
+    p.notifications = [{"notifier": "x.Y", "params": {"a": 1}, "on": ["failure"]}]
+    await store.save(p)
+    assert (await store.get("pg-notify")).notifications == p.notifications
+    await store.save(_pipeline("pg-notify-none", "notify b"))
+    assert (await store.get("pg-notify-none")).notifications == []
+    await store.delete("pg-notify")
+    await store.delete("pg-notify-none")

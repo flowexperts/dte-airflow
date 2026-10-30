@@ -13,6 +13,16 @@ from dte.airflow.results import eval_history, record_result
 from dte.airflow.runner import run_pipeline
 
 
+def run_as_of(context, config: dict):
+    """A scheduled run's logical date in its schedule's timezone, so a retry or
+    rerun resolves `{{today}}` to the same day (plan 070). Manual runs have no
+    logical date: None, i.e. now."""
+    ld = context.get("logical_date")
+    if ld is None:
+        return None
+    return ld.in_timezone((config.get("schedule") or {}).get("timezone", "UTC"))
+
+
 class DtePipelineOperator(BaseOperator):
     """Runs one pipeline revision: the one the dag run's conf pins (manual
     runs), else the one this DAG version was built from (scheduled runs).
@@ -103,7 +113,8 @@ class DtePipelineOperator(BaseOperator):
                 s.expunge_all()
 
             from dte.compiler.interpolate import resolve_context
-            values = conf.get("context") or resolve_context(pipeline, user_params or None)
+            values = conf.get("context") or resolve_context(
+                pipeline, user_params or None, as_of=run_as_of(context, rev.config))
             res = run_pipeline(pipeline, sources, destination, values, on_event,
                                lookups=lookups, run_id=run_id, eval_set=eval_set, eval_examples=examples)
             if res.scores:

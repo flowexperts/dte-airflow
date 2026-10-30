@@ -25,6 +25,7 @@ from dte.api.routes.lookup_tables import router as lookup_tables_router
 from dte.api.routes.pipelines import router as pipelines_router
 from dte.api.routes.providers import router as providers_router
 from dte.api.routes.runs import router as runs_router
+from dte.api.routes.notifications import router as notifications_router
 from dte.api.routes.schedules import router as schedules_router
 from dte.api.routes.schema import router as schema_router
 from dte.api.routes.sources import router as sources_router
@@ -51,7 +52,7 @@ _deps = [Depends(capture_auth)]
 for _router in (
     pipelines_router, runs_router, artifacts_router, schema_router, providers_router,
     sources_router, destinations_router, connections_router, lookup_tables_router,
-    dashboards_router, schedules_router, evals_router, me_router,
+    dashboards_router, schedules_router, notifications_router, evals_router, me_router,
 ):
     app.include_router(_router, prefix="/api", dependencies=_deps)
 

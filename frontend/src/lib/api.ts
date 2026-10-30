@@ -464,10 +464,13 @@ export const createPipeline = (pipeline: Pipeline) =>
     body: JSON.stringify(pipeline),
   });
 
-/** Omits `schedule`: it's owned by `/schedule`, the server keeps it when
- *  absent, and the caller's copy may predate a schedule edit. */
+/** Omits `schedule` and `notifications`: each is owned by its own route, the
+ *  server keeps it when absent, and the caller's copy may predate an edit. */
 export const updatePipeline = (id: string, pipeline: Pipeline) => {
-  const { schedule: _owned_elsewhere, ...body } = pipeline as Pipeline & { schedule?: unknown };
+  const { schedule: _s, notifications: _n, ...body } = pipeline as Pipeline & {
+    schedule?: unknown;
+    notifications?: unknown;
+  };
   return apiFetch<{ id: string }>(`/api/pipelines/${encodeURIComponent(id)}`, {
     method: "PUT",
     body: JSON.stringify(body),
@@ -782,6 +785,39 @@ export const inferSchema = (source: Source, table?: string | null) =>
     },
   );
 
+// ---------- Notifications (plan 070) ----------
+
+export type NotifyEvent = "failure" | "success" | "retry";
+
+/** Any notifier an installed Airflow provider registers, fired on run events
+ *  (manual and scheduled). `params` are its constructor kwargs. */
+export interface PipelineNotification {
+  notifier: string;
+  params: Record<string, unknown>;
+  on: NotifyEvent[];
+}
+
+export interface NotifierInfo {
+  notifier: string;
+  name: string;
+  doc: string;
+  params: { name: string; required: boolean; default: string | null }[];
+}
+
+export const listNotifiers = () => apiFetch<NotifierInfo[]>("/api/notifiers");
+
+const notificationsPath = (pipelineId: string) =>
+  `/api/pipelines/${encodeURIComponent(pipelineId)}/notifications`;
+
+export const getNotifications = (pipelineId: string) =>
+  apiFetch<PipelineNotification[]>(notificationsPath(pipelineId));
+
+export const putNotifications = (pipelineId: string, body: PipelineNotification[]) =>
+  apiFetch<PipelineNotification[]>(notificationsPath(pipelineId), {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
 // ---------- Schedule (plan 068) ----------
 
 /** A pipeline's one schedule — `PipelineSchedule` plus the computed
@@ -798,6 +834,10 @@ export interface Schedule {
   /** Required on an eval pipeline's schedule, forbidden on any other —
    *  the corpus the nightly run scores against. */
   eval_set_id: string | null;
+  /** On failure (plan 070). Retries are refused on append destinations. */
+  retries: number;
+  retry_delay_s: number;
+  timeout_s: number | null;
   next_run_at: string | null;
 }
 
@@ -809,6 +849,9 @@ export interface ScheduleWriteRequest {
   enabled: boolean;
   overlap: OverlapPolicy;
   eval_set_id?: string | null;
+  retries: number;
+  retry_delay_s: number;
+  timeout_s: number | null;
 }
 
 const schedulePath = (pipelineId: string) =>

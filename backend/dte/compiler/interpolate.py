@@ -74,7 +74,7 @@ _FALSE_VALS = {"false", "0", "no"}
 _SYSTEM_VAR_SENTINEL_RE = re.compile(r"^\{\{\s*([\w.]+)\s*\}\}$")
 
 
-def coerce_param_value(raw: str, expected_type: str) -> str:
+def coerce_param_value(raw: str, expected_type: str, as_of: datetime | None = None) -> str:
     """Validate `raw` parses as `expected_type`. Return the canonicalised
     string suitable for interpolation.
 
@@ -84,7 +84,8 @@ def coerce_param_value(raw: str, expected_type: str) -> str:
 
     Trigger-time dynamic binding: if `raw` is a bare `{{<system_var>}}`
     sentinel (e.g. `{{today}}`), resolve against the current system
-    context before coercing. Preserves late binding for scheduled runs.
+    context before coercing. Preserves late binding for scheduled runs;
+    `as_of` pins that context to the run's own date (plan 070).
     """
     if not isinstance(raw, str):
         raise ParamValidationError(
@@ -99,7 +100,7 @@ def coerce_param_value(raw: str, expected_type: str) -> str:
                 f"unknown system variable: {{{{{name}}}}}",
                 param="?", expected_type=expected_type, got=raw,
             )
-        raw = _system_context()[name]
+        raw = _system_context(as_of)[name]
     t = expected_type
     try:
         if t == "string":
@@ -132,10 +133,13 @@ def coerce_param_value(raw: str, expected_type: str) -> str:
     )
 
 
-def _system_context() -> dict[str, str]:
-    today = date.today()
+def _system_context(as_of: datetime | None = None) -> dict[str, str]:
+    """`as_of` is the run's own time (a scheduled run's logical date), so a
+    retry or rerun sees the same dates; None means now."""
+    now = as_of or datetime.now(timezone.utc)
+    today = now.date() if as_of else date.today()
     return {
-        "now": datetime.now(timezone.utc).isoformat(),
+        "now": now.isoformat(),
         "today": today.isoformat(),
         "yesterday": (today - timedelta(days=1)).isoformat(),
         "start_of_week": (today - timedelta(days=today.weekday())).isoformat(),
@@ -146,6 +150,8 @@ def _system_context() -> dict[str, str]:
 def resolve_context(
     pipeline: "Pipeline | None" = None,
     user_values: dict[str, str] | None = None,
+    *,
+    as_of: datetime | None = None,
 ) -> dict[str, Any]:
     """Build the runtime context for a pipeline run.
 
@@ -190,7 +196,7 @@ def resolve_context(
             else:
                 continue  # optional + no default + not supplied → omit
             try:
-                params_out[decl.name] = coerce_param_value(raw, decl.type)
+                params_out[decl.name] = coerce_param_value(raw, decl.type, as_of)
             except ParamValidationError as e:
                 # Re-raise with the real param name attached.
                 raise ParamValidationError(
@@ -201,7 +207,7 @@ def resolve_context(
         # No pipeline: pass raw values through (used by legacy tests).
         params_out = {k: str(v) for k, v in supplied.items()}
 
-    return {"params": params_out, **_system_context()}
+    return {"params": params_out, **_system_context(as_of)}
 
 
 def extract_param_refs(text: str) -> list[str]:

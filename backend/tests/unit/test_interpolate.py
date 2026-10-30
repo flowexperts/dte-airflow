@@ -243,3 +243,23 @@ def test_interpolate_pipeline_rewrites_case_condition_values():
     ctx = resolve_context(p, {"min": "10"})
     out = interpolate_pipeline(p, ctx)
     assert out.steps[0]["branches"][0]["when"][0]["value"] == "10"
+
+
+# ─── as_of: dates come from the run, not the wall clock (plan 070) ─────
+
+
+def test_resolve_context_as_of_pins_system_dates():
+    from datetime import datetime, timezone
+    ctx = resolve_context(as_of=datetime(2026, 3, 2, 0, 30, tzinfo=timezone.utc))
+    assert ctx["today"] == "2026-03-02"
+    assert ctx["yesterday"] == "2026-03-01"
+    assert ctx["start_of_month"] == "2026-03-01"
+    assert ctx["start_of_week"] == "2026-03-02"  # a Monday
+    assert ctx["now"] == "2026-03-02T00:30:00+00:00"
+
+
+def test_resolve_context_as_of_reaches_param_defaults():
+    from datetime import datetime, timezone
+    p = _pipeline(params=[{"name": "day", "type": "date", "default": "{{yesterday}}"}])
+    ctx = resolve_context(p, as_of=datetime(2026, 3, 2, tzinfo=timezone.utc))
+    assert ctx["params"]["day"] == "2026-03-01"

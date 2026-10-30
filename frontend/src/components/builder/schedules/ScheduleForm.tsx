@@ -96,6 +96,9 @@ export function ScheduleForm({
   const [overlap, setOverlap] = useState<OverlapPolicy>(schedule?.overlap ?? "skip");
   const [evalSetId, setEvalSetId] = useState<string>(schedule?.eval_set_id ?? "");
   const [enabled, setEnabled] = useState<boolean>(schedule?.enabled ?? true);
+  const [retries, setRetries] = useState<number>(schedule?.retries ?? 0);
+  const [retryDelayS, setRetryDelayS] = useState<number>(schedule?.retry_delay_s ?? 300);
+  const [timeoutMin, setTimeoutMin] = useState<string>(schedule?.timeout_s ? String(schedule.timeout_s / 60) : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -122,6 +125,9 @@ export function ScheduleForm({
     setOverlap(schedule?.overlap ?? "skip");
     setEvalSetId(schedule?.eval_set_id ?? "");
     setEnabled(schedule?.enabled ?? true);
+    setRetries(schedule?.retries ?? 0);
+    setRetryDelayS(schedule?.retry_delay_s ?? 300);
+    setTimeoutMin(schedule?.timeout_s ? String(schedule.timeout_s / 60) : "");
     setErr(null);
     setBusy(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,6 +159,9 @@ export function ScheduleForm({
       params,
       enabled,
       overlap,
+      retries,
+      retry_delay_s: retryDelayS,
+      timeout_s: timeoutMin.trim() === "" ? null : Math.round(Number(timeoutMin) * 60),
       // Only ever sent for eval pipelines: the backend rejects it on any
       // other type rather than quietly ignoring it.
       ...(isEval ? { eval_set_id: evalSetId } : {}),
@@ -371,6 +380,36 @@ export function ScheduleForm({
               />
             </Field>
           </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <Field label="Retries" hint="Off for append destinations.">
+              <Input
+                type="number"
+                min={0}
+                max={10}
+                value={retries}
+                onChange={(e) => setRetries(clamp(Number(e.target.value), 0, 10))}
+              />
+            </Field>
+            <Field label="Retry after (s)">
+              <Input
+                type="number"
+                min={10}
+                value={retryDelayS}
+                onChange={(e) => setRetryDelayS(Math.max(10, Number(e.target.value) || 10))}
+              />
+            </Field>
+            <Field label="Timeout (min)" hint="Blank = none.">
+              <Input
+                type="number"
+                min={1}
+                value={timeoutMin}
+                onChange={(e) => setTimeoutMin(e.target.value)}
+                placeholder="none"
+              />
+            </Field>
+          </div>
+
         </div>
 
         {err && (

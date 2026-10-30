@@ -30,6 +30,7 @@ export const NAV: { section: string; slugs: string[] }[] = [
       "pipelines/field-refs",
       "pipelines/preview-and-run",
       "pipelines/scheduling",
+      "pipelines/notifications",
       "pipelines/lookup-tables",
     ],
   },

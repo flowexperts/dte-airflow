@@ -690,6 +690,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capabilities
+         * @description What this deployment can read and write, from the installed Airflow
+         *     providers (plan 074). Unavailable connection kinds name what to install.
+         */
+        get: operations["capabilities_api_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/connections": {
         parameters: {
             query?: never;
@@ -870,6 +891,41 @@ export interface paths {
         post?: never;
         /** Delete Schedule */
         delete: operations["delete_schedule_api_pipelines__pipeline_id__schedule_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Notifiers */
+        get: operations["list_notifiers_api_notifiers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pipelines/{pipeline_id}/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Notifications */
+        get: operations["get_notifications_api_pipelines__pipeline_id__notifications_get"];
+        /** Put Notifications */
+        put: operations["put_notifications_api_pipelines__pipeline_id__notifications_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1529,6 +1585,8 @@ export interface components {
             schedule?: {
                 [key: string]: unknown;
             } | null;
+            /** Notifications */
+            notifications?: unknown[];
             /** Created At */
             created_at?: string | null;
             /** Updated At */
@@ -1580,6 +1638,27 @@ export interface components {
              */
             tenant_id: string;
             schedule?: components["schemas"]["PipelineSchedule"] | null;
+            /** Notifications */
+            notifications?: components["schemas"]["PipelineNotification"][];
+        };
+        /**
+         * PipelineNotification
+         * @description One Airflow notifier fired on run events (plan 070), manual or scheduled.
+         *
+         *     `notifier` is the class path of any notifier an installed provider
+         *     registers; `params` are its constructor kwargs, and templated ones may use
+         *     `{{ dte_message }}`. Checked against the registry at save
+         *     (`dte.airflow.notify.problem`).
+         */
+        PipelineNotification: {
+            /** Notifier */
+            notifier: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** On */
+            on?: ("failure" | "success" | "retry")[];
         };
         /**
          * PipelineParam
@@ -1642,6 +1721,18 @@ export interface components {
             overlap: "skip" | "allow";
             /** Eval Set Id */
             eval_set_id?: string | null;
+            /**
+             * Retries
+             * @default 0
+             */
+            retries: number;
+            /**
+             * Retry Delay S
+             * @default 300
+             */
+            retry_delay_s: number;
+            /** Timeout S */
+            timeout_s?: number | null;
         };
         /**
          * PromoteRequest
@@ -1719,7 +1810,7 @@ export interface components {
              * Source Type
              * @enum {string}
              */
-            source_type: "filesystem" | "s3" | "gcs" | "azure" | "sql_database" | "mongodb" | "rest_api" | "documents";
+            source_type: "filesystem" | "s3" | "gcs" | "azure" | "sftp" | "sql_database" | "mongodb" | "rest_api" | "documents";
             /** Config */
             config?: {
                 [key: string]: unknown;
@@ -3136,6 +3227,26 @@ export interface operations {
             };
         };
     };
+    capabilities_api_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_connections_api_connections_get: {
         parameters: {
             query?: {
@@ -3697,6 +3808,92 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notifiers_api_notifiers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_notifications_api_pipelines__pipeline_id__notifications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_notifications_api_pipelines__pipeline_id__notifications_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pipeline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineNotification"][];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {

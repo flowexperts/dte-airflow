@@ -9,6 +9,7 @@ Playwright-driven browser recordings of the DTE product for marketing use.
 | `record-unstructured.mjs` | `out/demo-unstructured.mp4` | ~1:40 | PDF invoices → extract → structure → **Postgres**, then joined against the order system to surface two that disagree. |
 | `record-cold-email.mjs` | `out/demo-cold-email-90s.mp4` | ~1:12 | The paste-into-a-cold-email cut. Same world, no build, hard 95s budget. |
 | `capture-docs.mjs` | `docs/user/assets/**` | stills | The user-guide screenshots, taken from a running stack that already has the demo pipelines. |
+| `capture-notifications.mjs` | `docs/user/assets/pipelines/notify-*.png` | stills | The notifications form and panel, added through the UI on `orders_clean`. |
 | `record-user-flow.mjs` | `out/demo-user-flow.mp4` | ~2:00 | The original filesystem-JSON tour. **Currently broken** — see below. |
 
 Shared harness lives in `lib.mjs`; every script imports its selectors,

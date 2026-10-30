@@ -176,3 +176,27 @@ def test_trigger_pins_the_latest_revision(client):
     rid = c.post("/api/pipelines/tx_pipe/trigger", json={}).json()["run_id"]
     latest = _run(stores["pipeline_revision"].latest_for_pipeline("tx_pipe"))
     assert _run(stores["run"].get(rid))["revision_id"] == latest.id
+
+
+def test_failure_settings_round_trip(client):
+    """Plan 070: retries and timeout ride the schedule."""
+    r = _put(client[0], retries=2, retry_delay_s=60, timeout_s=600)
+    assert r.status_code == 200, r.text
+    assert {k: r.json()[k] for k in ("retries", "retry_delay_s", "timeout_s")} == {
+        "retries": 2, "retry_delay_s": 60, "timeout_s": 600}
+    assert _put(client[0], retries=11).status_code == 422
+
+
+def test_retries_refused_on_append_destination(client):
+    """A retry after a partial append writes the rows twice."""
+    from dte.models.pipeline import Pipeline
+    c, stores = client
+    _run(stores["destination"].save(DestinationCreate(
+        id="ap_dst", connection_id="local_fs",
+        config={"type": "postgres", "schema": "public", "table": "t", "write_disposition": "append"},
+    )))
+    _run(stores["pipeline"].save(Pipeline(**{**TX, "id": "ap_pipe", "name": "ap_pipe", "output_id": "ap_dst"})))
+    r = _put(c, "ap_pipe", retries=1)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "retries_on_append"
+    assert _put(c, "ap_pipe").status_code == 200       # no retries: fine
+    assert _put(c, retries=1).status_code == 200       # replace destination: fine
