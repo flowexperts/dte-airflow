@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import useSWR from "swr";
-import { Button, Dropdown, Field, Panel, PanelHead, Textarea } from "@/components/ui";
+import { Button, Dropdown, Field, Input, Panel, PanelHead, Textarea } from "@/components/ui";
 import { portalHost } from "@/components/ui/portal-host";
 import {
   ApiError,
@@ -13,6 +13,7 @@ import {
   type PipelineNotification,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
+import { fromFields, toFields } from "./params";
 
 const EVENTS: { value: NotifyEvent; label: string }[] = [
   { value: "failure", label: "Failure" },
@@ -23,6 +24,15 @@ const EVENTS: { value: NotifyEvent; label: string }[] = [
 /** Constructor params that carry the message body — prefilled with the run
  *  summary DTE puts in the template context. */
 const MESSAGE_PARAMS = new Set(["text", "message", "html_content", "body", "description"]);
+
+/** Shown up front besides the required ones; the rest sit under "More options". */
+const COMMON_PARAMS = new Set([...MESSAGE_PARAMS, "to", "subject", "from_email", "channel"]);
+const isCommon = (p: { name: string; required: boolean }) =>
+  p.required || p.name.endsWith("_conn_id") || COMMON_PARAMS.has(p.name);
+
+const LABELS: Record<string, string> = { to: "To", html_content: "Message", text: "Message", from_email: "From" };
+const label = (name: string) =>
+  LABELS[name] ?? (name.endsWith("_conn_id") ? `${name.slice(0, -8).replace(/_/g, " ")} connection` : name.replace(/_/g, " "));
 
 const shortName = (path: string) => path.split(".").pop() ?? path;
 
@@ -125,11 +135,9 @@ function NotificationForm({
   const { data: notifiers } = useSWR<NotifierInfo[]>(["notifiers"], () => listNotifiers());
   const [notifier, setNotifier] = useState(initial?.notifier ?? "");
   const [events, setEvents] = useState<NotifyEvent[]>(initial?.on ?? ["failure"]);
-  const [paramsText, setParamsText] = useState(() => JSON.stringify(initial?.params ?? {}, null, 2));
+  const [fields, setFields] = useState<Record<string, string>>(() => toFields(initial?.params ?? {}));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   const info = notifiers?.find((n) => n.notifier === notifier);
 
@@ -140,23 +148,35 @@ function NotificationForm({
     const chosen = notifiers?.find((n) => n.notifier === path);
     const seed: Record<string, string> = {};
     for (const p of chosen?.params ?? []) {
-      if (MESSAGE_PARAMS.has(p.name)) seed[p.name] = "{{ dte_message }}";
-      else if (p.required) seed[p.name] = "";
+      if (MESSAGE_PARAMS.has(p.name)) seed[p.name] = p.name === "html_content" ? "<pre>{{ dte_message }}</pre>" : "{{ dte_message }}";
+      if (p.name === "subject") seed[p.name] = "DTE {{ dag.dag_display_name }}: {{ dte_event }}";
     }
-    setParamsText(JSON.stringify(seed, null, 2));
+    setFields(seed);
   };
 
-  let params: Record<string, unknown> | null = null;
-  try {
-    const parsed: unknown = JSON.parse(paramsText || "{}");
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) params = parsed as Record<string, unknown>;
-  } catch {
-    params = null;
-  }
-  const submittable = notifier !== "" && events.length > 0 && params !== null;
+  const params = fromFields(fields);
+  const missing = (info?.params ?? []).filter((p) => p.required && !(p.name in params)).map((p) => label(p.name));
+  const submittable = notifier !== "" && events.length > 0 && missing.length === 0;
+
+  const input = (p: NotifierInfo["params"][number]) => (
+    <Field
+      key={p.name}
+      label={label(p.name) + (p.required ? " *" : "")}
+      hint={p.name.endsWith("_conn_id") ? "An Airflow connection id, from Admin ▸ Connections." : undefined}
+    >
+      {MESSAGE_PARAMS.has(p.name) ? (
+        <Textarea rows={3} value={fields[p.name] ?? ""} onChange={(e) => setFields({ ...fields, [p.name]: e.target.value })} />
+      ) : (
+        <Input
+          value={fields[p.name] ?? ""}
+          placeholder={p.default && p.default !== "None" ? p.default : ""}
+          onChange={(e) => setFields({ ...fields, [p.name]: e.target.value })}
+        />
+      )}
+    </Field>
+  );
 
   const submit = async () => {
-    if (!params) return;
     setBusy(true);
     setErr(null);
     try {
@@ -168,7 +188,6 @@ function NotificationForm({
     }
   };
 
-  if (!mounted) return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
@@ -203,22 +222,26 @@ function NotificationForm({
             </div>
           </Field>
 
-          <Field
-            label="Parameters"
-            hint={
-              <>
-                The notifier&apos;s own arguments, as JSON
-                {info ? `: ${info.params.map((p) => p.name + (p.required ? "*" : "")).join(", ")}` : ""}.
-                Templated ones can use {"{{ dte_message }}"} (pipeline, run, error) and {"{{ dte_event }}"}.
-                Connection ids must exist in Airflow.
-              </>
-            }
-            error={params === null ? "Not a JSON object." : undefined}
-          >
-            <Textarea rows={8} value={paramsText} onChange={(e) => setParamsText(e.target.value)} />
-          </Field>
+          {info && (
+            <>
+              {info.params.filter(isCommon).map(input)}
+              {info.params.some((p) => !isCommon(p)) && (
+                <details className="text-[13px]">
+                  <summary className="cursor-pointer text-subtle">More options</summary>
+                  <div className="mt-3 space-y-4">{info.params.filter((p) => !isCommon(p)).map(input)}</div>
+                </details>
+              )}
+              <div className="text-[11.5px] text-subtle">
+                Text fields can use {"{{ dte_message }}"} (pipeline, run, error) and {"{{ dte_event }}"}. Lists
+                (several recipients, Slack blocks) can be given as JSON, e.g. {'["a@x.com", "b@x.com"]'}.
+              </div>
+            </>
+          )}
         </div>
 
+        {!err && notifier && missing.length > 0 && (
+          <div className="mt-4 text-[11.5px] text-subtle">Required: {missing.join(", ")}.</div>
+        )}
         {err && (
           <div className="mt-4 rounded border border-red/40 bg-red/10 p-2 font-mono text-[11px] text-red">{err}</div>
         )}

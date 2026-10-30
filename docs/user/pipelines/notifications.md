@@ -15,9 +15,11 @@ On the pipeline page, open **Notifications ▸ Add notification**:
    PagerDuty, Opsgenie, Apprise, …) adds its notifiers with no DTE change.
 2. **When**: any of *Failure*, *Retry*, *Success*. *Failure* fires once, after the last
    retry has failed.
-3. **Parameters**: the notifier's own arguments, as JSON. Picking a notifier prefills its
-   required ones, and sets its message argument (`text`, `message`, `html_content`, …) to
-   `{{ dte_message }}`.
+3. **The notifier's arguments**, one field each. Required ones are marked `*`; rarely used
+   ones sit under **More options**. Picking a notifier fills the message with
+   `{{ dte_message }}` (and an email's subject with the pipeline and event), so usually you
+   only add the recipient and the connection. A field that takes a list (several
+   recipients, Slack blocks) accepts JSON, e.g. `["a@x.com", "b@x.com"]`.
 
 Most notifiers take an Airflow connection id (`slack_conn_id`, `smtp_conn_id`, …). Create
 the connection in Airflow under **Admin ▸ Connections** first.
@@ -29,17 +31,8 @@ The saved notification shows in the panel with the events it fires on:
 ### Email
 
 Create an **SMTP** connection (`team_email` here) with your mail server's host, port, login
-and password, then pick **SmtpNotifier**:
-
-```json
-{
-  "to": "data-team@example.com",
-  "smtp_conn_id": "team_email",
-  "from_email": "dte@example.com",
-  "subject": "DTE orders_clean: {{ dte_event }}",
-  "html_content": "<pre>{{ dte_message }}</pre>"
-}
-```
+and password, then pick **SmtpNotifier** and fill in **To**, **From** and **SMTP
+connection** (`team_email`), as in the form above. Subject and message come prefilled.
 
 A failed run sends the pipeline, its DAG, the run and the error:
 
@@ -48,16 +41,13 @@ A failed run sends the pipeline, its DAG, the run and the error:
 ### Slack
 
 Create a **Slack Incoming Webhook** connection (`ops_slack`) with the webhook URL as its
-password, then pick **SlackWebhookNotifier**:
-
-```json
-{ "slack_webhook_conn_id": "ops_slack", "text": "{{ dte_message }}" }
-```
+password, then pick **SlackWebhookNotifier** and set **Slack webhook connection** to
+`ops_slack`. The message comes prefilled.
 
 With a Slack app token instead, use a **Slack API** connection and **SlackNotifier**, which
 also takes a `channel`.
 
-Arguments the notifier templates can use these values:
+Fields the notifier templates (message, subject, …) can use these values:
 
 | Value | Contains |
 |---|---|

@@ -66,13 +66,11 @@ await p.getByText("— select a notifier —").click();
 await p.getByRole("option", { name: /SmtpNotifier/ }).click();
 await p.getByLabel("Success").check();
 const modal = p.locator(".fixed.inset-0 > div");
-await modal.locator("textarea").fill(JSON.stringify({
-  to: "data-team@example.com",
-  smtp_conn_id: "team_email",
-  from_email: "dte@example.com",
-  subject: "DTE orders_clean: {{ dte_event }}",
-  html_content: "<pre>{{ dte_message }}</pre>",
-}, null, 2));
+// Each argument is a labelled field; the label isn't bound to its input, so go via the parent.
+const field = (name) => modal.locator("label", { hasText: new RegExp(`^${name}`) }).locator("xpath=..").locator("input, textarea").first();
+await field("To").fill("data-team@example.com");
+await field("From").fill("dte@example.com");
+await field("smtp connection").fill("team_email");
 await p.waitForTimeout(500);
 await modal.screenshot({ path: `${OUT}notify-form.png` });
 console.log("✓ notify-form");
