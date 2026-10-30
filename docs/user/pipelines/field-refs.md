@@ -1,10 +1,8 @@
 # Field names
 
-Anywhere a step or destination asks you to name a column, these are the rules.
+How to name a column in a step or destination.
 
 ## Simple
-
-Top-level column? Just its name.
 
 ```
 customer_id
@@ -13,29 +11,27 @@ amount
 
 ## Nested
 
-JSON files (and their S3, GCS, Azure equivalents) often have nested fields — an `order` object containing `amount`, a `user` containing `address` containing `city`. Reach into them with dots:
+Reach into nested JSON (and S3, GCS, Azure equivalents) with dots:
 
 ```
 order.amount
 user.address.city
 ```
 
-The field picker in every step lets you drill down and click, so you rarely type these by hand.
+The field picker lets you drill down and click.
 
-## MongoDB and REST API — flat names
+## MongoDB and REST API
 
-These sources flatten nested data using double underscores instead of dots:
+These sources flatten nested data with double underscores. Use the name as-is:
 
 ```
 address__city
 ```
 
-Single token, no dots. Use it as-is.
+## Empty field picker
 
-## When the field picker is empty
-
-You haven't inferred the schema on the source yet. Go to the source card, click **Infer schema**, come back. Every field picker in the builder fills in immediately.
+Click **Infer schema** on the source card.
 
 ## Result column names
 
-When you write a nested field to the output, dte names the column after the **leaf** of the path (`order.amount` → `amount`). Rename it with an alias in the Select or Rename step, or in the destination's field list.
+A nested field written to the output is named after the **leaf** (`order.amount` → `amount`). Rename with an alias in the Select or Rename step, or the destination's field list.

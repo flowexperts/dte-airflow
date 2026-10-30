@@ -1,9 +1,6 @@
 # Try it with Docker Compose
 
-dte is an Airflow 3.3+ plugin. If you already run Airflow, install it there
-instead: [Install into your own Airflow](install-plugin.md). This page is for
-trying dte without one. The Docker Compose stack runs Postgres plus the Airflow
-api-server, scheduler and dag-processor, with dte installed as a plugin.
+Postgres plus the Airflow api-server, scheduler and dag-processor, with dte installed as a plugin. For your own Airflow, see [Install into your own Airflow](install-plugin.md).
 
 ## Prerequisites
 
@@ -20,8 +17,7 @@ scripts/bootstrap.sh       # writes .env: Fernet key, JWT secret, admin password
 docker compose up -d --build
 ```
 
-Compose won't start without `.env`. The first build takes a few minutes.
-Follow the api-server:
+Compose won't start without `.env`. The first build takes a few minutes. Follow the api-server:
 
 ```bash
 docker compose logs -f airflow-apiserver
@@ -29,13 +25,11 @@ docker compose logs -f airflow-apiserver
 
 ## Open the app
 
-<http://localhost:8080>. Log in as `admin` with the password `bootstrap.sh`
-printed (it's also in `.env`). DTE is under **Plugins ▸ DTE Pipelines**.
+<http://localhost:8080>. Log in as `admin` with the password `bootstrap.sh` printed (also in `.env`). dte is under **Plugins ▸ DTE Pipelines**.
 
 ## Ports
 
-All ports bind to `127.0.0.1`. This stack is for local use; it isn't a server
-deployment.
+All bind to `127.0.0.1`. This is for local use, not a server deployment.
 
 | Port | Service |
 | ---- | ------- |
@@ -45,13 +39,11 @@ deployment.
 
 ## Where data lives
 
-Docker Compose bind-mounts `/tmp/dte-samples` into the Airflow containers at the same path. Files that users read/write through the **Local files** connection live here. Include this directory in backups. `/tmp` doesn't survive a reboot on most systems, so point production installs at a real path or use object storage.
+- `/tmp/dte-samples` is bind-mounted into the Airflow containers at the same path. It holds files read and written through the **Local files** connection. `/tmp` doesn't survive a reboot on most systems, so point production at a real path or object storage.
+- Pipelines, sources, destinations and run results live in the `dte` schema of the Airflow metadata database, in the `airflow_pgdata` volume, next to Airflow's connections and run history.
 
-Pipeline metadata (pipelines, sources, destinations, run results) lives in the `dte` schema of the Airflow metadata database, in the `airflow_pgdata` volume. Connections and run history are Airflow's own tables in the same database. Include it in backups too.
+Back up both.
 
 ## Next
 
-- [Secrets & environment](secrets.md)
-- [Scaling and execution](scaling.md)
-- [Upgrading](upgrading.md)
-- [Architecture overview](../architecture/overview.md)
+[Secrets & environment](secrets.md) · [Scaling](scaling.md) · [Upgrading](upgrading.md) · [Architecture](../architecture/overview.md)

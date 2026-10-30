@@ -1,44 +1,44 @@
 # Building a pipeline
 
-Pipelines live under **Plugins ▸ DTE Pipelines ▸ Transform** in Airflow's left rail. Click **New pipeline** to open the builder.
+**Plugins ▸ DTE Pipelines ▸ Transform**, then **New pipeline**.
+
+![Pipelines list](../assets/pipelines/list.png)
 
 ## The form
 
-- **Id**: required. Use letters, numbers, `_` and `-`. It names the Airflow DAG (`dte__<id>`) and appears in run history. There's no rename, so pick something you'll keep.
-- **Name**: required. A human-readable label you can change any time.
-- **Sources**: at least one. Pick from saved sources, or add one inline.
-- **Destination**: exactly one. Pick from saved destinations, or add one inline.
-- **Steps**: zero or more, in order.
+The id is generated on save and names the DAG: `dte__<id>`.
 
-Save is blocked until the id, the name, at least one source and a destination are filled in, and until every **Select / Drop fields** step has at least one field.
 
-## Sources panel
+- Name: required, unique, editable any time.
+- Pipeline type: **Transform** writes output; **Quality Check** asserts conditions on it.
+- Sources: at least one, saved or added inline.
+- Destination: exactly one, saved or added inline.
+- Steps: zero or more, in order.
 
-There's one card per source. Reorder with ↑/↓, remove with ✕, and add another with **+ New source**.
+Save is blocked until name, a source and a destination are set, and every **Select / Drop fields** step has at least one field.
 
-The **Edit** button on a source opens the source editor inline. Remember that sources are shared: editing one here affects every pipeline that uses it, and the form warns you about that.
+## Sources
 
-dte infers each source's schema as you build. If a field picker is empty, click **Infer schema** on the source card. Every field picker in the builder fills in from what it finds.
+One card per source. Reorder with ↑/↓, remove with x, add with **+ New source**. **Edit** opens the source inline; sources are shared, so the edit affects every pipeline using it.
 
-## Destination picker
+dte infers each source's schema as you build. If a field picker is empty, click **Infer schema** on the card.
 
-It's the same shape as a source card, but takes one value. JSON file destinations edit inline. Every other type lives under **Admin ▸ DTE Destinations** and you pick it by name here.
+## Destination
 
-## Steps panel
+Same shape as a source card, one value. JSON file destinations edit inline; other types live under **Admin ▸ DTE Destinations**.
 
-**Add step** opens a menu of every op (see [Steps](../steps/index.md)). Each step has its own small editor. Reorder with ↑/↓ and remove with ✕.
+## Steps
 
-For a database destination, **Auto-map** on the steps panel proposes a column mapping from your source fields to the target table's columns. You tick the matches you want, and it adds one ordinary **Select / Drop fields** step.
+**Add step** opens a menu of every op ([Steps](../steps/index.md)). Reorder with ↑/↓, remove with x.
 
-## Save, revisions and the DAG
+For a database destination, **Auto-map** proposes a mapping from source fields to the target table's columns. Tick the matches and it adds one ordinary **Select / Drop fields** step.
 
-**Save** checks that the sources and destination exist and match their connections, and that no step is obviously broken. Errors show up in a red panel naming the specific field.
+## Save and revisions
 
-Every save is a new **revision**, listed on the pipeline's **History** tab. Airflow's dag-processor picks up the change within seconds. Each run records the exact revision it ran.
+**Save** checks that sources and destination exist and match their connections, and that no step is obviously broken. Errors show in a red panel naming the field.
 
-## Next
+Every save is a new **revision** on the **History** tab, and the dag-processor picks it up in seconds. Each run records the revision it ran.
 
-- [Preview & run](preview-and-run.md)
-- [Scheduling](scheduling.md)
-- [Field names](field-refs.md)
-- [Lookup tables](lookup-tables.md)
+![Revision history](../assets/pipelines/history.png)
+
+See also: [Preview & run](preview-and-run.md), [Scheduling](scheduling.md), [Field names](field-refs.md), [Lookup tables](lookup-tables.md).

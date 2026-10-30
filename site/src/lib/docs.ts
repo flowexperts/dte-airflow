@@ -81,6 +81,13 @@ function render(slug: string, md: string): string {
         const to = rel === "README.md" ? "" : rel.replace(/\.md$/, "");
         return `<a href="${hrefFor(to)}${hash}">${label}</a>`;
       },
+      // docs/user/assets/** is copied to public/docs/assets by `prebuild`.
+      image({ href, text }: Tokens.Image) {
+        const rel = path.relative(path.join(ROOT, "assets"), path.resolve(dir, href));
+        if (rel.startsWith("..") || !fs.existsSync(path.join(ROOT, "assets", rel)))
+          throw new Error(`docs/user/${slug || "README"}.md: image ${href} not in docs/user/assets`);
+        return `<img src="/docs/assets/${rel}" alt="${text.replace(/"/g, "&quot;")}" loading="lazy">`;
+      },
     },
   });
   return (marked.parse(md) as string)

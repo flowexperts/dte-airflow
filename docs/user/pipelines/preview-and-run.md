@@ -1,45 +1,38 @@
 # Preview & run
 
-Two feedback loops. Use them together.
-
 ## Preview
 
-The pipeline page shows a **Preview**: dte runs your steps on a small sample and shows the result as a table.
+Runs your steps on a sample and shows a table.
 
-- It's always safe. Preview **reads** sources and never writes to a destination.
-- The sample size is capped at about 20 rows. Preview shows the *shape* of the output, not row totals.
-- If a step is broken (a bad type cast, a missing field, an invalid filter), the panel goes red and shows what went wrong. Fix it and preview again. This is the fastest way to debug in dte.
-
-Preview runs in Airflow's api-server, not as an Airflow task, so it doesn't appear in run history.
+- Reads sources, never writes to a destination.
+- Capped at about 20 rows: shape, not totals.
+- A broken step (bad cast, missing field, invalid filter) turns the panel red with the error.
+- Runs in Airflow's api-server, not as a task, so it isn't in run history.
 
 ## Run
 
-**▶ Run** starts a real run. If the pipeline declares parameters, dte asks for them first. The run is an Airflow dag run of `dte__<pipeline id>`: Airflow's scheduler queues it and an Airflow worker executes it.
+**▶ Run** starts an Airflow dag run of `dte__<pipeline id>`, asking for parameters first if the pipeline declares any. It appears on the pipeline page straight away and refreshes every couple of seconds.
 
-The run appears on the pipeline page straight away, and you watch it there.
+![Run detail](../assets/pipelines/run-detail.png)
 
-## What a run shows
+A run shows:
 
-The run refreshes every couple of seconds until it finishes. You see:
+- Status: `pending` → `running` → `completed` or `failed` (see [run statuses](../getting-started/03-concepts.md#run))
+- Rows written, elapsed, started
+- Trigger params, if any
+- Quality checks, each passed or failed
+- On failure, the full error
 
-- **Status**: `pending` → `running` → `completed` or `failed` (see [run statuses](../getting-started/03-concepts.md#run))
-- **Rows written**
-- **Elapsed**: how long the run took
-- **Started**
-- **Trigger params**, if the pipeline has parameters
-- **Quality checks**, if the pipeline has any, each passed or failed
-- On failure: the error, in full
+For file destinations the page also shows the first rows of the written file.
 
-The same dag run is in Airflow, with the task log, under the `dte__<pipeline id>` DAG. Filter the DAG list by the `dte` tag to see them all.
+The same dag run is in Airflow under `dte__<pipeline id>` (filter by the `dte` tag), with the task log.
 
-## Peek at the output
-
-For file destinations, the run page shows the first rows of the written file, so you can spot-check without leaving dte.
+![Task log in Airflow](../assets/airflow/task-log.png)
 
 ## Cancel
 
-dte has no cancel button yet. Mark the dag run failed in Airflow, or call `POST /dte/api/runs/{run_id}/cancel`, and Airflow stops the running task.
+No cancel button yet. Mark the dag run failed in Airflow, or call `POST /dte/api/runs/{run_id}/cancel`.
 
 ## Run history
 
-The pipeline's **Runs** tab lists every run, marked **Manual** or **Scheduled**.
+The **Runs** tab lists every run, marked **Manual** or **Scheduled**.

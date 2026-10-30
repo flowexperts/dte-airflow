@@ -126,6 +126,14 @@
   margin: 0 0 20px;
   line-height: 1.55;
 }
+.docs-prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 4px 0 20px;
+}
 .docs-prose pre code {
   background: none;
   border: 0;

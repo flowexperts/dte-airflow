@@ -1,24 +1,16 @@
 # Install into your own Airflow
 
-DTE is an Airflow 3.3+ plugin. To add it to an Airflow you already run, you
-need four things: the package, its migrations, one DAG file and one
-environment variable. To try DTE without an Airflow of your own, use the
-[Docker Compose stack](install.md) instead.
+dte is an Airflow 3.3+ plugin. You need the package, its migrations, one DAG file and one environment variable. To try it without your own Airflow, use the [Docker Compose stack](install.md).
 
 ## Requirements
 
-- Airflow 3.3 or later on Python 3.12.
-- A **Postgres** database for DTE's tables (a `dte` schema). Its own database
-  is the recommended setup; Airflow's metadata database also works.
-- The package installed on every Airflow component: api-server, scheduler,
-  dag-processor and workers.
+- Airflow 3.3+ on Python 3.12.
+- A **Postgres** database for dte's tables (a `dte` schema). Its own database is recommended; Airflow's metadata database also works.
+- The package on every component: api-server, scheduler, dag-processor and workers.
 
 ## 1. Install the package
 
-Install with your Airflow's own constraints file, unmodified: set `AIRFLOW`
-and `PY` to the versions you run. DTE follows the versions Airflow pins; it
-never asks you to change them, and it doesn't upgrade or downgrade Airflow
-itself.
+Use your Airflow's own constraints file, unmodified. dte follows the versions Airflow pins and never asks you to change them. Set `AIRFLOW` and `PY` to the versions you run.
 
 ```bash
 AIRFLOW=3.3.2 PY=3.12
@@ -27,8 +19,7 @@ curl -fsSLo constraints.txt \
 pip install dte-airflow --constraint constraints.txt
 ```
 
-Extras name the Airflow provider (and the filesystem package it needs) for a
-connection type. Add the ones your Airflow doesn't already have:
+Extras add the provider (and filesystem package) for a connection type:
 
 | Extra | Adds |
 |---|---|
@@ -43,20 +34,13 @@ connection type. Add the ones your Airflow doesn't already have:
 
 For example: `pip install "dte-airflow[amazon,unstructured]" --constraint constraints.txt`.
 
-The stock `apache/airflow` image already has the google, microsoft-azure, sftp,
-postgres, mysql, snowflake and http providers, with every driver DTE needs to
-read and write those databases. It lacks `s3fs` and `sshfs`, so add `amazon`
-for S3 and `sftp` for SFTP, and it has no mongo or mssql provider.
-On a slimmer Airflow build without those drivers, the `postgres-writer`,
-`mysql-writer`, `snowflake-writer` and `bigquery-writer` extras add them.
+The stock `apache/airflow` image has the google, microsoft-azure, sftp, postgres, mysql, snowflake and http providers, with every driver dte needs. It lacks `s3fs` and `sshfs` (add `amazon` for S3, `sftp` for SFTP) and has no mongo or mssql provider. On a slimmer build, the `postgres-writer`, `mysql-writer`, `snowflake-writer` and `bigquery-writer` extras add the drivers.
 
-In a Dockerfile built `FROM apache/airflow:3.3.2-python3.12`, run the same
-lines as `RUN` steps.
+In a Dockerfile `FROM apache/airflow:3.3.2-python3.12`, run the same lines as `RUN` steps.
 
 ## 2. Set `DTE_DATABASE_URL`
 
-Set it on every component, pointing at a Postgres database for DTE. Give DTE
-its own database and role, with no access to Airflow's:
+Set it on every component. Give dte its own database and role, with no access to Airflow's:
 
 ```sql
 CREATE ROLE dte LOGIN PASSWORD '...';
@@ -67,12 +51,7 @@ CREATE DATABASE dte OWNER dte;
 DTE_DATABASE_URL=postgresql://dte:...@host:5432/dte
 ```
 
-DTE reads its pipelines in DAG parsing and tasks, where Airflow 3 hides its own
-database URL, so the URL has to be passed explicitly. Without it, the DAG file
-fails to import with an error that names `DTE_DATABASE_URL`. Run history still
-comes from Airflow: the api-server reads dag runs through Airflow's own session
-and merges them with DTE's results, so DTE's role never needs Airflow's tables.
-Pointing `DTE_DATABASE_URL` at Airflow's metadata database works too.
+Airflow 3 hides its own database URL from DAG parsing and tasks, so dte needs this passed explicitly. Without it the DAG file fails to import with an error naming `DTE_DATABASE_URL`. Run history still comes from Airflow: the api-server reads dag runs through Airflow's session and merges them with dte's results, so dte's role never needs Airflow's tables. Pointing it at Airflow's metadata database also works.
 
 Optional:
 
@@ -99,22 +78,15 @@ from dte.airflow.dag_factory import build_dags
 globals().update(build_dags())
 ```
 
-Every DTE pipeline becomes a `dte__<pipeline id>` DAG. DTE's DAGs are created
-unpaused, so runs start without a click, whatever your
-`dags_are_paused_at_creation` setting is.
+Every pipeline becomes a `dte__<pipeline id>` DAG. They're created unpaused, whatever `dags_are_paused_at_creation` says.
 
 ## 5. Restart Airflow
 
-Restart the api-server, scheduler and dag-processor. DTE appears under
-**Plugins ▸ DTE Pipelines**, with sources, destinations and lookup tables
-under **Admin**.
+Restart the api-server, scheduler and dag-processor. dte appears under **Plugins ▸ DTE Pipelines**, with sources, destinations and lookup tables under **Admin**.
 
 ## Connections
 
-Whatever Airflow provider is installed, DTE supports that connection. The
-provider does the auth: an `aws` connection that uses an IAM role or
-assume-role, an Azure service principal or managed identity, or a GCP
-service account works in DTE exactly as it does in your other DAGs.
+dte supports any connection whose Airflow provider is installed, and the provider does the auth (IAM roles, Azure service principals, GCP service accounts).
 
 | Airflow connection type | In DTE | Through |
 |---|---|---|
@@ -128,15 +100,4 @@ service account works in DTE exactly as it does in your other DAGs.
 | `http` | REST API source | login/password as basic or bearer auth |
 | `fs` | Local files | |
 
-DTE only offers a type when its provider (and, for files, the provider's
-filesystem package) is installed. Anything else shows in the source picker
-as disabled, naming the package to install.
-
-Connections resolve the way they do for any task: secrets backends,
-`AIRFLOW_CONN_*` environment variables, then the metadata database. The
-connection picker lists the metadata database and `AIRFLOW_CONN_*` variables.
-A secrets backend can't be enumerated, so its connections resolve at run time
-but don't appear in the picker yet; set their `connection_id` through the API.
-
-**Test** on a connection calls the provider's own connection test. It
-follows Airflow's `[core] test_connection` setting, which is off by default.
+Types without an installed provider show as disabled in the source picker, naming the package. Connections resolve like any task: secrets backends, `AIRFLOW_CONN_*`, then the metadata database. The picker lists only the last two; for a secrets-backend connection, set `connection_id` through the API. **Test** follows Airflow's `[core] test_connection`, off by default. See [Connections](../connections/index.md).

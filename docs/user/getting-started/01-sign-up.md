@@ -1,24 +1,20 @@
 # Find dte in Airflow
 
-dte has no login of its own. It's part of your Airflow, so open Airflow and sign in the way you always do. If you don't have dte installed yet, see [Install into your own Airflow](../self-hosting/install-plugin.md), or [try it with Docker Compose](../self-hosting/install.md).
+dte has no login of its own. Sign in to Airflow as usual. Not installed yet? See [Install into your own Airflow](../self-hosting/install-plugin.md) or [Docker Compose](../self-hosting/install.md).
+
+![Airflow's Plugins menu with DTE Pipelines](../assets/getting-started/plugins-menu.png)
 
 ## Where it lives
 
-dte adds itself to Airflow's left rail:
-
-- **Plugins ▸ DTE Pipelines ▸ Transform**: your pipelines. This is where you build, preview and run them.
-- **Plugins ▸ DTE Pipelines ▸ Quality Check**: pipelines that only check data and don't write it anywhere.
-- **Admin ▸ DTE Sources**: where data comes from.
-- **Admin ▸ DTE Destinations**: where data lands.
-- **Admin ▸ DTE Lookup tables**: small reference tables a pipeline can use.
-- **Admin ▸ Connections**: Airflow's own connections. dte uses these for every database, bucket and API.
-
-The first time you open **Transform**, the list is empty. That's expected, because you haven't built a pipeline yet.
+- Plugins ▸ DTE Pipelines ▸ Transform: build, preview and run pipelines.
+- Plugins ▸ DTE Pipelines ▸ Quality Check: pipelines that only check data and write nothing.
+- Admin ▸ DTE Sources
+- Admin ▸ DTE Destinations
+- Admin ▸ DTE Lookup tables: small reference tables a pipeline can use.
+- Admin ▸ Connections: Airflow's own. dte uses these for every database, bucket and API.
 
 ## Who can do what
 
-Airflow decides. dte follows Airflow's auth manager and DAG permissions: if you can see and trigger a `dte__…` DAG in Airflow, you can see and run that pipeline in dte.
+Airflow decides. If you can see and trigger a `dte__…` DAG, you can see and run that pipeline.
 
-## Next
-
-- [Build your first pipeline →](02-first-pipeline.md)
+Next: [Your first pipeline](02-first-pipeline.md)
