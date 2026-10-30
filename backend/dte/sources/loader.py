@@ -142,7 +142,7 @@ def _load_object_store(
     fmt = _detect_format(pattern, source.format)
     _ensure_format_ext(con.con, fmt)
     con.con.execute(
-        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} "
+        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} "  # quoted identifier, escaped literals  # nosec B608
         f"AS SELECT * FROM {_duckdb_reader_call([url], fmt)}"
     )
     return con.table(source.table)
@@ -400,8 +400,8 @@ def _load_documents(
 
     con.con.register(f"__doc_listing_{source.table}", pa.Table.from_pylist(rows))
     con.con.execute(
-        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} AS "
-        f"SELECT * FROM __doc_listing_{source.table}"
+        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} AS "  # quoted identifier, escaped literals  # nosec B608
+        f"SELECT * FROM {_sql_ident(f'__doc_listing_{source.table}')}"
     )
     return con.table(source.table)
 

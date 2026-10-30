@@ -80,7 +80,7 @@ def split_off_provenance(
         # rejoining by position sound.
         raw.execute(f"DROP TABLE IF EXISTS {_ident(tmp)}")
         raw.execute(
-            f"CREATE TEMP TABLE {_ident(tmp)} AS "
+            f"CREATE TEMP TABLE {_ident(tmp)} AS "  # quoted identifiers, int constant  # nosec B608
             f"SELECT *, row_number() OVER () AS {_ident(_ROW_NO)} "
             f"FROM {_ident(src)}"
         )
@@ -89,7 +89,7 @@ def split_off_provenance(
 
     cols = ", ".join(_ident(c) for c in sys_cols)
     rows = raw.execute(
-        f"SELECT {cols} FROM {_ident(tmp)} "
+        f"SELECT {cols} FROM {_ident(tmp)} "  # quoted identifiers, int constant  # nosec B608
         f"ORDER BY {_ident(_ROW_NO)} LIMIT {MAX_PROVENANCE_ROWS}"
     ).fetchall()
 
