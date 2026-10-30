@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid as _uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from sqlalchemy import Column, DateTime, ForeignKey, Text, func
@@ -1314,6 +1314,27 @@ class PipelineSchedule(BaseModel):
     # The corpus a scheduled *eval* run scores against; required for eval
     # pipelines, since a nightly eval run with no corpus scores nothing.
     eval_set_id: str | None = None
+    # On failure (plan 070). Retries default off: a retry after a partial
+    # append writes rows twice, so `validate_schedule` refuses them there.
+    retries: int = Field(0, ge=0, le=10)
+    retry_delay_s: int = Field(300, ge=10)
+    timeout_s: int | None = Field(None, ge=60)
+
+
+NotifyEvent = Literal["failure", "success", "retry"]
+
+
+class PipelineNotification(BaseModel):
+    """One Airflow notifier fired on run events (plan 070), manual or scheduled.
+
+    `notifier` is the class path of any notifier an installed provider
+    registers; `params` are its constructor kwargs, and templated ones may use
+    `{{ dte_message }}`. Checked against the registry at save
+    (`dte.airflow.notify.problem`).
+    """
+    notifier: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    on: list[NotifyEvent] = Field(default_factory=lambda: ["failure"], min_length=1)
 
 
 class PipelineParam(BaseModel):
@@ -1452,6 +1473,8 @@ class PipelineBase(SQLModel):
     # At most one schedule: a pipeline is one DAG and a DAG has one schedule
     # (plan 068). Part of the spec, so a schedule edit is a revision.
     schedule: PipelineSchedule | None = None
+    # Separate from the schedule: manual runs notify too (plan 070).
+    notifications: list[PipelineNotification] = SMField(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_matrix(self):
@@ -1628,6 +1651,9 @@ class Pipeline(PipelineBase, table=True):
     )
     schedule: dict | None = SMField(  # type: ignore[override]
         default=None, sa_column=Column(JSONB, nullable=True)
+    )
+    notifications: list = SMField(  # type: ignore[override]
+        default_factory=list, sa_column=Column(JSONB, nullable=False, server_default="[]")
     )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
