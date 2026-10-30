@@ -89,8 +89,8 @@
 .site .af-grid { border: 1px solid #e6e9ef; border-radius: 6px; padding: 12px; display: grid; gap: 6px; }
 .site .bars { height: 110px; display: flex; align-items: flex-end; gap: 10px; padding-left: 50px; border-bottom: 1px solid #e6e9ef; }
 .site .bars i { width: 16px; background: #0a7a0a; border-radius: 2px 2px 0 0; transition: height 1.4s cubic-bezier(.3,.7,.3,1); }
-.site .newbar { background: #0b6bcb; }
-.site .newbar.ok { background: #0a7a0a; }
+.site .bars .newbar { background: #0b6bcb; }
+.site .bars .newbar.ok { background: #0a7a0a; }
 .site .task { display: flex; align-items: center; }
 .site .task > span:first-child { width: 50px; font-size: 12px; }
 .site .sqs { display: flex; gap: 10px; }
