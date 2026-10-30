@@ -1,28 +1,23 @@
-# Sign in
+# Find dte in Airflow
 
-Open dte in your browser. If your team hosts it, you have a URL — something like `dte.your-company.com`. If you're running your own copy, see [Install into your own Airflow](../self-hosting/install-plugin.md).
+dte has no login of its own. It's part of your Airflow, so open Airflow and sign in the way you always do. If you don't have dte installed yet, see [Install into your own Airflow](../self-hosting/install-plugin.md), or [try it with Docker Compose](../self-hosting/install.md).
 
-## First time
+## Where it lives
 
-- The first person to sign up on a fresh dte becomes the **admin**.
-- Everyone after that signs up as a regular user.
+dte adds itself to Airflow's left rail:
 
-Fill in email and password. You land on the **Pipelines** page. It's empty. That's expected — you haven't built one yet.
+- **Plugins ▸ DTE Pipelines ▸ Transform**: your pipelines. This is where you build, preview and run them.
+- **Plugins ▸ DTE Pipelines ▸ Quality Check**: pipelines that only check data and don't write it anywhere.
+- **Admin ▸ DTE Sources**: where data comes from.
+- **Admin ▸ DTE Destinations**: where data lands.
+- **Admin ▸ DTE Lookup tables**: small reference tables a pipeline can use.
+- **Admin ▸ Connections**: Airflow's own connections. dte uses these for every database, bucket and API.
 
-![Empty pipelines list](../assets/getting-started/pipelines-empty.png)
+The first time you open **Transform**, the list is empty. That's expected, because you haven't built a pipeline yet.
 
-## The sidebar
+## Who can do what
 
-From top to bottom:
-
-- **Pipelines** — recipes that move and change your data.
-- **Sources** — where data comes from.
-- **Destinations** — where data lands.
-- **Connections** — the systems dte can talk to (databases, cloud storage, APIs).
-- **Lookup tables** — small reference tables you can attach to a pipeline.
-- **Runs** — the history of every pipeline run.
-
-That's the whole app.
+Airflow decides. dte follows Airflow's auth manager and DAG permissions: if you can see and trigger a `dte__…` DAG in Airflow, you can see and run that pipeline in dte.
 
 ## Next
 

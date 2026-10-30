@@ -27,4 +27,5 @@ Preview (sample rows while editing) runs in the Airflow api-server, not in a tas
 
 ## Cancelling
 
-**Cancel** in the DTE UI marks the dag run failed; Airflow stops the running task.
+Mark the dag run failed in Airflow, or call `POST /dte/api/runs/{run_id}/cancel`; Airflow
+stops the running task.

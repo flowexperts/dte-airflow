@@ -1,47 +1,44 @@
 # Upgrading
 
-dte follows normal Docker Compose upgrade flow.
-
-## Steps
-
-```bash
-cd dte
-git pull
-docker compose pull      # optional if you build locally
-docker compose up -d --build
-```
-
-The backend container runs `alembic upgrade head` on start, so database schema migrations apply automatically. Check the logs:
-
-```bash
-docker compose logs -f backend
-```
-
-Wait for `Application startup complete`.
+dte is in beta, so read the release notes before every upgrade. Breaking changes and migration notes are called out per release.
 
 ## Before upgrading in production
 
-1. **Back up Postgres.** `pgdata` volume — snapshot, or `pg_dump` from inside the container.
-2. **Back up `./data`.** Any files served by the **Local files** connection.
-3. **Read the release notes.** Breaking changes and migration notes are called out per release.
+1. **Back up the metadata database.** dte's tables live in its `dte` schema, next to Airflow's own.
+2. **Back up local files** used by any `fs` connection, if you rely on them.
+
+## In your own Airflow
+
+On every component (api-server, scheduler, dag-processor, workers), upgrade with the same Airflow constraints file you installed with:
+
+```bash
+pip install --upgrade dte-airflow --constraint constraints.txt
+```
+
+In a Docker image, bump the version in your Dockerfile and rebuild.
+
+Then migrate once, with `DATABASE_URL` set, and restart Airflow:
+
+```bash
+dte db upgrade
+```
+
+The api-server serves the UI bundle from the installed package, so the new UI ships with the upgrade. Reload the page.
+
+## Docker Compose stack
+
+```bash
+cd dte-airflow
+git pull
+docker compose up -d --build
+```
+
+The `airflow-init` service runs `airflow db migrate` and `dte db upgrade` before the other services start.
 
 ## Rolling back
 
 If a migration goes wrong:
 
-1. Stop the backend: `docker compose stop backend`.
-2. Restore the Postgres snapshot.
-3. Check out the previous git tag: `git checkout <previous-tag>`.
-4. `docker compose up -d --build backend`.
-
-## Zero-downtime
-
-Not supported by the default Compose deployment — the frontend and backend restart during `up -d --build`. If you need it, put the backend behind a load balancer and roll instances.
-
-## Frontend rebuild after env changes
-
-`NEXT_PUBLIC_*` variables are baked into the frontend at build time. Change one → rebuild:
-
-```bash
-docker compose build frontend && docker compose up -d frontend
-```
+1. Stop Airflow.
+2. Restore the database backup.
+3. Install the previous version (`pip install dte-airflow==<previous> --constraint constraints.txt`), or for compose, `git checkout <previous-tag>` and `docker compose up -d --build`.
