@@ -7,6 +7,8 @@ the pipeline, not its schedule, so manual runs and scheduled runs both send them
 
 On the pipeline page, open **Notifications ▸ Add notification**:
 
+![New notification form](../assets/pipelines/notify-form.png)
+
 1. **Notifier**: any notifier offered by an Airflow provider installed in your deployment.
    The stock image has Slack, Slack webhook, SMTP email, Amazon SES, SNS, SQS and Chime, and
    Microsoft Graph. The list comes from Airflow, so installing a provider package (Discord,
@@ -20,9 +22,40 @@ On the pipeline page, open **Notifications ▸ Add notification**:
 Most notifiers take an Airflow connection id (`slack_conn_id`, `smtp_conn_id`, …). Create
 the connection in Airflow under **Admin ▸ Connections** first.
 
+The saved notification shows in the panel with the events it fires on:
+
+![Notifications panel](../assets/pipelines/notify-panel.png)
+
+### Email
+
+Create an **SMTP** connection (`team_email` here) with your mail server's host, port, login
+and password, then pick **SmtpNotifier**:
+
 ```json
-{ "slack_conn_id": "ops_slack", "channel": "#data-alerts", "text": "{{ dte_message }}" }
+{
+  "to": "data-team@example.com",
+  "smtp_conn_id": "team_email",
+  "from_email": "dte@example.com",
+  "subject": "DTE orders_clean: {{ dte_event }}",
+  "html_content": "<pre>{{ dte_message }}</pre>"
+}
 ```
+
+A failed run sends the pipeline, its DAG, the run and the error:
+
+![Failure email](../assets/pipelines/notify-email.png)
+
+### Slack
+
+Create a **Slack Incoming Webhook** connection (`ops_slack`) with the webhook URL as its
+password, then pick **SlackWebhookNotifier**:
+
+```json
+{ "slack_webhook_conn_id": "ops_slack", "text": "{{ dte_message }}" }
+```
+
+With a Slack app token instead, use a **Slack API** connection and **SlackNotifier**, which
+also takes a `channel`.
 
 Arguments the notifier templates can use these values:
 

@@ -690,6 +690,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capabilities
+         * @description What this deployment can read and write, from the installed Airflow
+         *     providers (plan 074). Unavailable connection kinds name what to install.
+         */
+        get: operations["capabilities_api_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/connections": {
         parameters: {
             query?: never;
@@ -1789,7 +1810,7 @@ export interface components {
              * Source Type
              * @enum {string}
              */
-            source_type: "filesystem" | "s3" | "gcs" | "azure" | "sql_database" | "mongodb" | "rest_api" | "documents";
+            source_type: "filesystem" | "s3" | "gcs" | "azure" | "sftp" | "sql_database" | "mongodb" | "rest_api" | "documents";
             /** Config */
             config?: {
                 [key: string]: unknown;
@@ -3202,6 +3223,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capabilities_api_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
