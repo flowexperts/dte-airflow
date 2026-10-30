@@ -1,4 +1,8 @@
-# Azurite's public, documented dev-storage AccountKey (devstoreaccount1), not a secret.
+# Azurite storage emulator's well-known dev account key ("Eby8vdM02x...",
+# public, documented by Microsoft) used by the local cloud-storage tests and
+# scripts. Not a secret. gitleaks dedupes identical secrets, so every
+# occurrence needs its own line.
+0b132f35ac7b06b1ca2b76acccd2cca57f92453c:scripts/test-pip-install.sh:generic-api-key:17
 497f6100256d08cc66cfbaf29dd8501dd54b70d7:backend/tests/unit/test_loader.py:generic-api-key:330
 497f6100256d08cc66cfbaf29dd8501dd54b70d7:scripts/test-cloud-storage.sh:generic-api-key:11
 497f6100256d08cc66cfbaf29dd8501dd54b70d7:backend/tests/integration/test_cloud_storage.py:generic-api-key:37
