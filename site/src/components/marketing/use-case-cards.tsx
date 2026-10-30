@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { USE_CASES } from "@/lib/use-cases";
 
-/** The five use cases, as cards. Landing page and the cross-links at the
+/** The use cases, as cards. Landing page and the cross-links at the
  *  bottom of each use-case page both render this. */
-export function UseCaseCards({ exclude }: { exclude?: string }) {
-  const shown = exclude ? USE_CASES.filter((u) => u.slug !== exclude) : USE_CASES;
+export function UseCaseCards({ exclude }: { exclude: string }) {
+  const shown = USE_CASES.filter((u) => u.slug !== exclude);
 
   return (
     <div className="steps-grid">

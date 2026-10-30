@@ -866,8 +866,6 @@
   }
   .mkt-root .steps-card-hint { display: none; }
   .mkt-root .steps-card-label { font-size: 12.5px; padding-right: 0; }
-  /* the coming-soon section's eyebrow already says "Coming soon" */
-  .mkt-root .steps-soon-badge { display: none; }
 }
 
 .mkt-root .steps-card {
@@ -890,28 +888,6 @@
   border-left-color: var(--mkt-border-hi);
 }
 
-.mkt-root .steps-card--soon {
-  border-left-color: var(--subtle);
-  opacity: 0.88;
-}
-.mkt-root .steps-card--soon:hover {
-  border-left-color: var(--subtle);
-}
-.mkt-root .steps-soon-badge {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--subtle);
-  background: var(--surface-2);
-  border: 1px solid var(--border-2);
-  border-radius: 3px;
-  padding: 2px 6px;
-}
 
 .mkt-root .steps-card-label {
   font-family: var(--font-ui);
@@ -1206,7 +1182,6 @@
   /* Two nav buttons don't fit beside the brand on a phone. Request access is
      the one that matters, and the #use-cases section is still in the page. */
   .mkt-root .nav-right .btn.ghost { display: none; }
-  .mkt-root #unstructured .section-head p { display: none; }
 
 
   /* --- Hero: one screen -------------------------------------------------

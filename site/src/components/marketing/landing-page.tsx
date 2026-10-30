@@ -62,19 +62,6 @@ const LOGIC_STEPS = [
   { idx: "05", op: "join", expr: "customers on cust_id" },
 ];
 
-// `live: true` means it works in the product today. PDF does: the `extract`
-// step ships pypdf and pdfplumber providers, and `structure` turns the text
-// into typed columns via Claude, OpenAI or regex. The other three do not —
-// there is no OCR provider, no transcription provider and no embedding step,
-// so they keep their SOON badge. Do not promote a tile here without a
-// provider behind it.
-const UNSTRUCTURED_TILES = [
-  { mono: "PDF", name: "PDF documents", sub: "text → typed columns", live: true },
-  { mono: "IMG", name: "Images", sub: "OCR · vision", live: false },
-  { mono: "DOC", name: "Docs & free text", sub: "chunking · embeddings", live: false },
-  { mono: "A/V", name: "Audio & video", sub: "transcripts", live: false },
-] as const;
-
 const QUALITY_ROWS = [
   { glyph: "CHK", label: "Check",   hint: "Assert any SQL rule — fail or warn on breach" },
   { glyph: "PRF", label: "Profile", hint: "Null %, distinct count, min/max embedded in the run" },
@@ -328,7 +315,8 @@ export function LandingPage() {
               <h2>Where will you use DTE?</h2>
             </div>
           </div>
-          <UseCaseCards />
+          {/* Four tiles, not five: PO compliance still has its page. */}
+          <UseCaseCards exclude="purchase-compliance" />
         </div>
       </section>
 
@@ -391,32 +379,6 @@ export function LandingPage() {
           </div>
         </section>
       )}
-
-      <section id="unstructured" className="steps-section">
-        <div className="wrap">
-          <div className="section-head">
-            <div className="section-head-copy">
-              <span className="section-eyebrow">Now shipping</span>
-              <h2>
-                Documents in.{" "}
-                <span className="h2-accent">Data out.</span>
-              </h2>
-            </div>
-          </div>
-          <div className="steps-grid">
-            {UNSTRUCTURED_TILES.map((t) => (
-              <div
-                key={t.mono}
-                className={`steps-card${t.live ? "" : " steps-card--soon"}`}
-              >
-                {!t.live && <span className="steps-soon-badge">SOON</span>}
-                <span className="steps-card-label">{t.name}</span>
-                <span className="steps-card-hint">{t.sub}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       <section id="book" className="book">
         <div className="wrap">
