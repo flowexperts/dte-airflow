@@ -1,117 +1,52 @@
 import Link from "next/link";
-import { UseCaseCards } from "./use-case-cards";
-import { type UseCase } from "@/lib/use-cases";
-import { SiteFooter, TopNav } from "./site-chrome";
-import "./landing.css";
+import { USE_CASES, type UseCase } from "@/lib/use-cases";
+import { InstallBox, SiteFooter, TopNav } from "./site-chrome";
+import { PageHero } from "./page-hero";
+import { PipelineCard } from "./pipeline-card";
 
 export function UseCasePage({ uc }: { uc: UseCase }) {
+  const others = USE_CASES.filter((u) => u.slug !== uc.slug);
   return (
-    <div className="mkt-root uc-page" data-theme="dark">
-      <TopNav />
-
+    <div className="site">
+      <TopNav current="use-cases" />
       <main>
-        <section className="hero uc-hero">
-          <div className="wrap">
-            <span className="eyebrow">{uc.dept}</span>
-            <h1 className="h-gap-lg">{uc.headline}</h1>
-            <p className="lede">{uc.lede}</p>
-            <div className="hero-ctas">
-              <Link href="/#quickstart" className="btn primary">
-                Quickstart <span className="kbd">↵</span>
+        <PageHero title={uc.headline} hi="" lede={uc.lede} />
+        <section className="s"><div className="in">
+          <p className="kicker">{uc.dept}</p>
+          <h2>The pipeline</h2>
+          <div className="split">
+            <div className="copy">
+              <span className="who">Today</span>
+              <ul>{uc.pains.map((p) => <li key={p}><div><b>{p}</b></div></li>)}</ul>
+            </div>
+            <div className="vis"><PipelineCard steps={uc.steps} /></div>
+          </div>
+        </div></section>
+
+        <section className="s"><div className="in">
+          <p className="kicker">With DTE</p>
+          <h2>What you get instead</h2>
+          <div className="outcomes">
+            {uc.outcomes.map((o) => (
+              <div key={o.label} className="card"><h3>{o.label}</h3><p>{o.hint}</p></div>
+            ))}
+          </div>
+        </div></section>
+
+        <section className="s"><div className="in">
+          <p className="kicker">Other teams</p>
+          <h2>Same engine, different paperwork</h2>
+          <div className="outcomes">
+            {others.map((u) => (
+              <Link key={u.slug} href={`/use-cases/${u.slug}/`} className="card">
+                <span className="who">{u.dept}</span><h3>{u.headline}</h3>
               </Link>
-              <Link href="/docs/getting-started/02-first-pipeline/" className="btn ghost">See the builder</Link>
-            </div>
+            ))}
           </div>
-        </section>
+        </div></section>
 
-        <section className="steps-section">
-          <div className="wrap">
-            <div className="uc-grid">
-              <div>
-                <span className="section-eyebrow">Today</span>
-                <h2 className="h-gap-md">What this costs you now.</h2>
-                <div className="qa-rows">
-                  {uc.pains.map((p, i) => (
-                    <div key={p} className="qa-row">
-                      <div className="qa-glyph">{String(i + 1).padStart(2, "0")}</div>
-                      <div>
-                        <span className="qa-row-hint">{p}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="logic-panel" aria-label="pipeline">
-                <div className="logic-head">
-                  <span className="dots"><i /><i /><i /></span>
-                  {uc.slug.replace(/-/g, "_")}_pipeline
-                </div>
-                <div className="logic-steps">
-                  {uc.steps.map((s, i) => (
-                    <div key={s.op + s.expr} className="lstep">
-                      <span className="idx">{String(i + 1).padStart(2, "0")}</span>
-                      <span className="op">{s.op}</span>
-                      <span className="expr">{s.expr}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="logic-foot">
-                  <span className="pill ok"><span className="dotp" />preview ok</span>
-                  <span>runs on your schedule</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="steps-section">
-          <div className="wrap">
-            <div className="section-head">
-              <div className="section-head-copy">
-                <span className="section-eyebrow">With DTE</span>
-                <h2>What you get instead.</h2>
-              </div>
-            </div>
-            <div className="steps-grid">
-              {uc.outcomes.map((o) => (
-                <div key={o.label} className="steps-card">
-                  <span className="steps-card-label">{o.label}</span>
-                  <span className="steps-card-hint">{o.hint}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="steps-section">
-          <div className="wrap">
-            <div className="section-head">
-              <div className="section-head-copy">
-                <span className="section-eyebrow">Other teams</span>
-                <h2>Same engine, different paperwork.</h2>
-              </div>
-            </div>
-            <UseCaseCards exclude={uc.slug} />
-          </div>
-        </section>
-
-        <section className="book">
-          <div className="wrap">
-            <div className="book-copy">
-              <span className="section-eyebrow">Production help</span>
-              <h2 className="h-gap-md">See this pipeline on your own files.</h2>
-              <ul className="bullets">
-                <li>No sales pitch. Zero slides.</li>
-              </ul>
-              <div className="hero-ctas">
-                <Link href="/#book" className="btn primary">Book a 30-min slot</Link>
-              </div>
-            </div>
-          </div>
-        </section>
+        <section className="s" id="install"><div className="in"><InstallBox /></div></section>
       </main>
-
       <SiteFooter />
     </div>
   );

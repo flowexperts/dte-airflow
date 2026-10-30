@@ -1,6 +1,6 @@
 import Script from "next/script";
 import type { Metadata } from "next";
-import { Outfit, Space_Mono, Cormorant_Garamond } from "next/font/google";
+import { Outfit, Space_Mono, Cormorant_Garamond, Bricolage_Grotesque, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SITE_URL, SITE_NAME, SITE_TITLE, SITE_DESCRIPTION, REPO_URL } from "@/lib/site";
 
@@ -21,6 +21,17 @@ const cormorant = Cormorant_Garamond({
   subsets: ["latin"],
   weight: ["500"],
   style: ["italic"],
+});
+
+const bricolage = Bricolage_Grotesque({
+  variable: "--font-bricolage",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
@@ -98,7 +109,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       data-theme="dark"
-      className={`${outfit.variable} ${spaceMono.variable} ${cormorant.variable}`}
+      className={`${outfit.variable} ${spaceMono.variable} ${cormorant.variable} ${bricolage.variable} ${geistMono.variable}`}
     >
       <body>
         {/* Google Analytics — afterInteractive so it never blocks first paint. */}

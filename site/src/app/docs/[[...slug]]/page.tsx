@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { SiteFooter, TopNav } from "@/components/marketing/site-chrome";
 import { allSlugs, getDoc, hrefFor, navTitles } from "@/lib/docs";
 import { REPO_URL } from "@/lib/site";
-import "@/components/marketing/landing.css";
 import "./docs.css";
 
 export const dynamicParams = false;
@@ -32,7 +31,7 @@ export default async function DocPage({ params }: { params: Params }) {
   const source = `${REPO_URL}/blob/main/docs/user/${doc.slug || "README"}.md`;
 
   return (
-    <div className="mkt-root docs-page" data-theme="dark">
+    <div className="site docs-page">
       <TopNav />
       <main className="wrap docs-layout">
         <article className="docs-prose">
