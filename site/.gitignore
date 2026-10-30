@@ -6,3 +6,4 @@ out
 next-env.d.ts
 .wrangler
 public/docs/
+docs-vp/.vitepress/cache/
