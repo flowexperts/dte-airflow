@@ -1,70 +1,71 @@
 # Your first pipeline
 
-Ten minutes. Read a folder of orders, keep only the paid ones, drop it as a clean JSON file.
+Ten minutes. You'll read a folder of orders, keep only the paid ones, and write them out as a clean JSON file.
 
-You'll create one of each thing: a connection, a source, a destination, then a pipeline that uses them.
+You'll make one of each thing: a connection, a source, a destination, and then a pipeline that uses them.
 
 ## 1. Add a connection
 
-**Connections → New**. Pick **Local files** (no credentials needed). Give it a name — `local` is fine. Click **Test** — you'll see a green ✓. Save.
+Connections are Airflow connections. Go to **Admin ▸ Connections ▸ Add connection** in Airflow:
 
-![New connection form — local files](../assets/connections/new-local-fs.png)
+- Connection Id: `local`
+- Connection Type: **File (path)** (`fs`)
+
+Save it. The `fs` type needs no credentials. dte reads and writes paths on the machines Airflow runs on. With the Docker Compose stack, `/tmp/dte-samples` is mounted for exactly this.
 
 ## 2. Add a source
 
-**Sources → New**.
+Go to **Admin ▸ DTE Sources ▸ New**.
 
 - Kind: **Filesystem**
 - Connection: **local**
-- Folder: `/data/`  (must be a folder, not a file)
+- Folder: `/tmp/dte-samples/` (it must be a folder, not a file)
 - Files: `orders.json`
-- Format: leave blank (dte will detect it)
+- Format: leave blank and dte detects it
 
-Click **Infer schema**. dte reads a sample and shows the columns it found — `id`, `customer`, `status`, `amount`. If the schema doesn't look right, fix the folder or files field and try again.
-
-![New source form — filesystem](../assets/sources/new-filesystem.png)
+Click **Infer schema**. dte reads a sample and shows the columns it found, such as `id`, `customer`, `status` and `amount`. If they don't look right, fix the folder or files field and try again.
 
 ## 3. Add a destination
 
-**Destinations → New**.
+Go to **Admin ▸ DTE Destinations ▸ New**.
 
 - Type: **JSON file**
 - Connection: **local**
-- Path: `/data/out/orders_paid.json`
+- Path: `/tmp/dte-samples/out/orders_paid.json`
 
-The extension has to match the type. If you type `.csv` here, the app will stop you at save.
+The extension has to match the type. If you type `.csv` here, dte stops you when you save.
 
 ## 4. Build the pipeline
 
-**Pipelines → New**.
+Go to **Plugins ▸ DTE Pipelines ▸ Transform ▸ New pipeline**.
 
-- Id: `orders_paid` (short, no spaces — this is used in run history)
+- Id: `orders_paid`. Keep it short with no spaces. The Airflow DAG is named after it: `dte__orders_paid`.
 - Name: **Paid orders**
 - Sources: pick your orders source
-- Destination: pick **orders_paid**
+- Destination: pick the one you just made
 
 Add two steps:
 
-1. **Filter** — on the *Basic* tab, choose field `status`, operator `=`, value `paid`
-2. **Select** — mode **Keep**, tick `id`, `customer`, `amount`
+1. **Filter**: on the *Basic* tab, choose field `status`, operator `=`, value `paid`
+2. **Select / Drop fields**: mode **Keep**, and tick `id`, `customer` and `amount`
 
-![Builder with filter + select](../assets/pipelines/builder-first.png)
-
-Save.
+Save. Within a few seconds Airflow's dag-processor picks up the new `dte__orders_paid` DAG.
 
 ## 5. Preview
 
-Click **Preview** on the pipeline page. dte runs the recipe on a small sample and shows the result — you should see two rows and three columns.
+The pipeline page shows a **Preview**: dte runs the steps on a small sample and shows the result. You should see only paid orders, with three columns.
 
-If something's wrong, the preview panel goes red and tells you what. Fix the step, preview again.
+If something's wrong, the preview turns red and says what. Fix the step and the preview updates.
 
 ## 6. Run
 
-Click **Trigger**. dte starts the run and takes you to a page that refreshes every couple of seconds. When it turns green, your file is written.
+Click **▶ Run** and confirm. dte starts an Airflow dag run of `dte__orders_paid` and shows it right on the page as it goes from `pending` to `running` to `completed`. When it's done, your file has been written.
 
-That's it. You have a pipeline. Trigger it again tomorrow. Or the day after.
+The same run is in Airflow too, under the DAG, with its task log.
+
+That's it, you have a pipeline. Run it again tomorrow, or [give it a schedule](../pipelines/scheduling.md) and let Airflow run it for you.
 
 ## Next
 
 - [Core ideas](03-concepts.md)
-- [Steps reference](../steps/index.md) — the other seven things you can do to data
+- [Steps reference](../steps/index.md): everything else you can do to data

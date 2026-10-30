@@ -1,46 +1,44 @@
 # Building a pipeline
 
-Pipelines live under **Pipelines** in the sidebar. Click **New** to open the builder.
+Pipelines live under **Plugins ▸ DTE Pipelines ▸ Transform** in Airflow's left rail. Click **New pipeline** to open the builder.
 
 ## The form
 
-- **Id** — required. Short, letters/numbers/underscores. This appears in URLs and run history. There's no rename today, so pick something you'll keep.
-- **Name** — required. Human label.
-- **Sources** — at least one. Pick from saved sources, or add one inline.
-- **Destination** — exactly one. Pick from saved destinations, or add one inline.
-- **Steps** — zero or more, in order.
+- **Id**: required. Use letters, numbers, `_` and `-`. It names the Airflow DAG (`dte__<id>`) and appears in run history. There's no rename, so pick something you'll keep.
+- **Name**: required. A human-readable label you can change any time.
+- **Sources**: at least one. Pick from saved sources, or add one inline.
+- **Destination**: exactly one. Pick from saved destinations, or add one inline.
+- **Steps**: zero or more, in order.
 
-Save is blocked until id, name, at least one source, and a destination are filled in — and any Select step has at least one field checked.
+Save is blocked until the id, the name, at least one source and a destination are filled in, and until every **Select / Drop fields** step has at least one field.
 
 ## Sources panel
 
-One card per source. Reorder with ↑/↓, remove with ✕, add another with **+ New source**.
+There's one card per source. Reorder with ↑/↓, remove with ✕, and add another with **+ New source**.
 
-The **Edit** button on a source opens the source editor inline. Remember: sources are shared. Editing here affects every pipeline that uses that source. The form warns you.
+The **Edit** button on a source opens the source editor inline. Remember that sources are shared: editing one here affects every pipeline that uses it, and the form warns you about that.
 
-Every source card has an **Infer schema** button. Do this before you build steps — the field pickers throughout the builder fill in from what Infer schema found.
+dte infers each source's schema as you build. If a field picker is empty, click **Infer schema** on the source card. Every field picker in the builder fills in from what it finds.
 
 ## Destination picker
 
-Same shape as a source card, single-value. JSON file destinations edit inline; other types live under **Destinations** and get picked by name here.
+It's the same shape as a source card, but takes one value. JSON file destinations edit inline. Every other type lives under **Admin ▸ DTE Destinations** and you pick it by name here.
 
 ## Steps panel
 
-**Add step** → menu with the nine ops (see [Steps](../steps/index.md)). Each step has its own small editor. Reorder with ↑/↓; remove with ✕.
+**Add step** opens a menu of every op (see [Steps](../steps/index.md)). Each step has its own small editor. Reorder with ↑/↓ and remove with ✕.
 
-## Save and validation
+For a database destination, **Auto-map** on the steps panel proposes a column mapping from your source fields to the target table's columns. You tick the matches you want, and it adds one ordinary **Select / Drop fields** step.
 
-**Save** checks:
+## Save, revisions and the DAG
 
-- Id and name filled in
-- All source ids exist and their connections match
-- The destination id exists and its connection matches
-- No empty Select step
+**Save** checks that the sources and destination exist and match their connections, and that no step is obviously broken. Errors show up in a red panel naming the specific field.
 
-Errors show up in a red panel with the specific field. Fix and save again.
+Every save is a new **revision**, listed on the pipeline's **History** tab. Airflow's dag-processor picks up the change within seconds. Each run records the exact revision it ran.
 
 ## Next
 
 - [Preview & run](preview-and-run.md)
+- [Scheduling](scheduling.md)
 - [Field names](field-refs.md)
 - [Lookup tables](lookup-tables.md)

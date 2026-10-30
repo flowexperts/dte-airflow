@@ -5,8 +5,8 @@ export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://dte.flowex
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://dte.flowexperts.ai";
 
 export const REPO_URL = "https://github.com/flowexperts/dte-airflow";
-export const DOCS_URL = `${REPO_URL}/tree/main/docs/user#readme`;
-export const INSTALL_URL = `${REPO_URL}/blob/main/docs/user/self-hosting/install-plugin.md`;
+export const DOCS_URL = "/docs/";
+export const INSTALL_URL = "/docs/self-hosting/install-plugin/";
 
 export const SITE_NAME = "DTE";
 export const SITE_TITLE = "DTE — Data Transformation Engine for Apache Airflow";
