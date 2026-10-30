@@ -75,6 +75,15 @@ Docs index for LLMs: https://dte.flowexperts.ai/docs/llms.txt
 - [KYC document verification](https://dte.flowexperts.ai/use-cases/kyc-verification/)
 - [Integrations](https://dte.flowexperts.ai/integrations/): every supported source, destination and Airflow provider
 
+## Built on
+
+- Apache Airflow: schedules, runs and records every pipeline
+- DuckDB: executes each step, in process, on the Airflow worker
+- ibis: compiles steps to SQL and pushes work down to your database
+- sqlglot: translates SQL between dialects
+- dlt: loads REST APIs and MongoDB, and writes to SQL destinations
+- Full list with licenses: https://dte.flowexperts.ai/open-source/
+
 ## Links
 
 - Source: https://github.com/flowexperts/dte-airflow

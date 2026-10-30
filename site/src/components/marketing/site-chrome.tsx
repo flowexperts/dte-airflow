@@ -80,6 +80,7 @@ export function SiteFooter() {
           <ul>
             <li><a href={REPO_URL}>GitHub</a></li>
             <li><a href={`${REPO_URL}/issues`}>Issues</a></li>
+            <li><Link href="/open-source/">Built on open source</Link></li>
           </ul>
         </div>
         <div>

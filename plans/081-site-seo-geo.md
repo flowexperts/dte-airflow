@@ -25,3 +25,11 @@ The marketing site and docs are crawlable static HTML, but:
 - `public/llms.txt`: absolute links to every page and docs section.
 
 Branch: `feature/site-seo`. Not changed: page copy (H1 wording is a copy call).
+
+## Built on open source
+
+- `site/src/lib/oss.ts`: one list of projects (role, license from package
+  metadata), `core` flags the five on the landing page.
+- Landing `#built-on` section, `/open-source/` page, footer link, sitemap.
+- README "Built on" and an llms.txt section, so the projects are named
+  wherever DTE is described.

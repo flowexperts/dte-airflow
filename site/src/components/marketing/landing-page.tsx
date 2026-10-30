@@ -1,6 +1,9 @@
 import { isValidElement, type ReactNode } from "react";
 import { DemoVideo } from "./demo-video";
 import { HeroDemo } from "./hero-demo";
+import { OssList } from "./oss-list";
+import { CORE_OSS } from "@/lib/oss";
+import Link from "next/link";
 import { CAL_LINK, InstallBox, SiteFooter, TopNav } from "./site-chrome";
 import { INSTALL_URL, REPO_URL } from "@/lib/site";
 
@@ -103,6 +106,13 @@ export function LandingPage() {
             </p>
           </div>
         </div></section>
+        <section className="s" id="built-on"><div className="in">
+          <p className="kicker">Credit where it&apos;s due</p>
+          <h2>Standing on open source</h2>
+          <OssList items={CORE_OSS} />
+          <p className="oss-more"><Link href="/open-source/">Every project DTE uses, and its license →</Link></p>
+        </div></section>
+
         <section className="s" id="faq"><div className="in">
           <h2>FAQ</h2>
           <script
