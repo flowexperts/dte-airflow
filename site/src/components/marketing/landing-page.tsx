@@ -20,7 +20,7 @@ export function LandingPage() {
           <div className="in">
             <div>
               <p className="kicker">Data transformation engine</p>
-              <h1>Visual pipeline builder <span className="hi">for Apache Airflow</span></h1>
+              <h1>Visual Builder <span className="hi">for Apache Airflow Pipelines</span></h1>
               <p className="lede">
                 Stop hand-writing mapping DAGs. The people who know the data build the pipeline in
                 the browser, from files, tables or even PDFs. Each one runs as a DAG in the Airflow
