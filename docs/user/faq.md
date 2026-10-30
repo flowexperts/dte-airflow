@@ -1,5 +1,61 @@
 # FAQ
 
+## Is there a visual, no-code ETL builder for Airflow?
+
+Yes, that's dte. You build a pipeline in the Airflow UI (source, steps, destination), and it becomes a `dte__<pipeline id>` DAG that Airflow schedules, runs and records. Open source, Apache-2.0.
+
+## How is dte different from dbt?
+
+dbt models data that's already in your warehouse. dte gets it there: files, APIs and PDFs, mapped and checked on the way in. Many teams use both.
+
+## How is dte different from Airbyte or Fivetran?
+
+Those copy data as-is into a warehouse, as a separate service. dte maps, filters, joins and checks data on the way, and runs inside the Airflow you already have, on your Airflow connections.
+
+## Why not write a PythonOperator with pandas?
+
+You can. dte gives you the same DAG without the code: the team that owns the data builds and changes the pipeline in the browser, with a preview before every run, instead of waiting for a deploy.
+
+## Can people who don't write Python build pipelines?
+
+Yes. Every step is a form: [filter, rename, lookup, join, aggregate, pivot and more](steps/index.md). Field names are picked from the source's schema.
+
+## How do I extract fields from PDFs or invoices in Airflow?
+
+Use a PDF source with an **Extract text** step, then **Structure fields** to turn the text into columns like `invoice_no` and `total`. Structuring uses Claude, OpenAI or a regex provider that never leaves your network.
+
+## Does dte work with Airflow 2?
+
+No. dte needs Airflow 3.3 or later.
+
+## Does dte need its own database?
+
+It needs Postgres, for its own tables in a `dte` schema. That can be its own database or Airflow's metadata database. See [install](self-hosting/install-plugin.md).
+
+## Is it batch or streaming?
+
+Batch. Each run reads the source, transforms and writes, on a [schedule](pipelines/scheduling.md) or on demand.
+
+## What happens when a data quality check fails?
+
+A **Check** step with severity **fail** fails the run (`failed_quality`), so bad data never reaches the destination. With **warn**, the run finishes as `completed_with_warnings`.
+
+## Can I run a dte pipeline from my own DAG?
+
+Yes. Trigger or wait on its `dte__<pipeline id>` DAG, or use `DtePipelineOperator` directly.
+
+## How does dte scale?
+
+A run is an Airflow task, so it runs on whatever executor Airflow uses: Local, Celery or Kubernetes. Cap concurrent runs with Airflow pools. See [Scaling and execution](self-hosting/scaling.md).
+
+## Is paid support available?
+
+Yes. flowexperts.ai, who build dte, offer paid support for running dte and Airflow in production. [Book a call](https://cal.com/bhavaniravi/dte-demo-call).
+
+## Is dte part of Apache Airflow?
+
+No. dte is an independent project, not affiliated with or endorsed by the Apache Software Foundation.
+
 ## Do I need my own Airflow?
 
 For real use, yes: dte is a plugin for Airflow 3.3+ ([install](self-hosting/install-plugin.md)). To try it, the [Docker Compose stack](self-hosting/install.md) brings its own.

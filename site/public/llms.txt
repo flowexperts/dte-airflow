@@ -37,6 +37,17 @@ Add the one-line DAG file (`from dte.airflow.dag_factory import build_dags;
 globals().update(build_dags())`), restart Airflow; DTE is under Plugins ▸ DTE
 Pipelines. Guide: https://dte.flowexperts.ai/docs/self-hosting/install-plugin
 
+## Common questions
+
+- **Is there a visual, no-code ETL builder for Airflow?** Yes: DTE. Build a pipeline in the Airflow UI; it becomes a DAG Airflow schedules and runs.
+- **DTE vs dbt?** dbt models data already in the warehouse. DTE gets it there: files, APIs and PDFs, mapped and checked on the way in.
+- **DTE vs Airbyte / Fivetran?** Those copy data as-is, as a separate service. DTE maps, joins and checks data inside the Airflow you already run.
+- **Airflow 2?** No. Airflow 3.3+ only. Batch, not streaming.
+- **PDFs and invoices?** Extract text, then Structure fields with Claude, OpenAI or an offline regex provider.
+- **Paid support?** Yes, from flowexperts.ai, for running DTE and Airflow in production: https://cal.com/bhavaniravi/dte-demo-call
+
+More: https://dte.flowexperts.ai/docs/faq
+
 ## Docs
 
 Full docs as one Markdown file: https://dte.flowexperts.ai/docs/llms-full.txt
@@ -66,7 +77,7 @@ Docs index for LLMs: https://dte.flowexperts.ai/docs/llms.txt
 
 - Source: https://github.com/flowexperts/dte-airflow
 - Package: https://pypi.org/project/dte-airflow/
-- Help running it in production (30-minute call): https://dte.flowexperts.ai/#book
+- Paid support / demo call: https://cal.com/bhavaniravi/dte-demo-call
 
 Apache Airflow and Airflow are trademarks of the Apache Software Foundation.
 DTE is an independent project, not affiliated with or endorsed by the ASF.
