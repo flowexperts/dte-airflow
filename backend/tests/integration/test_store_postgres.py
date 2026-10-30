@@ -148,7 +148,8 @@ async def test_postgres_destination_save_and_get(session_factory):
     assert result.id == "pg-dest1"
     # config is narrowed to typed OutputTarget union by narrow_config()
     assert isinstance(result.config, JsonFileTarget)
-    assert result.config.type == "json_file"
+    # "json_file" is a legacy alias normalised to the unified "json" target.
+    assert result.config.type == "json"
     assert result.config.path == "/tmp/out.json"
     assert result.connection_id == "local_fs"
     await store.delete("pg-dest1")

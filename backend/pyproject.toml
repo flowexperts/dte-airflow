@@ -93,6 +93,9 @@ dev = [
     "hypothesis>=6.100,<7.0",
     "mutmut>=2.5,<4.0",
     "pyarrow>=15",
+    # dte.airflow.db builds postgresql+psycopg2:// URLs; Airflow images ship it,
+    # a bare dev install (CI) does not.
+    "psycopg2-binary>=2.9,<3.0",
 ]
 # No ceilings on packages Airflow's constraints pin (pyarrow, fsspec, s3fs,
 # sqlglot): Airflow picks the version, DTE follows (plan 073).

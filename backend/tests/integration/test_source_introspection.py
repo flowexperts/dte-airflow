@@ -34,12 +34,14 @@ def test_list_schemas_includes_public(pg_connection):
 
 
 def test_list_tables_includes_known_app_table(pg_connection):
-    """`pipelines` is a table the app's own migrations create — a cheap,
-    always-present fixture rather than standing up throwaway tables."""
-    tables = list_tables(pg_connection, pg_connection.credentials, schema="public")
+    """`pipelines` is a table the app's own migrations create (in the `dte`
+    schema since plan 065) — a cheap, always-present fixture."""
+    tables = list_tables(pg_connection, pg_connection.credentials, schema="dte")
     assert "pipelines" in tables
 
 
 def test_list_tables_no_schema_arg_still_lists(pg_connection):
+    """No schema arg lists the default schema, where alembic keeps its
+    version table."""
     tables = list_tables(pg_connection, pg_connection.credentials)
-    assert "pipelines" in tables
+    assert "alembic_version" in tables
