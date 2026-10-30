@@ -34,6 +34,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          # Airflow 3.3.2's constraints, which DTE installs under, target 3.12.
+          python-version: "3.12"
       - name: Install (frozen from uv.lock)
         run: uv sync --frozen --extra dev --extra trino
       - name: Lint (ruff)
@@ -73,6 +75,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          # Airflow 3.3.2's constraints, which DTE installs under, target 3.12.
+          python-version: "3.12"
       - name: Install (frozen from uv.lock)
         run: uv sync --frozen --extra dev --extra trino
       - name: Migrate
