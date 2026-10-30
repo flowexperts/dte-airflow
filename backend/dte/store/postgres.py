@@ -2,10 +2,10 @@ import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import func as sa_func
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -31,42 +31,45 @@ from dte.models.pipeline import (
 )
 
 
-# Column list every run read path selects from `_RUNS_SQL`.
-_RUN_COLUMNS = (
-    "id, pipeline_id, revision_id, status, error, rows_written, location, "
-    "started_at, finished_at, params, quality_checks, sql_query, job_id, "
-    "last_heartbeat_at, scheduled, eval_set_id, labels_version, "
-    "config_digest, sweep_id, scores"
+# What `run_results` contributes to a run; the rest comes from the dag run.
+_RESULT_COLUMNS = (
+    "run_id", "dag_id", "pipeline_id", "revision_id", "status", "error", "rows_written", "location",
+    "params", "quality_checks", "sql_query", "eval_set_id", "labels_version", "config_digest",
+    "sweep_id", "scores",
 )
+_OPERATOR_STATUSES = ("completed", "completed_with_warnings", "failed_quality")
+_NEVER = datetime.max.replace(tzinfo=timezone.utc)
 
-# One row per Airflow dag run of a DTE DAG (`dte__<pipeline>`),
-# left-joined to what the operator recorded. `conf` carries the trigger-time
-# values, so queued runs already show their params / eval set / sweep.
-_RUNS_SQL = r"""
-SELECT
-    d.run_id AS id,
-    COALESCE(rr.pipeline_id, substr(d.dag_id, 6)) AS pipeline_id,
-    COALESCE(rr.revision_id, cf ->> 'revision_id') AS revision_id,
-    CASE WHEN d.state IN ('success', 'failed') THEN
-           CASE WHEN rr.status IN ('completed', 'completed_with_warnings', 'failed_quality') THEN rr.status
-                WHEN d.state = 'success' THEN 'completed'
-                ELSE 'failed' END
-         WHEN d.state = 'running' THEN 'running'
-         ELSE 'pending' END AS status,
-    rr.error, rr.rows_written, rr.location,
-    COALESCE(d.start_date, d.queued_at) AS started_at,
-    d.end_date AS finished_at,
-    COALESCE(rr.params, cf -> 'context') AS params,
-    rr.quality_checks, rr.sql_query,
-    NULL::text AS job_id, NULL::timestamptz AS last_heartbeat_at,
-    d.run_type = 'scheduled' AS scheduled,
-    COALESCE(rr.eval_set_id, cf ->> 'eval_set_id') AS eval_set_id,
-    rr.labels_version, rr.config_digest,
-    COALESCE(rr.sweep_id, cf ->> 'sweep_id') AS sweep_id,
-    rr.scores
-FROM (SELECT dr.*, (dr.conf::text)::jsonb AS cf FROM dag_run dr WHERE dr.dag_id LIKE 'dte\_\_%') d
-LEFT JOIN run_results rr ON rr.run_id = d.run_id AND rr.dag_id = d.dag_id
-"""
+
+def _merge(dag_run: dict, result: dict | None) -> dict:
+    """One run: an Airflow dag run of `dte__<pipeline>` plus what the operator
+    recorded for it. `conf` carries the trigger-time values, so queued runs
+    already show their params / eval set / sweep."""
+    rr = result if result and result.get("dag_id") == dag_run["dag_id"] else {}
+    cf = dag_run.get("conf") or {}
+    state = dag_run.get("state")
+    if state in ("success", "failed"):
+        status = rr.get("status") if rr.get("status") in _OPERATOR_STATUSES else (
+            "completed" if state == "success" else "failed")
+    else:
+        status = "running" if state == "running" else "pending"
+    return {
+        "id": dag_run["run_id"],
+        "pipeline_id": rr.get("pipeline_id") or dag_run["dag_id"][len("dte__"):],
+        "revision_id": rr.get("revision_id") or cf.get("revision_id"),
+        "status": status,
+        "error": rr.get("error"), "rows_written": rr.get("rows_written"), "location": rr.get("location"),
+        "started_at": dag_run.get("start_date") or dag_run.get("queued_at"),
+        "finished_at": dag_run.get("end_date"),
+        "params": rr["params"] if rr.get("params") is not None else cf.get("context"),
+        "quality_checks": rr.get("quality_checks"), "sql_query": rr.get("sql_query"),
+        "job_id": None, "last_heartbeat_at": None,
+        "scheduled": dag_run.get("run_type") == "scheduled",
+        "eval_set_id": rr.get("eval_set_id") or cf.get("eval_set_id"),
+        "labels_version": rr.get("labels_version"), "config_digest": rr.get("config_digest"),
+        "sweep_id": rr.get("sweep_id") or cf.get("sweep_id"),
+        "scores": rr.get("scores"),
+    }
 
 
 def _quality_summary_dicts(results: list[dict]) -> dict:
@@ -206,55 +209,65 @@ class PostgresDashboardStore:
 
 
 class PostgresRunStore:
-    """Read-only view of a pipeline run: Airflow's `dag_run` (status, timing)
-    joined to `dte.run_results` (scores, quality, sql). Airflow's tables sit on
-    the search_path after `dte`, so `dag_run` resolves without a schema prefix.
-    Runs are written by Airflow and by `DtePipelineOperator`, never here."""
+    """Read-only view of a pipeline run: Airflow's dag run (status, timing)
+    merged in Python with `dte.run_results` (scores, quality, sql). The dag
+    runs come through Airflow's own session, so DTE's database can be any
+    Postgres (plan 075). Runs are written by Airflow and by
+    `DtePipelineOperator`, never here."""
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], dag_runs=None):
+        if dag_runs is None:
+            from dte.airflow.dag_runs import dag_runs
         self._factory = session_factory
+        self._dag_runs = dag_runs
 
-    async def _rows(self, where: str, binds: dict, order: str = "started_at DESC",
-                    limit: int | None = None, offset: int = 0) -> list[dict]:
-        sql = f"SELECT {_RUN_COLUMNS} FROM ({_RUNS_SQL}) r WHERE {where} ORDER BY {order}"
-        if limit is not None:
-            sql += " LIMIT :limit OFFSET :offset"
-            binds = {**binds, "limit": limit, "offset": offset}
+    async def _results(self, ids: list[str]) -> dict[str, dict]:
+        if not ids:
+            return {}
+        q = text(f"SELECT {', '.join(_RESULT_COLUMNS)} FROM run_results WHERE run_id IN :ids").bindparams(
+            bindparam("ids", expanding=True))
         async with _session(self._factory) as s:
-            result = await s.execute(text(sql), binds)
-            return [_run_row_to_dict(r) for r in result.mappings().fetchall()]
+            return {r["run_id"]: dict(r) for r in (await s.execute(q, {"ids": ids})).mappings()}
+
+    async def _runs(self, keep=lambda r: True, dag_ids=None, run_id=None, desc=True,
+                    limit: int | None = None, offset: int = 0) -> list[dict]:
+        drs = await self._dag_runs(dag_ids=dag_ids, run_id=run_id)
+        results = await self._results([d["run_id"] for d in drs])
+        runs = [m for m in (_merge(d, results.get(d["run_id"])) for d in drs) if keep(m)]
+        # Postgres' default NULL placement: first when DESC, last when ASC.
+        runs.sort(key=lambda r: r["started_at"] or _NEVER, reverse=desc)
+        runs = runs[offset:] if limit is None else runs[offset:offset + limit]
+        return [_run_row_to_dict(r) for r in runs]
 
     async def get(self, id: str) -> dict | None:
-        rows = await self._rows("id = :id", {"id": id}, limit=1)
+        rows = await self._runs(run_id=id, limit=1)
         return rows[0] if rows else None
 
     async def list_for_pipeline(self, pipeline_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
-        return await self._rows("pipeline_id = :pid", {"pid": pipeline_id}, limit=limit, offset=offset)
+        return await self._runs(dag_ids=[f"dte__{pipeline_id}"], limit=limit, offset=offset)
 
+    # ponytail: the eval-set and sweep listings read every `dte__*` dag run and
+    # filter here; push the filter into the DagRun query (conf JSON) if run
+    # counts reach the tens of thousands.
     async def list_for_eval_set(self, eval_set_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
         """Every run scored against one eval set — the leaderboard's read path."""
-        return await self._rows("eval_set_id = :esid", {"esid": eval_set_id}, limit=limit, offset=offset)
+        return await self._runs(lambda r: r["eval_set_id"] == eval_set_id, limit=limit, offset=offset)
 
     async def list_for_sweep(self, sweep_id: str, limit: int = 50) -> list[dict]:
         """Oldest-first so a comparison grid keeps the matrix's declared order."""
-        return await self._rows("sweep_id = :sid", {"sid": sweep_id}, order="started_at ASC", limit=limit)
+        return await self._runs(lambda r: r["sweep_id"] == sweep_id, desc=False, limit=limit)
 
     async def list_sweep_runs_for_root(self, root_pipeline_id: str, limit: int = 500) -> list[dict]:
         """A sweep's runs are filed under the *variants* it created
         (`root__digest`), never under the swept pipeline itself."""
-        return await self._rows(
-            "sweep_id IS NOT NULL AND (pipeline_id = :root OR pipeline_id LIKE :prefix)",
-            {"root": root_pipeline_id, "prefix": f"{root_pipeline_id}\\_\\_%"},
+        return await self._runs(
+            lambda r: r["sweep_id"] is not None and (
+                r["pipeline_id"] == root_pipeline_id or r["pipeline_id"].startswith(f"{root_pipeline_id}__")),
             limit=limit,
         )
 
     async def count_for_pipeline(self, pipeline_id: str) -> int:
-        async with _session(self._factory) as s:
-            row = await s.execute(
-                text(f"SELECT COUNT(*) FROM ({_RUNS_SQL}) r WHERE pipeline_id = :pid"),
-                {"pid": pipeline_id},
-            )
-            return int(row.scalar_one())
+        return len(await self._dag_runs(dag_ids=[f"dte__{pipeline_id}"]))
 
     async def delete_for_pipeline(self, pipeline_id: str) -> int:
         """Drops DTE's results only; Airflow keeps its own dag run history."""

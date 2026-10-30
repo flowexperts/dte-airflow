@@ -1,6 +1,6 @@
 """Postgres integration test for batched_update.
 
-Skipped when DATABASE_URL is unset. Creates a scratch table with 250 rows,
+Skipped when DTE_DATABASE_URL is unset. Creates a scratch table with 250 rows,
 runs the helper, and verifies the row count + termination behaviour.
 """
 from __future__ import annotations
@@ -13,9 +13,9 @@ from sqlalchemy import create_engine, text
 
 pytestmark = pytest.mark.integration
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-if DATABASE_URL is None:
-    pytest.skip("DATABASE_URL unset", allow_module_level=True)
+DTE_DATABASE_URL = os.environ.get("DTE_DATABASE_URL")
+if DTE_DATABASE_URL is None:
+    pytest.skip("DTE_DATABASE_URL unset", allow_module_level=True)
 
 
 def _sync_url(url: str) -> str:
@@ -25,7 +25,7 @@ def _sync_url(url: str) -> str:
 
 @pytest.fixture()
 def scratch_table():
-    engine = create_engine(_sync_url(DATABASE_URL))
+    engine = create_engine(_sync_url(DTE_DATABASE_URL))
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS batched_test"))
         conn.execute(

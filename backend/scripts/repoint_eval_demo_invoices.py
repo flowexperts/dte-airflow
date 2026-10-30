@@ -19,9 +19,9 @@ matches zero rows and the UPDATE is a no-op.
 
 Usage:
     cd backend
-    DATABASE_URL=postgresql://dte:dte@localhost:5432/dte \
+    DTE_DATABASE_URL=postgresql://dte:dte@localhost:5432/dte \
         uv run python scripts/repoint_eval_demo_invoices.py           # dry run
-    DATABASE_URL=postgresql://dte:dte@localhost:5432/dte \
+    DTE_DATABASE_URL=postgresql://dte:dte@localhost:5432/dte \
         uv run python scripts/repoint_eval_demo_invoices.py --write
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ HASH_MAP: list[tuple[str, str]] = [
 
 
 async def main(write: bool) -> None:
-    db_url = os.environ["DATABASE_URL"]
+    db_url = os.environ["DTE_DATABASE_URL"]
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     engine = create_async_engine(db_url)

@@ -30,7 +30,7 @@ x-airflow: &airflow
     AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
     AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: "5"
     # DTE's own tables live in the `dte` schema of the same database.
-    DATABASE_URL: postgresql+asyncpg://airflow:airflow@postgres/airflow
+    DTE_DATABASE_URL: postgresql+asyncpg://airflow:airflow@postgres/airflow
     DTE_AIRFLOW_URL: http://localhost:8080
     DTE_ARTIFACT_DIR: /var/lib/dte/artifacts
     DTE_ADMIN_PASSWORD: ${DTE_ADMIN_PASSWORD:?run scripts/bootstrap.sh}

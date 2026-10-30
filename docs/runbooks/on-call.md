@@ -250,7 +250,7 @@ If the target email has no rows: it's locked out.
 
 ```bash
 cd backend
-DATABASE_URL=postgresql+asyncpg://dte:dte@localhost:5432/dte \
+DTE_DATABASE_URL=postgresql+asyncpg://dte:dte@localhost:5432/dte \
   uv run python scripts/promote_admin.py --email <operator@example.com>
 ```
 

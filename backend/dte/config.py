@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     )
 
     # Database (NOT under DTE_ prefix — standard 12-factor name)
-    database_url: str | None = Field(default=None, alias="DATABASE_URL")
+    database_url: str | None = Field(default=None, alias="DTE_DATABASE_URL")
 
     # Run guardrails
     run_timeout_seconds: int = 60 * 30  # 30 min default

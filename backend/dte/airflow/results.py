@@ -22,3 +22,15 @@ def record_result(engine, run_id: str, **fields) -> None:
                  f"ON CONFLICT (run_id) DO UPDATE SET {sets}"),
             {"run_id": run_id, **binds},
         )
+
+
+def eval_history(engine, eval_set_id: str, limit: int = 50) -> list[dict]:
+    """Scored runs of one eval set, newest first: what the regression check
+    compares against. `run_results` alone, so tasks never read `dag_run`."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT run_id AS id, config_digest, labels_version, scores FROM run_results "
+                 "WHERE eval_set_id = :e AND scores IS NOT NULL ORDER BY created_at DESC LIMIT :n"),
+            {"e": eval_set_id, "n": limit},
+        )
+        return [dict(r) for r in rows.mappings()]

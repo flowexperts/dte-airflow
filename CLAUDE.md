@@ -43,7 +43,7 @@ cd backend && uv sync --all-extras
 uv run pytest                      # unit; scenarios excluded by default
 uv run pytest tests/scenarios -m scenario -v
 uv run pytest -m "not integration" # skip postgres tests
-dte db upgrade                     # migrate the `dte` schema (needs DATABASE_URL or Airflow config)
+dte db upgrade                     # migrate the `dte` schema (needs DTE_DATABASE_URL or Airflow config)
 
 # Frontend (Airflow plugin bundle; rebuild the image to ship it)
 cd frontend && pnpm install && pnpm build
@@ -61,8 +61,9 @@ DuckDB connection as ibis tables (`dte/sources/loader.py`), the compiler
 and registers the UI as a native `react_apps` bundle (plan 066, no iframe), a DAG factory turns every pipeline (and enabled schedule) into a
 `dte__<id>` DAG, and `DtePipelineOperator` runs it via `dte/airflow/runner.py`.
 Airflow owns auth, connections, scheduling and run history; DTE's tables live
-in the `dte` schema of Airflow's metadata DB, with `run_results` holding the
-per-run outputs Airflow can't. Tests inject fake stores. Details in
+in the `dte` schema of the Postgres `DTE_DATABASE_URL` names (its own database
+or Airflow's metadata DB), with `run_results` holding the per-run outputs
+Airflow can't. Tests inject fake stores. Details in
 `.claude/rules/architecture.md`.
 
 ## Development workflow

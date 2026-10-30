@@ -27,7 +27,7 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgresql+asyncpg://dte:dte@localhost:5432/dte
+      DTE_DATABASE_URL: postgresql+asyncpg://dte:dte@localhost:5432/dte
       DTE_JWT_SECRET: ci-jwt-secret-do-not-reuse
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +39,7 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check dte
       - name: Migrate
-        run: DATABASE_URL=postgresql://dte:dte@localhost:5432/dte uv run alembic upgrade head
+        run: DTE_DATABASE_URL=postgresql://dte:dte@localhost:5432/dte uv run alembic upgrade head
       - name: Unit + compiler tests (with coverage floor)
         run: uv run pytest tests/unit -q --cov=dte --cov-report=term --cov-fail-under=70
       - name: Scenario tests
@@ -66,7 +66,7 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgresql+asyncpg://dte:dte@localhost:5432/dte
+      DTE_DATABASE_URL: postgresql+asyncpg://dte:dte@localhost:5432/dte
       DTE_JWT_SECRET: ci-jwt-secret-do-not-reuse
     steps:
       - uses: actions/checkout@v4
@@ -76,7 +76,7 @@ jobs:
       - name: Install (frozen from uv.lock)
         run: uv sync --frozen --extra dev --extra trino
       - name: Migrate
-        run: DATABASE_URL=postgresql://dte:dte@localhost:5432/dte uv run alembic upgrade head
+        run: DTE_DATABASE_URL=postgresql://dte:dte@localhost:5432/dte uv run alembic upgrade head
       - name: Integration tests (Postgres store + RLS enforcement)
         run: uv run pytest tests/integration -m integration -v
 

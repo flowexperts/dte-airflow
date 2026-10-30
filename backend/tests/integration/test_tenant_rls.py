@@ -1,7 +1,7 @@
 """Integration tests for Postgres Row-Level Security tenant isolation.
 
 These tests require a live Postgres instance with migration 016 applied
-(RLS policies). They auto-skip when DATABASE_URL is not set.
+(RLS policies). They auto-skip when DTE_DATABASE_URL is not set.
 
 Threat model covered:
 1. Cross-tenant read via list — tenant-a cannot see tenant-b's pipelines.
@@ -18,15 +18,15 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy import text
 
-# Auto-skip when DATABASE_URL is not set
+# Auto-skip when DTE_DATABASE_URL is not set
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")
 def db_url():
-    url = os.getenv("DATABASE_URL")
+    url = os.getenv("DTE_DATABASE_URL")
     if not url:
-        pytest.skip("DATABASE_URL not set — skipping RLS integration tests")
+        pytest.skip("DTE_DATABASE_URL not set — skipping RLS integration tests")
     return url
 
 

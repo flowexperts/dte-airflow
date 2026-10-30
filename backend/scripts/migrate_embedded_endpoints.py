@@ -18,7 +18,7 @@ Usage:
     uv run python scripts/migrate_embedded_endpoints.py           # dry run
     uv run python scripts/migrate_embedded_endpoints.py --write   # persist
 
-Picks the active stores off `DATABASE_URL` — same rule as `dte.api.deps`.
+Picks the active stores off `DTE_DATABASE_URL` — same rule as `dte.api.deps`.
 """
 from __future__ import annotations
 

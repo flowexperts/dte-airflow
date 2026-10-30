@@ -15,7 +15,7 @@ workers).
 
 | Variable | Purpose |
 | -------- | ------- |
-| `DATABASE_URL` | Required. Airflow's metadata database (`postgresql://…`); dte keeps its tables in the `dte` schema there. Airflow 3 hides its own URL from DAG parsing and tasks, so dte needs it passed explicitly. |
+| `DTE_DATABASE_URL` | Required. A Postgres database for dte's tables (`postgresql://…`, `dte` schema). Recommended: its own database and role with no access to Airflow's; Airflow's metadata database also works. Airflow 3 hides its own URL from DAG parsing and tasks, so dte needs it passed explicitly. |
 | `DTE_ARTIFACT_DIR` | Where run artifacts go. Use a path every component shares. |
 | `DTE_AIRFLOW_URL` | How the api-server reaches Airflow's REST API to trigger runs. Default `http://localhost:8080`. |
 

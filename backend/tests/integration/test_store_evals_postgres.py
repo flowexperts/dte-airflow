@@ -12,17 +12,15 @@ import pytest
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="requires DATABASE_URL"),
+    pytest.mark.skipif(not os.getenv("DTE_DATABASE_URL"), reason="requires DTE_DATABASE_URL"),
 ]
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from dte.models.eval import EvalExampleBase, EvalSetBase
-from dte.models.pipeline import Pipeline
 from dte.store.postgres import (
     PostgresEvalExampleStore,
     PostgresEvalSetStore,
-    PostgresPipelineStore,
     PostgresRunStore,
 )
 
@@ -32,7 +30,7 @@ KEY_B = "b" * 64
 
 @pytest.fixture
 async def session_factory():
-    engine = create_async_engine(os.environ["DATABASE_URL"])
+    engine = create_async_engine(os.environ["DTE_DATABASE_URL"])
     factory = async_sessionmaker(engine, expire_on_commit=False)
     yield factory
     await engine.dispose()
@@ -132,23 +130,23 @@ async def test_split_filter_and_label_source_counts(session_factory):
 
 
 async def test_run_eval_columns_survive_the_round_trip(session_factory):
-    """`runs` is raw SQL with no SQLModel — a column missing from the select
-    list vanishes silently, so read it back from both read paths."""
-    p_store = PostgresPipelineStore(session_factory)
-    r_store = PostgresRunStore(session_factory)
-    await p_store.save(Pipeline(id="pg-evp", name="pg eval", sources=[], steps=[], output_id="out"))
-    try:
-        run_id = await r_store.create("pg-evp")
-        await r_store.update(
-            run_id,
-            eval_set_id="pg-es-run",
-            labels_version=3,
-            config_digest="d" * 64,
-            sweep_id="sw1",
-            scores={"macro_f1": 0.91, "n": 42},
-        )
+    """`run_results` is raw SQL with no SQLModel — a column missing from the
+    select list vanishes silently, so read it back from both read paths."""
+    from sqlalchemy import text
 
-        got = await r_store.get(run_id)
+    async def dag_runs(dag_ids=None, run_id=None):
+        return [{"run_id": "pg-evr", "dag_id": "dte__pg-evp", "state": "success", "queued_at": None,
+                 "start_date": None, "end_date": None, "run_type": "manual", "conf": {}}]
+
+    r_store = PostgresRunStore(session_factory, dag_runs=dag_runs)
+    async with session_factory() as s:
+        await s.execute(text(
+            "INSERT INTO run_results (run_id, dag_id, pipeline_id, status, eval_set_id, labels_version, "
+            "config_digest, sweep_id, scores) VALUES ('pg-evr', 'dte__pg-evp', 'pg-evp', 'completed', "
+            "'pg-es-run', 3, :d, 'sw1', CAST(:s AS jsonb))"), {"d": "d" * 64, "s": '{"macro_f1": 0.91, "n": 42}'})
+        await s.commit()
+    try:
+        got = await r_store.get("pg-evr")
         assert got["eval_set_id"] == "pg-es-run"
         assert got["labels_version"] == 3
         assert got["config_digest"] == "d" * 64
@@ -159,7 +157,6 @@ async def test_run_eval_columns_survive_the_round_trip(session_factory):
         assert by_pipeline[0]["scores"] == {"macro_f1": 0.91, "n": 42}
 
         by_set = await r_store.list_for_eval_set("pg-es-run")
-        assert [r["id"] for r in by_set] == [run_id]
+        assert [r["id"] for r in by_set] == ["pg-evr"]
     finally:
         await r_store.delete_for_pipeline("pg-evp")
-        await p_store.delete("pg-evp")

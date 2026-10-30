@@ -28,7 +28,7 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgresql+asyncpg://dte:dte@localhost:5432/dte
+      DTE_DATABASE_URL: postgresql+asyncpg://dte:dte@localhost:5432/dte
       DTE_JWT_SECRET: ci-jwt-secret-do-not-reuse
     steps:
       - uses: actions/checkout@v4

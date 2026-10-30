@@ -1,7 +1,6 @@
 """DtePipelineOperator: run one DTE pipeline (transform, quality or eval)."""
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 
 from airflow.exceptions import AirflowFailException
@@ -10,7 +9,7 @@ from sqlmodel import Session, select
 
 from dte.airflow.connections import to_dte
 from dte.airflow.db import sync_engine
-from dte.airflow.results import record_result
+from dte.airflow.results import eval_history, record_result
 from dte.airflow.runner import run_pipeline
 
 
@@ -29,22 +28,12 @@ class DtePipelineOperator(BaseOperator):
         self.eval_set_id = eval_set_id
 
     @staticmethod
-    def _regression(eval_set_id, res, run_id):
+    def _regression(engine, eval_set_id, res, run_id):
         """Best effort: a failed comparison must never fail the run."""
-        from dte.airflow.db import async_engine
         from dte.evals.regression import detect_eval_regression
-        from dte.store.postgres import PostgresRunStore
-        from sqlalchemy.ext.asyncio import async_sessionmaker
-
-        async def _history():
-            eng = async_engine()
-            try:
-                return await PostgresRunStore(async_sessionmaker(eng)).list_for_eval_set(eval_set_id, limit=50)
-            finally:
-                await eng.dispose()
 
         try:
-            return detect_eval_regression(asyncio.run(_history()), res.config_digest,
+            return detect_eval_regression(eval_history(engine, eval_set_id, limit=50), res.config_digest,
                                           res.labels_version, run_id, res.scores)
         except Exception:
             return None
@@ -118,7 +107,7 @@ class DtePipelineOperator(BaseOperator):
             res = run_pipeline(pipeline, sources, destination, values, on_event,
                                lookups=lookups, run_id=run_id, eval_set=eval_set, eval_examples=examples)
             if res.scores:
-                res.scores["regression"] = self._regression(eval_set_id, res, run_id)
+                res.scores["regression"] = self._regression(engine, eval_set_id, res, run_id)
                 if not res.scores["regression"]:
                     del res.scores["regression"]
                 else:

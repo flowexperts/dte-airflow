@@ -16,7 +16,7 @@ AIRFLOW=3.3.2 PY=3.12
 curl -fsSLo constraints.txt \
   https://raw.githubusercontent.com/apache/airflow/constraints-$AIRFLOW/constraints-$PY.txt
 pip install dte-airflow --constraint constraints.txt
-export DATABASE_URL=postgresql://user:pass@host:5432/airflow   # Airflow's metadata DB
+export DTE_DATABASE_URL=postgresql://user:pass@host:5432/dte   
 dte db upgrade
 ```
 
@@ -66,7 +66,7 @@ Three tiers — run only what the change touches:
 | Tier | Command | Requires |
 |------|---------|----------|
 | Unit | `cd backend && uv run pytest` | nothing |
-| Integration (Postgres) | `cd backend && uv run pytest tests/integration -m integration` | `DATABASE_URL` |
+| Integration (Postgres) | `cd backend && uv run pytest tests/integration -m integration` | `DTE_DATABASE_URL` |
 | Airflow (stock image + emulators) | `scripts/test-pip-install.sh` | Docker, pnpm, uv |
 | Scenario (end-to-end) | `cd backend && uv run pytest tests/scenarios -m scenario -v` | nothing |
 

@@ -30,7 +30,7 @@ Into an existing Airflow 3.3+, with Airflow's constraints file unmodified:
 
     curl -fsSLo constraints.txt https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt
     pip install dte-airflow --constraint constraints.txt
-    export DATABASE_URL=postgresql://user:pass@host/airflow   # Airflow's metadata DB
+    export DTE_DATABASE_URL=postgresql://user:pass@host/dte   # DTE's own database
     dte db upgrade
 
 Add the one-line DAG file (`from dte.airflow.dag_factory import build_dags;

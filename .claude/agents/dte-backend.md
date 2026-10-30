@@ -19,13 +19,13 @@ uv run pytest tests/unit/test_compiler.py -x                   # single file
 uv run pytest tests/unit/test_compiler.py::test_filter_step    # single test
 uv run pytest --cov=dte                                        # coverage
 uv run pytest -m "not integration"                             # skip pg tests
-uv run alembic upgrade head                                    # migrations (needs DATABASE_URL)
+uv run alembic upgrade head                                    # migrations (needs DTE_DATABASE_URL)
 uv run uvicorn dte.api.main:app --port 8001 --reload           # dev server
 ```
 
 **Port `:8001` is required.** `:8000` is squatted by an unrelated Django dev server in this environment. The frontend defaults its `NEXT_PUBLIC_API_URL` to `:8001`. Don't drift back to `:8000` in examples, scripts, or docs.
 
-If a command needs an env var (e.g. `DATABASE_URL`, `DTE_CORS_ORIGINS`), pass it inline: `DATABASE_URL=postgresql+asyncpg://... uv run alembic upgrade head`.
+If a command needs an env var (e.g. `DTE_DATABASE_URL`, `DTE_CORS_ORIGINS`), pass it inline: `DTE_DATABASE_URL=postgresql+asyncpg://... uv run alembic upgrade head`.
 
 ## Stack (do not switch)
 

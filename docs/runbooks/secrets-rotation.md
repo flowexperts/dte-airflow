@@ -26,7 +26,7 @@ Script: `backend/scripts/rotate_secrets_key.py`.
     `DTE_SECRETS_KEY` and restart — do rotation first, promote second.
 - Both keys held in memory of the operator shell only; never commit either
   to `.env`, git, or ticket comments.
-- Confirm `DATABASE_URL` reachable from the operator host, asyncpg URL
+- Confirm `DTE_DATABASE_URL` reachable from the operator host, asyncpg URL
   form: `postgresql+asyncpg://user:pass@host:5432/db`.
 
 ## Steps
@@ -45,7 +45,7 @@ copy.
 ```bash
 export OLD_KEY="<current DTE_SECRETS_KEY value>"
 export NEW_KEY="<value generated in step 1>"
-export DATABASE_URL="postgresql+asyncpg://…"
+export DTE_DATABASE_URL="postgresql+asyncpg://…"
 ```
 
 The script takes both keys as CLI args (`--old-key`, `--new-key`). It does
@@ -59,7 +59,7 @@ cd backend
 uv run python scripts/rotate_secrets_key.py \
     --old-key "$OLD_KEY" \
     --new-key "$NEW_KEY" \
-    --database-url "$DATABASE_URL" \
+    --database-url "$DTE_DATABASE_URL" \
     --dry-run
 ```
 
@@ -79,7 +79,7 @@ Same command, drop `--dry-run`:
 uv run python scripts/rotate_secrets_key.py \
     --old-key "$OLD_KEY" \
     --new-key "$NEW_KEY" \
-    --database-url "$DATABASE_URL"
+    --database-url "$DTE_DATABASE_URL"
 ```
 
 Idempotent: if the process is killed mid-run, re-run with the same args.
@@ -149,7 +149,7 @@ block. Two failure modes:
    uv run python scripts/rotate_secrets_key.py \
        --old-key "$NEW_KEY" \
        --new-key "$OLD_KEY" \
-       --database-url "$DATABASE_URL"
+       --database-url "$DTE_DATABASE_URL"
    ```
 
    If the DB is unrecoverable, restore `connections` from the pg_dump

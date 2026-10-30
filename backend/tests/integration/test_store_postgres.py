@@ -3,7 +3,7 @@ import pytest
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not os.getenv("DATABASE_URL"), reason="requires DATABASE_URL"),
+    pytest.mark.skipif(not os.getenv("DTE_DATABASE_URL"), reason="requires DTE_DATABASE_URL"),
 ]
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -17,7 +17,7 @@ def _pipeline(id: str, name: str = "n", output_id: str = "out") -> Pipeline:
 
 @pytest.fixture
 async def session_factory():
-    engine = create_async_engine(os.environ["DATABASE_URL"])
+    engine = create_async_engine(os.environ["DTE_DATABASE_URL"])
     factory = async_sessionmaker(engine, expire_on_commit=False)
     yield factory
     await engine.dispose()
@@ -46,41 +46,33 @@ async def test_postgres_pipeline_delete(session_factory):
     assert await store.get("pg-del") is None
 
 
-async def test_postgres_run_create_and_get(session_factory):
-    p_store = PostgresPipelineStore(session_factory)
-    r_store = PostgresRunStore(session_factory)
-    await p_store.save(_pipeline("pg-rp1"))
-    run_id = await r_store.create("pg-rp1")
-    run = await r_store.get(run_id)
-    assert run["status"] == "pending"
-    assert run["pipeline_id"] == "pg-rp1"
-    await r_store.delete_for_pipeline("pg-rp1")
-    await p_store.delete("pg-rp1")
+def _fake_dag_runs(*runs):
+    """Airflow's side of a run (plan 075): DTE's database has no `dag_run`."""
+    async def reader(dag_ids=None, run_id=None):
+        return [{"run_id": r, "dag_id": d, "state": st, "queued_at": None, "start_date": None,
+                 "end_date": None, "run_type": "manual", "conf": {}}
+                for r, d, st in runs
+                if (dag_ids is None or d in dag_ids) and (run_id is None or r == run_id)]
+    return reader
 
 
-async def test_postgres_run_update_status(session_factory):
-    p_store = PostgresPipelineStore(session_factory)
-    r_store = PostgresRunStore(session_factory)
-    await p_store.save(_pipeline("pg-rp2"))
-    run_id = await r_store.create("pg-rp2")
-    await r_store.update(run_id, status="completed", rows_written=42)
-    run = await r_store.get(run_id)
-    assert run["status"] == "completed"
-    assert run["rows_written"] == 42
-    await r_store.delete_for_pipeline("pg-rp2")
-    await p_store.delete("pg-rp2")
-
-
-async def test_postgres_run_list_for_pipeline(session_factory):
-    p_store = PostgresPipelineStore(session_factory)
-    r_store = PostgresRunStore(session_factory)
-    await p_store.save(_pipeline("pg-rp3"))
-    await r_store.create("pg-rp3")
-    await r_store.create("pg-rp3")
-    runs = await r_store.list_for_pipeline("pg-rp3")
-    assert len(runs) == 2
-    await r_store.delete_for_pipeline("pg-rp3")
-    await p_store.delete("pg-rp3")
+async def test_postgres_runs_merge_dag_runs_with_run_results(session_factory):
+    from sqlalchemy import text
+    r_store = PostgresRunStore(session_factory, dag_runs=_fake_dag_runs(
+        ("pg-r1", "dte__pg-rp1", "success"), ("pg-r2", "dte__pg-rp1", "queued")))
+    async with session_factory() as s:
+        await s.execute(text("INSERT INTO run_results (run_id, dag_id, pipeline_id, status, rows_written) "
+                             "VALUES ('pg-r1', 'dte__pg-rp1', 'pg-rp1', 'completed_with_warnings', 42)"))
+        await s.commit()
+    try:
+        run = await r_store.get("pg-r1")
+        assert run["status"] == "completed_with_warnings"
+        assert run["rows_written"] == 42
+        assert (await r_store.get("pg-r2"))["status"] == "pending"
+        assert len(await r_store.list_for_pipeline("pg-rp1")) == 2
+        assert await r_store.count_for_pipeline("pg-rp1") == 2
+    finally:
+        assert await r_store.delete_for_pipeline("pg-rp1") == 1
 
 
 def _source(id: str, table: str = "t") -> SourceCreate:

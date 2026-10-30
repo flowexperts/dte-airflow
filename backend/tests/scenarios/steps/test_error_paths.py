@@ -267,7 +267,7 @@ async def test_trigger_with_job_queue_and_shared_fs_allows_local_fs(
     """Same setup, but DTE_SHARED_OUTPUT_FS=true opts back in — the guard
     must not fire. `enqueue_run` itself needs a real Postgres +
     procrastinate connection pool (this suite runs against in-memory fake
-    stores, no DATABASE_URL), so it's stubbed here — this test's scope is
+    stores, no DTE_DATABASE_URL), so it's stubbed here — this test's scope is
     strictly "did the guard block the request", not the enqueue plumbing
     covered by tests/integration/test_job_queue.py."""
     import dte.worker.tasks as tasks_mod
