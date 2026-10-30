@@ -12,13 +12,12 @@ import ibis.expr.datatypes as dt
 from dte.compiler.dialect_notes import execution_dialect_of
 from dte.errors import CompilerError
 from dte.models.pipeline import (
-    ExtractStep,
-    StructureStep,
     AggregateStep,
-    CaseStep,
     CaseCondition,
+    CaseStep,
     DatePartGroupBy,
     ExpressionMapStep,
+    ExtractStep,
     FilterStep,
     JoinStep,
     LookupMapStep,
@@ -30,6 +29,7 @@ from dte.models.pipeline import (
     RetypeStep,
     SelectStep,
     SortStep,
+    StructureStep,
     coerce_source_refs,
 )
 
@@ -284,8 +284,8 @@ def _dispatch_single_table_step(
 
 def _apply_structure(
     table: ibis.Table,
-    step: "StructureStep",
-    engine: "BaseEngine | None" = None,
+    step: StructureStep,
+    engine: BaseEngine | None = None,
     idx: int = 0,
     on_enrichment_stats=None,
 ) -> ibis.Table:
@@ -443,8 +443,8 @@ def _apply_structure(
 
 def _apply_extract(
     table: ibis.Table,
-    step: "ExtractStep",
-    engine: "BaseEngine | None" = None,
+    step: ExtractStep,
+    engine: BaseEngine | None = None,
     idx: int = 0,
 ) -> ibis.Table:
     """Read each document and emit its text blocks.
@@ -567,7 +567,7 @@ def _apply_join(left: ibis.Table, right: ibis.Table, step: JoinStep) -> ibis.Tab
     if isinstance(step.on, dict):
         # left column -> right column — the key isn't named the same on
         # both sides (e.g. `orders.customer_id` vs `customers.id`).
-        predicates = [left[l] == right[r] for l, r in step.on.items()]
+        predicates = [left[lk] == right[r] for lk, r in step.on.items()]
     else:
         on_cols = [step.on] if isinstance(step.on, str) else step.on
         predicates = [left[c] == right[c] for c in on_cols]
@@ -594,7 +594,7 @@ def _apply_check_step(
     table: ibis.Table,
     step: dict,
     idx: int = 0,
-    engine: "BaseEngine | None" = None,
+    engine: BaseEngine | None = None,
     on_quality_result=None,
     on_step_sql=None,
 ) -> ibis.Table:
@@ -604,6 +604,7 @@ def _apply_check_step(
     Calls on_quality_result(idx, QualityResult) if the callback is provided.
     """
     import uuid as _uuid
+
     from dte.models.quality import QualityResult
 
     expr = step.get("expr", "")
@@ -650,9 +651,10 @@ def _apply_profile(
     on_quality_result,
 ) -> ibis.Table:
     """Profile columns, call on_quality_result for each, return table unchanged."""
-    from dte.models.quality import QualityResult
-    import uuid as _uuid_mod
     import json as _json
+    import uuid as _uuid_mod
+
+    from dte.models.quality import QualityResult
 
     if engine is None:
         return table

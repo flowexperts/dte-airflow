@@ -16,15 +16,16 @@ from typing import Any
 async def create_connection(
     client, *, id: str, connection_type: str, credentials: dict | None = None
 ) -> dict:
-    """POST /api/connections. Skip for `local_fs` — pre-seeded in conftest."""
-    payload = {
-        "id": id,
-        "connection_type": connection_type,
-        "credentials": credentials or {},
-    }
-    r = await client.post("/api/connections", json=payload)
-    assert r.status_code in (200, 201), f"create_connection failed: {r.status_code} {r.text}"
-    return r.json()
+    """Seed a connection straight into the (fake) connection store. Connections
+    are owned by Airflow now: the API only reads and tests them, there is no
+    POST. `local_fs` is pre-seeded in conftest."""
+    from dte.api.deps import get_connection_store
+    from dte.api.main import app
+    from dte.models.pipeline import Connection
+
+    conn = Connection(id=id, connection_type=connection_type, credentials=credentials or {})
+    await app.dependency_overrides[get_connection_store]().save(conn)
+    return {"id": id, "connection_type": connection_type}
 
 
 async def create_source(

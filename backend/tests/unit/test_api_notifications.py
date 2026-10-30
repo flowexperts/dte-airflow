@@ -3,10 +3,13 @@ any notifier an installed Airflow provider registers."""
 from __future__ import annotations
 
 import pytest
-from airflow.exceptions import AirflowNotFoundException
 
-import dte.airflow.notify as notify
-from tests.unit.test_api_pipeline_schedule import TX, _run, client  # noqa: F401  (fixture)
+pytest.importorskip("airflow", reason="needs the airflow extra (not in CI's dev extra)")
+
+from airflow.exceptions import AirflowNotFoundException  # noqa: E402
+
+import dte.airflow.notify as notify  # noqa: E402
+from tests.unit.test_api_pipeline_schedule import TX, _run, client  # noqa: E402,F401  (fixture)
 
 FAKE = "tests.fixtures.fake_notifier.FakeNotifier"
 GOOD = {"notifier": FAKE, "params": {"target_conn_id": "ops"}, "on": ["failure", "success"]}

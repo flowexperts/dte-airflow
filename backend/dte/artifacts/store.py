@@ -49,7 +49,7 @@ def run_provenance_key(run_id: str) -> str:
 
     Namespaced so it can never collide with a document hash.
     """
-    return hashlib.sha256(f"dte:run-provenance:{run_id}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"dte:run-provenance:{run_id}".encode()).hexdigest()
 
 
 def _canonical(params: Any) -> str:

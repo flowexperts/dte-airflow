@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 # Structure types are a strict subset of comparator types, but the names
 # diverge where the concepts do: extraction cares whether a number is an

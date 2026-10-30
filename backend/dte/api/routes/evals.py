@@ -29,14 +29,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from dte.api.deps import (
-    get_current_user,
-    get_pipeline_revision_store,
     get_connection_store,
+    get_current_user,
+    get_destination_store,
     get_eval_example_store,
     get_eval_set_store,
     get_lookup_table_store,
+    get_pipeline_revision_store,
     get_pipeline_store,
-    get_destination_store,
     get_run_event_store,
     get_run_store,
     get_source_store,
@@ -51,15 +51,14 @@ from dte.config import get_settings
 from dte.evals.bootstrap import CONSENSUS_LABEL_SOURCE, consensus
 from dte.evals.comparison import build_comparison
 from dte.evals.derive import eval_set_fingerprint, field_specs_from_structure
+from dte.evals.digest import config_digest
 from dte.evals.runner import collapse_rows_by_doc
 from dte.evals.scoring import intervals_overlap
-from dte.evals.digest import config_digest
 from dte.evals.sweep import (
     _IGNORED_AXES,
     apply_cell,
     detached_copy,
     prune_cells,
-    root_pipeline_id,
     variant_id,
     variant_name,
 )
@@ -1213,4 +1212,4 @@ def _expand_matrix(matrix: dict[str, list]) -> list[dict]:
         raise HTTPException(
             status_code=422, detail="every matrix axis needs at least one value"
         )
-    return [dict(zip(keys, combo)) for combo in itertools.product(*values)]
+    return [dict(zip(keys, combo, strict=True)) for combo in itertools.product(*values)]

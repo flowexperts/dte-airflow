@@ -36,7 +36,8 @@ the same work.
 """
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from dte.evals.comparators import compare
 from dte.evals.runner import collapse_rows_by_doc

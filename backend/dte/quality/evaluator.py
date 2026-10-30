@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import ibis.backends.duckdb
+    pass
 
 from dte.models.quality import (
     ColumnInRange,
@@ -29,7 +29,6 @@ from dte.models.quality import (
     QualityResult,
     RowCountBetween,
 )
-
 
 # Targets name a format only; `path` may be local or an object-store URI, so
 # the same reader works either way (the run already registered the SECRET).

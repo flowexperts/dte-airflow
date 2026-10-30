@@ -119,15 +119,79 @@ def fake_stores():
 
 @pytest.fixture(autouse=True)
 def fake_airflow_trigger(fake_stores, monkeypatch):
-    """Triggering is an Airflow REST call; in tests it just records a run row
-    in the fake run store, carrying what the dag run `conf` would."""
+    """Triggering is an Airflow REST call. In tests it records a run row and
+    then runs the pipeline inline through `dte.airflow.runner.run_pipeline`
+    (what `DtePipelineOperator` does), against the fake stores, so a run is
+    terminal by the time the trigger returns."""
     import dte.airflow.trigger as trig
+    from dte.models.pipeline import Pipeline, coerce_source_refs
 
     async def _trigger(pipeline_id, conf, wait=0):
-        r = fake_stores["run"]
-        run_id = await r.create(pipeline_id, revision_id=conf.get("revision_id"))
+        from dte.airflow.runner import run_pipeline
+        from dte.compiler.interpolate import resolve_context
+
+        st = fake_stores
+        run_id = await st["run"].create(pipeline_id, revision_id=conf.get("revision_id"))
         fields = {k: conf[k] for k in ("eval_set_id", "sweep_id") if k in conf}
-        await r.update(run_id, params=conf.get("context"), **fields)
+        await st["run"].update(run_id, params=conf.get("context"), status="running", **fields)
+
+        events: list[tuple] = []
+        try:
+            rev = (
+                await st["pipeline_revision"].get(conf["revision_id"])
+                if conf.get("revision_id")
+                else await st["pipeline_revision"].latest_for_pipeline(pipeline_id)
+            )
+            if rev is None:
+                raise RuntimeError(f"revision of {pipeline_id} not found")
+            pipeline = Pipeline(**rev.config)
+            sources = []
+            for ref in coerce_source_refs(pipeline.sources):
+                src = await st["source"].get(ref.source_id)
+                if src is None:
+                    raise RuntimeError(f"source not found: {ref.source_id}")
+                conn = await st["connection"].get(src.connection_id)
+                sources.append((ref, src, conn, conn.credentials))
+            ptype = pipeline.pipeline_type or "transform"
+            destination = None
+            if ptype == "transform":
+                dest = await st["destination"].get(pipeline.output_id)
+                if dest is None:
+                    raise RuntimeError(f"destination not found: {pipeline.output_id}")
+                dest.narrow_config()
+                dconn = await st["connection"].get(dest.connection_id)
+                destination = (dest, dconn.credentials)
+            lookups = {}
+            for step in pipeline.steps or []:
+                if step.get("op") == "map" and step.get("mode") == "lookup" and step.get("lookup_id"):
+                    lookups[step["lookup_id"]] = await st["lookup_table"].get(step["lookup_id"])
+            eval_set = examples = None
+            if ptype == "eval":
+                eval_set = await st["eval_set"].get(conf["eval_set_id"])
+                examples = await st["eval_example"].list_for_set(conf["eval_set_id"])
+            values = conf.get("context") or resolve_context(pipeline, conf.get("params") or None)
+            res = run_pipeline(
+                pipeline, sources, destination, values,
+                lambda i, op, status, msg=None: events.append((i, op, status, msg)),
+                lookups=lookups, run_id=run_id, eval_set=eval_set, eval_examples=examples,
+            )
+        except Exception as e:  # mirror the operator: a failed run is a row, not a raise
+            for ev in events:
+                await st["run_event"].record(run_id, *ev)
+            await st["run"].update(run_id, status="failed", error=f"{type(e).__name__}: {e}")
+            return run_id
+        for ev in events:
+            await st["run_event"].record(run_id, *ev)
+        if res.quality:
+            from dte.models.quality import QualityResult
+            await st["run"].set_quality(run_id, [QualityResult(**q) for q in res.quality])
+        await st["run"].update(
+            run_id,
+            # The API vocabulary is completed|failed; failed_quality keeps its own.
+            status=res.status,
+            rows_written=res.rows_written, location=res.location, sql_query=res.sql_query,
+            scores=res.scores, labels_version=res.labels_version, config_digest=res.config_digest,
+        )
         return run_id
 
     monkeypatch.setattr(trig, "trigger_dag_run", _trigger)

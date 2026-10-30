@@ -93,7 +93,7 @@ def split_off_provenance(
         f"ORDER BY {_ident(_ROW_NO)} LIMIT {MAX_PROVENANCE_ROWS}"
     ).fetchall()
 
-    payload = [dict(zip(sys_cols, r)) for r in rows]
+    payload = [dict(zip(sys_cols, r, strict=True)) for r in rows]
     key = run_provenance_key(run_id)
     get_artifact_store().put(
         key,

@@ -7,9 +7,9 @@ from pathlib import Path
 
 
 def db_upgrade() -> None:
-    from alembic import command
     from alembic.config import Config
 
+    from alembic import command
     from dte.airflow.db import sync_url
 
     # Installed wheel: dte/migrations. Repo checkout and the image: backend/.

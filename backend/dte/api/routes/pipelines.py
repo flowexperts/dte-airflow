@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 import ibis
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
@@ -29,7 +28,6 @@ from dte.api.deps import (
     get_connection_store,
     get_current_user,
     get_destination_store,
-    get_eval_example_store,
     get_eval_set_store,
     get_lookup_table_store,
     get_pipeline_revision_store,
@@ -38,7 +36,6 @@ from dte.api.deps import (
     get_run_store,
     get_source_store,
 )
-from dte.compiler.ibis_compiler import compile_pipeline
 from dte.compiler.dialect_notes import (
     SOURCE_DIALECT,
     execution_dialect_of,
@@ -46,26 +43,24 @@ from dte.compiler.dialect_notes import (
     raw_sql_fragment,
     transpile_fragment,
 )
+from dte.compiler.ibis_compiler import compile_pipeline
 from dte.compiler.interpolate import (
     InterpolationError,
     ParamValidationError,
     interpolate_pipeline,
     resolve_context,
 )
-from dte.pipelines.diff import diff_pipeline, summarise_diff
-from dte.config import get_settings
-from dte.engine.duckdb_engine import DuckDBEngine  # noqa: F401 — still used as type hint fallback
-from dte.engine.registry import get_engine
-from dte.logging import decrypt_context_var, get_logger
 from dte.engine.backend_registry import BackendRegistry
+from dte.engine.duckdb_engine import DuckDBEngine  # noqa: F401 — still used as type hint fallback
+from dte.logging import decrypt_context_var, get_logger
 from dte.models.pipeline import (
     Connection,
     Destination,
     LookupTable,
     Pipeline,
     PipelineBase,
-    PipelineRevisionBase,
     PipelineNotification,
+    PipelineRevisionBase,
     PipelineSchedule,
     Source,
     SourceTableRef,
@@ -73,12 +68,12 @@ from dte.models.pipeline import (
     pipeline_requires_output,
 )
 from dte.models.user import User
+from dte.pipelines.diff import diff_pipeline, summarise_diff
 from dte.security.permissions import requires
 from dte.sources.loader import load_source
 from dte.store.base import (
     ConnectionStore,
     DestinationStore,
-    EvalExampleStore,
     EvalSetStore,
     LookupTableStore,
     PipelineRevisionStore,
@@ -87,7 +82,6 @@ from dte.store.base import (
     RunStore,
     SourceStore,
 )
-from dte.tracing import tracer
 
 router = APIRouter()
 _log = get_logger("dte.pipelines")
@@ -676,11 +670,11 @@ async def _resolve(
     s_store: SourceStore,
     d_store: DestinationStore,
     c_store: ConnectionStore,
-) -> tuple[list[tuple[SourceTableRef, Source, "Connection", dict]], tuple[Destination, dict]]:
+) -> tuple[list[tuple[SourceTableRef, Source, Connection, dict]], tuple[Destination, dict]]:
     """Resolve pipeline id refs to (SourceTableRef, Source, Connection,
     credentials) tuples and (Destination, credentials). Missing anything →
     422 naming what's gone."""
-    sources: list[tuple[SourceTableRef, Source, "Connection", dict]] = []
+    sources: list[tuple[SourceTableRef, Source, Connection, dict]] = []
     for ref in coerce_source_refs(pipeline.sources):
         source = await s_store.get(ref.source_id)
         if not source:
@@ -709,9 +703,9 @@ async def _resolve_sources(
     pipeline: Pipeline,
     s_store: SourceStore,
     c_store: ConnectionStore,
-) -> list[tuple[SourceTableRef, Source, "Connection", dict]]:
+) -> list[tuple[SourceTableRef, Source, Connection, dict]]:
     """Resolve only sources (no destination) — used for quality pipelines."""
-    sources: list[tuple[SourceTableRef, Source, "Connection", dict]] = []
+    sources: list[tuple[SourceTableRef, Source, Connection, dict]] = []
     for ref in coerce_source_refs(pipeline.sources):
         source = await s_store.get(ref.source_id)
         if not source:

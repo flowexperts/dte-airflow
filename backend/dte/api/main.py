@@ -20,12 +20,12 @@ from dte.api.routes.dashboards import router as dashboards_router
 from dte.api.routes.destinations import router as destinations_router
 from dte.api.routes.evals import router as evals_router
 from dte.api.routes.health import router as health_router
-from dte.api.routes.me import router as me_router
 from dte.api.routes.lookup_tables import router as lookup_tables_router
+from dte.api.routes.me import router as me_router
+from dte.api.routes.notifications import router as notifications_router
 from dte.api.routes.pipelines import router as pipelines_router
 from dte.api.routes.providers import router as providers_router
 from dte.api.routes.runs import router as runs_router
-from dte.api.routes.notifications import router as notifications_router
 from dte.api.routes.schedules import router as schedules_router
 from dte.api.routes.schema import router as schema_router
 from dte.api.routes.sources import router as sources_router

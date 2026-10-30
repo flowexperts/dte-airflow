@@ -38,7 +38,8 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from dte.evals.digest import config_digest
 

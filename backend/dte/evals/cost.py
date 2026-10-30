@@ -28,7 +28,8 @@ a convenience, not an invoice, and a model missing from it degrades to
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 PRICES: dict[str, tuple[float, float]] = {
     "claude-opus-5": (5.00, 25.00),

@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover — pymongo is an optional dep
 # Feature flag — flip to "true" after a week of dogfooding.
 _pool_enabled: bool = os.getenv("DTE_CONNECTION_POOL_ENABLED", "false").lower() in ("1", "true", "yes")
 
-_clients: dict[str, "_MongoClient"] = {}
+_clients: dict[str, MongoClient] = {}
 _lock = asyncio.Lock()
 
 

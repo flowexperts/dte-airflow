@@ -71,9 +71,9 @@ async def test_preview_limit_clips_rows(client, scenario_ids, fixtures_dir, out_
     assert len(body["rows"]) == 5
 
 
-async def test_preview_returns_422_on_compile_error(client, scenario_ids, fixtures_dir, out_dir):
-    """A pipeline that references a non-existent column should surface a
-    structured 4xx from preview, not a stack-trace 500."""
+async def test_preview_reports_compile_error_in_body(client, scenario_ids, fixtures_dir, out_dir):
+    """A pipeline that references a non-existent column should surface the
+    error in the preview body (200 + `error`), not as a stack-trace 500."""
     src_id, dst_id, _ = await _seed(client, scenario_ids, fixtures_dir, out_dir, "prev_err.json")
     pipe_id = scenario_ids("pipeline")
     await create_pipeline(
@@ -82,6 +82,6 @@ async def test_preview_returns_422_on_compile_error(client, scenario_ids, fixtur
         output_id=dst_id,
     )
     r = await client.get(f"/api/pipelines/{pipe_id}/preview?limit=20")
-    assert r.status_code == 422, f"expected 422, got {r.status_code}: {r.text}"
+    assert r.status_code == 200, r.text
     body = r.json()
-    assert body.get("detail"), "expected non-empty detail on preview error"
+    assert body["error"] and body["rows"] == []

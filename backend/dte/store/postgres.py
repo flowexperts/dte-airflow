@@ -1,12 +1,8 @@
-import json
-import logging
-import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import func as sa_func
 from sqlalchemy import bindparam, text
-from sqlalchemy import update as sa_update
+from sqlalchemy import func as sa_func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import select
@@ -30,7 +26,6 @@ from dte.models.pipeline import (
     SourceBase,
 )
 
-
 # What `run_results` contributes to a run; the rest comes from the dag run.
 _RESULT_COLUMNS = (
     "run_id", "dag_id", "pipeline_id", "revision_id", "status", "error", "rows_written", "location",
@@ -38,7 +33,7 @@ _RESULT_COLUMNS = (
     "sweep_id", "scores",
 )
 _OPERATOR_STATUSES = ("completed", "completed_with_warnings", "failed_quality")
-_NEVER = datetime.max.replace(tzinfo=timezone.utc)
+_NEVER = datetime.max.replace(tzinfo=UTC)
 
 
 def _merge(dag_run: dict, result: dict | None) -> dict:
