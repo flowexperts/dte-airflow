@@ -10,9 +10,9 @@ The id is generated on save and names the DAG: `dte__<id>`.
 
 
 - Name: required, unique, editable any time.
-- Pipeline type: **Transform** writes output; **Quality Check** asserts conditions on it.
+- Pipeline type: **Transform** writes output; **Quality Check** asserts conditions on it and has no destination. See [Pipeline types](types.md).
 - Sources: at least one, saved or added inline.
-- Destination: exactly one, saved or added inline.
+- Destination: exactly one (none for Quality Check), saved or added inline.
 - Steps: zero or more, in order.
 
 Save is blocked until name, a source and a destination are set, and every **Select / Drop fields** step has at least one field.

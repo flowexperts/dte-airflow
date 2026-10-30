@@ -27,6 +27,8 @@ For file destinations the page also shows the first rows of the written file.
 
 The same dag run is in Airflow under `dte__<pipeline id>` (filter by the `dte` tag), with the task log.
 
+![The dte DAG's runs in Airflow](../assets/airflow/dag-grid.png)
+
 ![Task log in Airflow](../assets/airflow/task-log.png)
 
 ## Cancel
