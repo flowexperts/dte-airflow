@@ -43,7 +43,7 @@ def main() -> int:  # pragma: no cover — integration-only path
             "uvicorn",
             "dte.api.main:app",
             "--host",
-            "0.0.0.0",
+            "0.0.0.0",  # nosec B104 - runs inside a container; must listen on all interfaces
             "--port",
             "8001",
         ],

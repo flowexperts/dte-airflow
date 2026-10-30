@@ -1,0 +1,41 @@
+name: Dependency audit
+
+# Weekly + manual, not on PRs: a new upstream CVE shouldn't block an unrelated
+# change (plan 080).
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: pip-audit (locked deps, all extras)
+        run: |
+          uv export --frozen --no-hashes --no-emit-project --all-extras \
+            | uvx pip-audit -r /dev/stdin --no-deps --disable-pip --strict
+
+  pnpm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm audit (high+ only)
+        run: pnpm audit --audit-level=high
