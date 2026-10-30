@@ -10,6 +10,31 @@ The engine is deliberately embedded and single-node today. DuckDB is the runtime
 
 The UI is a React app, rendered natively inside Airflow as a plugin, that lets users compose pipelines visually, preview them against sample rows, and monitor runs. The backend is a FastAPI service backed by Postgres. Everything ships together in a Docker Compose stack.
 
+## Runtime: DTE inside Airflow
+
+### Deployment
+
+![DTE deployment](docs/architecture-deployment.svg)
+
+DTE has no server of its own. It ships as one Airflow plugin (`pip install`, one entry point) and runs on the components an Airflow 3 deployment already has:
+
+1. **api-server.** The plugin mounts the React UI as a native `react_apps` page and the FastAPI app at `/dte`. Airflow's auth manager answers DTE's permission checks. Live preview and schema inference run here, in-process, on a `LIMIT 20` sample, and never create a run.
+2. **Save.** Every save writes a new revision to the `dte` schema of Airflow's metadata Postgres (own Alembic history).
+3. **dag-processor.** `build_dags()` (`dte/airflow/dag_factory.py`) reads the latest revision of every pipeline and builds one `dte__<id>` DAG each. The revision id is a DAG tag, so every save is a new DagVersion; an enabled schedule becomes the DAG's cron.
+4. **scheduler + executor.** Each DAG has one task, `run`, a `DtePipelineOperator` (`dte/airflow/operators.py`). It resolves the pinned revision, sources and destination, and takes credentials from Airflow Connections through the `to_dte()` adapter.
+5. **Record.** The task writes a `run_results` row (rows written, SQL, quality results); status, timings and logs are Airflow's own.
+
+### Execution
+
+![How DTE runs a pipeline](docs/architecture-execution.svg)
+
+Preview and a run share one path; only the caller and the row cap differ. `runner.run_pipeline()` (`dte/airflow/runner.py`) resolves the revision and its sources, loads each source through `BackendRegistry` (one ibis backend per connection), compiles the steps to one ibis expression, then executes and writes. `engine: auto` (`resolve_pipeline_engine`) decides where the work runs from the sources' connection types:
+
+- **DuckDB, in-process** for files, object stores and APIs, or any mix DuckDB can read. One node, no cluster. The default.
+- **Pushdown** when every source sits on one SQL connection: ibis compiles to that database's dialect, joins run in the database, raw SQL steps are transpiled by sqlglot.
+- **Trino**, opt-in with `DTE_TRINO_ENABLED=true`, for large cross-source work. Rejects raw SQL steps and pivot.
+- **Enrichment** (extract, structure) is the one per-row Python seam: it materialises, maps each row through a model call, retries per row and caches in the artifact store. DuckDB engine only.
+
 ## Data flow
 
 A pipeline run flows through five hops:
