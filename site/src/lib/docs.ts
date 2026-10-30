@@ -18,7 +18,6 @@ export const NAV: { section: string; slugs: string[] }[] = [
       "",
       "self-hosting/install-plugin",
       "self-hosting/install",
-      "getting-started/01-sign-up",
       "getting-started/02-first-pipeline",
       "getting-started/03-concepts",
     ],

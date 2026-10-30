@@ -5,9 +5,8 @@ dte is a visual pipeline builder that runs inside Apache Airflow 3.3+. Pick a so
 ## Start here
 
 1. [Install](self-hosting/install-plugin.md) into your Airflow, or [try it with Docker Compose](self-hosting/install.md)
-2. [Find dte in Airflow](getting-started/01-sign-up.md)
-3. [Build your first pipeline](getting-started/02-first-pipeline.md)
-4. [Core ideas](getting-started/03-concepts.md): connection, source, destination, pipeline, run
+2. [Build your first pipeline](getting-started/02-first-pipeline.md)
+3. [Core ideas](getting-started/03-concepts.md): connection, source, destination, pipeline, run
 
 ## Reference
 

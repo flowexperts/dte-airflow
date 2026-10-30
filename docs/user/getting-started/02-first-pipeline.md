@@ -1,61 +1,69 @@
 # Your first pipeline
 
-Read a folder of orders, keep the paid ones, write them as JSON. You'll make a connection, a source, a destination and a pipeline.
+Read a file of orders, keep the paid ones, write them as JSON. You'll make a connection, a source, a destination and a pipeline.
+
+## 0. Sample data
+
+With the Docker Compose stack, `/tmp/dte-samples` on your machine is mounted into Airflow at the same path:
+
+```bash
+mkdir -p /tmp/dte-samples && cat > /tmp/dte-samples/orders.json <<'EOF'
+[
+  {"id": 1, "customer": "Asha", "status": "paid",     "amount": 120.5},
+  {"id": 2, "customer": "Ben",  "status": "pending",  "amount": 80.0},
+  {"id": 3, "customer": "Chen", "status": "paid",     "amount": 42.0},
+  {"id": 4, "customer": "Dara", "status": "refunded", "amount": 15.0},
+  {"id": 5, "customer": "Eli",  "status": "paid",     "amount": 300.0}
+]
+EOF
+```
 
 ## 1. Add a connection
 
-**Admin ▸ Connections ▸ Add connection** in Airflow:
+**Admin ▸ Connections ▸ Add Connection**: Connection ID `local`, Connection Type **File (path)**. No credentials.
 
-- Connection Id: `local`
-- Connection Type: **File (path)** (`fs`)
-
-The `fs` type needs no credentials. With the Docker Compose stack, `/tmp/dte-samples` is mounted for this.
+![Airflow's Add Connection form: id local, type File (path)](../assets/getting-started/first-1-connection.png)
 
 ## 2. Add a source
 
-**Admin ▸ DTE Sources ▸ New**.
+**Admin ▸ DTE Sources ▸ New**:
 
-- Kind: **Filesystem**
+- Name: `orders`
+- Type: **Local filesystem**
 - Connection: **local**
-- Folder: `/tmp/dte-samples/` (a folder, not a file)
-- Files: `orders.json`
-- Format: leave blank to auto-detect
+- Bucket or directory: `/tmp/dte-samples/` (a directory, not a file)
+- File glob: `orders.json`
 
-Click **Infer schema**. You should see columns like `id`, `customer`, `status` and `amount`.
+Save. **Infer schema** on the saved source lists `id`, `customer`, `status`, `amount`.
+
+![The orders source with its inferred fields](../assets/getting-started/first-2-source.png)
 
 ## 3. Add a destination
 
-**Admin ▸ DTE Destinations ▸ New**.
+**Admin ▸ DTE Destinations ▸ New**: Destination id `orders_paid`, Connection **local**, Type **JSON**, Path `/tmp/dte-samples/out/orders_paid.json`.
 
-- Type: **JSON file**
-- Connection: **local**
-- Path: `/tmp/dte-samples/out/orders_paid.json`
+![The orders_paid destination](../assets/getting-started/first-3-destination.png)
 
 ## 4. Build the pipeline
 
-**Plugins ▸ DTE Pipelines ▸ Transform ▸ New pipeline**.
+**Plugins ▸ DTE Pipelines ▸ Transform ▸ New pipeline**. Name **Paid orders**, type **Transform**, source `orders`, destination `orders_paid`. Then **+ Add step**:
 
-- Name: **Paid orders**
-- Pipeline type: **Transform**
-- Sources: your orders source
-- Destination: the one you just made
+1. **Filter** ▸ **Advanced**: `status = 'paid'`
+2. **Select / Drop fields** ▸ **Select fields**: `id`, `customer`, `amount`
 
-Add two steps:
-
-1. **Filter**: *Basic* tab, field `status`, operator `=`, value `paid`
-2. **Select / Drop fields**: mode **Keep**, tick `id`, `customer` and `amount`
+![The two steps: a filter on status and a select of three fields](../assets/getting-started/first-4-steps.png)
 
 Save. DTE gives the pipeline an id, and the dag-processor picks up `dte__<pipeline id>` within seconds.
 
 ## 5. Preview
 
-The pipeline page shows a preview of the steps on a small sample: paid orders only, three columns. A red panel names what's wrong.
+The live preview on the right runs the steps on a sample as you edit: three paid orders, three columns. A red panel names what's wrong.
 
 ![The pipeline builder with live preview](../assets/pipelines/builder.png)
 
 ## 6. Run
 
-Click **▶ Run** and confirm. The run goes `pending` → `running` → `completed` on the page, and your file is written. The same dag run is in Airflow with its task log.
+Click **▶ Run** and confirm. The run goes `pending` → `running` → `completed` on the page, and `/tmp/dte-samples/out/orders_paid.json` is written. The same dag run is in Airflow with its task log.
 
 ![The dte DAG in Airflow](../assets/airflow/dag-grid.png)
 

@@ -13,6 +13,8 @@ dte has no server of its own. One package, `dte-airflow`, installed on every Air
 
 Airflow owns login, permissions, connections, scheduling and run history.
 
+![DTE deployment: the UI and API in the api-server, one DAG per pipeline from the dag-processor, the scheduler runs it](../assets/architecture/deployment.svg)
+
 ## The execution stack
 
 - ibis is the compiler DSL. Each step maps to an ibis operation, stitched into one query.
@@ -32,6 +34,8 @@ In Airflow: the metadata DB, `AIRFLOW_CONN_*` variables or a secrets backend. dt
 - In-process: an ephemeral DuckDB connection per run.
 
 ## How a run happens
+
+![How DTE runs a pipeline: preview in the api-server on a sample; a run is an Airflow task that loads, compiles to ibis and executes](../assets/architecture/execution.svg)
 
 1. A user clicks **▶ Run**, or the schedule fires.
 2. For a manual run, dte's API asks Airflow's REST API to trigger `dte__<pipeline id>`, forwarding the user's credentials so Airflow's permissions apply.

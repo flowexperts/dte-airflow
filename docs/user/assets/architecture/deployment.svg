@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" class="dep-svg" role="img" aria-label="DTE deployment: one Airflow plugin. The DTE UI and API live in the api-server, pipelines are stored in a dte schema in Airflow&#x27;s metadata Postgres, the dag-processor builds one DAG per pipeline and the scheduler runs it.">
+<style>
+.dep-svg text { font-family: Outfit, "Helvetica Neue", Arial, sans-serif; }
+.dep-b { font-size: 17px; fill: #c8c0b8; }
+.dep-h { font-size: 21px; font-weight: 600; fill: #f2ede4; }
+.dep-m { font-family: "Space Mono", Menlo, monospace !important; font-size: 15px; fill: #f2ede4; }
+.dep-k, .dep-ka, .dep-kg, .dep-kn { font-family: "Space Mono", Menlo, monospace !important; font-size: 13px; letter-spacing: 0.14em; }
+.dep-k { fill: #8a8278; } .dep-ka { fill: #e8441a; } .dep-kg { fill: #c9963e; } .dep-kn { fill: #5a9872; }
+.dep-num { font-size: 15px; font-weight: 700; fill: #0c0b09; }
+.dep-lab { font-size: 15px; font-style: italic; fill: #8a8278; }
+</style>
+<defs><marker id="dep-head-mu" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c8c0b8"/></marker><marker id="dep-head-ac" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e8441a"/></marker><marker id="dep-head-go" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c9963e"/></marker></defs>
+<rect width="1600" height="900" fill="#0c0b09"/>
+<rect x="40" y="330" width="220" height="150" rx="10" fill="#141210" stroke="#2a2720" stroke-width="1.5"/>
+<text x="58" y="358" class="dep-k" text-anchor="start">USERS</text>
+<text x="58" y="392" class="dep-h" text-anchor="start">Browser</text>
+<text x="58" y="416" class="dep-b" text-anchor="start">Airflow UI with</text>
+<text x="58" y="440" class="dep-b" text-anchor="start">DTE pages in its nav</text>
+<rect x="300" y="40" width="990" height="820" rx="14" fill="#0c0b09" stroke="#e8441a" stroke-width="1.5" stroke-dasharray="6 6"/>
+<text x="322" y="68" class="dep-ka" text-anchor="start">AIRFLOW 3 · ONE DEPLOYMENT · pip install dte</text>
+<rect x="330" y="90" width="440" height="400" rx="10" fill="#141210" stroke="#2a2720" stroke-width="1.5"/>
+<text x="348" y="118" class="dep-k" text-anchor="start">API-SERVER</text>
+<rect x="348" y="134" width="404" height="56" rx="8" fill="#1e1b16" stroke="#2a2720" stroke-width="1.5"/>
+<text x="364" y="168" class="dep-m" text-anchor="start">react_apps</text>
+<text x="500" y="168" class="dep-b" text-anchor="start">DTE UI: builder, runs</text>
+<rect x="348" y="202" width="404" height="56" rx="8" fill="#1e1b16" stroke="#2a2720" stroke-width="1.5"/>
+<text x="364" y="236" class="dep-m" text-anchor="start">fastapi_apps</text>
+<text x="500" y="236" class="dep-b" text-anchor="start">DTE API at /dte</text>
+<rect x="348" y="270" width="404" height="56" rx="8" fill="#1e1b16" stroke="#2a2720" stroke-width="1.5"/>
+<text x="364" y="304" class="dep-m" text-anchor="start">auth manager</text>
+<text x="500" y="304" class="dep-b" text-anchor="start">DTE perms = DAG access</text>
+<rect x="348" y="342" width="404" height="132" rx="8" fill="#1e1b16" stroke="#c9963e" stroke-width="1.5"/>
+<text x="364" y="370" class="dep-kg" text-anchor="start">SMALL · INTERACTIVE</text>
+<text x="364" y="400" class="dep-h" text-anchor="start">Live preview + schema infer</text>
+<text x="364" y="424" class="dep-b" text-anchor="start">in-process, on a LIMIT 20 sample</text>
+<text x="364" y="448" class="dep-b" text-anchor="start">never creates a run</text>
+<rect x="810" y="90" width="450" height="176" rx="10" fill="#141210" stroke="#2a2720" stroke-width="1.5"/>
+<text x="828" y="118" class="dep-k" text-anchor="start">DAG-PROCESSOR</text>
+<text x="828" y="150" class="dep-m" text-anchor="start">build_dags()</text>
+<text x="828" y="182" class="dep-b" text-anchor="start">one DAG per pipeline, latest revision</text>
+<text x="828" y="206" class="dep-b" text-anchor="start">revision id is a DAG tag:</text>
+<text x="828" y="230" class="dep-b" text-anchor="start">every save = new DagVersion</text>
+<rect x="810" y="290" width="450" height="200" rx="10" fill="#141210" stroke="#2a2720" stroke-width="1.5"/>
+<text x="828" y="318" class="dep-k" text-anchor="start">SCHEDULER + EXECUTOR</text>
+<text x="828" y="350" class="dep-m" text-anchor="start">DtePipelineOperator</text>
+<text x="828" y="382" class="dep-b" text-anchor="start">one task per DAG run: run</text>
+<text x="828" y="406" class="dep-b" text-anchor="start">cron from the pipeline&#x27;s schedule</text>
+<text x="828" y="430" class="dep-b" text-anchor="start">manual run pins a revision in conf</text>
+<text x="828" y="454" class="dep-b" text-anchor="start">step-by-step lines in the task log</text>
+<rect x="330" y="540" width="930" height="296" rx="10" fill="#141210" stroke="#2a2720" stroke-width="1.5"/>
+<text x="348" y="568" class="dep-k" text-anchor="start">METADATA POSTGRES</text>
+<rect x="348" y="584" width="288" height="236" rx="8" fill="#1e1b16" stroke="#2a2720" stroke-width="1.5"/>
+<text x="364" y="624" class="dep-h" text-anchor="start">Airflow tables</text>
+<text x="364" y="662" class="dep-b" text-anchor="start">dag · dag_version</text>
+<text x="364" y="700" class="dep-b" text-anchor="start">dag_run · task_instance</text>
+<text x="364" y="738" class="dep-b" text-anchor="start">connection</text>
+<rect x="650" y="584" width="288" height="236" rx="8" fill="#1e1b16" stroke="#e8441a" stroke-width="1.5"/>
+<text x="666" y="624" class="dep-h" text-anchor="start">dte schema</text>
+<text x="666" y="662" class="dep-b" text-anchor="start">own Alembic history</text>
+<text x="666" y="700" class="dep-b" text-anchor="start">pipelines · revisions</text>
+<text x="666" y="738" class="dep-b" text-anchor="start">sources · destinations</text>
+<text x="666" y="776" class="dep-b" text-anchor="start">run_results</text>
+<rect x="952" y="584" width="288" height="236" rx="8" fill="#1e1b16" stroke="#2a2720" stroke-width="1.5"/>
+<text x="968" y="624" class="dep-h" text-anchor="start">Airflow Connections</text>
+<text x="968" y="662" class="dep-b" text-anchor="start">credentials stay here</text>
+<text x="968" y="700" class="dep-b" text-anchor="start">to_dte() maps conn types</text>
+<text x="968" y="738" class="dep-b" text-anchor="start">onto DTE sources</text>
+<polyline points="260,395 328,300" fill="none" stroke="#e8441a" stroke-width="2" marker-end="url(#dep-head-ac)"/>
+<circle cx="292" cy="330" r="14" fill="#e8441a"/>
+<text x="292" y="335" class="dep-num" text-anchor="middle">1</text>
+<text x="58" y="512" class="dep-lab" text-anchor="start">build, preview, run</text>
+<polyline points="700,490 700,582" fill="none" stroke="#e8441a" stroke-width="2" marker-end="url(#dep-head-ac)"/>
+<circle cx="700" cy="515" r="14" fill="#e8441a"/>
+<text x="700" y="520" class="dep-num" text-anchor="middle">2</text>
+<text x="684" y="521" class="dep-lab" text-anchor="end">save</text>
+<polyline points="790,582 790,178 808,178" fill="none" stroke="#e8441a" stroke-width="2" marker-end="url(#dep-head-ac)"/>
+<circle cx="790" cy="440" r="14" fill="#e8441a"/>
+<text x="790" y="445" class="dep-num" text-anchor="middle">3</text>
+<text x="802" y="524" class="dep-lab" text-anchor="start">parse</text>
+<polyline points="1035,266 1035,288" fill="none" stroke="#e8441a" stroke-width="2" marker-end="url(#dep-head-ac)"/>
+<circle cx="1060" cy="276" r="14" fill="#e8441a"/>
+<text x="1060" y="281" class="dep-num" text-anchor="middle">4</text>
+<polyline points="900,490 900,582" fill="none" stroke="#c9963e" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#dep-head-go)"/>
+<circle cx="878" cy="540" r="14" fill="#e8441a"/>
+<text x="878" y="545" class="dep-num" text-anchor="middle">5</text>
+<text x="912" y="530" class="dep-lab" text-anchor="start">record</text>
+<polyline points="1180,582 1180,492" fill="none" stroke="#c8c0b8" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#dep-head-mu)"/>
+<text x="1192" y="540" class="dep-lab" text-anchor="start">creds</text>
+<rect x="1320" y="40" width="250" height="820" rx="10" fill="#141210" stroke="#c9963e" stroke-width="1.5"/>
+<text x="1340" y="70" class="dep-kg" text-anchor="start">BORROWED FROM AIRFLOW</text>
+<text x="1340" y="116" class="dep-h" text-anchor="start">Auth + RBAC</text>
+<text x="1340" y="144" class="dep-b" text-anchor="start">auth manager</text>
+<text x="1340" y="212" class="dep-h" text-anchor="start">Credentials</text>
+<text x="1340" y="240" class="dep-b" text-anchor="start">Connections</text>
+<text x="1340" y="308" class="dep-h" text-anchor="start">Scheduling</text>
+<text x="1340" y="336" class="dep-b" text-anchor="start">cron timetables</text>
+<text x="1340" y="404" class="dep-h" text-anchor="start">Recovery</text>
+<text x="1340" y="432" class="dep-b" text-anchor="start">clear, re-run, backfill</text>
+<text x="1340" y="500" class="dep-h" text-anchor="start">Versioning</text>
+<text x="1340" y="528" class="dep-b" text-anchor="start">DagVersion per save</text>
+<text x="1340" y="596" class="dep-h" text-anchor="start">Observability</text>
+<text x="1340" y="624" class="dep-b" text-anchor="start">task logs, run history</text>
+<text x="1340" y="692" class="dep-h" text-anchor="start">UI shell</text>
+<text x="1340" y="720" class="dep-b" text-anchor="start">rail, theme, light/dark</text>
+<text x="1340" y="788" class="dep-h" text-anchor="start">Deploy</text>
+<text x="1340" y="816" class="dep-b" text-anchor="start">one plugin entry point</text>
+</svg>

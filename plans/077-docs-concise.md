@@ -32,3 +32,14 @@ the old ones showed the pre-Airflow app, and the tooling that took them
 - changed: `docs/user/**/*.md`, `site/src/lib/docs.ts`, `site/package.json`,
   `site/.gitignore`, `site/src/app/docs/[[...slug]]/docs.css`,
   `scripts/demo/README.md`
+
+## Follow-ups found while capturing the tutorial
+
+- Removed "Find dte in Airflow" (`getting-started/01-sign-up.md`).
+- "Your first pipeline" gets a sample-data step and one screenshot per step.
+- Bug: a new source couldn't be saved from the UI ("Source id is required")
+  though the server generates the id. `lib/source-validate.ts` skips the id
+  check on create (test: `source-validate.test.ts`).
+- The running image predates the `duckdb<2` pin (plan 073): every DuckDB
+  preview/run fails with `fetch_arrow_table`. Rebuild the image; the preview
+  and run screenshots wait on that.
