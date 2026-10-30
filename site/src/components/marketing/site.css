@@ -226,3 +226,19 @@
 .site .hero h1 { margin-bottom: 14px; }
 .site .powered { font-size: 20px; opacity: .85; margin: 0 0 34px; }
 .site .powered sup { font-size: .55em; }
+
+/* hero demo: PDF text → structured columns */
+.site .grid.raw .r { grid-template-columns: 82px 1fr; }
+.site .grid.raw .r span:last-child { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #8a94a6; }
+.site .grid.tbl .r { grid-template-columns: 70px 1fr 56px; }
+.site .grid.tbl .r span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.site .grid.tbl:not([hidden]) { animation: pop .4s ease-out; }
+.site .stp.ai { background: #f1edff; }
+.site .stp.ai span { overflow-wrap: normal; }
+.site .stp.ai i { grid-column: 2; justify-self: start; }
+.site .stp.ai b { background: #6b4fd8; }
+.site .stp i { font-style: normal; font-family: var(--mono); font-size: 10px; color: #6b4fd8; border: 1px solid #cfc3fb; border-radius: 3px; padding: 0 5px; }
+.site .prev { position: relative; }
+.site .prev.busy::after { content: "extracting with claude…"; position: absolute; inset: 30px 0 0; display: grid; place-items: center; font: 600 12px var(--mono); color: #6b4fd8;
+  background: linear-gradient(100deg, rgba(255,255,255,.75) 30%, rgba(241,237,255,.95) 50%, rgba(255,255,255,.75) 70%); background-size: 200% 100%; animation: shimmer 1s linear infinite; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
