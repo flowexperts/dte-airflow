@@ -29,9 +29,7 @@ describe("validateEvalSetForm", () => {
   });
 
   it("requires a source", () => {
-    expect(validateEvalSetForm({ ...valid, source_id: "" })).toHaveProperty(
-      "source_id",
-    );
+    expect(validateEvalSetForm({ ...valid, source_id: "" })).toHaveProperty("source_id");
   });
 
   it("requires at least one field", () => {
@@ -114,9 +112,7 @@ describe("toEvalSetPayload", () => {
   });
 
   it("leaves comparator absent when no tolerance is given", () => {
-    expect(toEvalSetPayload(valid).field_specs[0]).not.toHaveProperty(
-      "comparator",
-    );
+    expect(toEvalSetPayload(valid).field_specs[0]).not.toHaveProperty("comparator");
   });
 
   it("ignores a tolerance typed on a non-numeric field", () => {

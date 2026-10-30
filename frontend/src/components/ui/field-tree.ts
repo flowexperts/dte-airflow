@@ -52,10 +52,7 @@ export function buildTree(fields: FieldInput[]): FieldNode[] {
   // If the input carries `children`, treat it as an already-shaped tree.
   const isTree = fields.some((f) => Array.isArray(f.children));
   if (isTree) {
-    const walk = (
-      nodes: FieldInput[],
-      parent: string[] = [],
-    ): FieldNode[] =>
+    const walk = (nodes: FieldInput[], parent: string[] = []): FieldNode[] =>
       nodes.map((n) => {
         const path = [...parent, n.name];
         const wire = path.join(SEP);

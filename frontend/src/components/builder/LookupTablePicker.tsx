@@ -1,11 +1,15 @@
 import { useState } from "react";
 import useSWR from "swr";
-import { Button, Dropdown, Panel, PanelHead, Field, Input, type DropdownOption } from "@/components/ui";
 import {
-  createLookupTable,
-  updateLookupTable,
-  type LookupTable,
-} from "@/lib/api";
+  Button,
+  Dropdown,
+  Panel,
+  PanelHead,
+  Field,
+  Input,
+  type DropdownOption,
+} from "@/components/ui";
+import { createLookupTable, updateLookupTable, type LookupTable } from "@/lib/api";
 import { LookupMappingsEditor } from "@/components/lookup-mappings-editor";
 
 function emptyLookup(id: string): LookupTable {
@@ -79,7 +83,9 @@ export function LookupTablePicker({
                 meta: `${Object.keys(l.mappings || {}).length} entries`,
               })),
               ...(value && !chosen
-                ? ([{ value, label: `${value} (missing)`, disabled: true }] as DropdownOption<string>[])
+                ? ([
+                    { value, label: `${value} (missing)`, disabled: true },
+                  ] as DropdownOption<string>[])
                 : []),
             ]}
           />
@@ -131,7 +137,10 @@ export function LookupTablePicker({
             <Input
               value={editing.draft.name ?? ""}
               onChange={(e) =>
-                setEditing({ ...editing, draft: { ...editing.draft, name: e.target.value || null } })
+                setEditing({
+                  ...editing,
+                  draft: { ...editing.draft, name: e.target.value || null },
+                })
               }
               placeholder="Country names"
             />
@@ -151,9 +160,7 @@ export function LookupTablePicker({
           <Field label="Mappings" hint="key on the left, replacement value on the right">
             <LookupMappingsEditor
               value={editing.draft.mappings}
-              onChange={(m) =>
-                setEditing({ ...editing, draft: { ...editing.draft, mappings: m } })
-              }
+              onChange={(m) => setEditing({ ...editing, draft: { ...editing.draft, mappings: m } })}
             />
           </Field>
         </div>

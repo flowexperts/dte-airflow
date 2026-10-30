@@ -28,11 +28,7 @@ export function HistoryPanel({ pipelineId }: { pipelineId: string }) {
     return <div className="text-[12px] text-subtle px-3 py-4">Loading history…</div>;
   }
   if (error) {
-    return (
-      <div className="text-[12px] text-red px-3 py-4">
-        Couldn&apos;t load history.
-      </div>
-    );
+    return <div className="text-[12px] text-red px-3 py-4">Couldn&apos;t load history.</div>;
   }
   const revs = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -55,9 +51,8 @@ export function HistoryPanel({ pipelineId }: { pipelineId: string }) {
 
   // Diff order: older → newer (list is newest-first, so from = later index).
   const [a, b] = selected;
-  const older = a && b
-    ? (revs.findIndex((r) => r.id === a) > revs.findIndex((r) => r.id === b) ? a : b)
-    : null;
+  const older =
+    a && b ? (revs.findIndex((r) => r.id === a) > revs.findIndex((r) => r.id === b) ? a : b) : null;
   const newer = a && b ? (older === a ? b : a) : null;
 
   return (
@@ -81,12 +76,12 @@ export function HistoryPanel({ pipelineId }: { pipelineId: string }) {
       {selected.length > 0 && (
         <div className="flex items-center gap-3 text-[12px] text-subtle">
           <span>{selected.length}/2 selected for diff</span>
-          <Button size="sm" variant="ghost" onClick={clear}>Clear</Button>
+          <Button size="sm" variant="ghost" onClick={clear}>
+            Clear
+          </Button>
         </div>
       )}
-      {older && newer && (
-        <DiffView pipelineId={pipelineId} fromId={older} toId={newer} />
-      )}
+      {older && newer && <DiffView pipelineId={pipelineId} fromId={older} toId={newer} />}
     </div>
   );
 }

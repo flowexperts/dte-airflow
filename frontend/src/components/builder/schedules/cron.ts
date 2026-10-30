@@ -74,8 +74,13 @@ export function parseCron(expr: string): ScheduleFormState {
   }
 
   if (
-    min !== undefined && hr !== undefined &&
-    isInt(min) && isInt(hr) && dom === "*" && mon === "*" && dow === "*"
+    min !== undefined &&
+    hr !== undefined &&
+    isInt(min) &&
+    isInt(hr) &&
+    dom === "*" &&
+    mon === "*" &&
+    dow === "*"
   ) {
     const minute = Number(min);
     const hour = Number(hr);
@@ -85,8 +90,14 @@ export function parseCron(expr: string): ScheduleFormState {
   }
 
   if (
-    min !== undefined && hr !== undefined && dow !== undefined &&
-    isInt(min) && isInt(hr) && dom === "*" && mon === "*" && isInt(dow)
+    min !== undefined &&
+    hr !== undefined &&
+    dow !== undefined &&
+    isInt(min) &&
+    isInt(hr) &&
+    dom === "*" &&
+    mon === "*" &&
+    isInt(dow)
   ) {
     const minute = Number(min);
     const hour = Number(hr);
@@ -169,8 +180,18 @@ const FIELDS: FieldSpec[] = [
 ];
 
 const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 /** Expand one cron field into the sorted set of values it matches.
@@ -228,15 +249,12 @@ export interface CronReading {
 }
 
 const listOut = (xs: (string | number)[], join = "and"): string =>
-  xs.length === 1
-    ? String(xs[0])
-    : `${xs.slice(0, -1).join(", ")} ${join} ${xs[xs.length - 1]}`;
+  xs.length === 1 ? String(xs[0]) : `${xs.slice(0, -1).join(", ")} ${join} ${xs[xs.length - 1]}`;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Is this set every value in the field's range? */
-const isFull = (vals: number[], spec: FieldSpec) =>
-  vals.length === spec.max - spec.min + 1;
+const isFull = (vals: number[], spec: FieldSpec) => vals.length === spec.max - spec.min + 1;
 
 /** Detect an evenly-spaced set so `*./15` reads as "every 15 minutes"
  *  rather than "at minute 0, 15, 30 and 45". */
@@ -283,7 +301,11 @@ export function readCron(expr: string): CronReading {
   }
 
   const [minute, hour, dom, month, dow] = expanded as [
-    number[], number[], number[], number[], number[],
+    number[],
+    number[],
+    number[],
+    number[],
+    number[],
   ];
   const fields = {
     minute,
@@ -341,7 +363,12 @@ export function readCron(expr: string): CronReading {
 
   const dayParts: string[] = [];
   if (!dowFull) {
-    dayParts.push(`on ${listOut(dow.map((d) => WEEKDAY_LABELS[d] ?? String(d)), "and")}`);
+    dayParts.push(
+      `on ${listOut(
+        dow.map((d) => WEEKDAY_LABELS[d] ?? String(d)),
+        "and",
+      )}`,
+    );
   }
   if (!domFull) {
     dayParts.push(`on the ${listOut(dom.map(ordinal))} of the month`);

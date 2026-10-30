@@ -1,7 +1,11 @@
 import { useSearchParams } from "@/lib/nav";
 import useSWR from "swr";
 import {
-  getDestination, getPipelineRevision, getSource, type Destination, type Source,
+  getDestination,
+  getPipelineRevision,
+  getSource,
+  type Destination,
+  type Source,
 } from "@/lib/api";
 import { orNull } from "@/lib/errors";
 import { InlineError } from "@/components/ui";
@@ -19,20 +23,24 @@ function PipelineRevisionPage() {
   const q = useSearchParams();
   const id = q.get("id");
   const revId = q.get("rev");
-  const { data, error } = useSWR(id && revId ? ["pipeline-rev", id, revId] : null, async () => {
-    const revision = await getPipelineRevision(id!, revId!);
-    const pipeline = revision.config;
-    // Sources and destinations are not versioned — these are today's rows.
-    const [sources, destination] = await Promise.all([
-      Promise.all(
-        (pipeline.sources ?? []).map((ref) => getSource(ref.source_id).catch(orNull<Source>)),
-      ),
-      pipeline.output_id
-        ? getDestination(pipeline.output_id).catch(orNull<Destination>)
-        : Promise.resolve(null),
-    ]);
-    return { revision, pipeline, sources, destination };
-  }, { revalidateOnFocus: false });
+  const { data, error } = useSWR(
+    id && revId ? ["pipeline-rev", id, revId] : null,
+    async () => {
+      const revision = await getPipelineRevision(id!, revId!);
+      const pipeline = revision.config;
+      // Sources and destinations are not versioned — these are today's rows.
+      const [sources, destination] = await Promise.all([
+        Promise.all(
+          (pipeline.sources ?? []).map((ref) => getSource(ref.source_id).catch(orNull<Source>)),
+        ),
+        pipeline.output_id
+          ? getDestination(pipeline.output_id).catch(orNull<Destination>)
+          : Promise.resolve(null),
+      ]);
+      return { revision, pipeline, sources, destination };
+    },
+    { revalidateOnFocus: false },
+  );
 
   if (!id || !revId) return <MissingParam what="revision" />;
   if (error) {

@@ -26,9 +26,7 @@ export function pipelineShape(p: Pipeline): string {
   const sources = p.sources?.length ?? 0;
   const steps = p.steps?.length ?? 0;
   if (isQualityPipeline(p)) {
-    const checks = (p.steps ?? []).filter(
-      (s) => s.op === "check" || s.op === "profile",
-    ).length;
+    const checks = (p.steps ?? []).filter((s) => s.op === "check" || s.op === "profile").length;
     return `${sources} src · ${checks || steps} check${(checks || steps) === 1 ? "" : "s"}`;
   }
   if (isEvalPipeline(p)) {
@@ -65,13 +63,7 @@ export function runOutcome(run: Run | undefined, quality: boolean): string {
 }
 
 /** Dot + text in the run's tone. Used wherever a run's health is summarised. */
-export function RunTone({
-  run,
-  children,
-}: {
-  run: Run | undefined;
-  children: ReactNode;
-}) {
+export function RunTone({ run, children }: { run: Run | undefined; children: ReactNode }) {
   const tone = statusTone(run?.status);
   const color = tone === "pending" ? "var(--subtle)" : toneVar[tone];
   const live = run?.status === "running";
@@ -127,10 +119,5 @@ export function sourcePathLabel(s: Source): string {
 
 export function destinationPathLabel(d: Destination): string {
   const c = d.config as Record<string, unknown>;
-  return (
-    (c.path as string) ??
-    (c.bucket_url as string) ??
-    (c.table as string) ??
-    d.config.type
-  );
+  return (c.path as string) ?? (c.bucket_url as string) ?? (c.table as string) ?? d.config.type;
 }

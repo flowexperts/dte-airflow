@@ -56,10 +56,7 @@ export function usePopoverPosition(
   const preferred = opts?.preferredMaxHeight ?? 288;
 
   useLayoutEffect(() => {
-    if (!open) {
-      setPos(null);
-      return;
-    }
+    if (!open) return;
 
     const compute = () => {
       const r = triggerRef.current?.getBoundingClientRect();
@@ -84,9 +81,7 @@ export function usePopoverPosition(
         style: {
           position: "fixed",
           left,
-          ...(flipped
-            ? { bottom: vh - r.top + GAP }
-            : { top: r.bottom + GAP }),
+          ...(flipped ? { bottom: vh - r.top + GAP } : { top: r.bottom + GAP }),
           minWidth: width,
           maxHeight,
           zIndex: 1000,
@@ -103,5 +98,5 @@ export function usePopoverPosition(
     };
   }, [open, minWidth, preferred, triggerRef]);
 
-  return pos;
+  return open ? pos : null;
 }

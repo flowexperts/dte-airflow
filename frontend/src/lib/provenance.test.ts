@@ -104,10 +104,7 @@ describe("resolveHighlight", () => {
   it("degrades when the page has no dimensions", () => {
     // Without a page size there is no scale factor and any rect would be a
     // guess in the wrong coordinate space.
-    const rects = resolveHighlight(
-      { words: WORDS, width: null, height: null },
-      { quote: "ACME" },
-    );
+    const rects = resolveHighlight({ words: WORDS, width: null, height: null }, { quote: "ACME" });
     expect(rects).toEqual([]);
   });
 });

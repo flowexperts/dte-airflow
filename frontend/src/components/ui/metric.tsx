@@ -1,13 +1,7 @@
 import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
 
-export function MetricRow({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+export function MetricRow({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
       className={cn(
@@ -34,13 +28,7 @@ export function Metric({
   className?: string;
 }) {
   const color =
-    tone === "ok"
-      ? "text-green"
-      : tone === "warn"
-        ? "text-gold"
-        : tone === "err"
-          ? "text-red"
-          : "";
+    tone === "ok" ? "text-green" : tone === "warn" ? "text-gold" : tone === "err" ? "text-red" : "";
   return (
     <div
       className={cn(

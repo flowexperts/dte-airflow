@@ -64,9 +64,7 @@ export function DataTable<T>({
   const gridStyle: CSSProperties = { gridTemplateColumns: widths.join(" ") };
 
   const allIds = selection ? rows.map(selection.rowId) : [];
-  const selectedCount = selection
-    ? allIds.filter((id) => selection.selectedIds.has(id)).length
-    : 0;
+  const selectedCount = selection ? allIds.filter((id) => selection.selectedIds.has(id)).length : 0;
   const allSelected = selection ? selectedCount > 0 && selectedCount === rows.length : false;
   const someSelected = selection ? selectedCount > 0 : false;
 
@@ -103,9 +101,7 @@ export function DataTable<T>({
         ))}
       </div>
       {rows.length === 0 ? (
-        <div className="px-3.5 py-6 text-sm text-subtle text-center">
-          {emptyText}
-        </div>
+        <div className="px-3.5 py-6 text-sm text-subtle text-center">{emptyText}</div>
       ) : (
         rows.map((row, i) => {
           const id = selection ? selection.rowId(row) : undefined;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Input } from "@/components/ui";
 
 export function LookupMappingsEditor({
@@ -15,7 +15,7 @@ export function LookupMappingsEditor({
   const initial = () => Object.entries(value).map(([k, v]) => ({ k, v }));
   const [rows, setRows] = useState<Array<{ k: string; v: string }>>(initial);
 
-  useEffect(() => {
+  {
     // Sync from parent only when its object shape differs from what our
     // local rows serialise to — otherwise our own commits would echo back
     // and wipe in-flight empty-key rows.
@@ -25,8 +25,7 @@ export function LookupMappingsEditor({
       Object.keys(serialised).length === Object.keys(value).length &&
       Object.entries(serialised).every(([k, v]) => value[k] === v);
     if (!same) setRows(initial());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }
 
   const commit = (next: Array<{ k: string; v: string }>) => {
     setRows(next);
@@ -51,9 +50,7 @@ export function LookupMappingsEditor({
         <div className="border-l border-border" />
       </div>
       {rows.length === 0 ? (
-        <div className="px-3 py-4 text-center text-subtle text-[12px]">
-          No mappings yet.
-        </div>
+        <div className="px-3 py-4 text-center text-subtle text-[12px]">No mappings yet.</div>
       ) : (
         rows.map((r, i) => (
           <div

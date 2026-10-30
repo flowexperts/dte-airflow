@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 import { CronExplainer } from "./CronExplainer";
 import { createPortal } from "react-dom";
 import { portalHost } from "@/components/ui/portal-host";
+import { useMounted } from "@/components/ui/use-mounted";
 import { Button, Dropdown, Field, Input, Segmented } from "@/components/ui";
 import {
   ApiError,
@@ -98,10 +99,13 @@ export function ScheduleForm({
   const [enabled, setEnabled] = useState<boolean>(schedule?.enabled ?? true);
   const [retries, setRetries] = useState<number>(schedule?.retries ?? 0);
   const [retryDelayS, setRetryDelayS] = useState<number>(schedule?.retry_delay_s ?? 300);
-  const [timeoutMin, setTimeoutMin] = useState<string>(schedule?.timeout_s ? String(schedule.timeout_s / 60) : "");
+  const [timeoutMin, setTimeoutMin] = useState<string>(
+    schedule?.timeout_s ? String(schedule.timeout_s / 60) : "",
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useMounted();
+  const [prevOpen, setPrevOpen] = useState(open);
 
   // Keyed `null` for non-eval pipelines so the list is never fetched for
   // the ~all schedules that can't use it. Declared above the `!open`
@@ -111,13 +115,18 @@ export function ScheduleForm({
     () => listEvalSets(),
   );
 
-  useEffect(() => setMounted(true), []);
-
   // Re-seed on open — mirrors ParamsModal's guarded re-sync so switching
   // which schedule is being edited doesn't leak stale state across opens.
-  useEffect(() => {
-    if (!open) return;
-    setForm(schedule ? { ...parseCron(schedule.cron_expr) } : { mode: "daily", minute: 0, hour: 2, weekday: 1, custom: "0 2 * * *" });
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) reseed();
+  }
+  function reseed() {
+    setForm(
+      schedule
+        ? { ...parseCron(schedule.cron_expr) }
+        : { mode: "daily", minute: 0, hour: 2, weekday: 1, custom: "0 2 * * *" },
+    );
     setTimezone(schedule?.timezone ?? browserTimezone());
     const seed: Record<string, string> = {};
     for (const p of declaredParams) seed[p.name] = schedule?.params?.[p.name] ?? "";
@@ -130,15 +139,17 @@ export function ScheduleForm({
     setTimeoutMin(schedule?.timeout_s ? String(schedule.timeout_s / 60) : "");
     setErr(null);
     setBusy(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }
 
   if (!open || !mounted) return null;
 
   const cronExpr = composeCron(form);
 
   const missingRequired = declaredParams.filter(
-    (p) => p.required !== false && (p.default == null || p.default === "") && (paramValues[p.name] ?? "") === "",
+    (p) =>
+      p.required !== false &&
+      (p.default == null || p.default === "") &&
+      (paramValues[p.name] ?? "") === "",
   );
   const isEval = pipelineType === "eval";
   const submittable =
@@ -192,7 +203,11 @@ export function ScheduleForm({
 
         <div className="space-y-4">
           <Field label="Frequency">
-            <Segmented value={form.mode} onChange={(mode) => setForm((f) => ({ ...f, mode }))} options={MODE_OPTIONS} />
+            <Segmented
+              value={form.mode}
+              onChange={(mode) => setForm((f) => ({ ...f, mode }))}
+              options={MODE_OPTIONS}
+            />
           </Field>
 
           {form.mode === "hourly" && (
@@ -310,16 +325,22 @@ export function ScheduleForm({
           {schedule?.next_run_at && (
             <Field label="Next run">
               <div className="font-mono text-[12px] text-text">
-                {new Date(schedule.next_run_at).toLocaleString(undefined, { timeZoneName: "short" })}
+                {new Date(schedule.next_run_at).toLocaleString(undefined, {
+                  timeZoneName: "short",
+                })}
               </div>
             </Field>
           )}
 
           {declaredParams.length > 0 && (
-            <Field label="Params" hint="Required inputs with no default must be filled in — the pipeline will fail every run otherwise.">
+            <Field
+              label="Params"
+              hint="Required inputs with no default must be filled in — the pipeline will fail every run otherwise."
+            >
               <div className="space-y-2">
                 {declaredParams.map((p) => {
-                  const isRequired = p.required !== false && (p.default == null || p.default === "");
+                  const isRequired =
+                    p.required !== false && (p.default == null || p.default === "");
                   return (
                     <div key={p.name} className="grid grid-cols-[120px_1fr] gap-2 items-center">
                       <div className="text-[12px] font-mono text-muted">
@@ -409,7 +430,6 @@ export function ScheduleForm({
               />
             </Field>
           </div>
-
         </div>
 
         {err && (

@@ -49,9 +49,7 @@ function CellCard({ cell, scored }: { cell: ComparisonCell; scored: boolean }) {
         {/* A leader that nothing else ties gets the badge. A leader inside
             someone else's confidence interval does not — declaring a winner
             on noise sends people off to ship a config that is not better. */}
-        {scored && cell.rank === 1 && !cell.tied_with_leader && (
-          <Pill status="ok">best</Pill>
-        )}
+        {scored && cell.rank === 1 && !cell.tied_with_leader && <Pill status="ok">best</Pill>}
         {scored && cell.tied_with_leader && <Pill status="pending">tied</Pill>}
         {running && <Pill status="running">running</Pill>}
         {cell.status === "failed" && <Pill status="failed">failed</Pill>}
@@ -64,7 +62,10 @@ function CellCard({ cell, scored }: { cell: ComparisonCell; scored: boolean }) {
       <div className="px-3.5 py-3 flex flex-col gap-2">
         {scored && (
           <div className="flex items-center gap-2">
-            <ScoreBar value={cell.macro_f1 ?? null} interval={cell.macro_f1_interval ?? undefined} />
+            <ScoreBar
+              value={cell.macro_f1 ?? null}
+              interval={cell.macro_f1_interval ?? undefined}
+            />
             <span className="font-mono text-[11px] text-subtle">n={cell.n ?? 0}</span>
           </div>
         )}
@@ -82,9 +83,7 @@ function CellCard({ cell, scored }: { cell: ComparisonCell; scored: boolean }) {
           <dt className="text-subtle">docs</dt>
           <dd>{cell.documents}</dd>
         </dl>
-        {cell.error && (
-          <p className="text-[11.5px] text-red break-words">{cell.error}</p>
-        )}
+        {cell.error && <p className="text-[11.5px] text-red break-words">{cell.error}</p>}
         {/* The provider's own words. "Could not resolve authentication
             method" is a fixable thing; a blank column is not. */}
         {cell.error_sample && (
@@ -165,16 +164,14 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
               <p className="text-[12.5px] text-muted max-w-[62ch]">
                 {disagreeing > 0 ? (
                   <>
-                    These configs disagree on{" "}
-                    <strong className="text-text">{disagreeing}</strong> of{" "}
-                    {data.documents.length} documents. Those are the ones worth
-                    reading — the rest they already settled between them.
+                    These configs disagree on <strong className="text-text">{disagreeing}</strong>{" "}
+                    of {data.documents.length} documents. Those are the ones worth reading — the
+                    rest they already settled between them.
                   </>
                 ) : (
                   <>
-                    Every config agreed on all {data.documents.length}{" "}
-                    documents. That usually means the task is easy enough for
-                    the cheapest option.
+                    Every config agreed on all {data.documents.length} documents. That usually means
+                    the task is easy enough for the cheapest option.
                   </>
                 )}
               </p>
@@ -192,10 +189,7 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
                     : `Accept ${data.labels.agreed_unlabeled} agreed as labels`}
                 </Button>
               )}
-              <PromoteFromComparison
-                evalSetId={data.eval_set_id}
-                cells={data.cells}
-              />
+              <PromoteFromComparison evalSetId={data.eval_set_id} cells={data.cells} />
             </div>
           </div>
           {/* The write is refused when every config shares a provider, and
@@ -205,8 +199,8 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
           {data.labels.warning && data.labels.agreed_unlabeled > 0 && (
             <div className="px-4 pb-3 -mt-1">
               <p className="text-[11.5px] text-subtle max-w-[72ch]">
-                {data.labels.warning} Add a second provider to the comparison,
-                or label these from the{" "}
+                {data.labels.warning} Add a second provider to the comparison, or label these from
+                the{" "}
                 <Link
                   href={`/eval-sets/detail?id=${encodeURIComponent(data.eval_set_id)}&tab=review`}
                   className="text-text underline underline-offset-2"
@@ -236,13 +230,9 @@ export function ComparisonGrid({ sweepId }: { sweepId: string }) {
                     }}
                   />
                 </span>
-                <span className="font-mono text-[12px] tabular-nums">
-                  {pct(f.agreement_rate)}
-                </span>
+                <span className="font-mono text-[12px] tabular-nums">{pct(f.agreement_rate)}</span>
                 <span className="text-[11.5px] text-subtle">
-                  {f.disagreement_count === 0
-                    ? "all agree"
-                    : `${f.disagreement_count} differ`}
+                  {f.disagreement_count === 0 ? "all agree" : `${f.disagreement_count} differ`}
                 </span>
               </div>
             ))}

@@ -10,7 +10,12 @@ import {
   Pill,
   type Column,
 } from "@/components/ui";
-import { automapFields, getDestinationSchema, type AutomapMatch, type SchemaField } from "@/lib/api";
+import {
+  automapFields,
+  getDestinationSchema,
+  type AutomapMatch,
+  type SchemaField,
+} from "@/lib/api";
 import { useSchemas } from "./schema-context";
 import type { StepShape } from "./steps/types";
 
@@ -28,9 +33,7 @@ import type { StepShape } from "./steps/types";
 function leaves(fields: SchemaField[], prefix = ""): { name: string; type: string }[] {
   return fields.flatMap((f) => {
     const name = prefix ? `${prefix}.${f.name}` : f.name;
-    return f.children?.length
-      ? leaves(f.children, name)
-      : [{ name, type: f.type }];
+    return f.children?.length ? leaves(f.children, name) : [{ name, type: f.type }];
   });
 }
 
@@ -109,7 +112,9 @@ export function AutoMapButton({
   const setSource = (dest: string, source: string) =>
     setMatches((prev) =>
       prev.map((m) =>
-        m.dest === dest ? { ...m, source: source || null, via: null, confidence: 0, warning: null } : m,
+        m.dest === dest
+          ? { ...m, source: source || null, via: null, confidence: 0, warning: null }
+          : m,
       ),
     );
 
@@ -164,9 +169,7 @@ export function AutoMapButton({
       header: "",
       width: "150px",
       render: (m) =>
-        m.warning ? (
-          <span className="font-mono text-[11px] text-gold">{m.warning}</span>
-        ) : null,
+        m.warning ? <span className="font-mono text-[11px] text-gold">{m.warning}</span> : null,
     },
   ];
 
@@ -176,84 +179,84 @@ export function AutoMapButton({
     !open || typeof document === "undefined"
       ? null
       : createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-8"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-[900px] mt-8"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="absolute -top-2 -right-2 z-10 w-6 h-6 rounded-full border border-border bg-surface text-subtle hover:text-red text-[13px] leading-none flex items-center justify-center shadow-sm"
-        >
-          ×
-        </button>
-        <Panel>
-          <PanelHead
-            label="Auto-map fields"
-            count={loading ? "Matching…" : `${acceptedCount} of ${matches.length} accepted`}
-          />
-          {error && (
-            <div className="px-3.5 py-3 border-b border-border text-red font-mono text-[12px]">
-              {error}
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-8"
+            onClick={onClose}
+          >
+            <div
+              className="relative w-full max-w-[900px] mt-8"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="absolute -top-2 -right-2 z-10 w-6 h-6 rounded-full border border-border bg-surface text-subtle hover:text-red text-[13px] leading-none flex items-center justify-center shadow-sm"
+              >
+                ×
+              </button>
+              <Panel>
+                <PanelHead
+                  label="Auto-map fields"
+                  count={loading ? "Matching…" : `${acceptedCount} of ${matches.length} accepted`}
+                />
+                {error && (
+                  <div className="px-3.5 py-3 border-b border-border text-red font-mono text-[12px]">
+                    {error}
+                  </div>
+                )}
+                {llmError && (
+                  <div className="px-3.5 py-3 border-b border-border text-gold font-mono text-[12px]">
+                    Name matching ran; the model pass did not: {llmError}
+                  </div>
+                )}
+                {!error && (
+                  <>
+                    <DataTable
+                      columns={columns}
+                      rows={matches}
+                      emptyText={loading ? "Matching…" : "No destination columns."}
+                      selection={{
+                        selectedIds: accepted,
+                        rowId: (m) => m.dest,
+                        onToggle: (id) =>
+                          setAccepted((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(id)) next.delete(id);
+                            else next.add(id);
+                            return next;
+                          }),
+                        onToggleAll: () =>
+                          setAccepted((prev) =>
+                            prev.size === matches.length
+                              ? new Set()
+                              : new Set(matches.map((m) => m.dest)),
+                          ),
+                      }}
+                    />
+                    <div className="flex items-center justify-between px-3.5 py-3 border-t border-border">
+                      <span className="text-[12px] text-subtle">
+                        Adds one select step at the end — the alias does the rename.
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={onClose}>
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={apply}
+                          disabled={loading || acceptedCount === 0}
+                        >
+                          Add {acceptedCount} mapping{acceptedCount === 1 ? "" : "s"}
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </Panel>
             </div>
-          )}
-          {llmError && (
-            <div className="px-3.5 py-3 border-b border-border text-gold font-mono text-[12px]">
-              Name matching ran; the model pass did not: {llmError}
-            </div>
-          )}
-          {!error && (
-            <>
-              <DataTable
-                columns={columns}
-                rows={matches}
-                emptyText={loading ? "Matching…" : "No destination columns."}
-                selection={{
-                  selectedIds: accepted,
-                  rowId: (m) => m.dest,
-                  onToggle: (id) =>
-                    setAccepted((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(id)) next.delete(id);
-                      else next.add(id);
-                      return next;
-                    }),
-                  onToggleAll: () =>
-                    setAccepted((prev) =>
-                      prev.size === matches.length
-                        ? new Set()
-                        : new Set(matches.map((m) => m.dest)),
-                    ),
-                }}
-              />
-              <div className="flex items-center justify-between px-3.5 py-3 border-t border-border">
-                <span className="text-[12px] text-subtle">
-                  Adds one select step at the end — the alias does the rename.
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={onClose}>
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={apply}
-                    disabled={loading || acceptedCount === 0}
-                  >
-                    Add {acceptedCount} mapping{acceptedCount === 1 ? "" : "s"}
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-        </Panel>
-      </div>
-    </div>,
+          </div>,
           portalHost(),
         );
 
@@ -269,7 +272,9 @@ export function AutoMapButton({
           void propose();
         }}
         disabled={!outputId}
-        title={outputId ? "Match source columns to the destination table" : "Pick a destination first"}
+        title={
+          outputId ? "Match source columns to the destination table" : "Pick a destination first"
+        }
       >
         Auto-map…
       </Button>

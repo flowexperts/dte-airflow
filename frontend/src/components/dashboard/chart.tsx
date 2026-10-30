@@ -79,9 +79,7 @@ function NumberTile({ rows, spec }: { rows: Row[]; spec: ChartSpec }) {
   return (
     <div className="h-full flex flex-col items-center justify-center gap-1">
       <div className="text-4xl font-medium tabular-nums text-text">{display}</div>
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-subtle">
-        {field}
-      </div>
+      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-subtle">{field}</div>
     </div>
   );
 }

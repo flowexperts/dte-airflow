@@ -1,13 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "@/components/ui/portal-host";
+import { useMounted } from "@/components/ui/use-mounted";
 import { Button, Dropdown } from "@/components/ui";
 import type { ParamType, PipelineParam } from "@/lib/api";
-import {
-  compatibleFor,
-  isDynamicSentinel,
-  type SystemVar,
-} from "@/lib/system-vars";
+import { compatibleFor, isDynamicSentinel, type SystemVar } from "@/lib/system-vars";
 
 /** Client-side validation mirror of `dte.compiler.interpolate.coerce_param_value`.
  *  Returns null on success, or a message. Server is source of truth — this
@@ -94,30 +91,27 @@ export function ParamsModal({
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
+  const [prevOpen, setPrevOpen] = useState(open);
 
   // Re-seed when the modal reopens (initialValues may have changed since last mount).
-  useEffect(() => {
-    if (!open) return;
-    setValues(() => {
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
       const seed: Record<string, string> = {};
       for (const p of declared) seed[p.name] = initialValues?.[p.name] ?? "";
-      return seed;
-    });
-    setErr(null);
-    setBusy(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+      setValues(seed);
+      setErr(null);
+      setBusy(false);
+    }
+  }
 
   if (!open || !mounted) return null;
 
   const fieldErrors: Record<string, string | null> = {};
   for (const p of declared) {
     const raw = values[p.name] ?? "";
-    const isRequired =
-      p.required !== false && (p.default == null || p.default === "");
+    const isRequired = p.required !== false && (p.default == null || p.default === "");
     if (raw === "" && isRequired) {
       fieldErrors[p.name] = "required";
     } else {
@@ -165,10 +159,7 @@ export function ParamsModal({
               const dynMatch = raw.match(/^\{\{\s*([\w.]+)\s*\}\}$/);
               const isDynamic = !!dynMatch && dynamicOpts.length > 0;
               return (
-                <div
-                  key={p.name}
-                  className="grid grid-cols-[130px_1fr] gap-2 items-start"
-                >
+                <div key={p.name} className="grid grid-cols-[130px_1fr] gap-2 items-start">
                   <div className="pt-1.5 text-[12px] text-muted font-mono">
                     <span className="text-text">{p.name}</span>
                     {isRequired && <span className="text-red">*</span>}
@@ -179,9 +170,7 @@ export function ParamsModal({
                       <div className="mb-1 inline-flex border border-border rounded-[var(--radius)] bg-bg p-0.5">
                         <button
                           type="button"
-                          onClick={() =>
-                            setValues((s) => ({ ...s, [p.name]: "" }))
-                          }
+                          onClick={() => setValues((s) => ({ ...s, [p.name]: "" }))}
                           className={
                             (!isDynamic
                               ? "bg-[color:var(--accent-tint)] text-accent"
@@ -213,14 +202,10 @@ export function ParamsModal({
                     {isDynamic ? (
                       <Dropdown<SystemVar>
                         value={dynMatch![1] as SystemVar}
-                        onChange={(v) =>
-                          setValues((s) => ({ ...s, [p.name]: `{{${v}}}` }))
-                        }
+                        onChange={(v) => setValues((s) => ({ ...s, [p.name]: `{{${v}}}` }))}
                         options={dynamicOpts.map((v) => ({
                           value: v,
-                          label: (
-                            <span className="font-mono">{`{{${v}}}`}</span>
-                          ),
+                          label: <span className="font-mono">{`{{${v}}}`}</span>,
                           meta: "dynamic",
                         }))}
                       />
@@ -230,9 +215,7 @@ export function ParamsModal({
                           <button
                             key={v}
                             type="button"
-                            onClick={() =>
-                              setValues((s) => ({ ...s, [p.name]: v }))
-                            }
+                            onClick={() => setValues((s) => ({ ...s, [p.name]: v }))}
                             className={
                               (values[p.name] === v
                                 ? "bg-[color:var(--accent-tint)] text-accent"
@@ -248,21 +231,15 @@ export function ParamsModal({
                       <input
                         type={inputTypeFor(p.type)}
                         value={values[p.name] ?? ""}
-                        onChange={(e) =>
-                          setValues((s) => ({ ...s, [p.name]: e.target.value }))
-                        }
+                        onChange={(e) => setValues((s) => ({ ...s, [p.name]: e.target.value }))}
                         placeholder={p.default ?? ""}
                         className="w-full bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent font-mono"
                       />
                     )}
                     {p.description && (
-                      <div className="mt-0.5 text-[10.5px] text-subtle">
-                        {p.description}
-                      </div>
+                      <div className="mt-0.5 text-[10.5px] text-subtle">{p.description}</div>
                     )}
-                    {showErr && (
-                      <div className="mt-0.5 text-[10.5px] text-red">{rowErr}</div>
-                    )}
+                    {showErr && <div className="mt-0.5 text-[10.5px] text-red">{rowErr}</div>}
                   </div>
                 </div>
               );
@@ -278,12 +255,7 @@ export function ParamsModal({
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={busy || !submittable}
-            onClick={submit}
-          >
+          <Button variant="primary" size="sm" disabled={busy || !submittable} onClick={submit}>
             {busy ? "Working…" : submitLabel}
           </Button>
         </div>

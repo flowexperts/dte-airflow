@@ -22,9 +22,7 @@ export function RunEvalButton({ evalSetId }: { evalSetId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const toast = useToast();
   const { data: pipelines } = useSWR<Pipeline[]>("/api/pipelines");
-  const { data: evalSet } = useSWR<EvalSet>(
-    `/api/eval-sets/${encodeURIComponent(evalSetId)}`,
-  );
+  const { data: evalSet } = useSWR<EvalSet>(`/api/eval-sets/${encodeURIComponent(evalSetId)}`);
 
   const allEval = (pipelines ?? []).filter(
     (p) => (p as { pipeline_type?: string }).pipeline_type === "eval",
@@ -68,12 +66,11 @@ export function RunEvalButton({ evalSetId }: { evalSetId: string }) {
           {hiddenByCorpus > 0 ? (
             <>
               {hiddenByCorpus} eval pipeline{hiddenByCorpus === 1 ? "" : "s"} exist
-              {hiddenByCorpus === 1 ? "s" : ""}, but none read this set&apos;s
-              corpus (
-              <code className="font-mono">{evalSet?.source_id}</code>). Labels
-              are keyed by document, so scoring a pipeline that reads different
-              documents would match nothing and report zero. Point the pipeline
-              at this source, or create an eval set for the source it does read.
+              {hiddenByCorpus === 1 ? "s" : ""}, but none read this set&apos;s corpus (
+              <code className="font-mono">{evalSet?.source_id}</code>). Labels are keyed by
+              document, so scoring a pipeline that reads different documents would match nothing and
+              report zero. Point the pipeline at this source, or create an eval set for the source
+              it does read.
             </>
           ) : (
             <>
@@ -81,10 +78,9 @@ export function RunEvalButton({ evalSetId }: { evalSetId: string }) {
                   `pipeline_type: eval` — a field name from the API, on a
                   control labelled "Pipeline type", reachable only from the
                   create route. Point at the button that does it instead. */}
-              No eval pipelines yet. Open the extraction pipeline you want to
-              measure and choose{" "}
-              <strong className="text-text">Compare…</strong> — it builds the
-              eval pipeline for you from the steps that are already there.
+              No eval pipelines yet. Open the extraction pipeline you want to measure and choose{" "}
+              <strong className="text-text">Compare…</strong> — it builds the eval pipeline for you
+              from the steps that are already there.
             </>
           )}
         </div>

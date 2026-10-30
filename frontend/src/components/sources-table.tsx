@@ -1,12 +1,7 @@
 import { useState } from "react";
 import { useRouter } from "@/lib/nav";
 import { CopyId, DataTable, type Column, type DataTableSelection } from "@/components/ui";
-import {
-  bulkDeleteSources,
-  deleteSource,
-  type BulkDeleteResult,
-  type Source,
-} from "@/lib/api";
+import { bulkDeleteSources, deleteSource, type BulkDeleteResult, type Source } from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
 import { summarizeBulkDelete } from "@/lib/bulk-delete";
 import { useToast } from "@/components/toaster";
@@ -81,9 +76,7 @@ export function SourcesTable({ rows }: { rows: Source[] }) {
       key: "type",
       header: "Type",
       width: "140px",
-      render: (r) => (
-        <span className="font-mono text-[11.5px] text-muted">{r.source_type}</span>
-      ),
+      render: (r) => <span className="font-mono text-[11.5px] text-muted">{r.source_type}</span>,
     },
     {
       key: "config",
@@ -100,19 +93,20 @@ export function SourcesTable({ rows }: { rows: Source[] }) {
       header: "",
       width: "100px",
       align: "right",
-      render: (r) => canDelete ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(r.id);
-          }}
-          disabled={busy === r.id}
-          className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
-        >
-          {busy === r.id ? "…" : "Delete"}
-        </button>
-      ) : null,
+      render: (r) =>
+        canDelete ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(r.id);
+            }}
+            disabled={busy === r.id}
+            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
+          >
+            {busy === r.id ? "…" : "Delete"}
+          </button>
+        ) : null,
     },
   ];
 
@@ -120,9 +114,7 @@ export function SourcesTable({ rows }: { rows: Source[] }) {
     <div className="flex flex-col gap-2">
       {canDelete && selectedIds.size > 0 && (
         <div className="flex items-center justify-between px-3.5 py-2 border border-border rounded-[var(--radius)] bg-surface-2">
-          <span className="font-mono text-[11px] text-muted">
-            {selectedIds.size} selected
-          </span>
+          <span className="font-mono text-[11px] text-muted">{selectedIds.size} selected</span>
           <button
             type="button"
             onClick={onBulkDelete}
@@ -138,9 +130,7 @@ export function SourcesTable({ rows }: { rows: Source[] }) {
         rows={rows}
         selection={selection}
         onRowClick={
-          canEdit
-            ? (r) => router.push(`/sources/edit?id=${encodeURIComponent(r.id)}`)
-            : undefined
+          canEdit ? (r) => router.push(`/sources/edit?id=${encodeURIComponent(r.id)}`) : undefined
         }
         emptyText="No sources yet. Create one to reuse across pipelines."
       />

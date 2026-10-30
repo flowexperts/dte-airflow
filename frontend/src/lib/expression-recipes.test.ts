@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RECIPES, buildRecipe, recipeById } from "./expression-recipes";
 
-const build = (id: string, args: Record<string, string>) =>
-  buildRecipe(recipeById(id)!, args);
+const build = (id: string, args: Record<string, string>) => buildRecipe(recipeById(id)!, args);
 
 describe("buildRecipe", () => {
   it("returns empty until every required slot is filled", () => {
@@ -39,12 +38,8 @@ describe("buildRecipe", () => {
   });
 
   it("takes a literal or a field on the right of arithmetic", () => {
-    expect(build("arithmetic", { field: "price", op: "*", other: "qty" })).toBe(
-      '"price" * "qty"',
-    );
-    expect(build("arithmetic", { field: "price", op: "*", other: "1.2" })).toBe(
-      '"price" * 1.2',
-    );
+    expect(build("arithmetic", { field: "price", op: "*", other: "qty" })).toBe('"price" * "qty"');
+    expect(build("arithmetic", { field: "price", op: "*", other: "1.2" })).toBe('"price" * 1.2');
   });
 
   it("defaults optional numeric slots rather than emitting nothing", () => {

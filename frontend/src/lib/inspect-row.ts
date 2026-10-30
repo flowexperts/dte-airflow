@@ -42,8 +42,7 @@ export function inspectableRow(row: Record<string, unknown>): InspectableRow | n
   if (!docKey) return null;
 
   const extractMeta = asObject(row.extract_meta);
-  const extractKey =
-    typeof extractMeta?.key === "string" ? extractMeta.key : null;
+  const extractKey = typeof extractMeta?.key === "string" ? extractMeta.key : null;
 
   const structureMeta = asObject(row.structure_meta);
   const provenance = asObject(structureMeta?.fields) ?? {};

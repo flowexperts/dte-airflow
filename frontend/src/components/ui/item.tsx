@@ -26,11 +26,7 @@ export function Item({
       </div>
       <div className="min-w-0">
         <div className="text-[13px] font-medium">{label}</div>
-        {path && (
-          <div className="font-mono text-[11px] text-subtle mt-0.5 truncate">
-            {path}
-          </div>
-        )}
+        {path && <div className="font-mono text-[11px] text-subtle mt-0.5 truncate">{path}</div>}
       </div>
       {tag}
     </div>

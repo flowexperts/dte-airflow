@@ -35,19 +35,10 @@ export interface ParquetOutput {
  *  Targets name a *format* only — `path` may be a local path or an
  *  object-store URI (`s3://`, `gcs://`, `az://`), so every format can
  *  address every storage backend. */
-export type FileOutputTarget =
-  | JsonFileOutput
-  | CsvFileOutput
-  | ExcelFileOutput
-  | ParquetOutput;
+export type FileOutputTarget = JsonFileOutput | CsvFileOutput | ExcelFileOutput | ParquetOutput;
 export type FileOutputType = FileOutputTarget["type"];
 
-export const FILE_OUTPUT_TYPES: FileOutputType[] = [
-  "json",
-  "csv",
-  "excel",
-  "parquet",
-];
+export const FILE_OUTPUT_TYPES: FileOutputType[] = ["json", "csv", "excel", "parquet"];
 
 export const FILE_OUTPUT_EXT: Record<FileOutputType, string> = {
   json: ".json",
@@ -74,11 +65,7 @@ export type EngineChoice =
 // ---------- Quality contracts ----------
 
 export type ContractType =
-  | "row_count_between"
-  | "column_not_null"
-  | "column_unique"
-  | "column_in_range"
-  | "column_matches";
+  "row_count_between" | "column_not_null" | "column_unique" | "column_in_range" | "column_matches";
 
 export interface QualityContract {
   id: string;
@@ -93,13 +80,7 @@ export interface QualityContract {
 // ---------- Pipeline params ----------
 
 /** Trigger-time typed inputs declared on a pipeline. */
-export type ParamType =
-  | "string"
-  | "int"
-  | "float"
-  | "date"
-  | "timestamp"
-  | "boolean";
+export type ParamType = "string" | "int" | "float" | "date" | "timestamp" | "boolean";
 
 export interface PipelineParam {
   name: string;
@@ -207,10 +188,18 @@ export type DltSource = Source;
 
 export type ConnectionType =
   | "local_fs"
-  | "s3" | "gcs" | "azure" | "sftp"
-  | "postgres" | "mysql" | "mssql" | "sqlite"
-  | "mongodb" | "rest_api"
-  | "snowflake" | "bigquery";
+  | "s3"
+  | "gcs"
+  | "azure"
+  | "sftp"
+  | "postgres"
+  | "mysql"
+  | "mssql"
+  | "sqlite"
+  | "mongodb"
+  | "rest_api"
+  | "snowflake"
+  | "bigquery";
 
 /** What this deployment can read and write, from the Airflow providers
  *  installed alongside DTE (`GET /api/capabilities`, plan 074). */
@@ -244,8 +233,19 @@ export type OutputTarget =
   | CsvFileOutput
   | ExcelFileOutput
   | ParquetOutput
-  | { type: "postgres"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" }
-  | { type: "sql_database"; dialect: "mysql" | "mssql" | "snowflake" | "bigquery"; schema: string; table: string; write_disposition?: "replace" | "append" | "merge" };
+  | {
+      type: "postgres";
+      schema: string;
+      table: string;
+      write_disposition?: "replace" | "append" | "merge";
+    }
+  | {
+      type: "sql_database";
+      dialect: "mysql" | "mssql" | "snowflake" | "bigquery";
+      schema: string;
+      table: string;
+      write_disposition?: "replace" | "append" | "merge";
+    };
 
 export interface Destination {
   /** Opaque, server-generated. Never edited after creation. */
@@ -269,21 +269,13 @@ export function isFileOutput(o: OutputTarget): o is FileOutputTarget {
 /** Empty config for a given file output type — used when the type picker
  *  swaps the discriminant. Preserves the current `path` so users don't
  *  lose what they've typed. */
-export function emptyFileOutput(
-  type: FileOutputType,
-  path = "",
-): FileOutputTarget {
+export function emptyFileOutput(type: FileOutputType, path = ""): FileOutputTarget {
   return { type, path, fields: [] } as FileOutputTarget;
 }
 
 // Run is untyped in OpenAPI (routes return `dict`), so we model it here.
 export type RunStatus =
-  | "pending"
-  | "running"
-  | "completed"
-  | "failed"
-  | "failed_quality"
-  | "completed_with_warnings";
+  "pending" | "running" | "completed" | "failed" | "failed_quality" | "completed_with_warnings";
 
 export interface QualityCheckResult {
   contract_id: string;
@@ -383,10 +375,7 @@ export interface Page<T> {
  * response the browser can't read cross-origin — `total` falls back to the
  * page length, which degrades to "one page" rather than to a broken count.
  */
-export async function apiFetchPage<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<Page<T>> {
+export async function apiFetchPage<T>(path: string, init?: RequestInit): Promise<Page<T>> {
   const { data, res } = await apiRequest<T[]>(path, init);
   const header = res.headers.get("X-Total-Count");
   const parsed = header === null ? NaN : Number(header);
@@ -397,10 +386,7 @@ export async function apiFetchPage<T>(
   };
 }
 
-export async function apiFetch<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await apiRequest<T>(path, init)).data;
 }
 
@@ -467,10 +453,9 @@ export const createPipeline = (pipeline: Pipeline) =>
 /** Omits `schedule` and `notifications`: each is owned by its own route, the
  *  server keeps it when absent, and the caller's copy may predate an edit. */
 export const updatePipeline = (id: string, pipeline: Pipeline) => {
-  const { schedule: _s, notifications: _n, ...body } = pipeline as Pipeline & {
-    schedule?: unknown;
-    notifications?: unknown;
-  };
+  const body: Record<string, unknown> = { ...pipeline };
+  delete body.schedule;
+  delete body.notifications;
   return apiFetch<{ id: string }>(`/api/pipelines/${encodeURIComponent(id)}`, {
     method: "PUT",
     body: JSON.stringify(body),
@@ -487,20 +472,13 @@ export const bulkDeletePipelines = (ids: string[]) =>
     body: JSON.stringify({ ids }),
   });
 
-export const triggerPipeline = (
-  id: string,
-  params: Record<string, string> = {},
-) =>
-  apiFetch<{ run_id: string }>(
-    `/api/pipelines/${encodeURIComponent(id)}/trigger`,
-    { method: "POST", body: JSON.stringify({ params }) },
-  );
+export const triggerPipeline = (id: string, params: Record<string, string> = {}) =>
+  apiFetch<{ run_id: string }>(`/api/pipelines/${encodeURIComponent(id)}/trigger`, {
+    method: "POST",
+    body: JSON.stringify({ params }),
+  });
 
-export const previewPipeline = (
-  id: string,
-  limit = 100,
-  params?: Record<string, string>,
-) => {
+export const previewPipeline = (id: string, limit = 100, params?: Record<string, string>) => {
   const q = new URLSearchParams({ limit: String(limit) });
   if (params && Object.keys(params).length > 0) {
     q.set("params", JSON.stringify(params));
@@ -511,19 +489,15 @@ export const previewPipeline = (
 };
 
 /** Compile + sample an unsaved pipeline body (plan 038 item 6). */
-export const dryRunPipeline = (
-  pipeline: Pipeline,
-  limit = 20,
-  params?: Record<string, string>,
-) => {
+export const dryRunPipeline = (pipeline: Pipeline, limit = 20, params?: Record<string, string>) => {
   const q = new URLSearchParams({ limit: String(limit) });
   if (params && Object.keys(params).length > 0) {
     q.set("params", JSON.stringify(params));
   }
-  return apiFetch<PreviewResponse>(
-    `/api/pipelines/dry-run?${q.toString()}`,
-    { method: "POST", body: JSON.stringify(pipeline) },
-  );
+  return apiFetch<PreviewResponse>(`/api/pipelines/dry-run?${q.toString()}`, {
+    method: "POST",
+    body: JSON.stringify(pipeline),
+  });
 };
 
 /** Per-step schema map for an unsaved pipeline body (plan 038 item 7),
@@ -543,15 +517,13 @@ export interface StepSchemasResponse {
 }
 
 export const pipelineStepSchemas = (pipeline: Pipeline) =>
-  apiFetch<StepSchemasResponse>(
-    `/api/pipelines/step-schemas`,
-    { method: "POST", body: JSON.stringify(pipeline) },
-  );
+  apiFetch<StepSchemasResponse>(`/api/pipelines/step-schemas`, {
+    method: "POST",
+    body: JSON.stringify(pipeline),
+  });
 
 export const listPipelineRuns = (id: string, limit = 50) =>
-  apiFetch<Run[]>(
-    `/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}`,
-  );
+  apiFetch<Run[]>(`/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}`);
 
 /** Paged variant — carries the total so the pager can size itself. */
 export const listPipelineRunsPage = (id: string, limit: number, offset: number) =>
@@ -598,15 +570,9 @@ export interface RevisionDiffResponse {
 }
 
 export const listPipelineRevisions = (id: string, limit = 100) =>
-  apiFetch<PipelineRevision[]>(
-    `/api/pipelines/${encodeURIComponent(id)}/revisions?limit=${limit}`,
-  );
+  apiFetch<PipelineRevision[]>(`/api/pipelines/${encodeURIComponent(id)}/revisions?limit=${limit}`);
 
-export const listPipelineRevisionsPage = (
-  id: string,
-  limit: number,
-  offset: number,
-) =>
+export const listPipelineRevisionsPage = (id: string, limit: number, offset: number) =>
   apiFetchPage<PipelineRevision>(
     `/api/pipelines/${encodeURIComponent(id)}/revisions?limit=${limit}&offset=${offset}`,
   );
@@ -616,11 +582,7 @@ export const getPipelineRevision = (pipelineId: string, revisionId: string) =>
     `/api/pipelines/${encodeURIComponent(pipelineId)}/revisions/${encodeURIComponent(revisionId)}`,
   );
 
-export const diffPipelineRevisions = (
-  pipelineId: string,
-  fromId: string,
-  toId: string,
-) =>
+export const diffPipelineRevisions = (pipelineId: string, fromId: string, toId: string) =>
   apiFetch<RevisionDiffResponse>(
     `/api/pipelines/${encodeURIComponent(pipelineId)}/diff?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`,
   );
@@ -641,7 +603,10 @@ export const getSource = (id: string) => apiFetch<Source>(`/api/sources/${encode
 export const createSource = (source: Source) =>
   apiFetch<Source>(`/api/sources`, { method: "POST", body: JSON.stringify(source) });
 export const updateSource = (id: string, source: Source) =>
-  apiFetch<Source>(`/api/sources/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(source) });
+  apiFetch<Source>(`/api/sources/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(source),
+  });
 export const deleteSource = (id: string) =>
   apiFetch<void>(`/api/sources/${encodeURIComponent(id)}`, { method: "DELETE" });
 export const bulkDeleteSources = (ids: string[]) =>
@@ -662,11 +627,15 @@ export const listSourceTables = (id: string) =>
 // ---------- Destinations ----------
 
 export const listDestinations = () => apiFetch<Destination[]>(`/api/destinations`);
-export const getDestination = (id: string) => apiFetch<Destination>(`/api/destinations/${encodeURIComponent(id)}`);
+export const getDestination = (id: string) =>
+  apiFetch<Destination>(`/api/destinations/${encodeURIComponent(id)}`);
 export const createDestination = (destination: Destination) =>
   apiFetch<Destination>(`/api/destinations`, { method: "POST", body: JSON.stringify(destination) });
 export const updateDestination = (id: string, destination: Destination) =>
-  apiFetch<Destination>(`/api/destinations/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(destination) });
+  apiFetch<Destination>(`/api/destinations/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(destination),
+  });
 export const deleteDestination = (id: string) =>
   apiFetch<void>(`/api/destinations/${encodeURIComponent(id)}`, { method: "DELETE" });
 /** Columns of a DB destination's target table. 422 for file targets —
@@ -714,9 +683,7 @@ export const bulkDeleteLookupTables = (ids: string[]) =>
 
 export const listConnections = () => apiFetch<Connection[]>(`/api/connections`);
 export const getConnection = (id: string, reveal = false) =>
-  apiFetch<Connection>(
-    `/api/connections/${encodeURIComponent(id)}${reveal ? "?reveal=true" : ""}`,
-  );
+  apiFetch<Connection>(`/api/connections/${encodeURIComponent(id)}${reveal ? "?reveal=true" : ""}`);
 export const createConnection = (connection: Connection) =>
   apiFetch<Connection>(`/api/connections`, {
     method: "POST",
@@ -749,8 +716,7 @@ export const listConnectionSchemas = (id: string) =>
 
 // ---------- Runs ----------
 
-export const getRun = (id: string) =>
-  apiFetch<Run>(`/api/runs/${encodeURIComponent(id)}`);
+export const getRun = (id: string) => apiFetch<Run>(`/api/runs/${encodeURIComponent(id)}`);
 
 export const getRunQuality = (runId: string) =>
   apiFetch<{ results: QualityCheckResult[]; count: number }>(
@@ -758,9 +724,7 @@ export const getRunQuality = (runId: string) =>
   );
 
 export const getRunOutput = (id: string, limit = 5) =>
-  apiFetch<PreviewResponse>(
-    `/api/runs/${encodeURIComponent(id)}/output?limit=${limit}`,
-  );
+  apiFetch<PreviewResponse>(`/api/runs/${encodeURIComponent(id)}/output?limit=${limit}`);
 
 export interface RunEvent {
   step_index: number;
@@ -772,9 +736,7 @@ export interface RunEvent {
 }
 
 export const getRunEvents = (id: string) =>
-  apiFetch<{ events: RunEvent[]; count: number }>(
-    `/api/runs/${encodeURIComponent(id)}/events`,
-  );
+  apiFetch<{ events: RunEvent[]; count: number }>(`/api/runs/${encodeURIComponent(id)}/events`);
 
 export const inferSchema = (source: Source, table?: string | null) =>
   apiFetch<{ fields: SchemaField[] }>(
@@ -874,8 +836,7 @@ export const deleteSchedule = (pipelineId: string) =>
 // so the token rides along.
 
 /** Strip the `artifact://` scheme rows use to reference stored blobs. */
-export const artifactKey = (ref: string): string =>
-  ref.replace(/^artifact:\/\//, "");
+export const artifactKey = (ref: string): string => ref.replace(/^artifact:\/\//, "");
 
 export const isArtifactRef = (v: unknown): v is string =>
   typeof v === "string" && /^artifact:\/\/[0-9a-f]{64}$/.test(v);
@@ -1046,7 +1007,10 @@ export const updateEvalSet = (id: string, body: Partial<EvalSet>) =>
 export const deleteEvalSet = (id: string) =>
   apiFetch<void>(`/api/eval-sets/${encodeURIComponent(id)}`, { method: "DELETE" });
 
-export const listEvalExamples = (id: string, opts: { split?: string; limit?: number; offset?: number } = {}) => {
+export const listEvalExamples = (
+  id: string,
+  opts: { split?: string; limit?: number; offset?: number } = {},
+) => {
   const q = new URLSearchParams();
   if (opts.split) q.set("split", opts.split);
   if (opts.limit != null) q.set("limit", String(opts.limit));
@@ -1101,11 +1065,7 @@ export interface BootstrapResult {
 
 /** `confirm: false` returns proposals and writes nothing. Bootstrap writes
  *  ground truth, so the preview is always the default. */
-export const bootstrapEvalSet = (
-  id: string,
-  variantPipelineIds: string[],
-  confirm = false,
-) =>
+export const bootstrapEvalSet = (id: string, variantPipelineIds: string[], confirm = false) =>
   apiFetch<BootstrapResult>(`/api/eval-sets/${encodeURIComponent(id)}/bootstrap`, {
     method: "POST",
     body: JSON.stringify({ variant_pipeline_ids: variantPipelineIds, confirm }),
@@ -1321,10 +1281,10 @@ export const getSweepComparison = (sweepId: string) =>
 
 /** Trigger an eval pipeline against a corpus. */
 export const triggerEval = (pipelineId: string, evalSetId: string) =>
-  apiFetch<{ run_id: string }>(
-    `/api/pipelines/${encodeURIComponent(pipelineId)}/trigger`,
-    { method: "POST", body: JSON.stringify({ eval_set_id: evalSetId }) },
-  );
+  apiFetch<{ run_id: string }>(`/api/pipelines/${encodeURIComponent(pipelineId)}/trigger`, {
+    method: "POST",
+    body: JSON.stringify({ eval_set_id: evalSetId }),
+  });
 
 /**
  * Two configs are indistinguishable when their confidence intervals overlap.

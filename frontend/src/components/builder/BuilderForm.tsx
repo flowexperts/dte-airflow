@@ -27,8 +27,9 @@ function formatSaveError(e: unknown): string {
   if (e instanceof ApiError && isPipelineGateError(e.rawDetail)) {
     const d = e.rawDetail;
     if (d.code === "trino_not_enabled") {
-      return d.message ||
-        "Trino engine is not enabled on this deployment. Choose a different engine.";
+      return (
+        d.message || "Trino engine is not enabled on this deployment. Choose a different engine."
+      );
     }
     const lines: string[] = [`Engine '${d.engine}' can't run this pipeline:`];
     for (const s of d.incompatible_sources) {
@@ -42,7 +43,6 @@ function formatSaveError(e: unknown): string {
   }
   return e instanceof Error ? e.message : String(e);
 }
-
 
 function AutoInferSchemas({ sources }: { sources: SourceTableRef[] }) {
   const { schemas, refreshById } = useSchemas();
@@ -78,10 +78,7 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
    * Validate a single field and show (or clear) its error.
    * Used on blur for text inputs and on change for picker fields.
    */
-  const touchField = (
-    field: "id" | "name" | "sources" | "output_id",
-    value: unknown,
-  ) => {
+  const touchField = (field: "id" | "name" | "sources" | "output_id", value: unknown) => {
     const msg = validateField(field, value);
     setFieldErrors((prev) => {
       const next = { ...prev };
@@ -99,10 +96,7 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
    * displayed for it — this clears the error as soon as the value becomes
    * valid without triggering errors on every keystroke before first blur.
    */
-  const revalidateField = (
-    field: "id" | "name" | "sources" | "output_id",
-    value: unknown,
-  ) => {
+  const revalidateField = (field: "id" | "name" | "sources" | "output_id", value: unknown) => {
     setFieldErrors((prev) => {
       if (!prev[field]) return prev; // no error shown yet; wait for blur
       const msg = validateField(field, value);
@@ -151,7 +145,8 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
     try {
       // Server generates the id — use the response, not the draft. Strip the
       // placeholder empty id so the backend's default_factory fires.
-      const { id: _drop, ...body } = pipeline;
+      const body = { ...pipeline } as Partial<Pipeline>;
+      delete body.id;
       const created = await createPipeline(body as Pipeline);
       router.push(`/pipelines/detail?id=${encodeURIComponent(created.id)}`);
     } catch (e) {
@@ -184,9 +179,7 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
         <Segmented<"transform" | "quality" | "eval" | "viz">
           options={PIPELINE_TYPE_TABS.map(({ type, label }) => ({ value: type, label }))}
           value={pipeline.pipeline_type ?? "transform"}
-          onChange={(v) =>
-            setPipeline((p: Pipeline) => ({ ...p, pipeline_type: v }))
-          }
+          onChange={(v) => setPipeline((p: Pipeline) => ({ ...p, pipeline_type: v }))}
         />
       </Field>
     </div>
@@ -194,99 +187,83 @@ export function BuilderForm({ initial }: { initial: Pipeline }) {
 
   return (
     <SchemaProvider>
-     <PipelineParamsProvider params={pipeline.params}>
-      <AutoInferSchemas sources={pipeline.sources ?? []} />
-      <AutoStepSchemas pipeline={pipeline} />
-      <Topbar
-        crumbs={[
-          { label: "DTE Pipelines", href: "/pipelines" },
-          { label: "New" },
-        ]}
-        actions={
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.back()}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              kbd="⌘S"
-              onClick={save}
-              disabled={saving}
-            >
-              {saving ? "Saving…" : "Save pipeline"}
-            </Button>
-          </>
-        }
-      />
-      <PageHeader
-        title="New pipeline"
-      />
+      <PipelineParamsProvider params={pipeline.params}>
+        <AutoInferSchemas sources={pipeline.sources ?? []} />
+        <AutoStepSchemas pipeline={pipeline} />
+        <Topbar
+          crumbs={[{ label: "DTE Pipelines", href: "/pipelines" }, { label: "New" }]}
+          actions={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => router.back()} disabled={saving}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" kbd="⌘S" onClick={save} disabled={saving}>
+                {saving ? "Saving…" : "Save pipeline"}
+              </Button>
+            </>
+          }
+        />
+        <PageHeader title="New pipeline" />
 
-      {(() => {
-        const previewNode = <PipelinePreview pipelineId={pipeline} />;
-        return (
-        <div
-          className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] overflow-hidden"
-          style={{ height: "calc(100vh - 52px - 89px)" }}
-        >
-          <div className="overflow-y-auto border-r border-border">
-            <div className="px-8 py-8 space-y-6">
-              {submitErr && (
-                <div className="p-3 border border-red rounded bg-code-bg text-red font-mono text-[12.5px]">
-                  {submitErr}
+        {(() => {
+          const previewNode = <PipelinePreview pipelineId={pipeline} />;
+          return (
+            <div
+              className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] overflow-hidden"
+              style={{ height: "calc(100vh - 52px - 89px)" }}
+            >
+              <div className="overflow-y-auto border-r border-border">
+                <div className="px-8 py-8 space-y-6">
+                  {submitErr && (
+                    <div className="p-3 border border-red rounded bg-code-bg text-red font-mono text-[12.5px]">
+                      {submitErr}
+                    </div>
+                  )}
+                  {fieldGrid}
+                  <SourcesPanel
+                    sources={pipeline.sources ?? []}
+                    onChange={(sources) => {
+                      setPipeline({ ...pipeline, sources });
+                      touchField("sources", sources);
+                    }}
+                    error={fieldErrors.sources}
+                  />
+                  {writesNowhere ? (
+                    <p className="text-muted text-sm">
+                      {isEval
+                        ? "Eval pipelines produce a score against a labeled corpus, not a data output."
+                        : "Quality pipelines produce a quality report, not a data output."}
+                    </p>
+                  ) : (
+                    <DestinationPicker
+                      outputId={pipeline.output_id ?? ""}
+                      onChange={(output_id) => {
+                        setPipeline({ ...pipeline, output_id });
+                        touchField("output_id", output_id);
+                      }}
+                      error={fieldErrors.output_id}
+                    />
+                  )}
+                  <InputsPanel
+                    params={pipeline.params ?? []}
+                    onChange={(params) => setPipeline({ ...pipeline, params })}
+                  />
+                  <StepsPanel
+                    steps={(pipeline.steps ?? []) as StepShape[]}
+                    onChange={(steps) => setPipeline({ ...pipeline, steps })}
+                    pipelineType={pipeline.pipeline_type ?? "transform"}
+                    sources={pipeline.sources ?? []}
+                    outputId={pipeline.output_id ?? ""}
+                  />
                 </div>
-              )}
-              {fieldGrid}
-              <SourcesPanel
-                sources={pipeline.sources ?? []}
-                onChange={(sources) => {
-                  setPipeline({ ...pipeline, sources });
-                  touchField("sources", sources);
-                }}
-                error={fieldErrors.sources}
-              />
-              {writesNowhere ? (
-                <p className="text-muted text-sm">
-                  {isEval
-                    ? "Eval pipelines produce a score against a labeled corpus, not a data output."
-                    : "Quality pipelines produce a quality report, not a data output."}
-                </p>
-              ) : (
-                <DestinationPicker
-                  outputId={pipeline.output_id ?? ""}
-                  onChange={(output_id) => {
-                    setPipeline({ ...pipeline, output_id });
-                    touchField("output_id", output_id);
-                  }}
-                  error={fieldErrors.output_id}
-                />
-              )}
-              <InputsPanel
-                params={pipeline.params ?? []}
-                onChange={(params) => setPipeline({ ...pipeline, params })}
-              />
-              <StepsPanel
-                steps={(pipeline.steps ?? []) as StepShape[]}
-                onChange={(steps) => setPipeline({ ...pipeline, steps })}
-                pipelineType={pipeline.pipeline_type ?? "transform"}
-                sources={pipeline.sources ?? []}
-                outputId={pipeline.output_id ?? ""}
-              />
+              </div>
+              <div className="overflow-y-auto hidden lg:block">
+                <div className="px-8 py-8">{previewNode}</div>
+              </div>
             </div>
-          </div>
-          <div className="overflow-y-auto hidden lg:block">
-            <div className="px-8 py-8">{previewNode}</div>
-          </div>
-        </div>
-      );
-      })()}
-     </PipelineParamsProvider>
+          );
+        })()}
+      </PipelineParamsProvider>
     </SchemaProvider>
   );
 }

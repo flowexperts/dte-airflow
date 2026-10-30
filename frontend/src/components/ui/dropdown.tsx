@@ -1,12 +1,7 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "./portal-host";
+import { useMounted } from "./use-mounted";
 import { cn } from "@/lib/cn";
 import { usePopoverPosition } from "./use-popover-position";
 
@@ -37,13 +32,11 @@ export function Dropdown<T extends string>({
 }: DropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useMounted();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => setMounted(true), []);
 
   const selectable = useMemo(
     () =>
@@ -130,11 +123,7 @@ export function Dropdown<T extends string>({
         <span className={cn("truncate text-left", !currentLabel && "text-subtle")}>
           {currentLabel ?? placeholder}
         </span>
-        <svg
-          aria-hidden
-          viewBox="0 0 12 12"
-          className="h-3 w-3 shrink-0 text-subtle"
-        >
+        <svg aria-hidden viewBox="0 0 12 12" className="h-3 w-3 shrink-0 text-subtle">
           <path
             d="M3 5l3 3 3-3"
             fill="none"
@@ -146,7 +135,9 @@ export function Dropdown<T extends string>({
         </svg>
       </button>
 
-      {mounted && open && pos &&
+      {mounted &&
+        open &&
+        pos &&
         createPortal(
           <div
             ref={popoverRef}
@@ -183,9 +174,7 @@ export function Dropdown<T extends string>({
                 >
                   <span className="truncate">{o.label}</span>
                   {"meta" in o && o.meta && (
-                    <span className="font-mono text-[11px] text-subtle shrink-0">
-                      {o.meta}
-                    </span>
+                    <span className="font-mono text-[11px] text-subtle shrink-0">{o.meta}</span>
                   )}
                 </button>
               );

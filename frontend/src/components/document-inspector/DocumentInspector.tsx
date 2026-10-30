@@ -46,8 +46,7 @@ export function DocumentInspector({
       .then((b) => !cancelled && setBlocks(b))
       .catch(
         (e) =>
-          !cancelled &&
-          setBlocksErr(e instanceof Error ? e.message : "could not load word boxes"),
+          !cancelled && setBlocksErr(e instanceof Error ? e.message : "could not load word boxes"),
       );
     return () => {
       cancelled = true;
@@ -74,9 +73,7 @@ export function DocumentInspector({
     // Blocks are per page at page granularity; at document granularity there
     // is one block carrying every word, and its `page` is null.
     const only = blocks.length === 1 ? blocks[0] : undefined;
-    const block =
-      blocks.find((b) => b.page === page) ??
-      (only && only.page === null ? only : null);
+    const block = blocks.find((b) => b.page === page) ?? (only && only.page === null ? only : null);
     if (!block) return [];
     return resolveHighlight(block, prov);
   }, [blocks, page, prov]);
@@ -105,9 +102,7 @@ export function DocumentInspector({
             Next →
           </Button>
           {filename && (
-            <span className="ml-2 text-[12.5px] text-subtle font-mono truncate">
-              {filename}
-            </span>
+            <span className="ml-2 text-[12.5px] text-subtle font-mono truncate">{filename}</span>
           )}
         </div>
 
@@ -120,12 +115,7 @@ export function DocumentInspector({
         )}
 
         {doc && !error && (
-          <PdfPageCanvas
-            doc={doc}
-            page={page}
-            highlights={highlights}
-            width={PAGE_WIDTH}
-          />
+          <PdfPageCanvas doc={doc} page={page} highlights={highlights} width={PAGE_WIDTH} />
         )}
       </div>
 
@@ -165,9 +155,7 @@ export function DocumentInspector({
                     String(f.value)
                   )}
                 </div>
-                {p?.page && (
-                  <div className="mt-0.5 text-[11px] text-subtle">page {p.page}</div>
-                )}
+                {p?.page && <div className="mt-0.5 text-[11px] text-subtle">page {p.page}</div>}
                 {active && !p?.quote && f.value !== null && (
                   // The acceptance rule: a paraphrased value has no span, and
                   // saying so is required. Boxing an approximation would be a

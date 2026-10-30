@@ -110,8 +110,7 @@ export function LabelFromInspector({
       <div className="px-4 py-3 flex flex-col gap-3">
         {available.length === 0 ? (
           <p className="text-[12.5px] text-subtle">
-            No eval sets yet. Create one to start collecting labels while you
-            review.
+            No eval sets yet. Create one to start collecting labels while you review.
           </p>
         ) : (
           <>
@@ -128,14 +127,10 @@ export function LabelFromInspector({
               <div className="flex flex-col gap-2">
                 {fieldNames.map((f) => (
                   <label key={f} className="flex flex-col gap-1">
-                    <span className="text-[11px] text-subtle uppercase tracking-wide">
-                      {f}
-                    </span>
+                    <span className="text-[11px] text-subtle uppercase tracking-wide">{f}</span>
                     <Input
                       value={draft[f] ?? ""}
-                      onChange={(e) =>
-                        setDraft((d) => ({ ...d, [f]: e.target.value }))
-                      }
+                      onChange={(e) => setDraft((d) => ({ ...d, [f]: e.target.value }))}
                       placeholder="leave blank if the document doesn't say"
                     />
                   </label>
@@ -151,20 +146,14 @@ export function LabelFromInspector({
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={busy || !activeId}
-                  onClick={saveAsIs}
-                >
+                <Button variant="primary" size="sm" disabled={busy || !activeId} onClick={saveAsIs}>
                   {busy ? "Saving…" : "Correct"}
                 </Button>
                 <Button variant="default" size="sm" disabled={!activeId} onClick={openFix}>
                   Fix…
                 </Button>
                 <span className="text-[11.5px] text-subtle">
-                  Saved as a human label against the document&apos;s hash, so it
-                  survives renames.
+                  Saved as a human label against the document&apos;s hash, so it survives renames.
                 </span>
               </div>
             )}

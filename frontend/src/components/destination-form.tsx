@@ -1,14 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "@/lib/nav";
-import {
-  Button,
-  Field,
-  InlineError,
-  Input,
-  PageHeader,
-  Panel,
-  Topbar,
-} from "@/components/ui";
+import { Button, Field, InlineError, Input, PageHeader, Panel, Topbar } from "@/components/ui";
 import {
   createDestination,
   updateDestination,
@@ -23,11 +15,11 @@ import { humanizeError, type HumanError } from "@/lib/errors";
 /** Which connection_types a given destination `config.type` may bind to.
  *  Mirrors backend's DESTINATION_CONNECTION_COMPAT. */
 const DESTINATION_CONNECTION_COMPAT: Record<string, ConnectionType[]> = {
-  json:    ["local_fs", "s3", "gcs", "azure", "sftp"],
-  csv:     ["local_fs", "s3", "gcs", "azure", "sftp"],
-  excel:   ["local_fs", "s3", "gcs", "azure", "sftp"],
+  json: ["local_fs", "s3", "gcs", "azure", "sftp"],
+  csv: ["local_fs", "s3", "gcs", "azure", "sftp"],
+  excel: ["local_fs", "s3", "gcs", "azure", "sftp"],
   parquet: ["local_fs", "s3", "gcs", "azure", "sftp"],
-  postgres:     ["postgres"],
+  postgres: ["postgres"],
   sql_database: ["mysql", "mssql", "snowflake", "bigquery"],
 };
 

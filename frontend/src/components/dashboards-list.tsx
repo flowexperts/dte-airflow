@@ -123,9 +123,7 @@ export function DashboardsList() {
         {creating && (
           <Panel>
             <div className="p-4 space-y-3">
-              {err && (
-                <InlineError title={err.title} message={err.message} detail={err.detail} />
-              )}
+              {err && <InlineError title={err.title} message={err.message} detail={err.detail} />}
               <Field label="Name" hint="editable; unique per workspace">
                 <Input
                   value={name}
@@ -134,12 +132,7 @@ export function DashboardsList() {
                 />
               </Field>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={save}
-                  disabled={busy || !name.trim()}
-                >
+                <Button variant="primary" size="sm" onClick={save} disabled={busy || !name.trim()}>
                   {busy ? "Saving…" : "Create dashboard"}
                 </Button>
                 <Button

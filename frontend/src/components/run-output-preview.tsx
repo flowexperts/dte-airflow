@@ -39,9 +39,7 @@ export function RunOutputPreview({
   // System columns ride on every extracted row and cannot be projected
   // away, so this is where they are kept out of sight. The rows still carry
   // them, which is what lets Inspect work on a table that never shows them.
-  const columns = visibleColumns(
-    data?.rows?.[0] ? Object.keys(data.rows[0]) : [],
-  );
+  const columns = visibleColumns(data?.rows?.[0] ? Object.keys(data.rows[0]) : []);
 
   // Nothing to show and no way to show it — collapse the whole section to one
   // line rather than heading an empty full-width panel.
@@ -65,12 +63,7 @@ export function RunOutputPreview({
         }
         actions={
           supported ? (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={load}
-              disabled={busy || disabled}
-            >
+            <Button variant="primary" size="sm" onClick={load} disabled={busy || disabled}>
               {busy ? "Loading…" : data ? "Reload" : "Load preview"}
             </Button>
           ) : null
@@ -85,9 +78,7 @@ export function RunOutputPreview({
         <Panel>
           <PanelHead label="Rows" count={data.count} />
           {columns.length === 0 || data.rows.length === 0 ? (
-            <div className="p-6 text-center text-subtle text-sm">
-              Output file is empty.
-            </div>
+            <div className="p-6 text-center text-subtle text-sm">Output file is empty.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
@@ -106,10 +97,7 @@ export function RunOutputPreview({
                 </thead>
                 <tbody>
                   {data.rows.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="border-b border-border last:border-b-0 hover:bg-hover"
-                    >
+                    <tr key={i} className="border-b border-border last:border-b-0 hover:bg-hover">
                       {/* Renders nothing unless the row is backed by a
                           document, so non-document pipelines see an empty
                           8px gutter rather than a dead column. */}

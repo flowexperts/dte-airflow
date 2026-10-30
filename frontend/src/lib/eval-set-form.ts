@@ -25,13 +25,7 @@
  * extractor will flatter it. It should be a considered choice, not
  * something landed on while scrolling. Declare it via the API for now.
  */
-export const FIELD_TYPES = [
-  "string",
-  "numeric",
-  "date",
-  "enum",
-  "list",
-] as const;
+export const FIELD_TYPES = ["string", "numeric", "date", "enum", "list"] as const;
 
 export type FieldType = (typeof FIELD_TYPES)[number];
 

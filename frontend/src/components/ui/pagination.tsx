@@ -41,35 +41,22 @@ export function Pagination({
       )}
     >
       <span className="font-mono text-[11px] text-subtle tabular-nums">
-        {first.toLocaleString()}–{last.toLocaleString()} of{" "}
-        {total.toLocaleString()}
+        {first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}
       </span>
       <div className="flex items-center gap-1">
         <PageButton onClick={() => go(1)} disabled={page === 1} label="First page">
           «
         </PageButton>
-        <PageButton
-          onClick={() => go(page - 1)}
-          disabled={page === 1}
-          label="Previous page"
-        >
+        <PageButton onClick={() => go(page - 1)} disabled={page === 1} label="Previous page">
           ‹
         </PageButton>
         <span className="font-mono text-[11px] text-muted px-2 tabular-nums">
           {page} / {pages}
         </span>
-        <PageButton
-          onClick={() => go(page + 1)}
-          disabled={page >= pages}
-          label="Next page"
-        >
+        <PageButton onClick={() => go(page + 1)} disabled={page >= pages} label="Next page">
           ›
         </PageButton>
-        <PageButton
-          onClick={() => go(pages)}
-          disabled={page >= pages}
-          label="Last page"
-        >
+        <PageButton onClick={() => go(pages)} disabled={page >= pages} label="Last page">
           »
         </PageButton>
       </div>
@@ -96,9 +83,7 @@ function PageButton({
       aria-label={label}
       className={cn(
         "size-6 rounded-[var(--radius)] text-[12px] leading-none transition-colors",
-        disabled
-          ? "text-subtle/40 cursor-default"
-          : "text-muted hover:text-accent hover:bg-hover",
+        disabled ? "text-subtle/40 cursor-default" : "text-muted hover:text-accent hover:bg-hover",
       )}
     >
       {children}

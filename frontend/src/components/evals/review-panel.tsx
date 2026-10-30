@@ -86,16 +86,15 @@ export function ReviewPanel({ evalSet }: { evalSet: EvalSet }) {
         <PanelHead label="Bootstrap from variants" />
         <div className="px-4 py-3 flex flex-col gap-3">
           <p className="text-[12.5px] text-muted">
-            Run two or more configs over the corpus and keep only what they all
-            agree on. Agreement uses this set&apos;s comparators, so{" "}
-            <code className="font-mono">$1,240.50</code> and{" "}
-            <code className="font-mono">1240.50</code> count as the same answer.
-            Everything they disagree on lands in the queue below.
+            Run two or more configs over the corpus and keep only what they all agree on. Agreement
+            uses this set&apos;s comparators, so <code className="font-mono">$1,240.50</code> and{" "}
+            <code className="font-mono">1240.50</code> count as the same answer. Everything they
+            disagree on lands in the queue below.
           </p>
           {evalPipelines.length < 2 ? (
             <p className="text-[12.5px] text-subtle">
-              You need at least two eval pipelines to bootstrap. One config
-              agreeing with itself is not evidence.
+              You need at least two eval pipelines to bootstrap. One config agreeing with itself is
+              not evidence.
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -106,9 +105,7 @@ export function ReviewPanel({ evalSet }: { evalSet: EvalSet }) {
                     key={p.id}
                     type="button"
                     onClick={() =>
-                      setVariants(
-                        on ? variants.filter((v) => v !== p.id) : [...variants, p.id],
-                      )
+                      setVariants(on ? variants.filter((v) => v !== p.id) : [...variants, p.id])
                     }
                     className="text-[12px] px-2 py-1 rounded-[var(--radius)] border transition-colors"
                     style={{
@@ -196,11 +193,8 @@ function ReviewQueue({
 
   const current = items[Math.min(cursor, items.length - 1)];
   const docKey = current?.doc_key;
-  const picked = useMemo(() => (docKey ? picksByDoc[docKey] ?? {} : {}), [picksByDoc, docKey]);
-  const contested = useMemo(
-    () => (current ? Object.keys(current.candidates) : []),
-    [current],
-  );
+  const picked = useMemo(() => (docKey ? (picksByDoc[docKey] ?? {}) : {}), [picksByDoc, docKey]);
+  const contested = useMemo(() => (current ? Object.keys(current.candidates) : []), [current]);
 
   /**
    * The options a reviewer may choose, which are deliberately *not* the raw
@@ -315,9 +309,7 @@ function ReviewQueue({
 
       <div className="px-4 py-3 flex flex-col gap-3">
         <div className="flex items-baseline gap-3">
-          <span className="font-mono text-[12px] text-subtle">
-            {current.doc_key.slice(0, 16)}…
-          </span>
+          <span className="font-mono text-[12px] text-subtle">{current.doc_key.slice(0, 16)}…</span>
           <a
             href={`/documents/detail?key=${encodeURIComponent(current.doc_key)}`}
             target="_blank"
@@ -349,8 +341,7 @@ function ReviewQueue({
             <span className="text-[11px] text-subtle uppercase tracking-wide">{field}</span>
             <div className="flex flex-wrap gap-2">
               {optionsFor(field).map((opt, i) => {
-                const on =
-                  picked[field] !== undefined && picked[field] === opt.value;
+                const on = picked[field] !== undefined && picked[field] === opt.value;
                 const absent = opt.value === null;
                 return (
                   <button
@@ -359,11 +350,7 @@ function ReviewQueue({
                     onClick={() => pick(field, opt.value)}
                     className="text-left px-2.5 py-1.5 rounded-[var(--radius)] border transition-colors"
                     style={{
-                      borderColor: on
-                        ? "var(--accent)"
-                        : absent
-                          ? "var(--gold)"
-                          : "var(--border)",
+                      borderColor: on ? "var(--accent)" : absent ? "var(--gold)" : "var(--border)",
                       background: on ? "var(--accent-tint)" : "transparent",
                     }}
                   >

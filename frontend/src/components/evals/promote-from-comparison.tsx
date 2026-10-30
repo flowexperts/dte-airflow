@@ -74,9 +74,7 @@ export function PromoteFromComparison({
               /* Excluded cells stay in the list with the reason attached.
                  A silently missing option reads as a bug; "every row
                  errored" is the most useful thing this page can say. */
-              label: o.shippable
-                ? cellLabel(o.cell)
-                : `${cellLabel(o.cell)} — ${o.reason}`,
+              label: o.shippable ? cellLabel(o.cell) : `${cellLabel(o.cell)} — ${o.reason}`,
               disabled: !o.shippable,
             }))}
           />

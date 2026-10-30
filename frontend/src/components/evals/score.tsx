@@ -87,9 +87,7 @@ export function FieldChip({ metrics }: { metrics: FieldMetrics }) {
 
 /** Sample size, stated next to every score rather than buried in a tooltip. */
 export function SampleSize({ n }: { n: number }) {
-  return (
-    <span className="font-mono text-[11.5px] text-subtle tabular-nums">n={n}</span>
-  );
+  return <span className="font-mono text-[11.5px] text-subtle tabular-nums">n={n}</span>;
 }
 
 export function StaleBadge() {
@@ -114,7 +112,6 @@ export function TiedBadge() {
     </span>
   );
 }
-
 
 /** Cost, cache-hit rate and p95 latency for one run.
  *

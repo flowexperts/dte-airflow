@@ -1,8 +1,5 @@
 import { useEffect, useRef } from "react";
-import {
-  EMPTY_DIALECT_FEEDBACK,
-  useSchemas,
-} from "@/components/builder/schema-context";
+import { EMPTY_DIALECT_FEEDBACK, useSchemas } from "@/components/builder/schema-context";
 import { pipelineStepSchemas, type Pipeline, type SourceTableRef } from "@/lib/api";
 
 /* Field autocomplete needs the same two background syncs BuilderForm runs.

@@ -31,13 +31,9 @@ export function VerdictBanner({
         {GLYPH[tone]}
       </span>
       <div className="min-w-0">
-        <strong className="block text-[14px] font-medium text-text">
-          {headline}
-        </strong>
+        <strong className="block text-[14px] font-medium text-text">{headline}</strong>
         {sub && <span className="text-[13px] text-muted">{sub}</span>}
-        {meta && (
-          <div className="mt-1.5 font-mono text-[11.5px] text-subtle">{meta}</div>
-        )}
+        {meta && <div className="mt-1.5 font-mono text-[11.5px] text-subtle">{meta}</div>}
       </div>
     </div>
   );

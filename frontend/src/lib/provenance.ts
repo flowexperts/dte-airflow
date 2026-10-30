@@ -91,9 +91,7 @@ export function resolveHighlight(block: PageBlock, prov: Provenance): Rect[] {
     // match across a boundary — the tail of one word plus the head of the
     // next — and box two words that never contained it.
     if (first !== -1 && last !== -1 && last >= first) {
-      return groupIntoLines(words.slice(first, last + 1)).map((run) =>
-        bounds(run, width, height),
-      );
+      return groupIntoLines(words.slice(first, last + 1)).map((run) => bounds(run, width, height));
     }
     at = joined.indexOf(target, at + 1);
   }

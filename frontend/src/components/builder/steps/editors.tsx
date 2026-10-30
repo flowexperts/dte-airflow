@@ -22,7 +22,7 @@ import { cn } from "@/lib/cn";
 import type { StepShape, GroupByEntry, DatePart, DataModelField } from "./types";
 import { LookupTablePicker } from "../LookupTablePicker";
 import { SYSTEM_VARS, type SystemVar } from "@/lib/system-vars";
-import { quoteIdent, quoteString, safeLiteral } from "@/lib/sql-literal";
+import { quoteIdent, safeLiteral } from "@/lib/sql-literal";
 import {
   RECIPES,
   buildRecipe,
@@ -87,7 +87,8 @@ function DynamicValueMenu({
       >
         λ
       </button>
-      {open && pos &&
+      {open &&
+        pos &&
         createPortal(
           <div
             ref={popRef}
@@ -108,9 +109,7 @@ function DynamicValueMenu({
                 className="w-full flex items-center justify-between gap-3 px-2.5 py-1.5 text-left text-[13px] text-text hover:bg-[color:var(--accent-tint)]"
               >
                 <span className="font-mono truncate">{`{{${v}}}`}</span>
-                <span className="font-mono text-[11px] text-subtle shrink-0">
-                  dynamic
-                </span>
+                <span className="font-mono text-[11px] text-subtle shrink-0">dynamic</span>
               </button>
             ))}
           </div>,
@@ -148,13 +147,7 @@ function DateValueField({
   // Reserve room on the right for the overlays. When a sentinel is set the
   // native calendar is gone, so we render our own — needs its own slot too.
   const padRight =
-    dynVars.length === 0
-      ? undefined
-      : isSentinel
-        ? "pr-14"
-        : isDatey
-          ? "pr-14"
-          : "pr-7";
+    dynVars.length === 0 ? undefined : isSentinel ? "pr-14" : isDatey ? "pr-14" : "pr-7";
   return (
     <div ref={wrapperRef} className="relative min-w-0">
       <Input
@@ -176,11 +169,7 @@ function DateValueField({
           )}
         >
           {isSentinel && <CalendarResetButton onClear={() => onChange("")} />}
-          <DynamicValueMenu
-            vars={dynVars}
-            onPick={onChange}
-            widthRef={wrapperRef}
-          />
+          <DynamicValueMenu vars={dynVars} onPick={onChange} widthRef={wrapperRef} />
         </div>
       )}
     </div>
@@ -204,10 +193,23 @@ function CalendarResetButton({ onClear }: { onClear: () => void }) {
       className="h-5 w-5 flex items-center justify-center rounded text-subtle hover:text-accent hover:bg-[color:var(--accent-tint)] transition-colors"
     >
       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden>
-        <rect x="2" y="3" width="12" height="11" rx="1.5"
-          fill="none" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M2 6h12M5 2v3M11 2v3"
-          fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        <rect
+          x="2"
+          y="3"
+          width="12"
+          height="11"
+          rx="1.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.3"
+        />
+        <path
+          d="M2 6h12M5 2v3M11 2v3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+        />
       </svg>
     </button>
   );
@@ -267,8 +269,8 @@ function VariablePickerHint({ onInsert }: { onInsert: (token: string) => void })
         )}
       </div>
       <div className="font-mono text-[10.5px] text-subtle">
-        Resolved at run time. Values substitute as strings — cast in SQL where needed
-        (<span className="font-mono">{"'{{params.d}}'::date"}</span>).
+        Resolved at run time. Values substitute as strings — cast in SQL where needed (
+        <span className="font-mono">{"'{{params.d}}'::date"}</span>).
       </div>
     </div>
   );
@@ -277,17 +279,7 @@ function VariablePickerHint({ onInsert }: { onInsert: (token: string) => void })
 /* --------------- Filter — Basic + Advanced tabs --------------- */
 
 type FilterOp =
-  | "="
-  | "!="
-  | ">"
-  | "<"
-  | ">="
-  | "<="
-  | "LIKE"
-  | "IN"
-  | "IS NULL"
-  | "IS NOT NULL"
-  | "BETWEEN";
+  "=" | "!=" | ">" | "<" | ">=" | "<=" | "LIKE" | "IN" | "IS NULL" | "IS NOT NULL" | "BETWEEN";
 
 interface FilterRule {
   field: string;
@@ -297,7 +289,17 @@ interface FilterRule {
 }
 
 const FILTER_OPS: FilterOp[] = [
-  "=", "!=", ">", "<", ">=", "<=", "LIKE", "IN", "IS NULL", "IS NOT NULL", "BETWEEN",
+  "=",
+  "!=",
+  ">",
+  "<",
+  ">=",
+  "<=",
+  "LIKE",
+  "IN",
+  "IS NULL",
+  "IS NOT NULL",
+  "BETWEEN",
 ];
 
 const OPS_WITHOUT_VALUE = new Set<FilterOp>(["IS NULL", "IS NOT NULL"]);
@@ -336,7 +338,10 @@ function ruleToSql(r: FilterRule): string {
       return `${f} IN (${parts.join(", ")})`;
     }
     case "BETWEEN": {
-      const parts = r.value.split(",").map((s) => s.trim()).filter(Boolean);
+      const parts = r.value
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       const [lo, hi] = parts;
       if (parts.length !== 2 || lo === undefined || hi === undefined) return "";
       return `${f} BETWEEN ${safeLiteral(lo)} AND ${safeLiteral(hi)}`;
@@ -390,7 +395,10 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
         let i = 1;
         while (i < rest.length) {
           if (rest[i] === '"') {
-            if (rest[i + 1] === '"') { i += 2; continue; }
+            if (rest[i + 1] === '"') {
+              i += 2;
+              continue;
+            }
             break;
           }
           i++;
@@ -404,7 +412,10 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
         parts.push(bare[1]!);
         rest = bare[2]!;
       }
-      if (rest.startsWith(".")) { rest = rest.slice(1); continue; }
+      if (rest.startsWith(".")) {
+        rest = rest.slice(1);
+        continue;
+      }
       break;
     }
     if (parts.length === 0) return null;
@@ -417,8 +428,7 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
     const rest = s.trimStart();
     // '{{sentinel}}' quoted (current emit form) — unwrap to display form.
     const quotedSentinelMatch = rest.match(/^'(\{\{\s*[\w.]+\s*\}\})'([\s\S]*)/);
-    if (quotedSentinelMatch)
-      return [quotedSentinelMatch[1]!, quotedSentinelMatch[2]!.trimStart()];
+    if (quotedSentinelMatch) return [quotedSentinelMatch[1]!, quotedSentinelMatch[2]!.trimStart()];
     // {{sentinel}} unquoted — legacy form; still parse so old pipelines
     // round-trip cleanly on next save.
     const sentinelMatch = rest.match(/^(\{\{\s*[\w.]+\s*\}\})([\s\S]*)/);
@@ -428,7 +438,10 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
       let i = 1;
       while (i < rest.length) {
         if (rest[i] === "'") {
-          if (rest[i + 1] === "'") { i += 2; continue; }
+          if (rest[i + 1] === "'") {
+            i += 2;
+            continue;
+          }
           break;
         }
         i++;
@@ -475,7 +488,10 @@ function tryParseBasicSql(sql: string): FilterRule[] | null {
       const items: string[] = [];
       while (true) {
         inside = inside.trimStart();
-        if (inside.startsWith(")")) { inside = inside.slice(1).trimStart(); break; }
+        if (inside.startsWith(")")) {
+          inside = inside.slice(1).trimStart();
+          break;
+        }
         if (items.length > 0) {
           if (!inside.startsWith(",")) return null;
           inside = inside.slice(1).trimStart();
@@ -563,172 +579,158 @@ function ConditionRules({
   // declared inputs to every value cell.
   const paramsListId = `filter-params-${useId()}`;
 
-  const addRule = () =>
-    onChange([...rules, { field: "", op: "=", value: "", join: "AND" }]);
+  const addRule = () => onChange([...rules, { field: "", op: "=", value: "", join: "AND" }]);
   const updateRule = (i: number, patch: Partial<FilterRule>) =>
     onChange(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const removeRule = (i: number) => onChange(rules.filter((_, j) => j !== i));
   const previewExpr = rulesToSql(rules);
 
   return (
-      <div className="space-y-1.5">
-        {rules.length === 0 && (
-          <div className="font-mono text-[11.5px] text-subtle">
-            No conditions. Add one below.
-          </div>
-        )}
-        {rules.map((r, i) => {
-          const noValue = OPS_WITHOUT_VALUE.has(r.op);
-          // Look up the selected field's declared type so date/timestamp
-          // columns get a native picker instead of a plain text input.
-          const fieldMeta = allFields.find((f) => f.name === r.field);
-          const inputType = fieldInputType(fieldMeta?.type);
-          // Native date/datetime pickers can't hold a {{sentinel}}, so we
-          // surface a compact λ dropdown beside them. Filter the sysvars
-          // to the shapes that will coerce cleanly.
-          const dynVars =
-            inputType === "date"
-              ? SYSTEM_VARS.filter((v) => v !== "now")
-              : inputType === "datetime-local"
-                ? SYSTEM_VARS
-                : [];
-          return (
-            <div
-              key={i}
-              className="flex flex-wrap items-center gap-2"
-            >
-              {i === 0 ? (
-                <span className="w-[60px] shrink-0 font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
-                  where
-                </span>
-              ) : (
-                <select
-                  value={r.join}
-                  onChange={(e) => updateRule(i, { join: e.target.value as "AND" | "OR" })}
-                  className="w-[60px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
-                >
-                  <option value="AND">AND</option>
-                  <option value="OR">OR</option>
-                </select>
-              )}
-              <FieldPicker
-                value={r.field}
-                onChange={(v) => updateRule(i, { field: v })}
-                options={allFields}
-                placeholder="field"
-                variant="tree"
-                className="basis-[190px] grow"
-              />
+    <div className="space-y-1.5">
+      {rules.length === 0 && (
+        <div className="font-mono text-[11.5px] text-subtle">No conditions. Add one below.</div>
+      )}
+      {rules.map((r, i) => {
+        const noValue = OPS_WITHOUT_VALUE.has(r.op);
+        // Look up the selected field's declared type so date/timestamp
+        // columns get a native picker instead of a plain text input.
+        const fieldMeta = allFields.find((f) => f.name === r.field);
+        const inputType = fieldInputType(fieldMeta?.type);
+        // Native date/datetime pickers can't hold a {{sentinel}}, so we
+        // surface a compact λ dropdown beside them. Filter the sysvars
+        // to the shapes that will coerce cleanly.
+        const dynVars =
+          inputType === "date"
+            ? SYSTEM_VARS.filter((v) => v !== "now")
+            : inputType === "datetime-local"
+              ? SYSTEM_VARS
+              : [];
+        return (
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            {i === 0 ? (
+              <span className="w-[60px] shrink-0 font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle text-center">
+                where
+              </span>
+            ) : (
               <select
-                value={r.op}
-                onChange={(e) => updateRule(i, { op: e.target.value as FilterOp })}
-                className="w-[120px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
+                value={r.join}
+                onChange={(e) => updateRule(i, { join: e.target.value as "AND" | "OR" })}
+                className="w-[60px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] focus:outline-none focus:border-accent"
               >
-                {FILTER_OPS.map((op) => (
-                  <option key={op} value={op}>
-                    {op}
-                  </option>
-                ))}
+                <option value="AND">AND</option>
+                <option value="OR">OR</option>
               </select>
-              <div className="basis-[210px] grow min-w-0">
-              {r.op === "BETWEEN" ? (
-                (() => {
-                  const [lo = "", hi = ""] = (r.value ?? "")
-                    .split(",")
-                    .map((s) => s.trim());
-                  const commit = (nlo: string, nhi: string) => {
-                    const parts = [nlo.trim(), nhi.trim()];
-                    updateRule(i, {
-                      value: parts.every((s) => s === "") ? "" : parts.join(", "),
-                    });
-                  };
-                  return (
-                    <div className="flex flex-wrap items-center gap-1">
+            )}
+            <FieldPicker
+              value={r.field}
+              onChange={(v) => updateRule(i, { field: v })}
+              options={allFields}
+              placeholder="field"
+              variant="tree"
+              className="basis-[190px] grow"
+            />
+            <select
+              value={r.op}
+              onChange={(e) => updateRule(i, { op: e.target.value as FilterOp })}
+              className="w-[120px] shrink-0 bg-bg border border-border rounded px-2 py-1.5 text-[12.5px] font-mono focus:outline-none focus:border-accent"
+            >
+              {FILTER_OPS.map((op) => (
+                <option key={op} value={op}>
+                  {op}
+                </option>
+              ))}
+            </select>
+            <div className="basis-[210px] grow min-w-0">
+              {r.op === "BETWEEN"
+                ? (() => {
+                    const [lo = "", hi = ""] = (r.value ?? "").split(",").map((s) => s.trim());
+                    const commit = (nlo: string, nhi: string) => {
+                      const parts = [nlo.trim(), nhi.trim()];
+                      updateRule(i, {
+                        value: parts.every((s) => s === "") ? "" : parts.join(", "),
+                      });
+                    };
+                    return (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <DateValueField
+                          value={lo}
+                          onChange={(v) => commit(v, hi)}
+                          baseType={inputType}
+                          dynVars={dynVars}
+                          placeholder="min"
+                          list={paramsListId}
+                        />
+                        <span className="w-4 shrink-0 text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+                          and
+                        </span>
+                        <DateValueField
+                          value={hi}
+                          onChange={(v) => commit(lo, v)}
+                          baseType={inputType}
+                          dynVars={dynVars}
+                          placeholder="max"
+                          list={paramsListId}
+                        />
+                      </div>
+                    );
+                  })()
+                : (() => {
+                    // IN / LIKE keep text semantics; disable pickers there.
+                    const suppressed = r.op === "IN" || r.op === "LIKE" || noValue;
+                    return (
                       <DateValueField
-                        value={lo}
-                        onChange={(v) => commit(v, hi)}
-                        baseType={inputType}
-                        dynVars={dynVars}
-                        placeholder="min"
+                        value={r.value}
+                        onChange={(v) => updateRule(i, { value: v })}
+                        baseType={suppressed ? "text" : inputType}
+                        dynVars={suppressed ? [] : dynVars}
+                        placeholder={r.op === "IN" ? "a, b, c" : "value"}
+                        disabled={noValue}
                         list={paramsListId}
                       />
-                      <span className="w-4 shrink-0 text-center font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
-                        and
-                      </span>
-                      <DateValueField
-                        value={hi}
-                        onChange={(v) => commit(lo, v)}
-                        baseType={inputType}
-                        dynVars={dynVars}
-                        placeholder="max"
-                        list={paramsListId}
-                      />
-                    </div>
-                  );
-                })()
-              ) : (
-                (() => {
-                  // IN / LIKE keep text semantics; disable pickers there.
-                  const suppressed = r.op === "IN" || r.op === "LIKE" || noValue;
-                  return (
-                    <DateValueField
-                      value={r.value}
-                      onChange={(v) => updateRule(i, { value: v })}
-                      baseType={suppressed ? "text" : inputType}
-                      dynVars={suppressed ? [] : dynVars}
-                      placeholder={r.op === "IN" ? "a, b, c" : "value"}
-                      disabled={noValue}
-                      list={paramsListId}
-                    />
-                  );
-                })()
-              )}
-              </div>
-              <button
-                type="button"
-                onClick={() => removeRule(i)}
-                className="w-[28px] shrink-0 text-subtle hover:text-red text-sm"
-                aria-label="Remove condition"
-              >
-                ×
-              </button>
+                    );
+                  })()}
             </div>
-          );
-        })}
-        <button
-          type="button"
-          onClick={addRule}
-          className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
-        >
-          + Add condition
-        </button>
-        {showSql && previewExpr && (
-          <div className="mt-2">
-            <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
-              Generated SQL
-            </div>
-            <code className="block font-mono text-[12px] text-muted bg-code-bg border border-border rounded px-2.5 py-1.5 whitespace-pre-wrap break-words">
-              {previewExpr}
-            </code>
+            <button
+              type="button"
+              onClick={() => removeRule(i)}
+              className="w-[28px] shrink-0 text-subtle hover:text-red text-sm"
+              aria-label="Remove condition"
+            >
+              ×
+            </button>
           </div>
-        )}
-        <datalist id={paramsListId}>
-          {declaredParams.map((p) => (
-            <option
-              key={`p-${p.name}`}
-              value={`{{params.${p.name}}}`}
-              label={`${p.name} · ${p.type}`}
-            />
-          ))}
-          {SYSTEM_VARS.map((v) => (
-            <option
-              key={`s-${v}`}
-              value={`{{${v}}}`}
-              label={`${v} · dynamic`}
-            />
-          ))}
-        </datalist>
-      </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={addRule}
+        className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+      >
+        + Add condition
+      </button>
+      {showSql && previewExpr && (
+        <div className="mt-2">
+          <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
+            Generated SQL
+          </div>
+          <code className="block font-mono text-[12px] text-muted bg-code-bg border border-border rounded px-2.5 py-1.5 whitespace-pre-wrap break-words">
+            {previewExpr}
+          </code>
+        </div>
+      )}
+      <datalist id={paramsListId}>
+        {declaredParams.map((p) => (
+          <option
+            key={`p-${p.name}`}
+            value={`{{params.${p.name}}}`}
+            label={`${p.name} · ${p.type}`}
+          />
+        ))}
+        {SYSTEM_VARS.map((v) => (
+          <option key={`s-${v}`} value={`{{${v}}}`} label={`${v} · dynamic`} />
+        ))}
+      </datalist>
+    </div>
   );
 }
 
@@ -772,9 +774,7 @@ function DialectReadback() {
           <Pill status="failed">{dialect}</Pill>
           {/* The engine's own words. Anything paraphrased here would be a
               second, worse description of a problem it already named. */}
-          <span className="text-[12.5px] text-muted leading-snug break-words">
-            {error}
-          </span>
+          <span className="text-[12.5px] text-muted leading-snug break-words">{error}</span>
         </div>
       )}
     </div>
@@ -786,11 +786,11 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   // the structured, injection-safe editor and where most conditions belong.
   // We open in Advanced only when the saved SQL can't be represented as
   // rules, because an empty Basic tab would read as "the filter is gone".
-  const parsedOnMount = useRef<FilterRule[] | null>(
+  const [parsedOnMount] = useState<FilterRule[] | null>(() =>
     step.expr ? tryParseBasicSql(step.expr as string) : [],
   );
   const [mode, setMode] = useState<"basic" | "advanced">(
-    parsedOnMount.current === null ? "advanced" : "basic",
+    parsedOnMount === null ? "advanced" : "basic",
   );
 
   // Each tab keeps its own independent local state so switching tabs never
@@ -801,12 +801,8 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
   //
   // On first mount we try to pre-populate Basic by parsing the existing expr
   // so a round-trippable expression shows up immediately in Basic mode.
-  const [rules, setRules] = useState<FilterRule[]>(
-    () => parsedOnMount.current ?? [],
-  );
-  const [advancedText, setAdvancedText] = useState<string>(
-    (step.expr as string) ?? "",
-  );
+  const [rules, setRules] = useState<FilterRule[]>(() => parsedOnMount ?? []);
+  const [advancedText, setAdvancedText] = useState<string>((step.expr as string) ?? "");
 
   const commitRules = (next: FilterRule[]) => {
     setRules(next);
@@ -889,9 +885,7 @@ export function FilterEditor({ step, set }: { step: StepShape; set: Setter }) {
             onChange={(e) => handleAdvancedChange(e.target.value)}
             placeholder="amount > 0 AND status = 'completed'"
           />
-          <VariablePickerHint
-            onInsert={(token) => handleAdvancedChange(advancedText + token)}
-          />
+          <VariablePickerHint onInsert={(token) => handleAdvancedChange(advancedText + token)} />
           <DialectReadback />
         </Field>
       )}
@@ -908,21 +902,21 @@ export function RenameEditor({ step, set }: { step: StepShape; set: Setter }) {
   const allFields = useStepFields();
   const mappings = (step.mappings as Record<string, string>) ?? {};
 
-  const initial = () =>
-    Object.entries(mappings).map(([from, to]) => ({ from, to }));
+  const initial = () => Object.entries(mappings).map(([from, to]) => ({ from, to }));
 
   const [rows, setRows] = useState<{ from: string; to: string }[]>(initial);
 
   // Re-sync if an external mapping (e.g. loading an existing pipeline) diverges.
-  useEffect(() => {
+  // Adjusted during render (not in an effect): local rows stay the source of
+  // truth while typing, and only reset when the parsed shape actually differs.
+  {
     const asObj: Record<string, string> = {};
     for (const r of rows) if (r.from && r.to) asObj[r.from] = r.to;
     const same =
       Object.keys(asObj).length === Object.keys(mappings).length &&
       Object.entries(asObj).every(([k, v]) => mappings[k] === v);
     if (!same) setRows(initial());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mappings]);
+  }
 
   const commit = (next: { from: string; to: string }[]) => {
     setRows(next);
@@ -944,10 +938,7 @@ export function RenameEditor({ step, set }: { step: StepShape; set: Setter }) {
     <Field label="Mappings" hint="rename fields — old name on the left, new on the right">
       <div className="space-y-1.5">
         {rows.map((r, i) => (
-          <div
-            key={i}
-            className="grid grid-cols-[1fr_16px_1fr_28px] gap-2 items-center"
-          >
+          <div key={i} className="grid grid-cols-[1fr_16px_1fr_28px] gap-2 items-center">
             <FieldPicker
               value={r.from}
               onChange={(v) => updateRow(i, { from: v })}
@@ -1004,7 +995,9 @@ export function RetypeEditor({ step, set }: { step: StepShape; set: Setter }) {
           className="w-full bg-bg border border-border rounded px-2.5 py-1.5 text-[13.5px] focus:outline-none focus:border-accent"
         >
           {RETYPE_OPTIONS.map((t) => (
-            <option key={t} value={t}>{t}</option>
+            <option key={t} value={t}>
+              {t}
+            </option>
           ))}
         </select>
       </Field>
@@ -1025,10 +1018,7 @@ export function MapLookupEditor({ step, set }: { step: StepShape; set: Setter })
             variant="tree"
           />
         </Field>
-        <Field
-          label="Output field (optional)"
-          hint="leave blank to overwrite the input column"
-        >
+        <Field label="Output field (optional)" hint="leave blank to overwrite the input column">
           <Input
             value={(step.output_field as string) ?? ""}
             onChange={(e) => set({ output_field: e.target.value || null })}
@@ -1160,11 +1150,7 @@ function ExpressionRecipes({
         <>
           <div className="flex flex-wrap items-end gap-2">
             {recipe.args.map((arg) => (
-              <Field
-                key={arg.key}
-                label={arg.label}
-                className="basis-[150px] grow min-w-0"
-              >
+              <Field key={arg.key} label={arg.label} className="basis-[150px] grow min-w-0">
                 <RecipeSlot
                   arg={arg}
                   value={args[arg.key] ?? ""}
@@ -1313,19 +1299,28 @@ export function CaseEditor({ step, set }: { step: StepShape; set: Setter }) {
       </Field>
 
       {branches.map((b, i) => (
-        <div
-          key={i}
-          className="border border-border rounded-[var(--radius)] p-3 grid gap-2"
-        >
+        <div key={i} className="border border-border rounded-[var(--radius)] p-3 grid gap-2">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
               {i === 0 ? "if" : "else if"}
             </span>
             <div className="flex items-center gap-1.5 text-subtle">
-              <button type="button" onClick={() => move(i, -1)}
-                className="hover:text-text text-sm" aria-label="Move branch up">↑</button>
-              <button type="button" onClick={() => move(i, 1)}
-                className="hover:text-text text-sm" aria-label="Move branch down">↓</button>
+              <button
+                type="button"
+                onClick={() => move(i, -1)}
+                className="hover:text-text text-sm"
+                aria-label="Move branch up"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => move(i, 1)}
+                className="hover:text-text text-sm"
+                aria-label="Move branch down"
+              >
+                ↓
+              </button>
               <button
                 type="button"
                 onClick={() => setBranches(branches.filter((_, j) => j !== i))}
@@ -1334,7 +1329,9 @@ export function CaseEditor({ step, set }: { step: StepShape; set: Setter }) {
                 // The backend requires at least one branch; a step you can't
                 // save is worse than a delete button that stops at one.
                 disabled={branches.length === 1}
-              >×</button>
+              >
+                ×
+              </button>
             </div>
           </div>
           <ConditionRules
@@ -1406,18 +1403,13 @@ export function SortEditor({ step, set }: { step: StepShape; set: Setter }) {
 
 const AGG_FUNCS = ["sum", "count", "avg", "min", "max", "count_distinct"];
 
-const DATE_PARTS: DatePart[] = [
-  "year",
-  "quarter",
-  "month",
-  "week",
-  "day",
-  "date",
-  "dow",
-  "hour",
-];
+const DATE_PARTS: DatePart[] = ["year", "quarter", "month", "week", "day", "date", "dow", "hour"];
 
-interface AggSpec { field: string; func: string; alias: string }
+interface AggSpec {
+  field: string;
+  func: string;
+  alias: string;
+}
 
 // A group_by entry name (string or the .field of a DatePartGroupBy) is
 // considered temporal if the resolved schema type looks like a date/timestamp.
@@ -1439,8 +1431,7 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
   };
 
   const entryField = (e: GroupByEntry) => (typeof e === "string" ? e : e.field);
-  const entryPart = (e: GroupByEntry): DatePart | "" =>
-    typeof e === "string" ? "" : e.part;
+  const entryPart = (e: GroupByEntry): DatePart | "" => (typeof e === "string" ? "" : e.part);
 
   const updateGroupBy = (i: number, next: GroupByEntry) => {
     const arr = [...group_by];
@@ -1467,8 +1458,7 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
     }
   };
   const addGroupBy = () => set({ group_by: [...group_by, ""] });
-  const removeGroupBy = (i: number) =>
-    set({ group_by: group_by.filter((_, j) => j !== i) });
+  const removeGroupBy = (i: number) => set({ group_by: group_by.filter((_, j) => j !== i) });
 
   const updateAgg = (i: number, patch: Partial<AggSpec>) => {
     const current = aggs[i];
@@ -1477,10 +1467,8 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
     next[i] = { ...current, ...patch };
     set({ aggregations: next });
   };
-  const addAgg = () =>
-    set({ aggregations: [...aggs, { field: "", func: "sum", alias: "" }] });
-  const removeAgg = (i: number) =>
-    set({ aggregations: aggs.filter((_, j) => j !== i) });
+  const addAgg = () => set({ aggregations: [...aggs, { field: "", func: "sum", alias: "" }] });
+  const removeAgg = (i: number) => set({ aggregations: aggs.filter((_, j) => j !== i) });
 
   return (
     <div className="grid gap-3">
@@ -1494,10 +1482,7 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
             const part = entryPart(entry);
             const temporal = isTemporalType(fieldType(field));
             return (
-              <div
-                key={i}
-                className="grid grid-cols-[1fr_140px_28px] gap-2"
-              >
+              <div key={i} className="grid grid-cols-[1fr_140px_28px] gap-2">
                 <FieldPicker
                   value={field}
                   onChange={(v) => setEntryField(i, v)}
@@ -1508,9 +1493,7 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
                 {temporal || part !== "" ? (
                   <select
                     value={part}
-                    onChange={(e) =>
-                      setEntryPart(i, e.target.value as DatePart | "")
-                    }
+                    onChange={(e) => setEntryPart(i, e.target.value as DatePart | "")}
                     className="bg-bg border border-border rounded px-2.5 py-1.5 text-[13.5px]"
                     title="Extract a date component"
                   >
@@ -1565,7 +1548,9 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
                 className="bg-bg border border-border rounded px-2.5 py-1.5 text-[13.5px]"
               >
                 {AGG_FUNCS.map((f) => (
-                  <option key={f} value={f}>{f}</option>
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
                 ))}
               </select>
               <Input
@@ -1628,9 +1613,10 @@ function OperandPicker({
 type JoinOnValue = string | string[] | Record<string, string>;
 
 function toPairs(value: JoinOnValue | undefined): [string, string][] {
-  const entries = typeof value === "object" && value !== null && !Array.isArray(value)
-    ? Object.entries(value)
-    : [];
+  const entries =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? Object.entries(value)
+      : [];
   return entries.length ? entries : [["", ""]];
 }
 
@@ -1658,16 +1644,14 @@ function JoinOnEditor({
   const mode: "same" | "different" = isPairs ? "different" : "same";
   const [pairs, setPairs] = useState<[string, string][]>(() => toPairs(value));
 
-  useEffect(() => {
-    if (!isPairs) return;
+  // Adjusted during render: re-sync only when the external value diverges
+  // from what the local pairs emit (so transient empty rows survive typing).
+  if (isPairs) {
     const emitted = Object.fromEntries(pairs.filter(([l]) => l));
     if (JSON.stringify(emitted) !== JSON.stringify(value ?? {})) {
       setPairs(toPairs(value));
     }
-    // Only re-sync when the external value changes — re-running on every
-    // local `pairs` edit would fight the transient empty/duplicate state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, isPairs]);
+  }
 
   const setMode = (next: "same" | "different") => {
     if (next === "different") {
@@ -1691,10 +1675,14 @@ function JoinOnEditor({
   };
 
   const addPair = () => commit([...pairs, ["", ""]]);
-  const removePair = (i: number) => commit(pairs.length > 1 ? pairs.filter((_, j) => j !== i) : [["", ""]]);
+  const removePair = (i: number) =>
+    commit(pairs.length > 1 ? pairs.filter((_, j) => j !== i) : [["", ""]]);
 
   return (
-    <Field label="On" hint={mode === "same" ? "single field or comma-separated list" : "left column → right column"}>
+    <Field
+      label="On"
+      hint={mode === "same" ? "single field or comma-separated list" : "left column → right column"}
+    >
       <div className="flex flex-col gap-2">
         <Segmented<"same" | "different">
           value={mode}
@@ -1706,9 +1694,12 @@ function JoinOnEditor({
         />
         {mode === "same" ? (
           <FieldPicker
-            value={Array.isArray(value) ? value.join(", ") : (value as string) ?? ""}
+            value={Array.isArray(value) ? value.join(", ") : ((value as string) ?? "")}
             onChange={(v) => {
-              const parts = v.split(",").map((s) => s.trim()).filter(Boolean);
+              const parts = v
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
               onChange(parts.length > 1 ? parts : v);
             }}
             options={allFields}
@@ -1767,10 +1758,18 @@ export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
     <div className="grid gap-3">
       <div className="grid grid-cols-3 gap-3">
         <Field label="Left">
-          <OperandPicker value={(step.left as string) ?? ""} onChange={(v) => set({ left: v })} operands={operands} />
+          <OperandPicker
+            value={(step.left as string) ?? ""}
+            onChange={(v) => set({ left: v })}
+            operands={operands}
+          />
         </Field>
         <Field label="Right">
-          <OperandPicker value={(step.right as string) ?? ""} onChange={(v) => set({ right: v })} operands={operands} />
+          <OperandPicker
+            value={(step.right as string) ?? ""}
+            onChange={(v) => set({ right: v })}
+            operands={operands}
+          />
         </Field>
         <Field label="How">
           <select
@@ -1779,7 +1778,9 @@ export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
             className="w-full bg-bg border border-border rounded px-2.5 py-1.5 text-[13.5px]"
           >
             {["inner", "left", "right", "outer"].map((h) => (
-              <option key={h} value={h}>{h}</option>
+              <option key={h} value={h}>
+                {h}
+              </option>
             ))}
           </select>
         </Field>
@@ -1791,7 +1792,11 @@ export function JoinEditor({ step, set }: { step: StepShape; set: Setter }) {
           allFields={allFields}
         />
         <Field label="Output id" hint="name of the resulting table in the registry">
-          <Input value={(step.output_id as string) ?? ""} onChange={(e) => set({ output_id: e.target.value })} placeholder="joined" />
+          <Input
+            value={(step.output_id as string) ?? ""}
+            onChange={(e) => set({ output_id: e.target.value })}
+            placeholder="joined"
+          />
         </Field>
       </div>
     </div>
@@ -1805,9 +1810,30 @@ export function PivotEditor({ step, set }: { step: StepShape; set: Setter }) {
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-3 gap-3">
-        <Field label="Index"><FieldPicker value={(step.index as string) ?? ""} onChange={(v) => set({ index: v })} options={allFields} variant="tree" /></Field>
-        <Field label="Columns"><FieldPicker value={(step.columns as string) ?? ""} onChange={(v) => set({ columns: v })} options={allFields} variant="tree" /></Field>
-        <Field label="Values"><FieldPicker value={(step.values as string) ?? ""} onChange={(v) => set({ values: v })} options={allFields} variant="tree" /></Field>
+        <Field label="Index">
+          <FieldPicker
+            value={(step.index as string) ?? ""}
+            onChange={(v) => set({ index: v })}
+            options={allFields}
+            variant="tree"
+          />
+        </Field>
+        <Field label="Columns">
+          <FieldPicker
+            value={(step.columns as string) ?? ""}
+            onChange={(v) => set({ columns: v })}
+            options={allFields}
+            variant="tree"
+          />
+        </Field>
+        <Field label="Values">
+          <FieldPicker
+            value={(step.values as string) ?? ""}
+            onChange={(v) => set({ values: v })}
+            options={allFields}
+            variant="tree"
+          />
+        </Field>
       </div>
       <Field label="Aggregation">
         <select
@@ -1816,7 +1842,9 @@ export function PivotEditor({ step, set }: { step: StepShape; set: Setter }) {
           className="w-full bg-bg border border-border rounded px-2.5 py-1.5 text-[13.5px]"
         >
           {PIVOT_AGG.map((a) => (
-            <option key={a} value={a}>{a}</option>
+            <option key={a} value={a}>
+              {a}
+            </option>
           ))}
         </select>
       </Field>
@@ -1826,7 +1854,10 @@ export function PivotEditor({ step, set }: { step: StepShape; set: Setter }) {
 
 /* --------------- Select — pick/drop fields with optional aliases --------------- */
 
-interface SelectField { field: string; alias?: string | null }
+interface SelectField {
+  field: string;
+  alias?: string | null;
+}
 
 export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
   const allFields = useStepFields();
@@ -1838,9 +1869,7 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
   // (a valid transitional state). Initial mode reflects what's persisted:
   // `drop` non-empty means we opened an existing drop step. Backend
   // enforces mutual exclusion; we mirror that on save.
-  const [mode, setMode] = useState<"keep" | "drop">(
-    dropped.length > 0 ? "drop" : "keep",
-  );
+  const [mode, setMode] = useState<"keep" | "drop">(dropped.length > 0 ? "drop" : "keep");
 
   const keepNames = fields.map((f) => f.field);
   const setKeep = (names: string[]) => {
@@ -1854,9 +1883,7 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
   };
   const setAlias = (field: string, alias: string) => {
     set({
-      fields: fields.map((f) =>
-        f.field === field ? { ...f, alias: alias || null } : f,
-      ),
+      fields: fields.map((f) => (f.field === field ? { ...f, alias: alias || null } : f)),
     });
   };
 
@@ -1911,10 +1938,7 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
                 Aliases (optional)
               </div>
               {fields.map((f) => (
-                <div
-                  key={f.field}
-                  className="grid grid-cols-[1fr_16px_1fr] gap-2 items-center"
-                >
+                <div key={f.field} className="grid grid-cols-[1fr_16px_1fr] gap-2 items-center">
                   <span className="font-mono text-[12.5px] text-text px-2.5 py-1.5 border border-border rounded bg-code-bg">
                     {toDisplay(f.field)}
                   </span>
@@ -1945,7 +1969,8 @@ export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
                 variant="tree"
               />
               <p className="font-mono text-[11px] text-subtle">
-                Drop is applied at run time — fields added to the source later pass through automatically.
+                Drop is applied at run time — fields added to the source later pass through
+                automatically.
               </p>
             </>
           )}
@@ -1961,19 +1986,15 @@ type StepEditorProps = { step: StepShape; set: Setter };
 
 function CheckEditor({ step, set }: StepEditorProps) {
   // Basic unless the saved SQL can't round-trip — see FilterEditor.
-  const parsedOnMount = useRef<FilterRule[] | null>(
+  const [parsedOnMount] = useState<FilterRule[] | null>(() =>
     step.expr ? tryParseBasicSql(step.expr as string) : [],
   );
   const [mode, setMode] = useState<"basic" | "advanced">(
-    parsedOnMount.current === null ? "advanced" : "basic",
+    parsedOnMount === null ? "advanced" : "basic",
   );
 
-  const [rules, setRules] = useState<FilterRule[]>(
-    () => parsedOnMount.current ?? [],
-  );
-  const [advancedText, setAdvancedText] = useState<string>(
-    (step.expr as string) ?? "",
-  );
+  const [rules, setRules] = useState<FilterRule[]>(() => parsedOnMount ?? []);
+  const [advancedText, setAdvancedText] = useState<string>((step.expr as string) ?? "");
 
   const commitRules = (next: FilterRule[]) => {
     setRules(next);
@@ -2062,9 +2083,7 @@ function CheckEditor({ step, set }: StepEditorProps) {
             onChange={(e) => handleAdvancedChange(e.target.value)}
             placeholder="amount > 0 AND status = 'completed'"
           />
-          <VariablePickerHint
-            onInsert={(token) => handleAdvancedChange(advancedText + token)}
-          />
+          <VariablePickerHint onInsert={(token) => handleAdvancedChange(advancedText + token)} />
           <DialectReadback />
         </Field>
       )}
@@ -2087,7 +2106,8 @@ function ProfileEditor({ step, set }: StepEditorProps) {
         />
       </Field>
       <p className="font-mono text-[11px] text-subtle">
-        Profiles null counts, distinct counts, min/max, and mean for each selected column. Leave empty to profile all columns in the table.
+        Profiles null counts, distinct counts, min/max, and mean for each selected column. Leave
+        empty to profile all columns in the table.
       </p>
     </div>
   );
@@ -2122,10 +2142,7 @@ function ExtractEditor({ step, set }: StepEditorProps) {
             variant="tree"
           />
         </Field>
-        <Field
-          label="Writes to"
-          hint="column the extracted text lands in"
-        >
+        <Field label="Writes to" hint="column the extracted text lands in">
           <Input
             value={(step.output_field as string) ?? ""}
             onChange={(e) => set({ ...step, output_field: e.target.value })}
@@ -2156,11 +2173,10 @@ function ExtractEditor({ step, set }: StepEditorProps) {
         </Field>
       </div>
       <p className="font-mono text-[11px] text-subtle">
-        Parsed text is cached by file content, so re-running costs nothing and
-        editing a downstream Structure step never re-parses the PDFs. A
-        document that fails to parse fills <code>extract_meta.error</code> and
-        leaves the text NULL — it does not fail the run. Add a Check step if
-        you want it fatal.
+        Parsed text is cached by file content, so re-running costs nothing and editing a downstream
+        Structure step never re-parses the PDFs. A document that fails to parse fills{" "}
+        <code>extract_meta.error</code> and leaves the text NULL — it does not fail the run. Add a
+        Check step if you want it fatal.
       </p>
     </div>
   );
@@ -2347,8 +2363,7 @@ function StructureEditor({ step, set }: StepEditorProps) {
         </button>
         {fields.length === 0 && (
           <p className="font-mono text-[11px] text-red">
-            At least one field is required — with none the step produces no
-            columns.
+            At least one field is required — with none the step produces no columns.
           </p>
         )}
       </div>
@@ -2364,10 +2379,7 @@ function StructureEditor({ step, set }: StepEditorProps) {
         />
       </Field>
 
-      <Field
-        label="On error"
-        hint="what happens when one document fails to structure"
-      >
+      <Field label="On error" hint="what happens when one document fails to structure">
         <Dropdown<string>
           value={(step.on_error as string) ?? "null"}
           onChange={(v) => set({ ...step, on_error: v })}
@@ -2376,9 +2388,8 @@ function StructureEditor({ step, set }: StepEditorProps) {
       </Field>
 
       <p className="font-mono text-[11px] text-subtle">
-        Each field above becomes a real typed column. From here on the row is
-        ordinary tabular data — filter, join, aggregate and check all work on
-        it unchanged.
+        Each field above becomes a real typed column. From here on the row is ordinary tabular data
+        — filter, join, aggregate and check all work on it unchanged.
       </p>
     </div>
   );
@@ -2386,21 +2397,37 @@ function StructureEditor({ step, set }: StepEditorProps) {
 
 export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
   switch (step.op) {
-    case "filter":    return <FilterEditor step={step} set={set} />;
-    case "rename":    return <RenameEditor step={step} set={set} />;
-    case "retype":    return <RetypeEditor step={step} set={set} />;
-    case "map":       return step.mode === "lookup"
-      ? <MapLookupEditor step={step} set={set} />
-      : <MapExpressionEditor step={step} set={set} />;
-    case "case":      return <CaseEditor step={step} set={set} />;
-    case "sort":      return <SortEditor step={step} set={set} />;
-    case "aggregate": return <AggregateEditor step={step} set={set} />;
-    case "join":      return <JoinEditor step={step} set={set} />;
-    case "pivot":     return <PivotEditor step={step} set={set} />;
-    case "select":    return <SelectEditor step={step} set={set} />;
-    case "check":     return <CheckEditor step={step} set={set} />;
-    case "profile":   return <ProfileEditor step={step} set={set} />;
-    case "extract":   return <ExtractEditor step={step} set={set} />;
-    case "structure": return <StructureEditor step={step} set={set} />;
+    case "filter":
+      return <FilterEditor step={step} set={set} />;
+    case "rename":
+      return <RenameEditor step={step} set={set} />;
+    case "retype":
+      return <RetypeEditor step={step} set={set} />;
+    case "map":
+      return step.mode === "lookup" ? (
+        <MapLookupEditor step={step} set={set} />
+      ) : (
+        <MapExpressionEditor step={step} set={set} />
+      );
+    case "case":
+      return <CaseEditor step={step} set={set} />;
+    case "sort":
+      return <SortEditor step={step} set={set} />;
+    case "aggregate":
+      return <AggregateEditor step={step} set={set} />;
+    case "join":
+      return <JoinEditor step={step} set={set} />;
+    case "pivot":
+      return <PivotEditor step={step} set={set} />;
+    case "select":
+      return <SelectEditor step={step} set={set} />;
+    case "check":
+      return <CheckEditor step={step} set={set} />;
+    case "profile":
+      return <ProfileEditor step={step} set={set} />;
+    case "extract":
+      return <ExtractEditor step={step} set={set} />;
+    case "structure":
+      return <StructureEditor step={step} set={set} />;
   }
 }

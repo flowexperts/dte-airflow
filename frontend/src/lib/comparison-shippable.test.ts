@@ -46,9 +46,7 @@ describe("shippableCells", () => {
    * empty columns on every document.
    */
   it("refuses a completed run where every row errored", () => {
-    const [only] = shippableCells([
-      cell({ status: "completed", documents: 5, error_count: 5 }),
-    ]);
+    const [only] = shippableCells([cell({ status: "completed", documents: 5, error_count: 5 })]);
     expect(only!.shippable).toBe(false);
     expect(only!.reason).toMatch(/every row errored/i);
   });

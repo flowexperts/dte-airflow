@@ -42,9 +42,7 @@ function TimelineRow({ index, event }: { index: number; event: RunEvent | undefi
           <>step {index}</>
         )}
       </span>
-      <span className="font-mono text-[11.5px] text-subtle tabular-nums">
-        {duration(event)}
-      </span>
+      <span className="font-mono text-[11.5px] text-subtle tabular-nums">{duration(event)}</span>
     </div>
   );
 }
@@ -138,13 +136,9 @@ export function Diagnostics({
 
           {tab === "timeline" &&
             (sorted.length === 0 ? (
-              <div className="py-6 text-center text-subtle text-sm">
-                No step events recorded.
-              </div>
+              <div className="py-6 text-center text-subtle text-sm">No step events recorded.</div>
             ) : (
-              sorted.map((i) => (
-                <TimelineRow key={i} index={i} event={eventByIndex.get(i)} />
-              ))
+              sorted.map((i) => <TimelineRow key={i} index={i} event={eventByIndex.get(i)} />)
             ))}
 
           {tab === "sql" && hasSql && (

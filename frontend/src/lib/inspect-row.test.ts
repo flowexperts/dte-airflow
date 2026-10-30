@@ -70,9 +70,7 @@ describe("inspectableRow", () => {
   });
 
   it("takes the page from the row when provenance has none", () => {
-    const r = inspectableRow(
-      row({ structure_meta: JSON.stringify({ fields: { total: null } }) }),
-    );
+    const r = inspectableRow(row({ structure_meta: JSON.stringify({ fields: { total: null } }) }));
     expect(r?.page).toBe(2);
   });
 

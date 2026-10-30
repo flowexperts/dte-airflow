@@ -50,15 +50,10 @@ import type { StepShape } from "@/components/builder/steps/types";
 /** Quality results carry the label their `check` step declared, which is the
  *  only handle we have to point back at it. Unlabelled checks get no link
  *  rather than a wrong one. */
-function checkStepIndex(
-  pipeline: Pipeline | undefined,
-  label: string | null | undefined,
-): number {
+function checkStepIndex(pipeline: Pipeline | undefined, label: string | null | undefined): number {
   if (!pipeline || !label) return -1;
   const steps = (pipeline.steps ?? []) as StepShape[];
-  return steps.findIndex(
-    (s) => (s.op === "check" || s.op === "profile") && s.label === label,
-  );
+  return steps.findIndex((s) => (s.op === "check" || s.op === "profile") && s.label === label);
 }
 
 function RevisionLink({ run }: { run: Run }) {
@@ -145,9 +140,7 @@ function QualityRunBody({
                 <>
                   {bad} of {tally.total} quality check
                   {tally.total === 1 ? "" : "s"} failed on this run
-                  {firstProblem && (
-                    <> — “{firstProblem.label ?? firstProblem.contract_type}”</>
-                  )}
+                  {firstProblem && <> — “{firstProblem.label ?? firstProblem.contract_type}”</>}
                 </>
               ) : (
                 <>
@@ -172,11 +165,7 @@ function QualityRunBody({
             actionFor={(r) => {
               const idx = checkStepIndex(pipeline, r.label);
               return !r.passed && idx >= 0 && pipeline ? (
-                <FixStepLink
-                  pipelineId={pipeline.id}
-                  index={idx}
-                  label="Edit check"
-                />
+                <FixStepLink pipelineId={pipeline.id} index={idx} label="Edit check" />
               ) : null;
             }}
           />
@@ -184,9 +173,7 @@ function QualityRunBody({
           <Panel>
             <PanelHead label="Quality checks" />
             <div className="px-4 py-8 text-center text-subtle text-sm">
-              {isTerminal(run.status)
-                ? "No check results recorded for this run."
-                : "Evaluating…"}
+              {isTerminal(run.status) ? "No check results recorded for this run." : "Evaluating…"}
             </div>
           </Panel>
         )}
@@ -197,10 +184,7 @@ function QualityRunBody({
             value={`${tally.passed} / ${tally.total}`}
             tone={bad > 0 ? "warn" : "ok"}
           />
-          <StatRow
-            label="Elapsed"
-            value={elapsedSeconds(run.started_at, run.finished_at)}
-          />
+          <StatRow label="Elapsed" value={elapsedSeconds(run.started_at, run.finished_at)} />
           <StatRow
             label="Started"
             value={run.started_at ? new Date(run.started_at).toLocaleString() : "—"}
@@ -248,9 +232,7 @@ function TransformRunBody({
   const ms = elapsedMs(run.started_at, run.finished_at);
   const rows = run.rows_written ?? null;
   const throughput =
-    rows !== null && ms !== null && ms > 0
-      ? Math.round(rows / (ms / 1000)).toLocaleString()
-      : "—";
+    rows !== null && ms !== null && ms > 0 ? Math.round(rows / (ms / 1000)).toLocaleString() : "—";
 
   return (
     <>
@@ -263,9 +245,7 @@ function TransformRunBody({
             headline={
               <>
                 Wrote {rows?.toLocaleString() ?? "—"} row{rows === 1 ? "" : "s"}
-                {destination?.config?.type && (
-                  <> to {destination.config.type.replace(/_/g, " ")}</>
-                )}
+                {destination?.config?.type && <> to {destination.config.type.replace(/_/g, " ")}</>}
                 {bad > 0 && (
                   <>
                     {" "}
@@ -288,18 +268,13 @@ function TransformRunBody({
           value={rows?.toLocaleString() ?? "—"}
           tone={tone === "ok" || tone === "warn" ? "ok" : "default"}
         />
-        <Metric
-          label="Elapsed"
-          value={elapsedSeconds(run.started_at, run.finished_at)}
-        />
+        <Metric label="Elapsed" value={elapsedSeconds(run.started_at, run.finished_at)} />
         <Metric label="Throughput" value={throughput} unit="rows/s" />
         <Metric
           label="Started"
           value={
             run.started_at ? (
-              <span className="text-[18px]">
-                {new Date(run.started_at).toLocaleString()}
-              </span>
+              <span className="text-[18px]">{new Date(run.started_at).toLocaleString()}</span>
             ) : (
               "—"
             )
@@ -321,11 +296,7 @@ function TransformRunBody({
           actionFor={(r) => {
             const idx = checkStepIndex(pipeline, r.label);
             return !r.passed && idx >= 0 && pipeline ? (
-              <FixStepLink
-                pipelineId={pipeline.id}
-                index={idx}
-                label="Edit check"
-              />
+              <FixStepLink pipelineId={pipeline.id} index={idx} label="Edit check" />
             ) : null;
           }}
         />
@@ -421,8 +392,7 @@ function RunDetail() {
       <PageHeader
         title={
           <>
-            Run{" "}
-            <span className="font-mono text-[18px] text-subtle">{id.slice(0, 8)}</span>
+            Run <span className="font-mono text-[18px] text-subtle">{id.slice(0, 8)}</span>
           </>
         }
         sub={isQuality ? "quality" : "transform"}
@@ -439,12 +409,7 @@ function RunDetail() {
           ) : isLoading || !data ? (
             <div className="text-subtle font-mono text-sm">Loading…</div>
           ) : isQuality ? (
-            <QualityRunBody
-              run={data}
-              results={results}
-              events={events}
-              pipeline={pipeline}
-            />
+            <QualityRunBody run={data} results={results} events={events} pipeline={pipeline} />
           ) : (
             <TransformRunBody
               run={data}

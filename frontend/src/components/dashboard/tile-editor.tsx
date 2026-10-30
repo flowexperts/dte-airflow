@@ -45,9 +45,7 @@ export function TileEditor({
   onRemove: () => void;
   onMove: (delta: -1 | 1) => void;
 }) {
-  const { data: pipelines } = useSWR<Pipeline[]>("pipelines-for-tiles", () =>
-    listPipelines(200),
-  );
+  const { data: pipelines } = useSWR<Pipeline[]>("pipelines-for-tiles", () => listPipelines(200));
   const { data: preview } = useSWR(
     tile.pipeline_id ? ["tile-columns", tile.pipeline_id] : null,
     // One row is enough to learn the column names, and it keeps the editor

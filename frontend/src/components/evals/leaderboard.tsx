@@ -59,14 +59,10 @@ export function LeaderboardPanel({ evalSetId }: { evalSetId: string }) {
       )}
 
       <Panel>
-        <PanelHead
-          label="Leaderboard"
-          count={`labels v${data.labels_version}`}
-        />
+        <PanelHead label="Leaderboard" count={`labels v${data.labels_version}`} />
         {ranked.length === 0 ? (
           <div className="px-4 py-8 text-[13px] text-muted">
-            No comparable runs yet. Trigger an eval pipeline against this set to
-            get a score.
+            No comparable runs yet. Trigger an eval pipeline against this set to get a score.
           </div>
         ) : (
           ranked.map((entry) => (
@@ -82,14 +78,10 @@ export function LeaderboardPanel({ evalSetId }: { evalSetId: string }) {
 
       {stale.length > 0 && (
         <Panel>
-          <PanelHead
-            label="Scored against older labels"
-            count={stale.length}
-          />
+          <PanelHead label="Scored against older labels" count={stale.length} />
           <div className="px-4 py-2.5 text-[12.5px] text-muted border-b border-border">
-            These ran before the labels changed. They are kept for history and
-            excluded from ranking — comparing across a label edit measures the
-            labels, not the extractor.
+            These ran before the labels changed. They are kept for history and excluded from ranking
+            — comparing across a label edit measures the labels, not the extractor.
           </div>
           {stale.map((entry) => (
             <RunRow key={entry.run_id} entry={entry} onFieldClick={() => {}} />
@@ -122,9 +114,7 @@ function RunRow({
     <div className="border-b border-border last:border-b-0 px-4 py-3 flex flex-col gap-2">
       <div className="flex items-center gap-3 flex-wrap">
         {entry.rank != null && (
-          <span className="font-mono text-[12px] text-subtle tabular-nums w-5">
-            {entry.rank}
-          </span>
+          <span className="font-mono text-[12px] text-subtle tabular-nums w-5">{entry.rank}</span>
         )}
         <ScoreBar value={entry.macro_f1} interval={entry.macro_f1_interval} />
         <SampleSize n={entry.n} />
@@ -148,7 +138,11 @@ function RunRow({
               holdout {pct(entry.holdout.macro_f1)}
             </span>
           )}
-          <Pill status={entry.status === "completed" ? "ok" : entry.status === "failed" ? "failed" : "warn"}>
+          <Pill
+            status={
+              entry.status === "completed" ? "ok" : entry.status === "failed" ? "failed" : "warn"
+            }
+          >
             {entry.status}
           </Pill>
         </span>
@@ -211,9 +205,8 @@ function FailuresPanel({
   field: string;
   onClose: () => void;
 }) {
-  const { data, error } = useSWR(
-    [`failures`, evalSetId, field, runId],
-    () => getFieldFailures(evalSetId, field, runId),
+  const { data, error } = useSWR([`failures`, evalSetId, field, runId], () =>
+    getFieldFailures(evalSetId, field, runId),
   );
 
   return (
@@ -247,9 +240,7 @@ function FailuresPanel({
         >
           <div className="font-mono text-[11px] text-subtle mb-1">
             {f.doc_ref ?? f.doc_key.slice(0, 16)}
-            {f.split === "holdout" && (
-              <span className="ml-2 text-[10.5px]">holdout</span>
-            )}
+            {f.split === "holdout" && <span className="ml-2 text-[10.5px]">holdout</span>}
           </div>
           <div className="grid grid-cols-2 gap-3 text-[12.5px]">
             <div>

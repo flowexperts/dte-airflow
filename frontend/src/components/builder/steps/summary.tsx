@@ -13,8 +13,7 @@ interface AggSpec {
   alias?: string;
 }
 
-const str = (v: unknown): string | null =>
-  typeof v === "string" && v.trim() !== "" ? v : null;
+const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : null);
 
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
@@ -24,8 +23,7 @@ const groupByLabel = (g: GroupByEntry): string => {
   return d.alias || `${d.field}_${d.part}`;
 };
 
-const aggLabel = (a: AggSpec): string =>
-  a.alias || `${a.func ?? "?"}(${a.field ?? "?"})`;
+const aggLabel = (a: AggSpec): string => a.alias || `${a.func ?? "?"}(${a.field ?? "?"})`;
 
 /** Count noun that stays readable at 0 and 1. */
 const n = (count: number, singular: string, plural = `${singular}s`) =>
@@ -88,9 +86,7 @@ export function stepTitle(step: StepShape): string {
     case "extract":
       return `${str(step.provider) ?? "?"} · per ${str(step.granularity) ?? "page"}`;
     case "structure": {
-      const fields = list(
-        (step.model as { fields?: unknown[] } | undefined)?.fields,
-      );
+      const fields = list((step.model as { fields?: unknown[] } | undefined)?.fields);
       if (fields.length === 0) return "no fields declared";
       return `${n(fields.length, "field")} via ${str(step.provider) ?? "?"}`;
     }
@@ -133,8 +129,7 @@ export function StepSummary({ step }: { step: StepShape }): ReactNode {
               label={from}
               value={
                 <>
-                  <ExprToken as="op">→</ExprToken>{" "}
-                  <ExprToken as="field">{to}</ExprToken>
+                  <ExprToken as="op">→</ExprToken> <ExprToken as="field">{to}</ExprToken>
                 </>
               }
             />
@@ -164,9 +159,7 @@ export function StepSummary({ step }: { step: StepShape }): ReactNode {
       return null;
 
     case "aggregate": {
-      const aggs = (list(step.aggregations) as AggSpec[]).filter(
-        (a) => a.field || a.alias,
-      );
+      const aggs = (list(step.aggregations) as AggSpec[]).filter((a) => a.field || a.alias);
       if (aggs.length === 0) return null;
       return (
         <KV>
@@ -237,17 +230,13 @@ export function StepSummary({ step }: { step: StepShape }): ReactNode {
           {shown.map((f, i) => (
             <KVItem key={i} label={f} />
           ))}
-          {names.length > shown.length && (
-            <KVItem label={`+${names.length - shown.length} more`} />
-          )}
+          {names.length > shown.length && <KVItem label={`+${names.length - shown.length} more`} />}
         </KV>
       );
     }
 
     case "profile": {
-      const cols = list(step.columns).filter(
-        (c): c is string => typeof c === "string",
-      );
+      const cols = list(step.columns).filter((c): c is string => typeof c === "string");
       if (cols.length === 0) return null;
       return (
         <KV>
@@ -267,11 +256,10 @@ export function StepSummary({ step }: { step: StepShape }): ReactNode {
       );
 
     case "structure": {
-      const model = step.model as
-        | { fields?: { name?: string; type?: string }[] }
-        | undefined;
-      const fields = (list(model?.fields) as { name?: string; type?: string }[])
-        .filter((f) => f.name);
+      const model = step.model as { fields?: { name?: string; type?: string }[] } | undefined;
+      const fields = (list(model?.fields) as { name?: string; type?: string }[]).filter(
+        (f) => f.name,
+      );
       if (fields.length === 0) return null;
       const shown = fields.slice(0, 8);
       return (

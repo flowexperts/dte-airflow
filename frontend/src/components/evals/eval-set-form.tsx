@@ -119,11 +119,7 @@ export function EvalSetForm() {
               placeholder="Invoice fields"
             />
           </Field>
-          <Field
-            label="Id"
-            error={errors.id}
-            hint="Optional — generated if you leave it blank."
-          >
+          <Field label="Id" error={errors.id} hint="Optional — generated if you leave it blank.">
             <Input
               value={draft.id}
               onChange={(e) => update({ id: e.target.value })}
@@ -154,10 +150,9 @@ export function EvalSetForm() {
           <div className="px-4 py-3 flex flex-col gap-3">
             <p className="text-[12.5px] text-muted">
               These names must match what your pipeline&apos;s{" "}
-              <code className="font-mono">structure</code>{" "}step produces —
-              scoring joins them by name. A name that doesn&apos;t match
-              won&apos;t error; it scores zero on every document, which reads
-              as a broken extractor.
+              <code className="font-mono">structure</code> step produces — scoring joins them by
+              name. A name that doesn&apos;t match won&apos;t error; it scores zero on every
+              document, which reads as a broken extractor.
             </p>
 
             {draft.fields.map((f, i) => (
@@ -198,9 +193,7 @@ export function EvalSetForm() {
                       ? "An eval set needs at least one field"
                       : "Remove this field"
                   }
-                  onClick={() =>
-                    update({ fields: draft.fields.filter((_, j) => j !== i) })
-                  }
+                  onClick={() => update({ fields: draft.fields.filter((_, j) => j !== i) })}
                 >
                   Remove
                 </button>

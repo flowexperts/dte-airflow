@@ -42,9 +42,8 @@ export function DocumentsSourceEditor({
         />
       </Field>
       <p className="font-mono text-[11px] text-subtle">
-        Lists documents — path, size, modified time — without opening them.
-        Add an <span className="text-accent">Extract</span> step to read their
-        text.
+        Lists documents — path, size, modified time — without opening them. Add an{" "}
+        <span className="text-accent">Extract</span> step to read their text.
       </p>
     </div>
   );

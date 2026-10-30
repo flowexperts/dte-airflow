@@ -49,9 +49,10 @@ describe("buildMatrix", () => {
 
   it("combines axes into one cartesian request", () => {
     // The shape the API has always accepted and the form never offered.
-    expect(
-      buildMatrix(draft({ providers: ["claude", "openai"], models: ["a", "b"] })),
-    ).toEqual({ provider: ["claude", "openai"], "params.model": ["a", "b"] });
+    expect(buildMatrix(draft({ providers: ["claude", "openai"], models: ["a", "b"] }))).toEqual({
+      provider: ["claude", "openai"],
+      "params.model": ["a", "b"],
+    });
   });
 
   it("omits an axis with nothing selected", () => {
@@ -68,9 +69,9 @@ describe("buildMatrix", () => {
 
   it("drops blank instruction variants", () => {
     // Three textareas, two filled. The empty one is not a config.
-    expect(
-      buildMatrix(draft({ instructions: ["terse", "   ", ""] })),
-    ).toEqual({ "model.instructions": ["terse"] });
+    expect(buildMatrix(draft({ instructions: ["terse", "   ", ""] }))).toEqual({
+      "model.instructions": ["terse"],
+    });
   });
 
   it("trims instruction whitespace", () => {
@@ -83,9 +84,9 @@ describe("buildMatrix", () => {
     // Two identical cells cost twice and rank against each other, which
     // reads as "the same config scored differently" — the exact thing that
     // makes people stop trusting a comparison.
-    expect(
-      buildMatrix(draft({ providers: ["claude", "claude"] })),
-    ).toEqual({ provider: ["claude"] });
+    expect(buildMatrix(draft({ providers: ["claude", "claude"] }))).toEqual({
+      provider: ["claude"],
+    });
   });
 });
 
@@ -101,15 +102,11 @@ describe("cellCount", () => {
   it("multiplies across axes", () => {
     // This is the number the user is about to spend against, so it must
     // match what the backend expands to exactly.
-    expect(
-      cellCount(draft({ providers: ["claude", "openai"], models: ["a", "b", "c"] })),
-    ).toBe(6);
+    expect(cellCount(draft({ providers: ["claude", "openai"], models: ["a", "b", "c"] }))).toBe(6);
   });
 
   it("ignores blank instruction slots", () => {
-    expect(
-      cellCount(draft({ providers: ["claude"], instructions: ["a", "", "  "] })),
-    ).toBe(1);
+    expect(cellCount(draft({ providers: ["claude"], instructions: ["a", "", "  "] }))).toBe(1);
   });
 });
 
@@ -195,9 +192,7 @@ describe("draftFromMatrix", () => {
      */
     const draft = draftFromMatrix({ "params.max_tokens": [1000, 2000] });
     expect(draft.providers).toEqual([]);
-    expect(unknownAxes({ "params.max_tokens": [1000] })).toEqual([
-      "params.max_tokens",
-    ]);
+    expect(unknownAxes({ "params.max_tokens": [1000] })).toEqual(["params.max_tokens"]);
   });
 
   it("coerces non-string values to strings", () => {

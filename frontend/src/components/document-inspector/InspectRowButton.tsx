@@ -67,9 +67,7 @@ export function InspectRowButton({ row }: { row: Record<string, unknown> }) {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-4 flex items-center justify-between gap-4">
-                <div className="text-sm font-medium">
-                  {info.filename ?? "Document"}
-                </div>
+                <div className="text-sm font-medium">{info.filename ?? "Document"}</div>
                 <Button size="sm" onClick={() => setOpen(false)} kbd="Esc">
                   Close
                 </Button>

@@ -57,9 +57,7 @@ const dateRef = (v: string) => (v === "@today" ? TODAY : quoteIdent(v));
  *  and quoted strings stay literals; anything else is treated as a column,
  *  which is what "other" reads as in `price * qty`. */
 const valueRef = (v: string) =>
-  /^-?\d+(\.\d+)?$/.test(v.trim()) || /^'.*'$/.test(v.trim())
-    ? safeLiteral(v)
-    : quoteIdent(v);
+  /^-?\d+(\.\d+)?$/.test(v.trim()) || /^'.*'$/.test(v.trim()) ? safeLiteral(v) : quoteIdent(v);
 
 const DATE_UNITS = [
   { value: "day", label: "day" },
@@ -251,8 +249,7 @@ export const RECIPES: Recipe[] = [
       { kind: "field", key: "field", label: "Part" },
       { kind: "field", key: "of", label: "Total" },
     ],
-    build: (a) =>
-      `round(${quoteIdent(a("field"))} / NULLIF(${quoteIdent(a("of"))}, 0) * 100, 2)`,
+    build: (a) => `round(${quoteIdent(a("field"))} / NULLIF(${quoteIdent(a("of"))}, 0) * 100, 2)`,
   },
   {
     id: "coalesce",
@@ -267,8 +264,7 @@ export const RECIPES: Recipe[] = [
   },
 ];
 
-export const recipeById = (id: string): Recipe | undefined =>
-  RECIPES.find((r) => r.id === id);
+export const recipeById = (id: string): Recipe | undefined => RECIPES.find((r) => r.id === id);
 
 /** Slots that may be left blank: `number` falls back, `text` is legitimately
  *  empty (replace-with-nothing, join-with-no-separator). */
@@ -286,8 +282,7 @@ export function buildRecipe(recipe: Recipe, args: Record<string, string>): strin
   for (const arg of recipe.args) {
     const raw = (args[arg.key] ?? "").trim();
     if (!raw && !optional(arg)) return "";
-    filled[arg.key] =
-      raw || (arg.kind === "number" ? arg.fallback : arg.kind === "text" ? "" : "");
+    filled[arg.key] = raw || (arg.kind === "number" ? arg.fallback : arg.kind === "text" ? "" : "");
   }
   return recipe.build((k) => filled[k] ?? "");
 }

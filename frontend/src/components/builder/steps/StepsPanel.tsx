@@ -40,8 +40,7 @@ export function StepsPanel({
     copy[i] = { ...current, ...patch };
     onChange(copy);
   };
-  const remove = (i: number) =>
-    onChange(steps.filter((_, j) => j !== i));
+  const remove = (i: number) => onChange(steps.filter((_, j) => j !== i));
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir;
     if (j < 0 || j >= steps.length) return;
@@ -68,9 +67,7 @@ export function StepsPanel({
     // runner, and a pipeline-level aggregate would collapse the very rows
     // the labels join against.
     if (pipelineType === "eval") {
-      return (
-        o.category !== "quality" && !["aggregate", "pivot"].includes(o.op)
-      );
+      return o.category !== "quality" && !["aggregate", "pivot"].includes(o.op);
     }
     return o.category !== "quality";
   });
@@ -87,9 +84,7 @@ export function StepsPanel({
         }
       />
       {steps.length === 0 && (
-        <div className="p-6 text-center text-sm text-subtle">
-          No steps yet. Add one below.
-        </div>
+        <div className="p-6 text-center text-sm text-subtle">No steps yet. Add one below.</div>
       )}
       {steps.map((step, i) => (
         <div key={i} className="border-b border-border last:border-b-0">
@@ -108,19 +103,25 @@ export function StepsPanel({
                     onClick={() => move(i, -1)}
                     className="text-subtle hover:text-text px-1"
                     title="Move up"
-                  >↑</button>
+                  >
+                    ↑
+                  </button>
                   <button
                     type="button"
                     onClick={() => move(i, 1)}
                     className="text-subtle hover:text-text px-1"
                     title="Move down"
-                  >↓</button>
+                  >
+                    ↓
+                  </button>
                   <button
                     type="button"
                     onClick={() => remove(i)}
                     className="text-subtle hover:text-red px-1"
                     title="Remove"
-                  >×</button>
+                  >
+                    ×
+                  </button>
                 </div>
               </div>
               <StepIndexProvider index={i}>

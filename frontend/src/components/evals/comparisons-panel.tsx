@@ -60,9 +60,7 @@ export function ComparisonsPanel({ pipelineId }: { pipelineId: string }) {
             {c.pending > 0 && <Pill status="running">{c.pending} running</Pill>}
             {/* Absent, not zero. Most comparisons in this flow are never
                 labelled, and 0% would read as "every config failed". */}
-            {c.best_macro_f1 != null && (
-              <ScoreBar value={c.best_macro_f1} width={72} />
-            )}
+            {c.best_macro_f1 != null && <ScoreBar value={c.best_macro_f1} width={72} />}
             <span className="ml-auto font-mono text-[11px] text-subtle">
               {c.started_at ? new Date(c.started_at).toLocaleDateString() : "—"}
             </span>
@@ -93,10 +91,9 @@ export function ComparisonsPane({ pipelineId }: { pipelineId: string }) {
     return (
       <Panel>
         <div className="px-4 py-4 text-[12.5px] text-muted max-w-[62ch]">
-          No comparisons yet. Choose{" "}
-          <strong className="text-text">Compare…</strong> in the header to run
-          the same documents through several configs and see where they
-          disagree — no labels needed.
+          No comparisons yet. Choose <strong className="text-text">Compare…</strong> in the header
+          to run the same documents through several configs and see where they disagree — no labels
+          needed.
         </div>
       </Panel>
     );

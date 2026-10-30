@@ -71,9 +71,7 @@ function LookupEditorPanel({
             placeholder="Country names"
           />
         </Field>
-        {!isNew && (
-          <div className="text-xs text-subtle font-mono">id: {draft.id}</div>
-        )}
+        {!isNew && <div className="text-xs text-subtle font-mono">id: {draft.id}</div>}
         <Field label="Default" hint="value used when no match">
           <Input
             value={draft.default ?? ""}
@@ -206,9 +204,7 @@ export function LookupTablesTable() {
       header: "Default",
       width: "1fr",
       render: (r) => (
-        <span className="font-mono text-[11.5px] text-subtle truncate">
-          {r.default ?? "—"}
-        </span>
+        <span className="font-mono text-[11.5px] text-subtle truncate">{r.default ?? "—"}</span>
       ),
     },
     {
@@ -216,19 +212,20 @@ export function LookupTablesTable() {
       header: "",
       width: "100px",
       align: "right",
-      render: (r) => canDelete ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(r.id);
-          }}
-          disabled={deletingId === r.id}
-          className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
-        >
-          {deletingId === r.id ? "…" : "Delete"}
-        </button>
-      ) : null,
+      render: (r) =>
+        canDelete ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(r.id);
+            }}
+            disabled={deletingId === r.id}
+            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
+          >
+            {deletingId === r.id ? "…" : "Delete"}
+          </button>
+        ) : null,
     },
   ];
 

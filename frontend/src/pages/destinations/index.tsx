@@ -14,7 +14,13 @@ export default function DestinationsPage() {
     <>
       <Topbar
         crumbs={[{ label: "Admin" }, { label: "Destinations" }]}
-        actions={<NewResourceButton perm="destination:write" href="/destinations/new" label="New destination" />}
+        actions={
+          <NewResourceButton
+            perm="destination:write"
+            href="/destinations/new"
+            label="New destination"
+          />
+        }
       />
       <PageHeader
         title="Destinations"

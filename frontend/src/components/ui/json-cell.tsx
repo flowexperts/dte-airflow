@@ -42,9 +42,7 @@ export function JsonCell({ value }: { value: unknown }) {
   return (
     <details className="group max-w-[280px]">
       <summary className="cursor-pointer list-none flex items-center gap-1.5 truncate">
-        <span className="text-subtle text-[10px] transition-transform group-open:rotate-90">
-          ▶
-        </span>
+        <span className="text-subtle text-[10px] transition-transform group-open:rotate-90">▶</span>
         <span className="text-accent truncate" title={oneLine}>
           {oneLine}
         </span>

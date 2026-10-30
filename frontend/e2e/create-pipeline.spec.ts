@@ -86,7 +86,7 @@ async function loginUser(request: APIRequestContext): Promise<string> {
     const body = await res.text();
     throw new Error(`login returned ${res.status()}: ${body}`);
   }
-  const body = await res.json() as { access_token: string };
+  const body = (await res.json()) as { access_token: string };
   return body.access_token;
 }
 
@@ -135,7 +135,11 @@ async function waitForRun(
     if (res.status() !== 200) {
       throw new Error(`GET /api/runs/${runId} → ${res.status()}`);
     }
-    const run = await res.json() as { status: string; rows_written: number | null; error: string | null };
+    const run = (await res.json()) as {
+      status: string;
+      rows_written: number | null;
+      error: string | null;
+    };
     if (run.status === "completed" || run.status === "failed") {
       return run;
     }
@@ -218,7 +222,11 @@ test.afterAll(async ({ request }) => {
     await apiDelete(request, TOKEN, endpoint).catch(() => {});
   }
   for (const p of [FIXTURE_PATH, OUTPUT_PATH]) {
-    try { fs.rmSync(p); } catch { /* ignore */ }
+    try {
+      fs.rmSync(p);
+    } catch {
+      /* ignore */
+    }
   }
 });
 
@@ -252,9 +260,7 @@ test("pipeline create-trigger-complete journey", async ({ page, request }) => {
   // SourcesPanel renders a Dropdown with placeholder "— pick a source —".
   // The trigger is a <button aria-haspopup="listbox"> and options are
   // <button role="option"> portalled to document.body.
-  const sourceDropdownTrigger = page
-    .getByRole("button", { name: /— pick a source —/ })
-    .first();
+  const sourceDropdownTrigger = page.getByRole("button", { name: /— pick a source —/ }).first();
   await sourceDropdownTrigger.click();
 
   // The source we created shows up by id in the listbox.
@@ -264,9 +270,7 @@ test("pipeline create-trigger-complete journey", async ({ page, request }) => {
 
   // ── 4. Pick the destination ────────────────────────────────────────────
   // DestinationPicker renders a Dropdown with placeholder "— pick a destination —".
-  const destDropdownTrigger = page
-    .getByRole("button", { name: /— pick a destination —/ })
-    .first();
+  const destDropdownTrigger = page.getByRole("button", { name: /— pick a destination —/ }).first();
   await destDropdownTrigger.click();
 
   const destOption = page.getByRole("option", { name: DEST_ID });
@@ -279,10 +283,9 @@ test("pipeline create-trigger-complete journey", async ({ page, request }) => {
   await saveBtn.click();
 
   // After a successful save we should be redirected to /pipelines/{id}.
-  await expect(page).toHaveURL(
-    new RegExp(`/pipelines/${escapeRegex(PIPELINE_ID)}$`),
-    { timeout: 15_000 },
-  );
+  await expect(page).toHaveURL(new RegExp(`/pipelines/${escapeRegex(PIPELINE_ID)}$`), {
+    timeout: 15_000,
+  });
 
   // ── 6. Trigger the run ─────────────────────────────────────────────────
   // TriggerButton only renders if the user has pipeline:trigger permission.
@@ -302,14 +305,17 @@ test("pipeline create-trigger-complete journey", async ({ page, request }) => {
     expect(runId).not.toBe("");
   } else {
     // Fallback: API trigger.
-    const res = await request.post(`${API}/api/pipelines/${encodeURIComponent(PIPELINE_ID)}/trigger`, {
-      headers: authHeaders(TOKEN),
-    });
+    const res = await request.post(
+      `${API}/api/pipelines/${encodeURIComponent(PIPELINE_ID)}/trigger`,
+      {
+        headers: authHeaders(TOKEN),
+      },
+    );
     if (res.status() !== 200 && res.status() !== 201) {
       const body = await res.text();
       throw new Error(`API trigger returned ${res.status()}: ${body}`);
     }
-    const body = await res.json() as { run_id: string };
+    const body = (await res.json()) as { run_id: string };
     runId = body.run_id;
     // Navigate to the run detail page so the UI assertion below works.
     await page.goto(`/runs/${encodeURIComponent(runId)}`);

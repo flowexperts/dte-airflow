@@ -17,13 +17,7 @@ import { readCron, nextFireTimes } from "./cron";
  * Evaluated in the schedule's timezone, matching croniter on the backend,
  * which stays the authority on whether an expression is accepted at all.
  */
-export function CronExplainer({
-  expr,
-  timezone,
-}: {
-  expr: string;
-  timezone: string;
-}) {
+export function CronExplainer({ expr, timezone }: { expr: string; timezone: string }) {
   const reading = useMemo(() => readCron(expr), [expr]);
 
   // Recomputed only when the expression or zone changes — not on a timer.
@@ -35,9 +29,7 @@ export function CronExplainer({
   );
 
   if (reading.problem) {
-    return (
-      <div className="mt-1.5 text-[12px] text-red">{reading.problem}</div>
-    );
+    return <div className="mt-1.5 text-[12px] text-red">{reading.problem}</div>;
   }
   if (!reading.text) return null;
 
@@ -48,8 +40,8 @@ export function CronExplainer({
       {reading.dayOrCaveat && (
         <div className="text-[11.5px] text-gold">
           Day-of-month and day-of-week are both set. Cron treats these as{" "}
-          <strong className="font-medium">or</strong>, not and — this fires on
-          either, which is usually more often than intended.
+          <strong className="font-medium">or</strong>, not and — this fires on either, which is
+          usually more often than intended.
         </div>
       )}
 
