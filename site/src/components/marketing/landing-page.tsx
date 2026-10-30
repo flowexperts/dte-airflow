@@ -4,11 +4,11 @@ import { HeroDemo } from "./hero-demo";
 import { OssList } from "./oss-list";
 import { CORE_OSS } from "@/lib/oss";
 import Link from "next/link";
-import { CAL_LINK, InstallBox, SiteFooter, TopNav } from "./site-chrome";
+import { InstallBox, SiteFooter, TopNav } from "./site-chrome";
 import { INSTALL_URL, REPO_URL } from "@/lib/site";
 
 const FAQ = [
-  ["Is it ready for production?", <>It&apos;s in beta. Interfaces and the <code>dte</code> schema can still change between releases, so back up before you upgrade.</>],
+  ["Is it ready for production?", <>It&apos;s in beta. Try it in your Airflow environment and give us feedback, or <a href={REPO_URL}>build it with us</a>.</>],
   ["Do I need to run another service?", <>No. DTE is an Airflow plugin. It runs in your api-server and scheduler and keeps its tables in a <code>dte</code> schema in Postgres.</>],
   ["Does our data leave our network?", <>No. It runs in your Airflow, on your connections. PDF extraction calls the model provider you configure, or a regex provider when nothing may leave.</>],
   ["Where does it sit next to dbt?", <>dbt models data that&apos;s already in your warehouse. DTE gets it there: files, APIs and PDFs, mapped and checked on the way in.</>],
@@ -85,26 +85,6 @@ export function LandingPage() {
 
         <section className="s" id="install"><div className="in">
           <InstallBox />
-        </div></section>
-
-        <section className="s" id="production"><div className="in">
-          <p className="kicker">Open source, with backup</p>
-          <h2>Airflow in production is the hard part</h2>
-          <div className="founder">
-            <p>
-              DTE is free and open source, and it always will be. Installing it takes a minute.
-              Running Airflow well (upgrades, scaling the scheduler, deployments, the 3am failed
-              DAG) is the work I do every day at flowexperts.ai.
-            </p>
-            <p>
-              If your team wants DTE and the Airflow under it running in production without
-              becoming the bottleneck, talk to us.
-            </p>
-            <p>
-              <a className="btn go" href={`https://cal.com/${CAL_LINK}`} target="_blank" rel="noopener noreferrer">Talk about your Airflow</a>{" "}
-              <a className="plain" href="https://flowexperts.ai">or see flowexperts.ai</a>
-            </p>
-          </div>
         </div></section>
         <section className="s" id="built-on"><div className="in">
           <p className="kicker">Credit where it&apos;s due</p>
