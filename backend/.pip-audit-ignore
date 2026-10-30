@@ -1,0 +1,46 @@
+# Advisories pip-audit skips (read by .github/workflows/audit.yml).
+# DTE installs with Apache Airflow's constraints unmodified, so a fix that
+# needs a version newer than Airflow 3.3.2 pins waits for Airflow. Re-check
+# this list on every Airflow upgrade and delete what clears.
+# One ID per line; the comment after it says why.
+CVE-2026-111063  # aiohttp: Airflow pins 3.14.3, fixed in 3.14.4
+CVE-2026-111064  # aiohttp
+CVE-2026-111065  # aiohttp
+CVE-2026-111066  # aiohttp
+CVE-2026-111748  # aiohttp
+CVE-2026-111749  # aiohttp
+CVE-2026-111750  # aiohttp
+GHSA-2g87-pp6c-29x5  # aiohttp
+PYSEC-2026-4320  # certifi: Airflow pins 2026.7.22, fixed in 2026.10.19
+CVE-2026-114605  # dnspython: Airflow pins 2.8.0, fixed in 2.9.0
+CVE-2026-112907  # filelock: Airflow pins 3.32.6, fixed in 4.x
+CVE-2026-112908  # filelock
+CVE-2026-112909  # filelock
+CVE-2026-112910  # filelock
+CVE-2026-112911  # filelock
+CVE-2026-112913  # filelock
+CVE-2026-112915  # filelock
+CVE-2026-112935  # filelock
+CVE-2026-112936  # filelock
+CVE-2026-112938  # filelock
+CVE-2026-112939  # filelock
+CVE-2026-112940  # filelock
+CVE-2026-110855  # gitpython: Airflow pins 3.1.62, fixed in 3.2.x
+CVE-2026-110856  # gitpython
+CVE-2026-110857  # gitpython
+CVE-2026-110858  # gitpython
+CVE-2026-110859  # gitpython
+CVE-2026-114145  # gitpython
+CVE-2026-114612  # litellm: Airflow pins 1.85.7, fixed in 1.100.4+
+PYSEC-2026-4244  # multidict: Airflow pins 6.8.0, fixed in 6.9.1
+CVE-2026-49272   # oauthlib: Airflow pins 3.3.1, fixed in 4.0.0
+PYSEC-2026-4114  # oauthlib
+CVE-2026-114603  # opentelemetry-api: Airflow pins 1.44.0, fixed in 1.45.1
+PYSEC-2026-4141  # pyjwt: Airflow pins 2.14.0, fixed in 2.15.0
+PYSEC-2026-4183  # pyjwt
+CVE-2026-106435  # pymongo: Airflow pins 4.18.1, fixed in 4.18.3
+GHSA-xmj3-9gf7-h52w  # setuptools: Airflow pins 84.0.0, fixed in 84.1.0
+PYSEC-2026-4175  # urllib3: Airflow pins 2.7.0, fixed in 2.8.0
+PYSEC-2026-4176  # urllib3
+PYSEC-2026-4177  # urllib3
+PYSEC-2026-1845  # pytest (dev only): 9.x needs the asyncio tests moved off get_event_loop()

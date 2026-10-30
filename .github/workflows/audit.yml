@@ -19,7 +19,8 @@ jobs:
       - name: pip-audit (locked deps, all extras)
         run: |
           uv export --frozen --no-hashes --no-emit-project --all-extras \
-            | uvx pip-audit -r /dev/stdin --no-deps --disable-pip --strict
+            | uvx pip-audit -r /dev/stdin --no-deps --disable-pip --strict \
+              $(awk '/^[A-Z]/ {print "--ignore-vuln", $1}' .pip-audit-ignore)
 
   pnpm-audit:
     runs-on: ubuntu-latest
