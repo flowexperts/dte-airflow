@@ -1,36 +1,24 @@
 # Core ideas
 
-Five words. Learn them once and the rest of dte makes sense.
-
 ## Connection
 
-A **connection** is the login to one system: a database, a cloud storage bucket, an API. It holds the credentials and nothing else. It doesn't know which table or which folder inside that system.
-
-dte uses **Airflow connections**, the same ones your other DAGs use. You add a connection once, and every source or destination that talks to that system points at it. Rotate a password in Airflow, and every pipeline picks up the new value on its next run. See [Connections](../connections/index.md).
+Credentials for one system: a database, a bucket, an API. No table or folder. dte uses **Airflow connections**, so rotating a password in Airflow updates every pipeline on its next run. See [Connections](../connections/index.md).
 
 ## Source
 
-A **source** is *where inside a system your data lives*. It picks a connection and adds the details:
-
-- For a file store: which folder, which files.
-- For a database: which table (or a query).
-- For an API: which endpoint.
-
-Sources are reusable. Two pipelines can read the same source.
+Where inside a system your data lives. Picks a connection and adds details: folder and files, table or query, or API endpoint. Reusable across pipelines.
 
 ## Destination
 
-A **destination** is *where the result of a pipeline lands*. It's the same idea as a source, in reverse: pick a connection, add the details (file path, table name), and you're done.
+Where a pipeline's result lands. A connection plus details (file path, table name).
 
 ## Pipeline
 
-A **pipeline** is a recipe: pick one or more sources, add an ordered list of steps, and pick a destination. Steps are the changes you make to the data, such as filter, rename and join. See [Steps](../steps/index.md) for the full list.
-
-Every pipeline is one Airflow DAG, `dte__<pipeline id>`. Every save is a new revision, and the pipeline's **History** tab lists them.
+One or more sources, an ordered list of [steps](../steps/index.md), and a destination. Every pipeline is one Airflow DAG, `dte__<pipeline id>`. Every save is a new revision, listed on the **History** tab.
 
 ## Run
 
-A **run** is one execution of a pipeline, which means one Airflow dag run. It has a status, a row count, and a start and end time. The pipeline's **Runs** tab keeps the history, and Airflow shows the same runs with their task logs.
+One execution of a pipeline, i.e. one Airflow dag run, with a status, row count, and start and end time. The pipeline's **Runs** tab keeps the history; Airflow shows the same runs with task logs.
 
 | Status | Meaning |
 | --- | --- |

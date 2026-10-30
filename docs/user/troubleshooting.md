@@ -1,16 +1,14 @@
 # Troubleshooting
 
-The pattern: **read the red panel**. dte shows the underlying error in full rather than a friendly wrapper, so the message is often the answer. For a run, Airflow's task log for that dag run has everything.
-
-Here are the common ones and what to do about them.
+Read the red panel: dte shows the underlying error in full. For a run, Airflow's task log for that dag run has the rest.
 
 ## A connection type is greyed out
 
-Its Airflow provider isn't installed. The picker names the package; install it on every Airflow component ([extras](self-hosting/install-plugin.md#1-install-the-package)) and restart.
+Its Airflow provider isn't installed. Install the named package on every component ([extras](self-hosting/install-plugin.md#1-install-the-package)) and restart.
 
 ## Connection test fails
 
-If **Test** says it's disabled, that's Airflow's default. Enable it with `AIRFLOW__CORE__TEST_CONNECTION=Enabled`.
+If **Test** says it's disabled, set `AIRFLOW__CORE__TEST_CONNECTION=Enabled`.
 
 | Message contains | Try this |
 | ---------------- | -------- |
@@ -22,17 +20,15 @@ If **Test** says it's disabled, that's Airflow's default. Enable it with `AIRFLO
 
 ## The DAG file fails to import with `DTE_DATABASE_URL`
 
-Set `DTE_DATABASE_URL` on every Airflow component, pointing at dte's Postgres database. See [Install](self-hosting/install-plugin.md#2-set-dte_database_url).
+Set `DTE_DATABASE_URL` on every Airflow component. See [Install](self-hosting/install-plugin.md#2-set-dte_database_url).
 
 ## Infer schema returns nothing
 
-- The folder is empty, or the file pattern matches nothing. Fix the folder or the pattern, and check for a trailing space.
-- The file exists but isn't valid, for example an empty CSV or malformed JSON. Open it and check.
-- For file sources, the **folder** field must be a folder, not a single file. Move the filename into the **files** field.
+- The folder is empty, or the pattern matches nothing (check for a trailing space).
+- The file isn't valid, e.g. an empty CSV or malformed JSON.
+- The **folder** field holds a file. Move the filename into **files**.
 
 ## Preview goes red
-
-The message says what's wrong. Frequent ones:
 
 | Message contains | What it means | Fix |
 | ---------------- | ------------- | --- |
@@ -43,25 +39,21 @@ The message says what's wrong. Frequent ones:
 
 ## A run fails
 
-The run shows the error in full, and the Airflow task log has the rest. Two frequent categories:
-
-- **Source unreachable at run time.** A database went down, credentials expired, or a file moved. Fix it and run again. Nothing was written.
-- **Destination refused the write.** The target table's schema doesn't match, the permissions are wrong, or the path isn't writable. Read the message, then fix the destination or the pipeline.
+- Source unreachable: a database down, credentials expired, a file moved. Fix and rerun. Nothing was written.
+- Destination refused the write: schema mismatch, permissions, or an unwritable path. Fix the destination or pipeline.
 
 ## A run stays `pending`
 
-The dag run is queued in Airflow and nothing has picked it up yet.
+The dag run is queued and nothing has picked it up.
 
-- Check that Airflow's scheduler is running, and that the `dte__<pipeline id>` DAG shows up in Airflow without an import error.
-- A schedule with **Overlap: Skip** runs one at a time, so a manual run waits behind a running scheduled one.
-- Check Airflow's pools and `parallelism`, which may be full.
+- Check the scheduler is running and `dte__<pipeline id>` shows in Airflow without an import error.
+- Overlap: Skip runs one at a time, so a manual run waits behind a scheduled one.
+- Check Airflow's pools and `parallelism`.
 
 ## A "Referenced by" error on delete
 
-You tried to delete a source or destination that a pipeline uses. The error lists exactly which pipelines. Update or delete those first, then try again.
+A pipeline uses that source or destination. The error lists which. Update or delete those first.
 
 ## Still stuck?
 
-- Preview is your friend: it isolates the problem to one step.
-- Check the [FAQ](faq.md).
-- Open an issue or a discussion on [GitHub](https://github.com/flowexperts/dte-airflow).
+Check the [FAQ](faq.md), or open an issue or discussion on [GitHub](https://github.com/flowexperts/dte-airflow).

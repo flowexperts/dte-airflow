@@ -2,58 +2,56 @@
 
 ## Do I need my own Airflow?
 
-To run dte for real, yes: it's a plugin for Airflow 3.3+ ([install](self-hosting/install-plugin.md)). To try it, the [Docker Compose stack](self-hosting/install.md) brings its own Airflow.
+For real use, yes: dte is a plugin for Airflow 3.3+ ([install](self-hosting/install-plugin.md)). To try it, the [Docker Compose stack](self-hosting/install.md) brings its own.
 
 ## Can I schedule a pipeline?
 
-Yes. Give it a [schedule](pipelines/scheduling.md) and it becomes the cron of the pipeline's Airflow DAG.
+Yes. A [schedule](pipelines/scheduling.md) is the cron of the pipeline's DAG.
 
 ## Can I run pipeline B after pipeline A?
 
-Use plain Airflow: write a DAG that triggers or waits on the `dte__<pipeline id>` DAGs.
+Write an Airflow DAG that triggers or waits on the `dte__<pipeline id>` DAGs.
 
 ## Can I rename a pipeline id?
 
-No. The id names the Airflow DAG and appears in run history, so it's fixed after creation. The **Name** is free to change any time.
+No. It names the Airflow DAG and appears in run history. **Name** can change any time.
 
 ## Can two pipelines write to the same table?
 
-Yes, but be careful with the write mode on a database destination. Two pipelines both set to **Replace** overwrite each other's results on every run. **Append** or **Merge** are usually what you want.
+Yes. Two pipelines on **Replace** overwrite each other on every run; use **Append** or **Merge**.
 
-## Can I edit a source without breaking the pipelines that use it?
+## Can I edit a source without breaking its pipelines?
 
-You can edit it, but the change affects every pipeline that reads that source on its next run. The source form warns you.
+The change applies to every pipeline reading it, on their next run. For a big change, duplicate the source, edit the copy, and switch pipelines over one by one.
 
-If you need to change a source drastically, duplicate it, edit the copy, then switch pipelines over one by one.
+## What if I edit a pipeline mid-run?
 
-## What happens to a running pipeline if I edit it mid-run?
+Nothing. A run uses the revision it started against; the edit applies to the next run.
 
-Nothing. Each run uses the exact revision it started against, and your edit becomes a new revision that applies to the next run.
+## Where does the output go?
 
-## Where does the output actually go?
-
-Wherever the destination points. For a local file destination (an `fs` connection), that's a path on the machine that runs the Airflow task, so use storage every Airflow worker shares, or object storage.
+Wherever the destination points. For a local file destination (`fs` connection) that's a path on the machine running the Airflow task, so use storage every worker shares, or object storage.
 
 ## Can I preview more than 20 rows?
 
-Not from the UI. Preview is for shape, not scale. Run the pipeline and peek at the output.
+No. Run the pipeline and look at the output.
 
-## The field picker is empty. Why?
+## The field picker is empty.
 
-The source's schema hasn't been inferred yet. Click **Infer schema** on the source card.
+Click **Infer schema** on the source card.
 
 ## How do I filter on a nested field?
 
-Use dot syntax, `order.amount > 100`. See [Field names](pipelines/field-refs.md).
+Dot syntax, `order.amount > 100`. See [Field names](pipelines/field-refs.md).
 
 ## Can I use a Google Sheet as a source?
 
-Not directly. Export or sync the sheet to a database or a CSV file, then read that.
+Not directly. Export or sync it to a database or CSV.
 
 ## Who can see my pipelines?
 
 Airflow decides. dte follows Airflow's auth manager and DAG permissions.
 
-## Is my data leaving my infrastructure?
+## Does my data leave my infrastructure?
 
-No. dte runs inside your Airflow, reads from your sources and writes to your destinations. The exception is **Structure fields** with Claude or OpenAI, which sends document text to that provider through your own Airflow connection. The regex provider stays offline.
+No, except **Structure fields** with Claude or OpenAI, which sends document text to that provider through your Airflow connection. The regex provider stays offline.

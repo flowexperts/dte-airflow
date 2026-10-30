@@ -5,6 +5,7 @@ import { createSource, updateSource, type Source } from "@/lib/api";
 import { SourceEditor } from "@/components/builder/sources/SourceEditor";
 import { SchemaProvider } from "@/components/builder/schema-context";
 import { humanizeError, type HumanError } from "@/lib/errors";
+import { validateSource } from "@/lib/source-validate";
 
 export function SourceForm({
   initial,
@@ -18,15 +19,8 @@ export function SourceForm({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<HumanError | null>(null);
 
-  const validate = (): string | null => {
-    if (!source.id.trim()) return "Source id is required.";
-    if (!/^[a-zA-Z0-9_-]+$/.test(source.id))
-      return "Source id may only contain letters, numbers, '_' and '-'.";
-    return null;
-  };
-
   const save = async () => {
-    const problem = validate();
+    const problem = validateSource(source, mode);
     if (problem) {
       setErr({ title: "Check your input", message: problem, kind: "validation" });
       return;

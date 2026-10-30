@@ -1,71 +1,75 @@
 # Your first pipeline
 
-Ten minutes. You'll read a folder of orders, keep only the paid ones, and write them out as a clean JSON file.
+Read a file of orders, keep the paid ones, write them as JSON. You'll make a connection, a source, a destination and a pipeline.
 
-You'll make one of each thing: a connection, a source, a destination, and then a pipeline that uses them.
+## 0. Sample data
+
+With the Docker Compose stack, `/tmp/dte-samples` on your machine is mounted into Airflow at the same path:
+
+```bash
+mkdir -p /tmp/dte-samples && cat > /tmp/dte-samples/orders.json <<'EOF'
+[
+  {"id": 1, "customer": "Asha", "status": "paid",     "amount": 120.5},
+  {"id": 2, "customer": "Ben",  "status": "pending",  "amount": 80.0},
+  {"id": 3, "customer": "Chen", "status": "paid",     "amount": 42.0},
+  {"id": 4, "customer": "Dara", "status": "refunded", "amount": 15.0},
+  {"id": 5, "customer": "Eli",  "status": "paid",     "amount": 300.0}
+]
+EOF
+```
 
 ## 1. Add a connection
 
-Connections are Airflow connections. Go to **Admin ▸ Connections ▸ Add connection** in Airflow:
+**Admin ▸ Connections ▸ Add Connection**: Connection ID `local`, Connection Type **File (path)**. No credentials.
 
-- Connection Id: `local`
-- Connection Type: **File (path)** (`fs`)
-
-Save it. The `fs` type needs no credentials. dte reads and writes paths on the machines Airflow runs on. With the Docker Compose stack, `/tmp/dte-samples` is mounted for exactly this.
+![Airflow's Add Connection form: id local, type File (path)](../assets/getting-started/first-1-connection.png)
 
 ## 2. Add a source
 
-Go to **Admin ▸ DTE Sources ▸ New**.
+**Admin ▸ DTE Sources ▸ New**:
 
-- Kind: **Filesystem**
+- Name: `orders`
+- Type: **Local filesystem**
 - Connection: **local**
-- Folder: `/tmp/dte-samples/` (it must be a folder, not a file)
-- Files: `orders.json`
-- Format: leave blank and dte detects it
+- Bucket or directory: `/tmp/dte-samples/` (a directory, not a file)
+- File glob: `orders.json`
 
-Click **Infer schema**. dte reads a sample and shows the columns it found, such as `id`, `customer`, `status` and `amount`. If they don't look right, fix the folder or files field and try again.
+Save. **Infer schema** on the saved source lists `id`, `customer`, `status`, `amount`.
+
+![The orders source with its inferred fields](../assets/getting-started/first-2-source.png)
 
 ## 3. Add a destination
 
-Go to **Admin ▸ DTE Destinations ▸ New**.
+**Admin ▸ DTE Destinations ▸ New**: Destination id `orders_paid`, Connection **local**, Type **JSON**, Path `/tmp/dte-samples/out/orders_paid.json`.
 
-- Type: **JSON file**
-- Connection: **local**
-- Path: `/tmp/dte-samples/out/orders_paid.json`
-
-The extension has to match the type. If you type `.csv` here, dte stops you when you save.
+![The orders_paid destination](../assets/getting-started/first-3-destination.png)
 
 ## 4. Build the pipeline
 
-Go to **Plugins ▸ DTE Pipelines ▸ Transform ▸ New pipeline**.
+**Plugins ▸ DTE Pipelines ▸ Transform ▸ New pipeline**. Name **Paid orders**, type **Transform**, source `orders`, destination `orders_paid`. Then **+ Add step**:
 
-- Id: `orders_paid`. Keep it short with no spaces. The Airflow DAG is named after it: `dte__orders_paid`.
-- Name: **Paid orders**
-- Sources: pick your orders source
-- Destination: pick the one you just made
+1. **Filter** ▸ **Advanced**: `status = 'paid'`
+2. **Select / Drop fields** ▸ **Select fields**: `id`, `customer`, `amount`
 
-Add two steps:
+![The two steps: a filter on status and a select of three fields](../assets/getting-started/first-4-steps.png)
 
-1. **Filter**: on the *Basic* tab, choose field `status`, operator `=`, value `paid`
-2. **Select / Drop fields**: mode **Keep**, and tick `id`, `customer` and `amount`
-
-Save. Within a few seconds Airflow's dag-processor picks up the new `dte__orders_paid` DAG.
+Save. DTE gives the pipeline an id, and the dag-processor picks up `dte__<pipeline id>` within seconds.
 
 ## 5. Preview
 
-The pipeline page shows a **Preview**: dte runs the steps on a small sample and shows the result. You should see only paid orders, with three columns.
+The live preview on the right runs the steps on a sample as you edit: three paid orders, three columns. A red panel names what's wrong.
 
-If something's wrong, the preview turns red and says what. Fix the step and the preview updates.
+![The pipeline builder with live preview](../assets/pipelines/builder.png)
 
 ## 6. Run
 
-Click **▶ Run** and confirm. dte starts an Airflow dag run of `dte__orders_paid` and shows it right on the page as it goes from `pending` to `running` to `completed`. When it's done, your file has been written.
+Click **▶ Run** and confirm. The run goes `pending` → `running` → `completed` on the page, and `/tmp/dte-samples/out/orders_paid.json` is written. The same dag run is in Airflow with its task log.
 
-The same run is in Airflow too, under the DAG, with its task log.
+![The dte DAG in Airflow](../assets/airflow/dag-grid.png)
 
-That's it, you have a pipeline. Run it again tomorrow, or [give it a schedule](../pipelines/scheduling.md) and let Airflow run it for you.
+To run it automatically, [add a schedule](../pipelines/scheduling.md).
 
 ## Next
 
 - [Core ideas](03-concepts.md)
-- [Steps reference](../steps/index.md): everything else you can do to data
+- [Steps reference](../steps/index.md)

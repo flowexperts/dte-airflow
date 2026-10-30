@@ -1,6 +1,6 @@
 # Steps
 
-Steps are the things you do to your data. Each step reads the current data, changes it, and hands it to the next step, so order matters.
+Each step reads the current data, changes it and hands it to the next, so order matters.
 
 ## Transform
 
@@ -27,6 +27,8 @@ Steps are the things you do to your data. Each step reads the current data, chan
 
 A **Quality Check** pipeline (**Plugins ▸ DTE Pipelines ▸ Quality Check**) runs only these steps against a source and writes nothing.
 
+![A quality check pipeline](../assets/pipelines/quality-check.png)
+
 ## Documents (PDF)
 
 For a **Documents** source, which lists PDF files:
@@ -36,16 +38,16 @@ For a **Documents** source, which lists PDF files:
 | **Extract text** | Turns each document into text, one row per page or per document. A file that can't be parsed gets an error in its row instead of failing the run. |
 | **Structure fields** | Turns text into the typed columns you declare (`invoice_number`, `total`…). It uses Claude or OpenAI through an `anthropic` / `openai` Airflow connection, or regex rules that run offline. |
 
-Results are cached by content, so later steps and re-runs don't pay for the same model call twice. These steps need the `unstructured` and `models` extras ([install](../self-hosting/install-plugin.md)).
+Results are cached by content. These steps need the `unstructured` and `models` extras ([install](../self-hosting/install-plugin.md)).
 
-## Two tabs on Filter and Check
+## Filter and Check tabs
 
-- **Basic** is the safe one. Pick a field, an operator and a value, and dte handles the quoting.
-- **Advanced** takes a raw SQL condition. Write it in DuckDB SQL: for a database source, dte translates it to that database's dialect and tells you under the input if the database will read it differently. Use Basic unless you need something Basic can't express.
+- Basic: field, operator, value; dte handles quoting.
+- Advanced: a raw SQL condition in DuckDB SQL. For a database source dte translates it to that dialect and tells you under the input if it will read differently. Use Basic unless you need more.
 
 ## Aggregate: date parts
 
-When grouping by a date or timestamp field, you can group by a part of it instead of the exact value:
+Group a date or timestamp field by a part of it:
 
 | Part | Example |
 | ---- | ------- |
@@ -60,10 +62,4 @@ When grouping by a date or timestamp field, you can group by a part of it instea
 
 ## Join: where the result goes
 
-Join is the one step that writes to a **named** result instead of the running dataset. You give it an **Output id**, and later steps pick which result to read from, with the join result as one of them. This is how multi-source pipelines work.
-
-## Adding a step
-
-The **Add step** button in the builder opens a menu. Reorder with the ↑/↓ arrows and remove with ✕.
-
-After every change, check the **Preview** to see the result on a small sample. That's your fastest debugging loop.
+Join writes to a **named** result instead of the running dataset. You give it an **Output id**, and later steps choose which result to read, including the join result. This is how multi-source pipelines work.

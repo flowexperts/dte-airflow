@@ -4,7 +4,9 @@
   "private": true,
   "packageManager": "pnpm@10.26.1",
   "scripts": {
+    "predev": "rm -rf public/docs && mkdir -p public/docs && cp -R ../docs/user/assets public/docs/assets",
     "dev": "next dev",
+    "prebuild": "rm -rf public/docs && mkdir -p public/docs && cp -R ../docs/user/assets public/docs/assets",
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint",

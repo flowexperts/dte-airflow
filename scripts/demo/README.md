@@ -8,6 +8,7 @@ Playwright-driven browser recordings of the DTE product for marketing use.
 | `record-core-join.mjs` | `out/demo-core-join.mp4` | ~3:00 | The flagship. Two sources, five tables, four joins, derived columns, Auto-map onto a drifted mart schema, a 27,691-row run. |
 | `record-unstructured.mjs` | `out/demo-unstructured.mp4` | ~1:40 | PDF invoices → extract → structure → **Postgres**, then joined against the order system to surface two that disagree. |
 | `record-cold-email.mjs` | `out/demo-cold-email-90s.mp4` | ~1:12 | The paste-into-a-cold-email cut. Same world, no build, hard 95s budget. |
+| `capture-docs.mjs` | `docs/user/assets/**` | stills | The user-guide screenshots, taken from a running stack that already has the demo pipelines. |
 | `record-user-flow.mjs` | `out/demo-user-flow.mp4` | ~2:00 | The original filesystem-JSON tour. **Currently broken** — see below. |
 
 Shared harness lives in `lib.mjs`; every script imports its selectors,
@@ -46,7 +47,7 @@ open out/demo-core-join.mp4
 ```
 
 `out/` is gitignored — the encoded assets stay local until someone
-deliberately copies one into `docs/user/assets/`.
+deliberately copies one into the site.
 
 `encode.sh` also writes a `.gif` beside the `.mp4`. At 1512px those run
 11–26 MB, which is fine for the 72-second cold-email cut and much too big to
@@ -150,6 +151,4 @@ server-generated UUIDs in plan 042, and `/pipelines/new` now shows only
 `Name` and `Pipeline type`. It was already broken on `main` before the
 `lib.mjs` refactor; the refactor only made the failure visible.
 
-It is kept because the landing asset (`docs/user/assets/landing/dte-demo.webm`)
-was cut from it. Either fix the two field references or delete it once the
-landing page moves to `demo-core-join`.
+Fix the two field references or delete it.

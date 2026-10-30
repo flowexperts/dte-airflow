@@ -18,7 +18,6 @@ export const NAV: { section: string; slugs: string[] }[] = [
       "",
       "self-hosting/install-plugin",
       "self-hosting/install",
-      "getting-started/01-sign-up",
       "getting-started/02-first-pipeline",
       "getting-started/03-concepts",
     ],
@@ -80,6 +79,13 @@ function render(slug: string, md: string): string {
           throw new Error(`docs/user/${slug || "README"}.md: broken link ${href}`);
         const to = rel === "README.md" ? "" : rel.replace(/\.md$/, "");
         return `<a href="${hrefFor(to)}${hash}">${label}</a>`;
+      },
+      // docs/user/assets/** is copied to public/docs/assets by `prebuild`.
+      image({ href, text }: Tokens.Image) {
+        const rel = path.relative(path.join(ROOT, "assets"), path.resolve(dir, href));
+        if (rel.startsWith("..") || !fs.existsSync(path.join(ROOT, "assets", rel)))
+          throw new Error(`docs/user/${slug || "README"}.md: image ${href} not in docs/user/assets`);
+        return `<img src="/docs/assets/${rel}" alt="${text.replace(/"/g, "&quot;")}" loading="lazy">`;
       },
     },
   });
