@@ -55,7 +55,7 @@ export function LandingPage() {
 
         <section className="s" id="demo"><div className="in">
           <p className="kicker">The demo</p>
-          <h2>Watch one go from ticket to DAG</h2>
+          <h2>UI based Rule-Engine</h2>
           <ol className="how">
             <li><b>Install it into Airflow</b><span>One pip install into Airflow 3.3+, with Airflow&apos;s own constraints file. There&apos;s no new service to run.</span></li>
             <li><b>Hand over the mapping</b><span>Finance, ops or whoever owns the data builds the pipeline in the browser and previews real rows before saving.</span></li>
