@@ -81,9 +81,7 @@ export function DestinationsTable({ rows }: { rows: Destination[] }) {
       key: "type",
       header: "Type",
       width: "140px",
-      render: (r) => (
-        <span className="font-mono text-[11.5px] text-muted">{r.config.type}</span>
-      ),
+      render: (r) => <span className="font-mono text-[11.5px] text-muted">{r.config.type}</span>,
     },
     {
       key: "path",
@@ -100,19 +98,20 @@ export function DestinationsTable({ rows }: { rows: Destination[] }) {
       header: "",
       width: "100px",
       align: "right",
-      render: (r) => canDelete ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(r.id);
-          }}
-          disabled={busy === r.id}
-          className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
-        >
-          {busy === r.id ? "…" : "Delete"}
-        </button>
-      ) : null,
+      render: (r) =>
+        canDelete ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(r.id);
+            }}
+            disabled={busy === r.id}
+            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle hover:text-red disabled:opacity-50"
+          >
+            {busy === r.id ? "…" : "Delete"}
+          </button>
+        ) : null,
     },
   ];
 
@@ -120,9 +119,7 @@ export function DestinationsTable({ rows }: { rows: Destination[] }) {
     <div className="flex flex-col gap-2">
       {canDelete && selectedIds.size > 0 && (
         <div className="flex items-center justify-between px-3.5 py-2 border border-border rounded-[var(--radius)] bg-surface-2">
-          <span className="font-mono text-[11px] text-muted">
-            {selectedIds.size} selected
-          </span>
+          <span className="font-mono text-[11px] text-muted">{selectedIds.size} selected</span>
           <button
             type="button"
             onClick={onBulkDelete}

@@ -31,9 +31,7 @@ export function StepRow({
           <span className="font-mono text-[10px] font-bold tracking-[0.15em] uppercase text-accent px-1.5 py-0.5 rounded-sm bg-[color:var(--accent-tint)]">
             {op}
           </span>
-          <span className="text-[14.5px] font-medium text-text truncate">
-            {title}
-          </span>
+          <span className="text-[14.5px] font-medium text-text truncate">{title}</span>
         </div>
         {children}
       </div>
@@ -49,13 +47,7 @@ export function StepRow({
   );
 }
 
-export function ExprCode({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+export function ExprCode({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <code
       className={cn(
@@ -70,15 +62,8 @@ export function ExprCode({
   );
 }
 
-export function ExprToken({
-  as,
-  children,
-}: {
-  as: "field" | "value" | "op";
-  children: ReactNode;
-}) {
-  const color =
-    as === "field" ? "text-gold" : as === "value" ? "text-green" : "text-accent";
+export function ExprToken({ as, children }: { as: "field" | "value" | "op"; children: ReactNode }) {
+  const color = as === "field" ? "text-gold" : as === "value" ? "text-green" : "text-accent";
   return <span className={color}>{children}</span>;
 }
 
@@ -90,13 +75,7 @@ export function KV({ children }: { children: ReactNode }) {
   );
 }
 
-export function KVItem({
-  label,
-  value,
-}: {
-  label: ReactNode;
-  value?: ReactNode;
-}) {
+export function KVItem({ label, value }: { label: ReactNode; value?: ReactNode }) {
   return (
     <span>
       <b className="text-muted font-normal">{label}</b>

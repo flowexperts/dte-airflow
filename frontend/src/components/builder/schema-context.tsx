@@ -1,17 +1,6 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import {
-  getSourceSchema,
-  inferSchema,
-  type Source,
-  type SchemaField,
-} from "@/lib/api";
+import { getSourceSchema, inferSchema, type Source, type SchemaField } from "@/lib/api";
 import { SYSTEM_COLUMNS } from "@/lib/system-columns";
 
 interface SchemaEntry {
@@ -87,12 +76,8 @@ const SchemaContext = createContext<SchemaState | null>(null);
 
 export function SchemaProvider({ children }: { children: ReactNode }) {
   const [schemas, setSchemas] = useState<Record<string, SchemaEntry>>({});
-  const [dialectFeedback, setDialectFeedback] = useState<DialectFeedback>(
-    EMPTY_DIALECT_FEEDBACK,
-  );
-  const [perStepSchemas, setPerStepSchemas] = useState<
-    Record<number, string[]>
-  >({});
+  const [dialectFeedback, setDialectFeedback] = useState<DialectFeedback>(EMPTY_DIALECT_FEEDBACK);
+  const [perStepSchemas, setPerStepSchemas] = useState<Record<number, string[]>>({});
 
   const _apply = useCallback((id: string, fn: () => Promise<{ fields: SchemaField[] }>) => {
     setSchemas((prev) => ({
@@ -160,16 +145,18 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
       // a source field (e.g. group_by columns pass through unchanged); new
       // aggregation aliases fall back to "unknown".
       const typeByName = new Map(allFields.map((f) => [f.name, f.type]));
-      return cols
-        // System columns are carried by the compiler and cannot be dropped
-        // by a projection, so offering them as pickable fields would be
-        // offering a choice that has no effect. Hidden, not removed — the
-        // data is still on every row.
-        .filter((name) => !SYSTEM_COLUMNS.has(name))
-        .map((name) => ({
-          name,
-          type: typeByName.get(name) ?? "unknown",
-        }));
+      return (
+        cols
+          // System columns are carried by the compiler and cannot be dropped
+          // by a projection, so offering them as pickable fields would be
+          // offering a choice that has no effect. Hidden, not removed — the
+          // data is still on every row.
+          .filter((name) => !SYSTEM_COLUMNS.has(name))
+          .map((name) => ({
+            name,
+            type: typeByName.get(name) ?? "unknown",
+          }))
+      );
     },
     [allFields, perStepSchemas],
   );
@@ -201,16 +188,8 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
  */
 const StepIndexContext = createContext<number>(0);
 
-export function StepIndexProvider({
-  index,
-  children,
-}: {
-  index: number;
-  children: ReactNode;
-}) {
-  return (
-    <StepIndexContext.Provider value={index}>{children}</StepIndexContext.Provider>
-  );
+export function StepIndexProvider({ index, children }: { index: number; children: ReactNode }) {
+  return <StepIndexContext.Provider value={index}>{children}</StepIndexContext.Provider>;
 }
 
 /** Fields available to the editor at the current step index. Falls back
@@ -271,11 +250,7 @@ export function JoinOperandsProvider({
   operands: string[];
   children: ReactNode;
 }) {
-  return (
-    <JoinOperandsContext.Provider value={operands}>
-      {children}
-    </JoinOperandsContext.Provider>
-  );
+  return <JoinOperandsContext.Provider value={operands}>{children}</JoinOperandsContext.Provider>;
 }
 
 export function useJoinOperands(): string[] {

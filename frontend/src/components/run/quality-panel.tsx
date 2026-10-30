@@ -60,15 +60,9 @@ export function QualityCheckRow({
         {pct !== null && (
           <div className="flex items-center gap-2.5 mt-2.5">
             <div className="flex-1 max-w-[320px] h-1.5 rounded-full bg-surface-2 overflow-hidden">
-              <i
-                className="block h-full"
-                style={{ width: `${pct}%`, background: toneVar[tone] }}
-              />
+              <i className="block h-full" style={{ width: `${pct}%`, background: toneVar[tone] }} />
             </div>
-            <span
-              className="font-mono text-[11.5px] tabular-nums"
-              style={{ color: toneVar[tone] }}
-            >
+            <span className="font-mono text-[11.5px] tabular-nums" style={{ color: toneVar[tone] }}>
               {pct.toFixed(1)}% of rows
             </span>
           </div>
@@ -99,9 +93,7 @@ export function QualityPanel({
         count={
           <>
             {results.length} check{results.length === 1 ? "" : "s"}
-            {failedCount > 0 && (
-              <span className="text-subtle"> · {failedCount} failed</span>
-            )}
+            {failedCount > 0 && <span className="text-subtle"> · {failedCount} failed</span>}
           </>
         }
       />

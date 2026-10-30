@@ -1,10 +1,5 @@
 import { cn } from "@/lib/cn";
-import type {
-  InputHTMLAttributes,
-  ReactNode,
-  Ref,
-  TextareaHTMLAttributes,
-} from "react";
+import type { InputHTMLAttributes, ReactNode, Ref, TextareaHTMLAttributes } from "react";
 
 export function Field({
   label,
@@ -27,9 +22,7 @@ export function Field({
         </label>
       )}
       {children}
-      {hint && !error && (
-        <span className="text-[11.5px] text-subtle">{hint}</span>
-      )}
+      {hint && !error && <span className="text-[11.5px] text-subtle">{hint}</span>}
       {error && <span className="text-[11.5px] text-red">{error}</span>}
     </div>
   );
@@ -95,9 +88,7 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               "px-3 py-1 text-[12.5px] font-medium rounded-[3px] transition-colors",
-              active
-                ? "bg-[color:var(--accent-tint)] text-accent"
-                : "text-muted hover:text-text",
+              active ? "bg-[color:var(--accent-tint)] text-accent" : "text-muted hover:text-text",
             )}
           >
             {o.label}

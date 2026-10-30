@@ -1,22 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "./portal-host";
+import { useMounted } from "./use-mounted";
 import { cn } from "@/lib/cn";
 import { Input } from "./form";
 import { usePopoverPosition } from "./use-popover-position";
-import {
-  buildTree,
-  collectLeaves,
-  toDisplay,
-  type FieldNode,
-} from "./field-tree";
+import { buildTree, collectLeaves, toDisplay, type FieldNode } from "./field-tree";
 
 interface FieldOption {
   name: string;
   type?: string;
 }
-
-type Mode = "single" | "multi";
 
 interface CommonProps {
   options: FieldOption[];
@@ -100,21 +94,16 @@ export function FieldTreePicker(props: Props) {
   const { options, placeholder, className, disabled, mode } = props;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [highlight, setHighlight] = useState(0);
+  const [rawHighlight, setHighlight] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [mounted, setMounted] = useState(false);
+  const mounted = useMounted();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setMounted(true), []);
-
   const tree = useMemo(() => buildTree(options), [options]);
-  const filtered = useMemo(
-    () => filterTree(tree, query.trim().toLowerCase()),
-    [tree, query],
-  );
+  const filtered = useMemo(() => filterTree(tree, query.trim().toLowerCase()), [tree, query]);
 
   // When searching, auto-expand every remaining branch so the hits show.
   const effectiveExpanded = useMemo(() => {
@@ -132,19 +121,13 @@ export function FieldTreePicker(props: Props) {
     return s;
   }, [filtered, query, expanded]);
 
-  const rows = useMemo(
-    () => flatten(filtered, effectiveExpanded),
-    [filtered, effectiveExpanded],
-  );
+  const rows = useMemo(() => flatten(filtered, effectiveExpanded), [filtered, effectiveExpanded]);
 
   /* Each nesting level costs 12px of indent (see the row's paddingLeft below)
    * on top of the chevron and checkbox, so a deep tree in a narrow trigger
    * leaves almost nothing for the label. Widen the popover by the depth it
    * actually has to render. */
-  const maxDepth = useMemo(
-    () => rows.reduce((m, r) => Math.max(m, r.depth), 0),
-    [rows],
-  );
+  const maxDepth = useMemo(() => rows.reduce((m, r) => Math.max(m, r.depth), 0), [rows]);
   const pos = usePopoverPosition(inputRef, open, {
     minWidth: 220 + maxDepth * 12,
   });
@@ -153,10 +136,7 @@ export function FieldTreePicker(props: Props) {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (
-        containerRef.current?.contains(target) ||
-        popoverRef.current?.contains(target)
-      ) {
+      if (containerRef.current?.contains(target) || popoverRef.current?.contains(target)) {
         return;
       }
       setOpen(false);
@@ -165,9 +145,7 @@ export function FieldTreePicker(props: Props) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  useEffect(() => {
-    if (highlight >= rows.length) setHighlight(0);
-  }, [rows, highlight]);
+  const highlight = rawHighlight >= rows.length ? 0 : rawHighlight;
 
   const toggleBranch = (wire: string) => {
     if (query.trim()) return; // search auto-expands
@@ -267,11 +245,12 @@ export function FieldTreePicker(props: Props) {
     return "partial";
   };
 
-  const inputValue = mode === "single"
-    ? ((props as SingleProps).value
-      ? toDisplay((props as SingleProps).value)
-      : "")
-    : query;
+  const inputValue =
+    mode === "single"
+      ? (props as SingleProps).value
+        ? toDisplay((props as SingleProps).value)
+        : ""
+      : query;
 
   return (
     <div ref={containerRef} className={cn("relative", className)}>
@@ -291,7 +270,10 @@ export function FieldTreePicker(props: Props) {
         disabled={disabled}
         autoComplete="off"
       />
-      {mounted && open && pos && rows.length > 0 &&
+      {mounted &&
+        open &&
+        pos &&
+        rows.length > 0 &&
         createPortal(
           <div
             ref={popoverRef}
@@ -373,9 +355,7 @@ export function FieldTreePicker(props: Props) {
                     <span className="text-subtle text-[11px]">{node.type}</span>
                   )}
                   {isBranch && node.children && (
-                    <span className="text-subtle text-[10.5px]">
-                      {node.children.length}
-                    </span>
+                    <span className="text-subtle text-[10.5px]">{node.children.length}</span>
                   )}
                 </button>
               );
@@ -383,16 +363,17 @@ export function FieldTreePicker(props: Props) {
           </div>,
           portalHost(),
         )}
-      {mounted && open && pos && rows.length === 0 &&
+      {mounted &&
+        open &&
+        pos &&
+        rows.length === 0 &&
         createPortal(
           <div
             ref={popoverRef}
             style={pos.style}
             className="border border-border rounded-[var(--radius)] bg-surface shadow-lg px-2.5 py-2 text-[12px] text-subtle"
           >
-            {options.length === 0
-              ? "Infer schema on the source to see fields."
-              : "No matches."}
+            {options.length === 0 ? "Infer schema on the source to see fields." : "No matches."}
           </div>,
           portalHost(),
         )}

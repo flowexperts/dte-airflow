@@ -8,7 +8,7 @@ the precedents — rules already paid for in rework, each with the specific bug
 behind it named so you can check whether a new case actually rhymes rather
 than applying them by vibes.
 
-Referenced from `CLAUDE.md`. Design *tokens* and the component list live there;
+Referenced from `CLAUDE.md`. Design _tokens_ and the component list live there;
 this file is about placement and behaviour.
 
 ---
@@ -31,11 +31,11 @@ and it is not the order the backend model declares its fields.
 Most product surfaces mix three kinds of information, and they do not belong
 together:
 
-| Tense | Example | Where it goes |
-|---|---|---|
-| **Present** — live, changes as you work | preview, active run | Beside the thing being edited |
-| **Past** — consulted deliberately | run history, revisions | A tab or its own view, full width |
-| **Definitional** — the spec itself | sources, steps, schedule | The main column, ordered by causality |
+| Tense                                   | Example                  | Where it goes                         |
+| --------------------------------------- | ------------------------ | ------------------------------------- |
+| **Present** — live, changes as you work | preview, active run      | Beside the thing being edited         |
+| **Past** — consulted deliberately       | run history, revisions   | A tab or its own view, full width     |
+| **Definitional** — the spec itself      | sources, steps, schedule | The main column, ordered by causality |
 
 Mixing tenses in one column is the most common way a page becomes hard to
 read. When in doubt, ask "would someone look at these two things in the same
@@ -48,7 +48,7 @@ explicitly what earns that space. Everything else is below the fold or behind
 a disclosure — and a disclosure is a promise that the content is genuinely
 rare, not a place to put things you couldn't rank.
 
-### Count the clicks *and* the distance
+### Count the clicks _and_ the distance
 
 Two separate costs, both real:
 
@@ -86,7 +86,7 @@ disabled buttons whose enabling condition isn't stated somewhere on screen.
 ### Feedback beats validation
 
 When an input encodes behaviour — a cron string, an expression, a glob —
-render what it *means* as the user types, next to it. Server-side validation
+render what it _means_ as the user types, next to it. Server-side validation
 tells you an input is legal; it cannot tell you it is wrong. Never silently
 rewrite what the user typed.
 
@@ -123,7 +123,7 @@ the dependency reads first.
 
 **2. Endpoints before body.** Source and destination are the contract — read
 together, changed together — so they go above the steps. The destination used
-to sit *below* the steps, which meant scrolling the entire body to answer
+to sit _below_ the steps, which meant scrolling the entire body to answer
 "where does this land?"
 
 **3. Never anchor anything to the end of an unbounded document.** Runs and
@@ -135,11 +135,11 @@ viewport, or both. The tab strip is `sticky top-[52px]` under the 52px
 
 **4. Tabs are for alternatives, not for stages.** Runs and History share a tab
 strip because they are the same subject on the same time axis — you consult
-one *or* the other. Preview does not join them: it is present tense, re-runs
+one _or_ the other. Preview does not join them: it is present tense, re-runs
 as you type, and belongs beside the editor in the rail. Tabbing it with them
 would imply you swap between them in the same moment, which is not how any of
-the three get used. `Tabs` vs `Segmented`: Tabs pick *which thing*, Segmented
-picks a *mode* for one thing (Basic vs Advanced filter editing).
+the three get used. `Tabs` vs `Segmented`: Tabs pick _which thing_, Segmented
+picks a _mode_ for one thing (Basic vs Advanced filter editing).
 
 **5. Put the glanceable signal on the control, not on a second surface.** The
 Runs tab carries last-run health as its badge, so the Spec view answers "is
@@ -149,20 +149,20 @@ jobs, beats two elements.
 **6. Defaults should open on the readable form.** Filter and check editors
 parse their SQL on mount and open in Basic whenever it round-trips; Advanced
 is reserved for expressions the rules UI genuinely cannot represent.
-Previously `step.expr ? "advanced" : "basic"` meant every *saved* filter
+Previously `step.expr ? "advanced" : "basic"` meant every _saved_ filter
 opened as raw SQL and the rules builder was only ever seen on a new step.
 
 **7. A text field that encodes behaviour needs a live readback.** Cron is the
 case: `0 5 * * *` and `0 * 5 * *` differ by one character and by 24× in run
 frequency, and both pass server validation. `CronExplainer` renders plain
-English *plus* the next three fire times, because the sentence is the part
+English _plus_ the next three fire times, because the sentence is the part
 the user already believed — the times are what catch the mistake. Show the
 readback, never silently rewrite the input.
 
 **8. Link to the thing that produced the artifact, not to its current
 version.** A run records `revision_id`; its links open
 `/pipelines/{id}/revisions/{revId}`, not the live pipeline. Once anyone edits,
-the live pipeline is precisely the spec that did *not* produce that run. The
+the live pipeline is precisely the spec that did _not_ produce that run. The
 revision view reuses the same canvas so a step cannot read one way live and
 another way in history.
 
@@ -184,7 +184,7 @@ button lets you click forever without learning how far you are from the end.
 carry no chrome.
 
 **12. Creation lives next to the list it adds to.** "+ New pipeline" was
-removed from the sidebar, where it read as a third *kind* of pipeline beside
+removed from the sidebar, where it read as a third _kind_ of pipeline beside
 Transform and Quality Check. `NewResourceButton` on `/pipelines` is the one
 entry point — and it renders while permissions are in flight, because gating
 on `can()` alone hides the primary action on first paint and permanently if
@@ -213,7 +213,7 @@ headers. Check before adding a `Panel`.
 
 **17. Read-only means read-only, and say why.** The revision canvas drops
 Save, Trigger, the tabs, the preview rail, and the Schedule panel. Preview
-compiles the *saved* pipeline and schedules are not versioned, so either one
+compiles the _saved_ pipeline and schedules are not versioned, so either one
 beside a historical spec would report something that spec never did. When you
 hide something in a restricted mode, the reason should be a property of the
 data, not a shrug.

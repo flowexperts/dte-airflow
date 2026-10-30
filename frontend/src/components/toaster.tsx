@@ -53,8 +53,7 @@ export function Toaster({ children }: { children: React.ReactNode }) {
   );
 
   const success = useCallback(
-    (t: { title: string; message?: string | undefined }) =>
-      add({ kind: "success", ...t }),
+    (t: { title: string; message?: string | undefined }) => add({ kind: "success", ...t }),
     [add],
   );
 
@@ -99,9 +98,7 @@ function ToastCard({ toast, onDismiss }: { toast: RichToast; onDismiss: () => vo
       <div className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className={`font-medium ${titleTone}`}>{toast.title}</div>
-          {toast.message && (
-            <div className="mt-0.5 text-[12.5px] text-muted">{toast.message}</div>
-          )}
+          {toast.message && <div className="mt-0.5 text-[12.5px] text-muted">{toast.message}</div>}
           {toast.detail && (
             <div className="mt-2">
               <button

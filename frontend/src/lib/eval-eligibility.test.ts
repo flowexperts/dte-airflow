@@ -13,7 +13,13 @@ import type { Pipeline } from "./api";
  */
 
 const p = (id: string, sources: string[], type = "eval") =>
-  ({ id, name: id, sources, steps: [], pipeline_type: type }) as unknown as Pipeline;
+  ({
+    id,
+    name: id,
+    sources: sources.map((source_id) => ({ source_id })),
+    steps: [],
+    pipeline_type: type,
+  }) as unknown as Pipeline;
 
 describe("eligibleEvalPipelines", () => {
   it("keeps eval pipelines reading the set's corpus", () => {

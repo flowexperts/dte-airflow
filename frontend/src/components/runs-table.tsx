@@ -114,9 +114,7 @@ export function RunsTable({ runs }: { runs: Run[] }) {
       header: "Error",
       width: "1fr",
       render: (r) => (
-        <span className="font-mono text-[11.5px] text-red truncate">
-          {r.error ?? ""}
-        </span>
+        <span className="font-mono text-[11.5px] text-red truncate">{r.error ?? ""}</span>
       ),
     },
   ];

@@ -7,13 +7,7 @@ import { SchemaProvider } from "@/components/builder/schema-context";
 import { humanizeError, type HumanError } from "@/lib/errors";
 import { validateSource } from "@/lib/source-validate";
 
-export function SourceForm({
-  initial,
-  mode,
-}: {
-  initial: Source;
-  mode: "create" | "edit";
-}) {
+export function SourceForm({ initial, mode }: { initial: Source; mode: "create" | "edit" }) {
   const router = useRouter();
   const [source, setSource] = useState<Source>(initial);
   const [saving, setSaving] = useState(false);
@@ -50,20 +44,10 @@ export function SourceForm({
         ]}
         actions={
           <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.back()}
-              disabled={saving}
-            >
+            <Button variant="ghost" size="sm" onClick={() => router.back()} disabled={saving}>
               Cancel
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={save}
-              disabled={saving}
-            >
+            <Button variant="primary" size="sm" onClick={save} disabled={saving}>
               {saving ? "Saving…" : "Save source"}
             </Button>
           </>

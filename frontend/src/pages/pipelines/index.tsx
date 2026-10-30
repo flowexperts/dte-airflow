@@ -17,8 +17,7 @@ function PipelinesPage() {
   const router = useRouter();
   // No ?type= means Transform: the unfiltered list would surface the hidden
   // Eval and Visualize pipelines (plan 067).
-  const pipelineType =
-    parsePipelineType(useSearchParams().get("type") ?? undefined) ?? "transform";
+  const pipelineType = parsePipelineType(useSearchParams().get("type") ?? undefined) ?? "transform";
   const { data, error } = useSWR<Pipeline[]>("pipelines", () => listPipelines());
   const pipelines = (data ?? []).filter(
     (p) => !pipelineType || (p.pipeline_type ?? "transform") === pipelineType,

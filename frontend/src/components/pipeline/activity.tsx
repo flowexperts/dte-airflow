@@ -30,9 +30,7 @@ export function usePipelineRuns(pipelineId: string) {
     () => listPipelineRuns(pipelineId, 20),
     {
       refreshInterval: (latest) =>
-        latest?.some((r) => r.status === "running" || r.status === "pending")
-          ? 3000
-          : 0,
+        latest?.some((r) => r.status === "running" || r.status === "pending") ? 3000 : 0,
     },
   );
   return data ?? [];
@@ -49,9 +47,7 @@ export function RunsPane({ pipelineId }: { pipelineId: string }) {
       // collapse the table to an empty state and bounce the scroll position.
       keepPreviousData: true,
       refreshInterval: (latest) =>
-        latest?.items.some((r) => r.status === "running" || r.status === "pending")
-          ? 3000
-          : 0,
+        latest?.items.some((r) => r.status === "running" || r.status === "pending") ? 3000 : 0,
     },
   );
 
@@ -73,12 +69,7 @@ export function RunsPane({ pipelineId }: { pipelineId: string }) {
       <div className="p-3">
         <RunsTable runs={runs} />
       </div>
-      <Pagination
-        total={total}
-        limit={RUNS_PAGE_SIZE}
-        offset={offset}
-        onChange={setOffset}
-      />
+      <Pagination total={total} limit={RUNS_PAGE_SIZE} offset={offset} onChange={setOffset} />
     </Panel>
   );
 }

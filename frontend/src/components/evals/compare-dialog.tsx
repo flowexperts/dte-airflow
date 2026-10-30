@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "@/components/ui/portal-host";
+import { useMounted } from "@/components/ui/use-mounted";
 import type { Pipeline } from "@/lib/api";
 import { MatrixPanel } from "./matrix-panel";
 
@@ -26,8 +27,7 @@ export function CompareDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
 
   useEffect(() => {
     if (!open) return;
@@ -45,10 +45,7 @@ export function CompareDialog({
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-8"
       onClick={onClose}
     >
-      <div
-        className="relative w-full max-w-[640px] mt-8"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="relative w-full max-w-[640px] mt-8" onClick={(e) => e.stopPropagation()}>
         <button
           type="button"
           onClick={onClose}

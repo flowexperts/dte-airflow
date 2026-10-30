@@ -27,7 +27,12 @@ test("DTE renders inside Airflow with Airflow's theme", async ({ page }) => {
   const style = await root.evaluate((el) => {
     const cs = getComputedStyle(el);
     const body = getComputedStyle(document.body);
-    return { font: cs.fontFamily, bodyFont: body.fontFamily, text: cs.color, bg: cs.getPropertyValue("--bg").trim() };
+    return {
+      font: cs.fontFamily,
+      bodyFont: body.fontFamily,
+      text: cs.color,
+      bg: cs.getPropertyValue("--bg").trim(),
+    };
   });
   expect(style.font).toContain("Inter");
   expect(style.bg).not.toBe("");

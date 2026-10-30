@@ -39,14 +39,10 @@ import { visibleColumns } from "@/lib/system-columns";
  * Plan-039 adds a Data | SQL toggle so the user can inspect the compiled
  * per-step SQL and final SELECT alongside the sample rows.
  */
-export function PipelinePreview({
-  pipelineId,
-}: {
-  pipelineId: string | Pipeline;
-}) {
-  const [data, setData] = useState<PreviewResponse | null>(null);
-  const [err, setErr] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
+export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline }) {
+  const [rawData, setData] = useState<PreviewResponse | null>(null);
+  const [rawErr, setErr] = useState<unknown>(null);
+  const [rawBusy, setBusy] = useState(false);
   const [view, setView] = useState<"data" | "sql">("data");
 
   const isLive = typeof pipelineId !== "string";
@@ -59,9 +55,8 @@ export function PipelinePreview({
 
   // Live mode carries params on the pipeline object; saved mode fetches the
   // pipeline once to read the declared params list.
-  const { data: savedPipeline } = useSWR<Pipeline>(
-    !isLive ? ["pipeline", pipelineId] : null,
-    () => getPipeline(pipelineId as string),
+  const { data: savedPipeline } = useSWR<Pipeline>(!isLive ? ["pipeline", pipelineId] : null, () =>
+    getPipeline(pipelineId as string),
   );
   const declaredParams: PipelineParam[] = useMemo(() => {
     if (isLive) return (pipelineId as Pipeline).params ?? [];
@@ -79,6 +74,17 @@ export function PipelinePreview({
     return requiredNoDefault && !paramValues[p.name];
   });
 
+  // A live pipeline without enough shape to compile shows nothing (no 422
+  // flood), and a pending prompt means no request is in flight. Derived at
+  // render so the effect never has to reset state.
+  const livePipeline = isLive ? (pipelineId as Pipeline) : null;
+  const liveNotReady =
+    !!livePipeline &&
+    (!livePipeline.sources || livePipeline.sources.length === 0 || !livePipeline.output_id);
+  const data = liveNotReady ? null : rawData;
+  const err = liveNotReady ? null : rawErr;
+  const busy = isLive && (liveNotReady || needsPrompt) ? false : rawBusy;
+
   const runSaved = async (overrideValues?: Record<string, string>) => {
     if (isLive) return;
     if (needsPrompt && !overrideValues) {
@@ -88,11 +94,7 @@ export function PipelinePreview({
     setBusy(true);
     setErr(null);
     try {
-      const res = await previewPipeline(
-        pipelineId as string,
-        20,
-        overrideValues ?? paramValues,
-      );
+      const res = await previewPipeline(pipelineId as string, 20, overrideValues ?? paramValues);
       setData(res);
     } catch (e) {
       setErr(e);
@@ -105,26 +107,10 @@ export function PipelinePreview({
   useEffect(() => {
     if (!isLive) return;
     const pipeline = pipelineId as Pipeline;
-    // Skip until the pipeline has enough shape to compile — otherwise every
-    // keystroke on an empty form generates a 422 flood.
-    if (
-      !pipeline.sources ||
-      pipeline.sources.length === 0 ||
-      !pipeline.output_id
-    ) {
-      setData(null);
-      setErr(null);
-      setBusy(false);
-      return;
-    }
-    // Gate live preview on the user having supplied any required inputs.
-    // The modal stays available via the Inputs button; without it the
-    // dry-run would 422 on every keystroke.
-    if (needsPrompt) {
-      setBusy(false);
-      return;
-    }
+    // Not ready / awaiting inputs: nothing to fetch (see derived state above).
+    if (liveNotReady || needsPrompt) return;
     const seq = ++reqSeq.current;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag for the async request this effect starts
     setBusy(true);
     const t = window.setTimeout(async () => {
       try {
@@ -141,14 +127,12 @@ export function PipelinePreview({
       }
     }, 500);
     return () => window.clearTimeout(t);
-  }, [isLive, liveKey, pipelineId, needsPrompt, paramValues]);
+  }, [isLive, liveKey, pipelineId, needsPrompt, paramValues, liveNotReady]);
 
   // System columns ride on every extracted row and cannot be projected
   // away, so this is where they are kept out of sight. The rows still carry
   // them, which is what lets Inspect work on a table that never shows them.
-  const columns = visibleColumns(
-    data?.rows?.[0] ? Object.keys(data.rows[0]) : [],
-  );
+  const columns = visibleColumns(data?.rows?.[0] ? Object.keys(data.rows[0]) : []);
   // Backend now returns 200 with `error` populated on compile failure so
   // partial SQL can accompany the failure. Surface both fetch-level errors
   // (network / HTTP) and payload-level compile errors.
@@ -187,12 +171,7 @@ export function PipelinePreview({
               </Button>
             )}
             {isLive ? null : (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => runSaved()}
-                disabled={busy}
-              >
+              <Button variant="primary" size="sm" onClick={() => runSaved()} disabled={busy}>
                 {busy ? "Running…" : data ? "Re-run" : "Dry run"}
               </Button>
             )}
@@ -219,8 +198,13 @@ export function PipelinePreview({
       {isLive && needsPrompt && !modalOpen && (
         <div className="p-4 border border-dashed border-border rounded bg-code-bg text-subtle text-[12.5px] flex items-center justify-between">
           <span>
-            Waiting on {declaredParams.filter((p) => p.required !== false && (p.default ?? "") === "" && !paramValues[p.name]).length}
-            {" "}required input(s) to run preview.
+            Waiting on{" "}
+            {
+              declaredParams.filter(
+                (p) => p.required !== false && (p.default ?? "") === "" && !paramValues[p.name],
+              ).length
+            }{" "}
+            required input(s) to run preview.
           </span>
           <Button variant="primary" size="sm" onClick={() => setModalOpen(true)}>
             Enter inputs
@@ -273,10 +257,7 @@ export function PipelinePreview({
                 </thead>
                 <tbody>
                   {data.rows.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="border-b border-border last:border-b-0 hover:bg-hover"
-                    >
+                    <tr key={i} className="border-b border-border last:border-b-0 hover:bg-hover">
                       {/* Renders nothing unless the row is backed by a
                           document, so non-document pipelines see an empty
                           8px gutter rather than a dead column. */}
@@ -306,9 +287,7 @@ export function PipelinePreview({
         </div>
       )}
 
-      {view === "sql" && data && (
-        <SqlPanel data={data} pipeline={pipelineObj} />
-      )}
+      {view === "sql" && data && <SqlPanel data={data} pipeline={pipelineObj} />}
     </section>
   );
 }
@@ -320,13 +299,7 @@ export function PipelinePreview({
  * Copy button on each block. Step labels use the op from the pipeline object
  * when available (live mode); otherwise they show a generic "Step N" heading.
  */
-function SqlPanel({
-  data,
-  pipeline,
-}: {
-  data: PreviewResponse;
-  pipeline: Pipeline | null;
-}) {
+function SqlPanel({ data, pipeline }: { data: PreviewResponse; pipeline: Pipeline | null }) {
   const isQualityPipeline = pipeline?.pipeline_type === "quality";
   const stepSqls = data.step_sqls ?? {};
   // Transform pipelines capture one SQL block per step (each op is compiled
@@ -356,11 +329,7 @@ function SqlPanel({
   return (
     <div className="flex flex-col gap-3">
       {stepEntries.map(([idx, sql]) => (
-        <SqlBlock
-          key={`step-${idx}`}
-          label={`Step ${idx + 1} · ${stepOp(idx)}`}
-          sql={sql}
-        />
+        <SqlBlock key={`step-${idx}`} label={`Step ${idx + 1} · ${stepOp(idx)}`} sql={sql} />
       ))}
       {finalSql && <SqlBlock label="Final query" sql={finalSql} />}
     </div>

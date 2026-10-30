@@ -1,12 +1,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { Button, InlineError, Panel, PanelHead, Textarea } from "@/components/ui";
-import {
-  importEvalExamples,
-  listEvalExamples,
-  type EvalExample,
-  type EvalSet,
-} from "@/lib/api";
+import { importEvalExamples, listEvalExamples, type EvalExample, type EvalSet } from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
@@ -23,13 +18,17 @@ const PAGE = 50;
 export function ExamplesPanel({ evalSet }: { evalSet: EvalSet }) {
   const [offset, setOffset] = useState(0);
   const { can } = usePermissions();
-  const { data, error, mutate } = useSWR(
-    ["eval-examples", evalSet.id, offset],
-    () => listEvalExamples(evalSet.id, { limit: PAGE, offset }),
+  const { data, error, mutate } = useSWR(["eval-examples", evalSet.id, offset], () =>
+    listEvalExamples(evalSet.id, { limit: PAGE, offset }),
   );
 
   if (error) {
-    return <InlineError title="Couldn't load labels" message="The examples for this set didn't come back." />;
+    return (
+      <InlineError
+        title="Couldn't load labels"
+        message="The examples for this set didn't come back."
+      />
+    );
   }
 
   const rows = data?.examples ?? [];
@@ -44,8 +43,8 @@ export function ExamplesPanel({ evalSet }: { evalSet: EvalSet }) {
         <PanelHead label="Labeled documents" count={total} />
         {rows.length === 0 ? (
           <div className="px-4 py-8 text-[13px] text-muted">
-            No labels yet. Import a CSV above, or label documents from a run&apos;s
-            output — reviewing and labeling are the same action.
+            No labels yet. Import a CSV above, or label documents from a run&apos;s output —
+            reviewing and labeling are the same action.
           </div>
         ) : (
           rows.map((ex) => <ExampleRow key={ex.id} example={ex} fields={fields} />)
@@ -173,9 +172,9 @@ function ImportBox({ evalSetId, onDone }: { evalSetId: string; onDone: () => voi
       <PanelHead label="Import labels" />
       <div className="px-4 py-3 flex flex-col gap-2">
         <p className="text-[12.5px] text-muted">
-          CSV with a <code className="font-mono">doc_key</code> column (the
-          document&apos;s sha256) plus one column per field. Keying on content
-          rather than filename means labels survive renames and moves.
+          CSV with a <code className="font-mono">doc_key</code> column (the document&apos;s sha256)
+          plus one column per field. Keying on content rather than filename means labels survive
+          renames and moves.
         </p>
         <Textarea
           value={content}
@@ -184,7 +183,12 @@ function ImportBox({ evalSetId, onDone }: { evalSetId: string; onDone: () => voi
           placeholder={"doc_key,invoice_no,total\n<sha256>,INV-1001,1240.50"}
         />
         <div className="flex items-center gap-2">
-          <Button variant="primary" size="sm" disabled={busy || !content.trim()} onClick={() => void run()}>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={busy || !content.trim()}
+            onClick={() => void run()}
+          >
             {busy ? "Importing…" : "Import"}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>

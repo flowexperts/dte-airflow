@@ -72,24 +72,19 @@ export function PromoteForm({
 
   return (
     <>
-          <p className="text-[12.5px] text-muted">
-            Copies this exact extract + structure config into a transform
-            pipeline. The steps are copied verbatim, so the promoted pipeline
-            keeps the digest that earned the score.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              value={newId}
-              onChange={(e) => setNewId(e.target.value)}
-              placeholder="new pipeline id"
-            />
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="display name"
-            />
-          </div>
-          {/* The builder's own picker, not a plain dropdown of what already
+      <p className="text-[12.5px] text-muted">
+        Copies this exact extract + structure config into a transform pipeline. The steps are copied
+        verbatim, so the promoted pipeline keeps the digest that earned the score.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          value={newId}
+          onChange={(e) => setNewId(e.target.value)}
+          placeholder="new pipeline id"
+        />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="display name" />
+      </div>
+      {/* The builder's own picker, not a plain dropdown of what already
               exists. Promote *creates a pipeline*, so the destination it
               writes to very often does not exist yet — and a list with no way
               to add to it reads as "you must have prepared one first", which
@@ -97,22 +92,22 @@ export function PromoteForm({
               destination…" and Edit inline, and it is the same control the
               builder uses for the same slot, so the two surfaces cannot
               drift on what a valid destination looks like. */}
-          <DestinationPicker outputId={outputId} onChange={setOutputId} />
-          <div className="flex items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={busy || !pipelineId || !newId.trim() || !outputId}
-              onClick={() => void go()}
-            >
-              {busy ? "Promoting…" : "Promote"}
-            </Button>
-            {onCancel && (
-              <Button variant="ghost" size="sm" onClick={onCancel}>
-                Cancel
-              </Button>
-            )}
-          </div>
+      <DestinationPicker outputId={outputId} onChange={setOutputId} />
+      <div className="flex items-center gap-2">
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={busy || !pipelineId || !newId.trim() || !outputId}
+          onClick={() => void go()}
+        >
+          {busy ? "Promoting…" : "Promote"}
+        </Button>
+        {onCancel && (
+          <Button variant="ghost" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
+      </div>
     </>
   );
 }

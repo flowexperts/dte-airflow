@@ -1,13 +1,7 @@
 import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
 
-export function Timeline({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+export function Timeline({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
       className={cn(
@@ -24,8 +18,8 @@ type Tone = "default" | "warn" | "err";
 
 const dotStyles: Record<Tone, { bg: string; ring: string }> = {
   default: { bg: "var(--green)", ring: "color-mix(in srgb, var(--green) 20%, transparent)" },
-  warn:    { bg: "var(--gold)",  ring: "color-mix(in srgb, var(--gold) 20%, transparent)" },
-  err:     { bg: "var(--red)",   ring: "color-mix(in srgb, var(--red) 20%, transparent)" },
+  warn: { bg: "var(--gold)", ring: "color-mix(in srgb, var(--gold) 20%, transparent)" },
+  err: { bg: "var(--red)", ring: "color-mix(in srgb, var(--red) 20%, transparent)" },
 };
 
 export function TimelineRow({
@@ -57,9 +51,7 @@ export function TimelineRow({
           boxShadow: `0 0 0 2px ${s.ring}`,
         }}
       />
-      <span className="font-[family-name:var(--font-ui)] text-[13px] text-text">
-        {message}
-      </span>
+      <span className="font-[family-name:var(--font-ui)] text-[13px] text-text">{message}</span>
       <span className="text-subtle text-[11.5px] text-right">{duration}</span>
     </div>
   );

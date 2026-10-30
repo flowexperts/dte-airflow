@@ -58,9 +58,7 @@ export function EvalSetsTable({ rows }: { rows: EvalSet[] }) {
       key: "example_count",
       header: "Labeled",
       render: (r) => (
-        <span className="font-mono text-[12px] tabular-nums">
-          {r.example_count ?? 0}
-        </span>
+        <span className="font-mono text-[12px] tabular-nums">{r.example_count ?? 0}</span>
       ),
     },
     {
@@ -113,9 +111,7 @@ export function EvalSetsTable({ rows }: { rows: EvalSet[] }) {
       key: "labels_version",
       header: "Labels v",
       render: (r) => (
-        <span className="font-mono text-[12px] text-subtle tabular-nums">
-          v{r.labels_version}
-        </span>
+        <span className="font-mono text-[12px] text-subtle tabular-nums">v{r.labels_version}</span>
       ),
     },
     ...(canDelete

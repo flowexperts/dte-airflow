@@ -1,11 +1,4 @@
-import {
-  Dropdown,
-  Field,
-  Input,
-  Panel,
-  PanelHead,
-  type DropdownOption,
-} from "@/components/ui";
+import { Dropdown, Field, Input, Panel, PanelHead, type DropdownOption } from "@/components/ui";
 import {
   FILE_OUTPUT_EXT,
   FILE_OUTPUT_TYPES,
@@ -30,13 +23,11 @@ export function OutputPanel({
   output: FileOutputTarget;
   onChange: (next: FileOutputTarget) => void;
 }) {
-  const typeOptions: DropdownOption<FileOutputType>[] = FILE_OUTPUT_TYPES.map(
-    (t) => ({
-      value: t,
-      label: TYPE_LABEL[t],
-      meta: FILE_OUTPUT_EXT[t],
-    }),
-  );
+  const typeOptions: DropdownOption<FileOutputType>[] = FILE_OUTPUT_TYPES.map((t) => ({
+    value: t,
+    label: TYPE_LABEL[t],
+    meta: FILE_OUTPUT_EXT[t],
+  }));
 
   const setType = (t: FileOutputType) => {
     if (t === output.type) return;
@@ -64,11 +55,7 @@ export function OutputPanel({
       <PanelHead label="Output" />
       <div className="p-4 grid gap-3">
         <Field label="Type" hint="chooses the writer (JSON, CSV, or XLSX)">
-          <Dropdown<FileOutputType>
-            value={output.type}
-            onChange={setType}
-            options={typeOptions}
-          />
+          <Dropdown<FileOutputType> value={output.type} onChange={setType} options={typeOptions} />
         </Field>
         <Field
           label="Path"

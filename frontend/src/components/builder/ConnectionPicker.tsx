@@ -49,7 +49,9 @@ export function ConnectionPicker({
             meta: c.connection_type,
           })),
           ...(value && !candidates.find((c) => c.id === value)
-            ? ([{ value, label: `${value} (not found or wrong type)`, disabled: true }] as DropdownOption<string>[])
+            ? ([
+                { value, label: `${value} (not found or wrong type)`, disabled: true },
+              ] as DropdownOption<string>[])
             : []),
         ]}
       />

@@ -173,7 +173,8 @@ export function humanizeError(err: unknown, ctx: HumanCtx = {}): HumanError {
       };
     }
     if (err.status === 422) {
-      const parsed = parsePydantic(err.rawDetail) ?? (typeof err.rawDetail === "string" ? err.rawDetail : null);
+      const parsed =
+        parsePydantic(err.rawDetail) ?? (typeof err.rawDetail === "string" ? err.rawDetail : null);
       return {
         title: "Some fields need attention",
         message: parsed ?? "Check the highlighted fields and try again.",
@@ -184,7 +185,8 @@ export function humanizeError(err: unknown, ctx: HumanCtx = {}): HumanError {
     if (err.status >= 500) {
       return {
         title: "Something went wrong on our side",
-        message: "Try again in a moment. If it keeps happening, share the details below with the team.",
+        message:
+          "Try again in a moment. If it keeps happening, share the details below with the team.",
         detail,
         kind: "server",
       };
@@ -192,7 +194,8 @@ export function humanizeError(err: unknown, ctx: HumanCtx = {}): HumanError {
     // Other 4xx
     return {
       title: `Couldn't ${action}`,
-      message: typeof err.detail === "string" && err.detail ? err.detail : "The request was rejected.",
+      message:
+        typeof err.detail === "string" && err.detail ? err.detail : "The request was rejected.",
       detail,
       kind: "unknown",
     };
@@ -260,8 +263,7 @@ export function orNull<T>(e: unknown): T | null {
   const digest = (e as { digest?: unknown })?.digest;
   if (
     typeof digest === "string" &&
-    (digest.startsWith("NEXT_REDIRECT") ||
-      digest.startsWith("NEXT_HTTP_ERROR_FALLBACK"))
+    (digest.startsWith("NEXT_REDIRECT") || digest.startsWith("NEXT_HTTP_ERROR_FALLBACK"))
   ) {
     throw e;
   }

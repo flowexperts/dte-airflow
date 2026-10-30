@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildTree,
-  findNode,
-  toDisplay,
-  toPath,
-  toWire,
-} from "./field-tree";
+import { buildTree, findNode, toDisplay, toPath, toWire } from "./field-tree";
 
 describe("toDisplay / toWire / toPath", () => {
   it("dot form is identity for display", () => {
@@ -95,9 +89,7 @@ describe("buildTree from flat list (legacy)", () => {
   });
 
   it("keeps _dlt_* as flat top-level leaves", () => {
-    const tree = buildTree([
-      { name: "_dlt_id", type: "string" },
-    ]);
+    const tree = buildTree([{ name: "_dlt_id", type: "string" }]);
     expect(tree[0]!.children).toBeUndefined();
     expect(tree[0]!.wire).toBe("_dlt_id");
   });

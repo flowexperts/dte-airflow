@@ -16,20 +16,15 @@ export function DiffView({
   fromId: string;
   toId: string;
 }) {
-  const { data, error, isLoading } = useSWR(
-    ["pipeline-diff", pipelineId, fromId, toId],
-    () => diffPipelineRevisions(pipelineId, fromId, toId),
+  const { data, error, isLoading } = useSWR(["pipeline-diff", pipelineId, fromId, toId], () =>
+    diffPipelineRevisions(pipelineId, fromId, toId),
   );
 
   if (isLoading) {
     return <div className="text-[12px] text-subtle px-3 py-4">Loading diff…</div>;
   }
   if (error) {
-    return (
-      <div className="text-[12px] text-red px-3 py-4">
-        Couldn&apos;t load diff.
-      </div>
-    );
+    return <div className="text-[12px] text-red px-3 py-4">Couldn&apos;t load diff.</div>;
   }
   if (!data) return null;
   const { diff, summary } = data;
@@ -51,10 +46,14 @@ export function DiffView({
               sources
             </div>
             {diff.sources_added.map((s) => (
-              <div key={`+${s}`} className="font-mono text-[12px] text-green">+ {s}</div>
+              <div key={`+${s}`} className="font-mono text-[12px] text-green">
+                + {s}
+              </div>
             ))}
             {diff.sources_removed.map((s) => (
-              <div key={`-${s}`} className="font-mono text-[12px] text-red">- {s}</div>
+              <div key={`-${s}`} className="font-mono text-[12px] text-red">
+                - {s}
+              </div>
             ))}
           </div>
         )}
@@ -87,15 +86,7 @@ export function DiffView({
   );
 }
 
-function ChangeRow({
-  label,
-  before,
-  after,
-}: {
-  label: string;
-  before: string;
-  after: string;
-}) {
+function ChangeRow({ label, before, after }: { label: string; before: string; after: string }) {
   return (
     <div>
       <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">

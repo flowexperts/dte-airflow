@@ -3,12 +3,7 @@ import { AddStep, Panel, PanelHead } from "@/components/ui";
 import { StepEditor } from "@/components/builder/steps/editors";
 import { StepIndexProvider, JoinOperandsProvider } from "@/components/builder/schema-context";
 import { StepSummary, stepTitle } from "@/components/builder/steps/summary";
-import {
-  STEP_OPS,
-  emptyStep,
-  labelFor,
-  type StepShape,
-} from "@/components/builder/steps/types";
+import { STEP_OPS, emptyStep, labelFor, type StepShape } from "@/components/builder/steps/types";
 import { cn } from "@/lib/cn";
 import type { SourceTableRef } from "@/lib/api";
 import type { PipelineTypeFilter } from "@/lib/pipeline-type";
@@ -124,7 +119,7 @@ export function StepsColumn({
   };
 
   /** The op menu, shared by the between-rows inserts and the footer button. */
-  const OpMenu = ({ at }: { at: number }) => (
+  const renderOpMenu = (at: number) => (
     <div className="px-3.5 py-3 bg-surface-2 border-b border-border">
       <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-2">
         {at === steps.length ? `Add ${isQuality ? "check" : "step"}` : `Insert at ${at + 1}`}
@@ -156,7 +151,7 @@ export function StepsColumn({
    * primary, always-visible way in. */
   const InsertRow = ({ at }: { at: number }) => {
     if (readOnly) return null;
-    if (addAt === at) return <OpMenu at={at} />;
+    if (addAt === at) return renderOpMenu(at);
     return (
       <button
         type="button"
@@ -179,18 +174,14 @@ export function StepsColumn({
         count={
           <span className="flex items-center gap-2">
             {steps.length === 0 ? <span className="text-subtle">none</span> : steps.length}
-            {!readOnly && (
-              <AutoMapButton outputId={outputId} steps={steps} onChange={onChange} />
-            )}
+            {!readOnly && <AutoMapButton outputId={outputId} steps={steps} onChange={onChange} />}
           </span>
         }
       />
 
       {steps.length === 0 && (
         <div className="px-4 py-6 text-center text-sm text-subtle">
-          {readOnly
-            ? `No ${label.toLowerCase()} defined.`
-            : `No ${label.toLowerCase()} yet.`}
+          {readOnly ? `No ${label.toLowerCase()} defined.` : `No ${label.toLowerCase()} yet.`}
         </div>
       )}
 
@@ -223,9 +214,7 @@ export function StepsColumn({
                     <span className="font-mono text-[10px] font-bold tracking-[0.15em] uppercase text-accent px-1.5 py-0.5 rounded-sm bg-[color:var(--accent-tint)] shrink-0">
                       {labelFor(step)}
                     </span>
-                    <span className="text-[13.5px] text-muted truncate">
-                      {stepTitle(step)}
-                    </span>
+                    <span className="text-[13.5px] text-muted truncate">{stepTitle(step)}</span>
                   </div>
                 </div>
 
@@ -276,7 +265,7 @@ export function StepsColumn({
 
       {!readOnly &&
         (addAt === steps.length ? (
-          <OpMenu at={steps.length} />
+          renderOpMenu(steps.length)
         ) : (
           <AddStep
             onClick={() => setAddAt(steps.length)}

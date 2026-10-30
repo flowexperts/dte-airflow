@@ -10,15 +10,15 @@ import { useSchemasOptional } from "../schema-context";
 import { ConnectionPicker } from "../ConnectionPicker";
 
 const CONFIG_TEMPLATES: Record<SourceKind, Record<string, unknown>> = {
-  filesystem:   { bucket_url: "", file_glob: "*.json" },
-  documents:    { bucket_url: "", file_glob: "**/*.pdf" },
-  s3:           { bucket_url: "", file_glob: "*.json" },
-  gcs:          { bucket_url: "", file_glob: "*.json" },
-  azure:        { bucket_url: "", file_glob: "*.json" },
-  sftp:         { bucket_url: "", file_glob: "*.json" },
+  filesystem: { bucket_url: "", file_glob: "*.json" },
+  documents: { bucket_url: "", file_glob: "**/*.pdf" },
+  s3: { bucket_url: "", file_glob: "*.json" },
+  gcs: { bucket_url: "", file_glob: "*.json" },
+  azure: { bucket_url: "", file_glob: "*.json" },
+  sftp: { bucket_url: "", file_glob: "*.json" },
   sql_database: {},
-  mongodb:      { database: "", collection: "" },
-  rest_api:     { client: {}, resources: [] },
+  mongodb: { database: "", collection: "" },
+  rest_api: { client: {}, resources: [] },
 };
 
 /** A kind is offered only when an installed Airflow provider can serve it;
@@ -83,7 +83,10 @@ export function SourceEditor({
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Name" hint="editable; unique per workspace. Also used as the local table name unless overridden.">
+        <Field
+          label="Name"
+          hint="editable; unique per workspace. Also used as the local table name unless overridden."
+        >
           <Input
             value={source.name ?? ""}
             onChange={(e) => {
@@ -91,20 +94,14 @@ export function SourceEditor({
               // Auto-mirror name → table while the user is naming a fresh
               // source (empty table, or table still matches the old name).
               const nextTable =
-                !source.table || source.table === (source.name ?? "")
-                  ? name
-                  : source.table;
+                !source.table || source.table === (source.name ?? "") ? name : source.table;
               onChange({ ...source, name, table: nextTable });
             }}
             placeholder="orders"
           />
         </Field>
         <Field label="Type">
-          <Dropdown<SourceKind>
-            value={kind}
-            onChange={setKind}
-            options={kindOptions(caps)}
-          />
+          <Dropdown<SourceKind> value={kind} onChange={setKind} options={kindOptions(caps)} />
         </Field>
       </div>
       {source.name && source.name !== source.id && (
@@ -117,7 +114,11 @@ export function SourceEditor({
         allowedTypes={SOURCE_CONNECTION_COMPAT[kind]}
       />
 
-      {(kind === "filesystem" || kind === "s3" || kind === "gcs" || kind === "azure" || kind === "sftp") && (
+      {(kind === "filesystem" ||
+        kind === "s3" ||
+        kind === "gcs" ||
+        kind === "azure" ||
+        kind === "sftp") && (
         <FilesystemSourceEditor
           config={config}
           onChange={setConfig}
@@ -125,15 +126,11 @@ export function SourceEditor({
           onFormatChange={(fmt) => onChange({ ...source, format: fmt })}
         />
       )}
-      {kind === "documents" && (
-        <DocumentsSourceEditor config={config} onChange={setConfig} />
-      )}
+      {kind === "documents" && <DocumentsSourceEditor config={config} onChange={setConfig} />}
       {kind === "sql_database" && (
         <SqlSourceEditor config={config} onChange={setConfig} connectionId={source.connection_id} />
       )}
-      {kind === "mongodb" && (
-        <MongoSourceEditor config={config} onChange={setConfig} />
-      )}
+      {kind === "mongodb" && <MongoSourceEditor config={config} onChange={setConfig} />}
       {kind === "rest_api" && (
         <div className="p-3 border border-border rounded bg-code-bg text-xs text-subtle font-mono">
           rest_api uses a raw dlt config dict; edit `sources/{"{"}source.id{"}"}` directly for now.
@@ -141,46 +138,43 @@ export function SourceEditor({
       )}
 
       {schemaCtx && (
-      <div className="pt-2 border-t border-dashed border-border">
-        <div className="flex items-center justify-between mb-2">
-          <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle">
-            Inferred fields
-            {entry?.fields.length ? ` · ${entry.fields.length}` : ""}
-          </span>
-          <button
-            type="button"
-            onClick={() => schemaCtx.refresh(source, source.id)}
-            disabled={!source.id || !source.connection_id || entry?.loading}
-            className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h disabled:opacity-50 disabled:pointer-events-none"
-          >
-            {entry?.loading ? "Inferring…" : "Infer schema"}
-          </button>
+        <div className="pt-2 border-t border-dashed border-border">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle">
+              Inferred fields
+              {entry?.fields.length ? ` · ${entry.fields.length}` : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => schemaCtx.refresh(source, source.id)}
+              disabled={!source.id || !source.connection_id || entry?.loading}
+              className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h disabled:opacity-50 disabled:pointer-events-none"
+            >
+              {entry?.loading ? "Inferring…" : "Infer schema"}
+            </button>
+          </div>
+          {entry?.error && (
+            <div className="font-mono text-[11.5px] text-red mb-2">{entry.error}</div>
+          )}
+          {entry?.fields.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {entry.fields.map((f) => (
+                <span
+                  key={f.name}
+                  className="font-mono text-[11px] px-1.5 py-0.5 rounded border border-border bg-code-bg"
+                >
+                  <span className="text-text">{f.name}</span>
+                  <span className="text-subtle ml-1.5">{f.type}</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="font-mono text-[11.5px] text-subtle">
+              Click <span className="text-accent">Infer schema</span> after filling the config to
+              see available fields (also enables autocomplete in step editors).
+            </div>
+          )}
         </div>
-        {entry?.error && (
-          <div className="font-mono text-[11.5px] text-red mb-2">
-            {entry.error}
-          </div>
-        )}
-        {entry?.fields.length ? (
-          <div className="flex flex-wrap gap-1.5">
-            {entry.fields.map((f) => (
-              <span
-                key={f.name}
-                className="font-mono text-[11px] px-1.5 py-0.5 rounded border border-border bg-code-bg"
-              >
-                <span className="text-text">{f.name}</span>
-                <span className="text-subtle ml-1.5">{f.type}</span>
-              </span>
-            ))}
-          </div>
-        ) : (
-          <div className="font-mono text-[11.5px] text-subtle">
-            Click <span className="text-accent">Infer schema</span> after
-            filling the config to see available fields (also enables
-            autocomplete in step editors).
-          </div>
-        )}
-      </div>
       )}
     </div>
   );

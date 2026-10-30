@@ -57,9 +57,7 @@ export type CompareDraft = {
 
 export type FieldPattern = { name: string; pattern?: string | null };
 
-export type RegexAvailability =
-  | { available: true }
-  | { available: false; missing: string[] };
+export type RegexAvailability = { available: true } | { available: false; missing: string[] };
 
 function clean(values: string[]): string[] {
   const seen = new Set<string>();
@@ -110,8 +108,7 @@ const OWNED_AXES = [PROVIDER_AXIS, MODEL_AXIS, INSTRUCTIONS_AXIS];
 export function draftFromMatrix(
   matrix: Record<string, unknown[]> | null | undefined,
 ): CompareDraft {
-  const axis = (name: string): string[] =>
-    (matrix?.[name] ?? []).map((v) => String(v));
+  const axis = (name: string): string[] => (matrix?.[name] ?? []).map((v) => String(v));
   return {
     providers: axis(PROVIDER_AXIS),
     models: axis(MODEL_AXIS),
@@ -127,9 +124,7 @@ export function draftFromMatrix(
  * them silently would delete a user's configuration on the next save — so
  * the panel reports them and leaves them untouched instead.
  */
-export function unknownAxes(
-  matrix: Record<string, unknown[]> | null | undefined,
-): string[] {
+export function unknownAxes(matrix: Record<string, unknown[]> | null | undefined): string[] {
   return Object.keys(matrix ?? {}).filter((k) => !OWNED_AXES.includes(k));
 }
 
@@ -151,8 +146,6 @@ export function cellCount(draft: CompareDraft): number {
  */
 export function regexAvailability(fields: FieldPattern[]): RegexAvailability {
   if (fields.length === 0) return { available: false, missing: [] };
-  const missing = fields
-    .filter((f) => !(f.pattern ?? "").trim())
-    .map((f) => f.name);
+  const missing = fields.filter((f) => !(f.pattern ?? "").trim()).map((f) => f.name);
   return missing.length === 0 ? { available: true } : { available: false, missing };
 }

@@ -24,12 +24,9 @@ const base =
   "inline-flex items-center gap-1.5 rounded-[var(--radius)] font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none";
 
 const variants: Record<Variant, string> = {
-  default:
-    "bg-surface text-text border border-border-2 hover:bg-hover",
-  primary:
-    "bg-accent-solid border border-accent-solid text-accent-contrast hover:opacity-90",
-  ghost:
-    "bg-transparent border border-transparent text-muted hover:text-text hover:bg-hover",
+  default: "bg-surface text-text border border-border-2 hover:bg-hover",
+  primary: "bg-accent-solid border border-accent-solid text-accent-contrast hover:opacity-90",
+  ghost: "bg-transparent border border-transparent text-muted hover:text-text hover:bg-hover",
 };
 
 const sizes: Record<Size, string> = {
@@ -87,13 +84,7 @@ export function Button({
   );
 }
 
-export function Kbd({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span
       className={cn(

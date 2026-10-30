@@ -39,8 +39,7 @@ export function FilesystemSourceEditor({
   onFormatChange: (next: FileFormat | null) => void;
 }) {
   const current = (format ?? "") as FileFormat | "";
-  const placeholder =
-    (current && GLOB_PLACEHOLDER[current]) ?? "*.json  or  orders.json";
+  const placeholder = (current && GLOB_PLACEHOLDER[current]) ?? "*.json  or  orders.json";
 
   return (
     <div className="grid gap-3">

@@ -1,12 +1,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { Button, Dropdown, Panel, PanelHead, type DropdownOption } from "@/components/ui";
-import {
-  createDestination,
-  updateDestination,
-  isFileOutput,
-  type Destination,
-} from "@/lib/api";
+import { createDestination, updateDestination, isFileOutput, type Destination } from "@/lib/api";
 import { OutputPanel } from "./OutputPanel";
 
 function emptyDestination(name: string): Destination {
@@ -86,13 +81,12 @@ export function DestinationPicker({
               ...available.map<DropdownOption<string>>((d) => ({
                 value: d.id,
                 label: d.name ?? d.id,
-                meta:
-                  "path" in d.config && d.config.path
-                    ? d.config.path
-                    : d.config.type,
+                meta: "path" in d.config && d.config.path ? d.config.path : d.config.type,
               })),
               ...(outputId && !chosen
-                ? ([{ value: outputId, label: `${outputId} (missing)`, disabled: true }] as DropdownOption<string>[])
+                ? ([
+                    { value: outputId, label: `${outputId} (missing)`, disabled: true },
+                  ] as DropdownOption<string>[])
                 : []),
             ]}
           />
@@ -113,7 +107,9 @@ export function DestinationPicker({
         <div className="border-t-2 border-accent bg-code-bg p-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-accent">
-              {editing.isNew ? "New destination" : `Editing ${editing.draft.name ?? editing.draft.id}`}
+              {editing.isNew
+                ? "New destination"
+                : `Editing ${editing.draft.name ?? editing.draft.id}`}
               {!editing.isNew && (
                 <span className="ml-2 text-subtle normal-case tracking-normal">
                   · shared with other pipelines
@@ -121,27 +117,15 @@ export function DestinationPicker({
               )}
             </span>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditing(null)}
-                disabled={busy}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={busy}>
                 Cancel
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={saveDraft}
-                disabled={busy}
-              >
+              <Button variant="primary" size="sm" onClick={saveDraft} disabled={busy}>
                 {busy ? "Saving…" : "Save destination"}
               </Button>
             </div>
           </div>
-          {err && (
-            <div className="font-mono text-[11.5px] text-red">{err}</div>
-          )}
+          {err && <div className="font-mono text-[11.5px] text-red">{err}</div>}
           <input
             className="w-full bg-transparent border border-border rounded px-2 py-1 text-[13px]"
             value={editing.draft.name ?? ""}
@@ -162,16 +146,13 @@ export function DestinationPicker({
             />
           ) : (
             <div className="border border-border rounded p-4 text-sm text-subtle bg-surface">
-              {editing.draft.config.type} destinations aren&apos;t editable in
-              the UI yet.
+              {editing.draft.config.type} destinations aren&apos;t editable in the UI yet.
             </div>
           )}
         </div>
       )}
 
-      {error && (
-        <div className="px-3 pb-2 font-mono text-[11.5px] text-red">{error}</div>
-      )}
+      {error && <div className="px-3 pb-2 font-mono text-[11.5px] text-red">{error}</div>}
     </Panel>
   );
 }

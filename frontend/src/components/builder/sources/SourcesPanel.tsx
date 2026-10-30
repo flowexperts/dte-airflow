@@ -77,9 +77,7 @@ export function SourcesPanel({
 
   const allAliasesExcept = (skip: Set<number>) =>
     new Set(
-      sources
-        .map((r, j) => (skip.has(j) ? null : r.alias))
-        .filter((a): a is string => Boolean(a)),
+      sources.map((r, j) => (skip.has(j) ? null : r.alias)).filter((a): a is string => Boolean(a)),
     );
 
   const setRef = (i: number, ref: SourceTableRef) => {
@@ -174,7 +172,11 @@ export function SourcesPanel({
   const usedSourceIds = new Set(groups.map((g) => g.sourceId));
 
   const newSourceOpts: DropdownOption<string>[] = [
-    { kind: "action", label: "+ Create new source…", onSelect: () => openNewAtSlot(sources.length) },
+    {
+      kind: "action",
+      label: "+ Create new source…",
+      onSelect: () => openNewAtSlot(sources.length),
+    },
     ...(available.length > 0 ? ([{ kind: "divider" }] as DropdownOption<string>[]) : []),
     ...available
       .filter((s) => !usedSourceIds.has(s.id))
@@ -202,7 +204,11 @@ export function SourcesPanel({
             aliasIsDuplicate={(i, alias) => !!alias && allAliasesExcept(new Set([i])).has(alias)}
             onChangeRowSource={(i, sourceId) => changeRowSource(i, sourceId)}
             sourceOpts={[
-              { kind: "action", label: "+ Create new source…", onSelect: () => openNewAtSlot(group.indices[0]!) },
+              {
+                kind: "action",
+                label: "+ Create new source…",
+                onSelect: () => openNewAtSlot(group.indices[0]!),
+              },
               ...(available.length > 0 ? ([{ kind: "divider" }] as DropdownOption<string>[]) : []),
               ...available.map<DropdownOption<string>>((s) => ({
                 value: s.id,
@@ -244,41 +250,23 @@ export function SourcesPanel({
               )}
             </span>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditing(null)}
-                disabled={busy}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={busy}>
                 Cancel
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={saveDraft}
-                disabled={busy}
-              >
+              <Button variant="primary" size="sm" onClick={saveDraft} disabled={busy}>
                 {busy ? "Saving…" : "Save source"}
               </Button>
             </div>
           </div>
-          {err && (
-            <div className="px-4 pb-2 font-mono text-[11.5px] text-red">
-              {err}
-            </div>
-          )}
+          {err && <div className="px-4 pb-2 font-mono text-[11.5px] text-red">{err}</div>}
           <SourceEditor
             source={editing.draft}
-            onChange={(next) =>
-              setEditing((e) => (e ? { ...e, draft: next } : null))
-            }
+            onChange={(next) => setEditing((e) => (e ? { ...e, draft: next } : null))}
           />
         </div>
       )}
 
-      {error && (
-        <div className="px-3 pb-2 font-mono text-[11.5px] text-red">{error}</div>
-      )}
+      {error && <div className="px-3 pb-2 font-mono text-[11.5px] text-red">{error}</div>}
     </Panel>
   );
 }
@@ -314,7 +302,11 @@ function SourceGroup({
 }) {
   const { schemas, refreshById } = useSchemas();
 
-  const { data: tablesData, isLoading: tablesLoading, error: tablesError } = useSWR<{
+  const {
+    data: tablesData,
+    isLoading: tablesLoading,
+    error: tablesError,
+  } = useSWR<{
     tables: string[];
   }>(isDb && info ? `/api/sources/${encodeURIComponent(info.id)}/tables` : null, () =>
     listSourceTables(info!.id),
@@ -447,7 +439,8 @@ function SourceGroup({
 
       {isDb && tablesError && (
         <div className="px-3 pb-2 pl-6 font-mono text-[11px] text-red">
-          Couldn&apos;t list tables — {tablesError instanceof Error ? tablesError.message : String(tablesError)}
+          Couldn&apos;t list tables —{" "}
+          {tablesError instanceof Error ? tablesError.message : String(tablesError)}
         </div>
       )}
 

@@ -19,9 +19,9 @@ describe("rootPipelineId", () => {
 
   it("strips a nested chain", () => {
     // The reported id.
-    expect(
-      rootPipelineId("demo_eval_strict__27fb9c1d2679__27fb9c1d2679__37f7b8bbec71"),
-    ).toBe("demo_eval_strict");
+    expect(rootPipelineId("demo_eval_strict__27fb9c1d2679__27fb9c1d2679__37f7b8bbec71")).toBe(
+      "demo_eval_strict",
+    );
   });
 
   it("keeps the eval twin suffix", () => {

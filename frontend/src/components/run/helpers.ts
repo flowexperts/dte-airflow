@@ -1,9 +1,6 @@
 import type { QualityCheckResult, Run, RunStatus } from "@/lib/api";
 
-export function elapsedSeconds(
-  started?: string | null,
-  finished?: string | null,
-): string {
+export function elapsedSeconds(started?: string | null, finished?: string | null): string {
   if (!started) return "—";
   const s = new Date(started).getTime();
   const e = finished ? new Date(finished).getTime() : Date.now();
@@ -12,10 +9,7 @@ export function elapsedSeconds(
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
-export function elapsedMs(
-  started?: string | null,
-  finished?: string | null,
-): number | null {
+export function elapsedMs(started?: string | null, finished?: string | null): number | null {
   if (!started) return null;
   const s = new Date(started).getTime();
   const e = finished ? new Date(finished).getTime() : Date.now();

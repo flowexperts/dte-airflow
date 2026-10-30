@@ -3,14 +3,7 @@ import type { ParamType, PipelineParam } from "@/lib/api";
 import { compatibleFor, type SystemVar } from "@/lib/system-vars";
 import { cn } from "@/lib/cn";
 
-const TYPES: ParamType[] = [
-  "string",
-  "int",
-  "float",
-  "date",
-  "timestamp",
-  "boolean",
-];
+const TYPES: ParamType[] = ["string", "int", "float", "date", "timestamp", "boolean"];
 
 /** Declares typed trigger-time inputs on a pipeline. Each row edits one
  *  `PipelineParam`; the parent owns the list and re-renders on every change.
@@ -39,8 +32,7 @@ export function InputsPanel({
         {params.length === 0 && (
           <div className="font-mono text-[11.5px] text-subtle">
             No inputs declared. Add one to reference it as{" "}
-            <span className="text-gold">{"{{params.<name>}}"}</span> in filter
-            or map expressions.
+            <span className="text-gold">{"{{params.<name>}}"}</span> in filter or map expressions.
           </div>
         )}
         {params.map((p, i) => (

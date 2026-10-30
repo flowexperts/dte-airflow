@@ -8,27 +8,27 @@
 
 /* ---------- tokens ---------- */
 .dte-root {
-  --bg:          var(--chakra-colors-bg);
-  --surface:     var(--chakra-colors-bg-panel);
-  --surface-2:   var(--chakra-colors-bg-subtle);
-  --hover:       var(--chakra-colors-bg-muted);
-  --border:      var(--chakra-colors-border);
-  --border-2:    var(--chakra-colors-border-emphasized);
-  --text:        var(--chakra-colors-fg);
-  --muted:       var(--chakra-colors-fg-muted);
-  --subtle:      var(--chakra-colors-fg-subtle);
+  --bg: var(--chakra-colors-bg);
+  --surface: var(--chakra-colors-bg-panel);
+  --surface-2: var(--chakra-colors-bg-subtle);
+  --hover: var(--chakra-colors-bg-muted);
+  --border: var(--chakra-colors-border);
+  --border-2: var(--chakra-colors-border-emphasized);
+  --text: var(--chakra-colors-fg);
+  --muted: var(--chakra-colors-fg-muted);
+  --subtle: var(--chakra-colors-fg-subtle);
   /* brand.fg, not brand.solid: accent is mostly text (text-accent), and
      solid is too dark to read on Airflow's dark background. */
-  --accent:      var(--chakra-colors-brand-fg);
-  --accent-h:    color-mix(in oklab, var(--chakra-colors-brand-fg), var(--chakra-colors-fg) 30%);
+  --accent: var(--chakra-colors-brand-fg);
+  --accent-h: color-mix(in oklab, var(--chakra-colors-brand-fg), var(--chakra-colors-fg) 30%);
   --accent-tint: var(--chakra-colors-brand-subtle);
   /* Filled controls use Airflow's own solid-button pair. */
-  --accent-solid:    var(--chakra-colors-brand-solid);
+  --accent-solid: var(--chakra-colors-brand-solid);
   --accent-contrast: var(--chakra-colors-brand-contrast);
-  --gold:        var(--chakra-colors-warning-fg);
-  --green:       var(--chakra-colors-success-fg);
-  --red:         var(--chakra-colors-danger-fg);
-  --code-bg:     var(--chakra-colors-bg-subtle);
+  --gold: var(--chakra-colors-warning-fg);
+  --green: var(--chakra-colors-success-fg);
+  --red: var(--chakra-colors-danger-fg);
+  --code-bg: var(--chakra-colors-bg-subtle);
 
   /* Categorical chart series (plan 064). Assigned in fixed order, never
      cycled — colour follows the series, so filtering one out must not
@@ -58,40 +58,49 @@
 
 /* ---------- Tailwind theme mapping ---------- */
 @theme inline {
-  --color-bg:        var(--bg);
-  --color-surface:   var(--surface);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
-  --color-hover:     var(--hover);
-  --color-border:    var(--border);
-  --color-border-2:  var(--border-2);
-  --color-text:      var(--text);
-  --color-muted:     var(--muted);
-  --color-subtle:    var(--subtle);
-  --color-accent:    var(--accent);
-  --color-accent-h:  var(--accent-h);
-  --color-accent-solid:    var(--accent-solid);
+  --color-hover: var(--hover);
+  --color-border: var(--border);
+  --color-border-2: var(--border-2);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-h: var(--accent-h);
+  --color-accent-solid: var(--accent-solid);
   --color-accent-contrast: var(--accent-contrast);
-  --color-gold:      var(--gold);
-  --color-green:     var(--green);
-  --color-red:       var(--red);
-  --color-code-bg:   var(--code-bg);
-  --color-chart-1:   var(--chart-1);
-  --color-chart-2:   var(--chart-2);
-  --color-chart-3:   var(--chart-3);
-  --color-chart-4:   var(--chart-4);
-  --color-chart-5:   var(--chart-5);
-  --color-chart-6:   var(--chart-6);
+  --color-gold: var(--gold);
+  --color-green: var(--green);
+  --color-red: var(--red);
+  --color-code-bg: var(--code-bg);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
 
-  --font-ui:    var(--chakra-fonts-body);
-  --font-mono:  var(--chakra-fonts-mono);
+  --font-ui: var(--chakra-fonts-body);
+  --font-mono: var(--chakra-fonts-mono);
   --font-brand: var(--chakra-fonts-heading);
 
   --radius: 4px;
 }
 
 @keyframes dte-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
-.animate-pulse-dot { animation: dte-pulse 1.4s ease-in-out infinite; }
-.animate-pulse-live { animation: dte-pulse 2s ease-in-out infinite; }
+.animate-pulse-dot {
+  animation: dte-pulse 1.4s ease-in-out infinite;
+}
+.animate-pulse-live {
+  animation: dte-pulse 2s ease-in-out infinite;
+}

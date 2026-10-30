@@ -3,13 +3,7 @@ import { usePermissions } from "@/lib/use-permissions";
 
 type Perm = Parameters<ReturnType<typeof usePermissions>["can"]>[0];
 
-export function RequirePermission({
-  perm,
-  children,
-}: {
-  perm: Perm;
-  children: ReactNode;
-}) {
+export function RequirePermission({ perm, children }: { perm: Perm; children: ReactNode }) {
   const { can, isLoading } = usePermissions();
   if (isLoading) return null;
   if (!can(perm)) {
@@ -21,8 +15,8 @@ export function RequirePermission({
           </div>
           <div className="text-lg font-medium mb-1">You don&apos;t have access to this page.</div>
           <div className="text-sm text-muted">
-            This action requires the <code className="font-mono text-[12px]">{perm}</code> permission.
-            Ask an admin to update your role.
+            This action requires the <code className="font-mono text-[12px]">{perm}</code>{" "}
+            permission. Ask an admin to update your role.
           </div>
         </div>
       </div>

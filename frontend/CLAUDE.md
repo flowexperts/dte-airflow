@@ -14,7 +14,7 @@ An **Airflow `react_apps` plugin** (plan 066): React **19** + TypeScript + Tailw
 - Airflow mounts plugins at `plugin/:page/*`. `src/plugin.tsx` holds the route table (paths relative to that base) and picks the landing section from `:page` (`dte` → pipelines, `dte-sources` → sources, …).
 - `src/lib/nav.tsx` gives Next-shaped `Link` / `useRouter` / `usePathname` / `useSearchParams` over react-router, adding and stripping the `/plugin/<page>` base — so page code writes app-absolute paths (`/pipelines/detail?id=x`). Use it; importing `react-router-dom` directly means handling the base yourself. `router.refresh()` revalidates every SWR key.
 - **No DTE sidebar** (plan 067): Airflow's rail is the only nav. Airflow 3.3 groups same-category plugin items under the rail's **Plugins** menu, so Transform (`dte`) and Quality Check (`dte-quality`, which just redirects to the filtered list) appear under Plugins ▸ DTE Pipelines. Sources, Destinations and Lookup tables are Admin-menu entries (`dte-sources`, …).
-- **Every entry shares one bundle.** Airflow 3.3 clears `globalThis.AirflowPlugin` before each `import()` and looks the component up at `globalThis[<react_app name>]`, and the browser runs the cached bundle only once, so `plugin.tsx` registers `DtePlugin` under every name in `ENTRY_NAMES`. A new entry in `plugin.py` needs its name added there (`test_plugin_names.py` fails otherwise). Keep `plugin.tsx`'s only export the default: a named export turns the UMD global into a module object. `nav.tsx` mounts an absolute href under the page that *owns* its section (`OWNED`), not the current page, so cross-section links move the rail highlight. A new owned section = a `plugin.py` entry + an `OWNED` prefix.
+- **Every entry shares one bundle.** Airflow 3.3 clears `globalThis.AirflowPlugin` before each `import()` and looks the component up at `globalThis[<react_app name>]`, and the browser runs the cached bundle only once, so `plugin.tsx` registers `DtePlugin` under every name in `ENTRY_NAMES`. A new entry in `plugin.py` needs its name added there (`test_plugin_names.py` fails otherwise). Keep `plugin.tsx`'s only export the default: a named export turns the UMD global into a module object. `nav.tsx` mounts an absolute href under the page that _owns_ its section (`OWNED`), not the current page, so cross-section links move the rail highlight. A new owned section = a `plugin.py` entry + an `OWNED` prefix.
 - Pipeline types in the UI come from `PIPELINE_TYPE_TABS` (Transform, Quality Check), shared by the list toggle and the builder picker. Eval and Visualize are hidden, and so are eval sets and dashboards: their components remain but are unrouted. They are still in the API.
 - Pages live in `src/pages/` and route by query string (`detail?id=`), not path segments.
 - `window.history.replaceState` must pass `window.history.state`, not `null` — react-router keeps its index there and `null` breaks Back.
@@ -98,7 +98,7 @@ own.
   `DialectReadback`: what the target database receives, its own error attached
   to the step that caused it, and any known meaning-change. Silent for DuckDB.
 - **Recipes** (`lib/expression-recipes.ts`) are fill-in-the-slots shapes that
-  *generate* a fragment into the existing `expr`. One direction only — no
+  _generate_ a fragment into the existing `expr`. One direction only — no
   parse-back and no Basic/Advanced mode, because here the fragment is the
   artifact and a mode that had to re-parse arbitrary SQL would either lie or
   refuse to open. The list only offers expressions measured to survive
@@ -110,8 +110,6 @@ own.
 ### When adding a new step op
 
 1. Backend: add `Xxx` Pydantic model in `dte/models/pipeline.py`, dispatch in `dte/compiler/ibis_compiler.py`, add compiler tests first.
-2. Regenerate `frontend/src/lib/api-types.ts` (see *API client + typegen*).
+2. Regenerate `frontend/src/lib/api-types.ts` (see _API client + typegen_).
 3. Frontend: extend `StepOp` + `STEP_OPS` + `emptyStep()` in `components/builder/steps/types.ts`.
 4. Write `XxxEditor` in `editors.tsx`; dispatch from `StepEditor` at the bottom. Use `useSchemas().allFields` for any field references.
-
-

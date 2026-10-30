@@ -46,27 +46,16 @@ import {
 import { StepsColumn } from "./steps-column";
 import { Rail } from "./rail";
 import { HistoryPane, RunsPane, usePipelineRuns } from "./activity";
-import {
-  ComparisonsPane,
-  usePipelineComparisons,
-} from "@/components/evals/comparisons-panel";
+import { ComparisonsPane, usePipelineComparisons } from "@/components/evals/comparisons-panel";
 
 type PipelineView = "spec" | "runs" | "history" | "comparisons";
 
 /** Read-only sources, for viewers without write permission. */
-function SourcesCard({
-  sources,
-  refs,
-}: {
-  sources: (Source | null)[];
-  refs: SourceTableRef[];
-}) {
+function SourcesCard({ sources, refs }: { sources: (Source | null)[]; refs: SourceTableRef[] }) {
   return (
     <Panel>
       <PanelHead label="Sources" count={refs.length} />
-      {refs.length === 0 && (
-        <div className="px-4 py-4 text-sm text-subtle">No sources.</div>
-      )}
+      {refs.length === 0 && <div className="px-4 py-4 text-sm text-subtle">No sources.</div>}
       {sources.map((s, i) => {
         const ref = refs[i];
         return s ? (
@@ -179,9 +168,7 @@ export function PipelineCanvas({
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
   const [view, setView] = useState<PipelineView>(
-    tabParam === "runs" || tabParam === "history" || tabParam === "comparisons"
-      ? tabParam
-      : "spec",
+    tabParam === "runs" || tabParam === "history" || tabParam === "comparisons" ? tabParam : "spec",
   );
 
   const changeView = (next: PipelineView) => {
@@ -197,9 +184,7 @@ export function PipelineCanvas({
      nothing to compare configs *of*. Derived from the spec rather than from
      the comparisons list, so the tab strip does not reflow once an async
      fetch lands. */
-  const comparable = (pipeline.steps ?? []).some(
-    (s) => (s as { op?: string }).op === "structure",
-  );
+  const comparable = (pipeline.steps ?? []).some((s) => (s as { op?: string }).op === "structure");
   const { data: comparisonsData } = usePipelineComparisons(pipeline.id);
   const comparisonCount = comparisonsData?.comparisons?.length ?? 0;
 
@@ -233,10 +218,7 @@ export function PipelineCanvas({
   };
 
   const sourcesBlock = canEdit ? (
-    <SourcesPanel
-      sources={pipeline.sources ?? []}
-      onChange={(next) => patch({ sources: next })}
-    />
+    <SourcesPanel sources={pipeline.sources ?? []} onChange={(next) => patch({ sources: next })} />
   ) : (
     <SourcesCard sources={sources} refs={pipeline.sources ?? []} />
   );
@@ -275,10 +257,7 @@ export function PipelineCanvas({
       <div className="px-3.5 py-3.5 space-y-3">
         {canEdit ? (
           <Field label="Name" hint="editable; unique per workspace">
-            <Input
-              value={pipeline.name}
-              onChange={(e) => patch({ name: e.target.value })}
-            />
+            <Input value={pipeline.name} onChange={(e) => patch({ name: e.target.value })} />
           </Field>
         ) : (
           <Field label="Name">
@@ -298,10 +277,7 @@ export function PipelineCanvas({
    * Declaring has to come before scheduling, so it reads in that order. */
   /* No wrapping Panel — InputsPanel brings its own Panel and header. */
   const inputsBlock = canEdit ? (
-    <InputsPanel
-      params={pipeline.params ?? []}
-      onChange={(params) => patch({ params })}
-    />
+    <InputsPanel params={pipeline.params ?? []} onChange={(params) => patch({ params })} />
   ) : null;
 
   /* What's left after name and inputs moved out. Kept collapsed — nothing
@@ -382,7 +358,10 @@ export function PipelineCanvas({
           crumbs={[
             { label: "DTE Pipelines", href: "/pipelines" },
             revision
-              ? { label: pipeline.name, href: `/pipelines/detail?id=${encodeURIComponent(pipeline.id)}` }
+              ? {
+                  label: pipeline.name,
+                  href: `/pipelines/detail?id=${encodeURIComponent(pipeline.id)}`,
+                }
               : { label: pipeline.name },
             ...(revision ? [{ label: revision.id.slice(0, 8) }] : []),
           ]}
@@ -392,32 +371,29 @@ export function PipelineCanvas({
                 <Button size="sm">Back to current</Button>
               </Link>
             ) : (
-            <>
-              {dirty && (
-                <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-gold">
-                  unsaved
-                </span>
-              )}
-              {canEdit && (
-                <Button
-                  variant={dirty ? "primary" : "default"}
-                  size="sm"
-                  onClick={save}
-                  disabled={saving || !dirty}
-                >
-                  {saving ? "Saving…" : "Save"}
-                </Button>
-              )}
-              <CompareButton
-                pipeline={pipeline}
-                onMatrixChange={(matrix) => patch({ matrix })}
-              />
-              <TriggerRunButton
-                pipeline={pipeline}
-                variant="primary"
-                onStarted={setActiveRunId}
-              />
-            </>
+              <>
+                {dirty && (
+                  <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-gold">
+                    unsaved
+                  </span>
+                )}
+                {canEdit && (
+                  <Button
+                    variant={dirty ? "primary" : "default"}
+                    size="sm"
+                    onClick={save}
+                    disabled={saving || !dirty}
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </Button>
+                )}
+                <CompareButton pipeline={pipeline} onMatrixChange={(matrix) => patch({ matrix })} />
+                <TriggerRunButton
+                  pipeline={pipeline}
+                  variant="primary"
+                  onStarted={setActiveRunId}
+                />
+              </>
             )
           }
         />
@@ -433,13 +409,10 @@ export function PipelineCanvas({
             <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent">
               read-only revision
             </span>
-            <span className="font-mono text-[11.5px] text-muted">
-              {revision.id.slice(0, 8)}
-            </span>
+            <span className="font-mono text-[11.5px] text-muted">{revision.id.slice(0, 8)}</span>
             <span className="text-[12px] text-subtle">
               {revision.summary ?? "initial revision"}
-              {revision.changed_at &&
-                ` · ${new Date(revision.changed_at).toLocaleString()}`}
+              {revision.changed_at && ` · ${new Date(revision.changed_at).toLocaleString()}`}
               {revision.changed_by && ` · ${revision.changed_by}`}
             </span>
           </div>
@@ -451,39 +424,39 @@ export function PipelineCanvas({
             Hidden on a revision: runs and history belong to the pipeline as
             it stands, not to a frozen copy of it. */}
         {!revision && (
-        <div className="sticky top-[52px] z-10 bg-surface border-b border-border px-14">
-          <Tabs
-            options={[
-              { value: "spec", label: quality ? "Checks" : "Spec" },
-              {
-                value: "runs",
-                label: "Runs",
-                badge: lastRun ? (
-                  <RunTone run={lastRun}>{runOutcome(lastRun, quality)}</RunTone>
-                ) : (
-                  "never run"
-                ),
-              },
-              { value: "history", label: "History" },
-              /* Only where a comparison is possible — the same `structure`
+          <div className="sticky top-[52px] z-10 bg-surface border-b border-border px-14">
+            <Tabs
+              options={[
+                { value: "spec", label: quality ? "Checks" : "Spec" },
+                {
+                  value: "runs",
+                  label: "Runs",
+                  badge: lastRun ? (
+                    <RunTone run={lastRun}>{runOutcome(lastRun, quality)}</RunTone>
+                  ) : (
+                    "never run"
+                  ),
+                },
+                { value: "history", label: "History" },
+                /* Only where a comparison is possible — the same `structure`
                  step gate Compare… uses. A tab present on every pipeline
                  that can never have one is the noise the rail panel avoided
                  by rendering null, and a tab cannot render null. */
-              ...(comparable
-                ? [
-                    {
-                      value: "comparisons" as const,
-                      label: "Comparisons",
-                      ...(comparisonCount > 0 ? { badge: comparisonCount } : {}),
-                    },
-                  ]
-                : []),
-            ]}
-            value={view}
-            onChange={changeView}
-            className="max-w-md border-b-0"
-          />
-        </div>
+                ...(comparable
+                  ? [
+                      {
+                        value: "comparisons" as const,
+                        label: "Comparisons",
+                        ...(comparisonCount > 0 ? { badge: comparisonCount } : {}),
+                      },
+                    ]
+                  : []),
+              ]}
+              value={view}
+              onChange={changeView}
+              className="max-w-md border-b-0"
+            />
+          </div>
         )}
 
         {view === "spec" && (
@@ -537,9 +510,7 @@ export function PipelineCanvas({
               {stepsBlock}
               {settingsBlock}
             </div>
-            {rail && (
-              <div className="min-w-0 xl:sticky xl:top-[100px]">{rail}</div>
-            )}
+            {rail && <div className="min-w-0 xl:sticky xl:top-[100px]">{rail}</div>}
           </div>
         )}
 
@@ -560,7 +531,6 @@ export function PipelineCanvas({
             <ComparisonsPane pipelineId={pipeline.id} />
           </div>
         )}
-
       </PipelineParamsProvider>
     </SchemaProvider>
   );

@@ -55,9 +55,7 @@ export function FieldMultiSelect({
               key={v}
               className="inline-flex items-center gap-1.5 font-mono text-[11.5px] pl-2 pr-1 py-0.5 rounded border border-border-2 bg-code-bg"
             >
-              <span className="text-text">
-                {variant === "tree" ? toDisplay(v) : v}
-              </span>
+              <span className="text-text">{variant === "tree" ? toDisplay(v) : v}</span>
               <button
                 type="button"
                 onClick={() => remove(v)}

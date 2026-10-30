@@ -1,13 +1,7 @@
 import { useState } from "react";
 import { useRouter } from "@/lib/nav";
 import useSWR from "swr";
-import {
-  CopyId,
-  DataTable,
-  Tag,
-  type Column,
-  type DataTableSelection,
-} from "@/components/ui";
+import { CopyId, DataTable, Tag, type Column, type DataTableSelection } from "@/components/ui";
 import {
   bulkDeletePipelines,
   deletePipeline,
@@ -46,9 +40,7 @@ function useLastRuns(pipelineId: string) {
     () => listPipelineRuns(pipelineId, 5),
     {
       refreshInterval: (latest) =>
-        latest?.some((r) => r.status === "running" || r.status === "pending")
-          ? 3000
-          : 0,
+        latest?.some((r) => r.status === "running" || r.status === "pending") ? 3000 : 0,
       revalidateOnFocus: false,
     },
   );
@@ -127,8 +119,7 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
   const onBulkDelete = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    if (!confirm(`Delete ${ids.length} pipeline(s)? Their runs will be deleted too.`))
-      return;
+    if (!confirm(`Delete ${ids.length} pipeline(s)? Their runs will be deleted too.`)) return;
     setBulkBusy(true);
     try {
       const result: BulkDeleteResult = await bulkDeletePipelines(ids);
@@ -157,9 +148,7 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
         // past what the filter is showing.
         onToggleAll: () =>
           setSelectedIds((prev) =>
-            prev.size === filtered.length
-              ? new Set()
-              : new Set(filtered.map((r) => r.id)),
+            prev.size === filtered.length ? new Set() : new Set(filtered.map((r) => r.id)),
           ),
       }
     : undefined;
@@ -199,11 +188,7 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
       key: "shape",
       header: "Shape",
       width: "1fr",
-      render: (r) => (
-        <span className="font-mono text-[11.5px] text-muted">
-          {pipelineShape(r)}
-        </span>
-      ),
+      render: (r) => <span className="font-mono text-[11.5px] text-muted">{pipelineShape(r)}</span>,
     },
     {
       key: "actions",
@@ -241,9 +226,7 @@ export function PipelinesTable({ rows }: { rows: Pipeline[] }) {
       />
       {canDelete && selectedIds.size > 0 && (
         <div className="flex items-center justify-between px-3.5 py-2 border border-border rounded-[var(--radius)] bg-surface-2">
-          <span className="font-mono text-[11px] text-muted">
-            {selectedIds.size} selected
-          </span>
+          <span className="font-mono text-[11px] text-muted">{selectedIds.size} selected</span>
           <button
             type="button"
             onClick={onBulkDelete}

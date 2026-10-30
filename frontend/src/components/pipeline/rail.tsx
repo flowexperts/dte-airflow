@@ -4,12 +4,7 @@ import { Panel, PanelHead, Pill } from "@/components/ui";
 import { PipelinePreview } from "@/components/pipeline-preview";
 import { QualityPanel } from "@/components/run/quality-panel";
 import { StatRail, StatRow } from "@/components/run/stat-rail";
-import {
-  STATUS_LABEL,
-  elapsedSeconds,
-  qualityTally,
-  statusTone,
-} from "@/components/run/helpers";
+import { STATUS_LABEL, elapsedSeconds, qualityTally, statusTone } from "@/components/run/helpers";
 import {
   getRun,
   getRunQuality,
@@ -42,9 +37,8 @@ function LiveRun({
   const { data: qualityResp } = useSWR<{
     results: QualityCheckResult[];
     count: number;
-  }>(
-    quality && isTerminal(run?.status) ? ["run-quality", runId] : null,
-    () => getRunQuality(runId),
+  }>(quality && isTerminal(run?.status) ? ["run-quality", runId] : null, () =>
+    getRunQuality(runId),
   );
   const results = qualityResp?.results ?? [];
 
@@ -90,18 +84,14 @@ function LiveRun({
               <StatRow
                 label="Checks passed"
                 value={`${tally.passed} / ${tally.total}`}
-                {...(tally.total > 0 ? { tone: bad > 0 ? ("warn" as const) : ("ok" as const) } : {})}
+                {...(tally.total > 0
+                  ? { tone: bad > 0 ? ("warn" as const) : ("ok" as const) }
+                  : {})}
               />
             ) : (
-              <StatRow
-                label="Rows written"
-                value={run.rows_written?.toLocaleString() ?? "—"}
-              />
+              <StatRow label="Rows written" value={run.rows_written?.toLocaleString() ?? "—"} />
             )}
-            <StatRow
-              label="Elapsed"
-              value={elapsedSeconds(run.started_at, run.finished_at)}
-            />
+            <StatRow label="Elapsed" value={elapsedSeconds(run.started_at, run.finished_at)} />
           </StatRail>
 
           {run.error && (
@@ -112,11 +102,7 @@ function LiveRun({
 
           {quality && results.length > 0 && (
             <div className="border-t border-border">
-              <QualityPanel
-                results={results}
-                totalRows={null}
-                failedCount={bad}
-              />
+              <QualityPanel results={results} totalRows={null} failedCount={bad} />
             </div>
           )}
 
@@ -158,13 +144,7 @@ export function Rail({
 
   return (
     <div className="space-y-5">
-      {activeRunId && (
-        <LiveRun
-          runId={activeRunId}
-          quality={quality}
-          onDismiss={onDismissRun}
-        />
-      )}
+      {activeRunId && <LiveRun runId={activeRunId} quality={quality} onDismiss={onDismissRun} />}
       {/* Comparisons moved to a tab beside Spec / Runs / History — past
           comparisons are history of this pipeline, the same kind of thing
           the other tabs hold, and the rail is for what is happening now. */}

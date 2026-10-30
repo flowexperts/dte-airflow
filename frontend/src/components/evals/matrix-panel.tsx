@@ -46,9 +46,8 @@ import { cn } from "@/lib/cn";
  */
 
 function structureFields(pipeline: Pipeline): FieldPattern[] {
-  const step = (pipeline.steps ?? []).find(
-    (s) => (s as { op?: string }).op === "structure",
-  ) as { model?: { fields?: FieldPattern[] } } | undefined;
+  const step = (pipeline.steps ?? []).find((s) => (s as { op?: string }).op === "structure") as
+    { model?: { fields?: FieldPattern[] } } | undefined;
   return step?.model?.fields ?? [];
 }
 
@@ -121,9 +120,7 @@ export function MatrixPanel({
   const effective: CompareDraft = useMemo(
     () => ({
       ...draft,
-      providers: draft.providers.filter(
-        (p) => providerStatus[p]?.configured !== false,
-      ),
+      providers: draft.providers.filter((p) => providerStatus[p]?.configured !== false),
     }),
     [draft, providerStatus],
   );
@@ -148,9 +145,7 @@ export function MatrixPanel({
   const toggle = (key: keyof CompareDraft, value: string) => {
     const current = draft[key];
     update({
-      [key]: current.includes(value)
-        ? current.filter((v) => v !== value)
-        : [...current, value],
+      [key]: current.includes(value) ? current.filter((v) => v !== value) : [...current, value],
     } as Partial<CompareDraft>);
   };
 
@@ -159,9 +154,7 @@ export function MatrixPanel({
     setErr(null);
     try {
       const { eval_set_id } = await evalSetForPipeline(pipeline.id);
-      setEstimate(
-        await previewSweep(eval_set_id, pipeline.id, buildMatrix(effective)),
-      );
+      setEstimate(await previewSweep(eval_set_id, pipeline.id, buildMatrix(effective)));
     } catch (e) {
       setErr(humanizeError(e, { action: "estimate", entity: "comparison" }).message);
     } finally {
@@ -175,10 +168,7 @@ export function MatrixPanel({
       const { eval_set_id } = await evalSetForPipeline(pipeline.id);
       const res = await launchSweep(eval_set_id, pipeline.id, buildMatrix(effective));
       toast.success({
-        title:
-          res.cells === 1
-            ? "Running this config"
-            : `Comparing ${res.cells} configs`,
+        title: res.cells === 1 ? "Running this config" : `Comparing ${res.cells} configs`,
         message: "Results fill in as each finishes.",
       });
       router.push(
@@ -204,21 +194,17 @@ export function MatrixPanel({
       />
       <div className="px-4 py-3 flex flex-col gap-4">
         <p className="text-[12.5px] text-muted max-w-[68ch]">
-          Run this pipeline&apos;s extraction several ways over the same
-          documents and see where they differ. No labels needed — PDFs are
-          parsed once and shared across every config. Leave everything
-          unticked to run the single config below as it stands.
+          Run this pipeline&apos;s extraction several ways over the same documents and see where
+          they differ. No labels needed — PDFs are parsed once and shared across every config. Leave
+          everything unticked to run the single config below as it stands.
         </p>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-[11.5px] text-subtle uppercase tracking-wide">
-            Provider
-          </span>
+          <span className="text-[11.5px] text-subtle uppercase tracking-wide">Provider</span>
           <div className="flex gap-1.5 flex-wrap">
             {PROVIDERS.map((p) => {
               const unconfigured = providerStatus[p.id]?.configured === false;
-              const blocked =
-                readOnly || (p.id === "regex" && !regex.available) || unconfigured;
+              const blocked = readOnly || (p.id === "regex" && !regex.available) || unconfigured;
               return (
                 <Chip
                   key={p.id}
@@ -251,8 +237,8 @@ export function MatrixPanel({
                 <>
                   <span className="font-mono">{regex.missing.join(", ")}</span>{" "}
                   {regex.missing.length === 1 ? "has" : "have"} none — add{" "}
-                  {regex.missing.length === 1 ? "one" : "them"} on the structure
-                  step to compare against it.
+                  {regex.missing.length === 1 ? "one" : "them"} on the structure step to compare
+                  against it.
                 </>
               ) : (
                 "This pipeline declares no fields."
@@ -297,9 +283,7 @@ export function MatrixPanel({
           </button>
         ) : (
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11.5px] text-subtle uppercase tracking-wide">
-              Instructions
-            </span>
+            <span className="text-[11.5px] text-subtle uppercase tracking-wide">Instructions</span>
             {[0, 1, 2].map((i) => (
               <Textarea
                 key={i}
@@ -324,9 +308,8 @@ export function MatrixPanel({
             edit, and pretending it isn't there would be worse. */}
         {foreign.length > 0 && (
           <p className="text-[11.5px] text-subtle">
-            Also varying{" "}
-            <span className="font-mono">{foreign.join(", ")}</span>, set
-            outside this panel and kept as-is.
+            Also varying <span className="font-mono">{foreign.join(", ")}</span>, set outside this
+            panel and kept as-is.
           </p>
         )}
 
@@ -345,9 +328,7 @@ export function MatrixPanel({
               </span>
               <span>
                 <span className="text-subtle">cost ≤ </span>
-                {estimate.est_cost_usd == null
-                  ? "unknown"
-                  : `$${estimate.est_cost_usd.toFixed(2)}`}
+                {estimate.est_cost_usd == null ? "unknown" : `$${estimate.est_cost_usd.toFixed(2)}`}
               </span>
             </div>
             <span className="text-[11.5px] text-subtle">
@@ -407,8 +388,8 @@ export function MatrixPanel({
             control rather than a deliberate one. */}
         {!estimate && (
           <p className="text-[11.5px] text-subtle">
-            Estimate first — it shows the cost and runs nothing.{" "}
-            {cells === 1 ? "Run" : "Compare"} unlocks once you&apos;ve seen it.
+            Estimate first — it shows the cost and runs nothing. {cells === 1 ? "Run" : "Compare"}{" "}
+            unlocks once you&apos;ve seen it.
           </p>
         )}
       </div>

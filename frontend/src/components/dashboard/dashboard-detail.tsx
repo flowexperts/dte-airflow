@@ -9,12 +9,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { Button, InlineError, PageHeader, Topbar } from "@/components/ui";
-import {
-  getDashboard,
-  updateDashboard,
-  type Dashboard,
-  type DashboardTile,
-} from "@/lib/api";
+import { getDashboard, updateDashboard, type Dashboard, type DashboardTile } from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
 import { humanizeError, type HumanError } from "@/lib/errors";
 import { DashboardGrid } from "./grid";
@@ -139,11 +134,7 @@ export function DashboardDetail({ id }: { id: string }) {
 
       <div className="px-14 py-8 space-y-6">
         {saveErr && (
-          <InlineError
-            title={saveErr.title}
-            message={saveErr.message}
-            detail={saveErr.detail}
-          />
+          <InlineError title={saveErr.title} message={saveErr.message} detail={saveErr.detail} />
         )}
 
         <DashboardGrid

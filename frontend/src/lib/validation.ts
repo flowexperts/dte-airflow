@@ -17,9 +17,7 @@ import { z } from "zod";
 export const pipelineIdSchema = z.string();
 
 /** Pipeline name: non-empty string. */
-export const pipelineNameSchema = z
-  .string()
-  .min(1, "Pipeline name is required.");
+export const pipelineNameSchema = z.string().min(1, "Pipeline name is required.");
 
 /**
  * A single step in the pipeline.
@@ -77,10 +75,7 @@ export const pipelineFormSchema = z.object({
       (refs) => refs.every((r) => Boolean(r.source_id)),
       "Every source slot needs a saved source picked.",
     )
-    .refine(
-      (refs) => refs.every((r) => r.alias.trim().length > 0),
-      "Every source needs an alias.",
-    )
+    .refine((refs) => refs.every((r) => r.alias.trim().length > 0), "Every source needs an alias.")
     .refine(
       (refs) => refs.every((r) => !r.alias || ALIAS_RE.test(r.alias)),
       "Alias must start with a letter or underscore and contain only letters, digits, or underscores.",

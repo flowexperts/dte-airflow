@@ -1,7 +1,13 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { Button, Panel, PanelHead, Pill } from "@/components/ui";
-import { deleteSchedule, getSchedule, putSchedule, type PipelineParam, type Schedule } from "@/lib/api";
+import {
+  deleteSchedule,
+  getSchedule,
+  putSchedule,
+  type PipelineParam,
+  type Schedule,
+} from "@/lib/api";
 import { usePermissions } from "@/lib/use-permissions";
 import { ScheduleForm } from "./ScheduleForm";
 
@@ -23,10 +29,12 @@ export function SchedulePanel({
   pipelineParams: PipelineParam[] | undefined;
   pipelineType?: string | undefined;
 }) {
-  const { data: schedule, error, isLoading, mutate } = useSWR(
-    ["pipeline-schedule", pipelineId],
-    () => getSchedule(pipelineId),
-  );
+  const {
+    data: schedule,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR(["pipeline-schedule", pipelineId], () => getSchedule(pipelineId));
   const { can } = usePermissions();
   const canWrite = can("pipeline:trigger");
   const [formOpen, setFormOpen] = useState(false);
@@ -47,9 +55,10 @@ export function SchedulePanel({
   const remove = (s: Schedule) => {
     // Retries and the timeout live on the schedule and cover manual runs too,
     // so removing it switches them off as well (plan 070). Notifications don't.
-    const alsoLost = s.retries > 0 || s.timeout_s != null
-      ? "\n\nThis also turns off retries and the timeout, for manual runs too."
-      : "";
+    const alsoLost =
+      s.retries > 0 || s.timeout_s != null
+        ? "\n\nThis also turns off retries and the timeout, for manual runs too."
+        : "";
     if (!window.confirm(`Remove schedule ${s.cron_expr} (${s.timezone})?${alsoLost}`)) return;
     act(async () => {
       await deleteSchedule(pipelineId);
@@ -61,7 +70,9 @@ export function SchedulePanel({
     <Panel>
       <PanelHead label="Schedule" />
       {isLoading && <div className="text-[12px] text-subtle px-3.5 py-4">Loading schedule…</div>}
-      {error && <div className="text-[12px] text-red px-3.5 py-4">Couldn&apos;t load the schedule.</div>}
+      {error && (
+        <div className="text-[12px] text-red px-3.5 py-4">Couldn&apos;t load the schedule.</div>
+      )}
       {!isLoading && !error && !schedule && (
         <div className="text-[12px] text-subtle px-3.5 py-4">
           No schedule — this pipeline only runs on manual trigger.

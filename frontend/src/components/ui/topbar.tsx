@@ -31,18 +31,11 @@ export function Topbar({
             <span key={i} className="flex items-center gap-2">
               {i > 0 && <span className="text-subtle opacity-50">/</span>}
               {c.href && !isLast ? (
-                <Link
-                  href={c.href}
-                  className="text-subtle hover:text-text no-underline"
-                >
+                <Link href={c.href} className="text-subtle hover:text-text no-underline">
                   {c.label}
                 </Link>
               ) : (
-                <span
-                  className={isLast ? "text-text font-medium" : "text-subtle"}
-                >
-                  {c.label}
-                </span>
+                <span className={isLast ? "text-text font-medium" : "text-subtle"}>{c.label}</span>
               )}
             </span>
           );
