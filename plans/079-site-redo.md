@@ -19,7 +19,13 @@ sections, one idea each.
 - Use cases move to `/use-cases/` (index) and keep their detail pages,
   restyled. Integrations get their own page, `/integrations/`.
 - New nav: Use cases, Integrations, Docs, GitHub, Install.
-- Docs are untouched in this plan.
+- Docs move from the hand-rolled Next route to **VitePress** (`site/docs-vp/`),
+  still sourced from `docs/user/*.md` unchanged: left sidebar, local search,
+  "On this page" TOC, edit-on-GitHub, themed to match (ink nav, ember,
+  Bricolage). `pnpm build` runs `next build` then writes the docs into
+  `out/docs/`, so it stays one Cloudflare Pages deploy. Dead links fail the
+  build. Dev: `pnpm docs:dev` on :3101, and `NEXT_PUBLIC_DOCS_URL` points the
+  site's nav at it.
 
 ## Tasks (branch `feature/site-redo`)
 
@@ -29,7 +35,8 @@ sections, one idea each.
 3. `site-chrome.tsx`: new nav + footer.
 4. `landing-page.tsx` rewritten; hero demo is a small client component.
 5. `/use-cases/` index, `use-case-page.tsx` restyle, `/integrations/` page.
-6. Sitemap gets the two new routes.
+6. Sitemap gets the two new routes; docs publish their own sitemap.
+7. Docs on VitePress; delete `src/app/docs`, `src/lib/docs.ts`.
 
 ## Files
 

@@ -71,9 +71,11 @@ export function LandingPage() {
           </ol>
         </div></section>
 
-        <section className="s"><div className="in">
-          <p className="kicker">Before you install</p>
-          <h2>Fair questions</h2>
+        <section className="s" id="install"><div className="in">
+          <InstallBox />
+        </div></section>
+        <section className="s" id="faq"><div className="in">
+          <h2>FAQ</h2>
           <div className="faq">
             {FAQ.map(([q, a], i) => (
               <details key={q} open={i === 0}><summary>{q}</summary><p>{a}</p></details>
@@ -81,9 +83,6 @@ export function LandingPage() {
           </div>
         </div></section>
 
-        <section className="s" id="install"><div className="in">
-          <InstallBox />
-        </div></section>
       </main>
       <SiteFooter />
     </div>

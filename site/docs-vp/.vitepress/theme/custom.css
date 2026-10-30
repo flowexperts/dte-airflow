@@ -1,0 +1,56 @@
+/* Docs in the marketing site's look (plan 079): ink nav bar like the site's
+   hero, ember accent, Bricolage Grotesque, Geist Mono. Content stays on a
+   light page, the way Doris's docs do. */
+:root {
+  --dte-ink: #15110d;
+  --dte-paper: #f2ede4;
+  --dte-ember: #e8441a;
+  --vp-font-family-base: "Bricolage Grotesque", system-ui, sans-serif;
+  --vp-font-family-mono: "Geist Mono", ui-monospace, Menlo, monospace;
+  --vp-c-brand-1: #c2380f;
+  --vp-c-brand-2: #e8441a;
+  --vp-c-brand-3: #e8441a;
+  --vp-c-brand-soft: rgba(232, 68, 26, 0.12);
+  --vp-c-bg: #fffdf9;
+  --vp-c-bg-alt: #f6f1e8;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-text-1: #1b140e;
+  --vp-c-divider: #e7dfd2;
+  --vp-c-gutter: #ebe3d6;
+  --vp-code-bg: #f3ece1;
+  --vp-code-color: #a8320d;
+  --vp-code-block-bg: #15110d;
+  --vp-button-brand-bg: #e8441a;
+  --vp-button-brand-hover-bg: #c2380f;
+}
+.dark {
+  --vp-c-brand-1: #ff6a40;
+  --vp-c-brand-2: #e8441a;
+  --vp-c-brand-soft: rgba(232, 68, 26, 0.18);
+  --vp-c-bg: #15110d;
+  --vp-c-bg-alt: #0f0c09;
+  --vp-c-bg-elv: #1c1712;
+  --vp-c-text-1: #f2ede4;
+  --vp-c-divider: #2a2720;
+  --vp-c-gutter: #0c0a08;
+  --vp-code-bg: #221c16;
+  --vp-code-color: #ff8a5c;
+  --vp-code-block-bg: #0c0a08;
+}
+
+/* The top bar is the site's nav: ink, whatever the theme. */
+.VPNavBar, .VPNavBar.has-sidebar .content-body, .VPNavBar .divider-line { background: var(--dte-ink) !important; }
+.VPNavBar .title, .VPNavBarMenuLink, .VPNavBar .VPSocialLink, .VPNavBarSearch .DocSearch-Button-Placeholder { color: var(--dte-paper) !important; }
+.VPNavBarMenuLink.active, .VPNavBarMenuLink:hover { color: var(--dte-ember) !important; }
+.VPNavBar.has-sidebar .title { border-bottom-color: transparent; }
+.VPNavBar .title { font-weight: 800; letter-spacing: -0.02em; font-size: 18px; }
+.VPNavBar .title::before { content: ""; width: 15px; height: 19px; margin-right: 9px; background: var(--dte-paper); clip-path: polygon(0 0, 70% 0, 100% 25%, 100% 100%, 0 100%); }
+.VPNavBarSearch .DocSearch-Button { background: rgba(255, 255, 255, 0.08); }
+.VPNavBar .VPSwitchAppearance { background: rgba(255, 255, 255, 0.12); }
+
+/* Headings carry the brand: heavy, tight Bricolage. */
+.vp-doc h1, .vp-doc h2, .vp-doc h3 { font-weight: 800; letter-spacing: -0.03em; }
+.vp-doc h1 { font-size: 40px; line-height: 1.05; }
+.vp-doc h2 { border-top: 2px solid var(--vp-c-text-1); }
+.VPSidebarItem.level-0 > .item .text { font-weight: 800; letter-spacing: -0.01em; }
+.vp-doc div[class*="language-"] { border-radius: 6px; }
