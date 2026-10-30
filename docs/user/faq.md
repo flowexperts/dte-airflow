@@ -28,6 +28,10 @@ Use a PDF source with an **Extract text** step, then **Structure fields** to tur
 
 No. dte needs Airflow 3.3 or later.
 
+## Does dte run on Astronomer, Amazon MWAA or Google Cloud Composer?
+
+Yes, on any Airflow 3.3+ that lets you pip install packages: add `dte-airflow` to its requirements, point `DTE_DATABASE_URL` at Postgres, and add the one-line DAG file. See [install](self-hosting/install-plugin.md).
+
 ## Does dte need its own database?
 
 It needs Postgres, for its own tables in a `dte` schema. That can be its own database or Airflow's metadata database. See [install](self-hosting/install-plugin.md).
