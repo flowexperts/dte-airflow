@@ -2,7 +2,7 @@ name: Deploy site
 
 on:
   push:
-    branches: [main, dte-airflow]
+    branches: [main]
     paths:
       - "site/**"
       - "docs/user/**"
