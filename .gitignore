@@ -27,3 +27,5 @@ marketing-plans/
 # UI bundle copied in for a wheel build (plan 073)
 backend/dte/ui/
 backend/dist/
+.DS_Store
+.codegraph/
