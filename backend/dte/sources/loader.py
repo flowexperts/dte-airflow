@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC
 from typing import TYPE_CHECKING
 
 import dlt
@@ -126,8 +127,8 @@ def _glob_local(bucket_url: str, file_glob: str) -> list[str]:
 
 def _load_object_store(
     source: Source,
-    registry: "BackendRegistry",
-    connection: "Connection",
+    registry: BackendRegistry,
+    connection: Connection,
     credentials: dict,
 ) -> ibis.Table:
     """s3 / gcs / azure / sftp: read `bucket_url + file_glob` through the
@@ -150,8 +151,8 @@ def _load_object_store(
 
 def _load_filesystem(
     source: Source,
-    registry: "BackendRegistry",
-    connection: "Connection",
+    registry: BackendRegistry,
+    connection: Connection,
     credentials: dict,
 ) -> ibis.Table:
     """Read local files directly via DuckDB's native readers.
@@ -185,8 +186,8 @@ def _load_filesystem(
 
 def _load_sql_database(
     source: Source,
-    registry: "BackendRegistry",
-    connection: "Connection",
+    registry: BackendRegistry,
+    connection: Connection,
     credentials: dict,
     table: str | None = None,
 ) -> ibis.Table:
@@ -220,7 +221,7 @@ def _load_sql_database(
     return backend.table(table_name)
 
 
-def list_schemas(connection: "Connection", credentials: dict) -> list[str]:
+def list_schemas(connection: Connection, credentials: dict) -> list[str]:
     """List schema/database names visible through a connection's native
     ibis backend. Raises `NotImplementedError` for connection types with no
     native backend (filesystem-family, mongodb, rest_api)."""
@@ -231,7 +232,7 @@ def list_schemas(connection: "Connection", credentials: dict) -> list[str]:
 
 
 def list_tables(
-    connection: "Connection", credentials: dict, schema: str | None = None
+    connection: Connection, credentials: dict, schema: str | None = None
 ) -> list[str]:
     """List table names visible through a connection's native ibis backend,
     optionally scoped to a schema/database."""
@@ -250,8 +251,8 @@ def _mongo_client(connection_url: str):
 
 def _load_mongodb(
     source: Source,
-    registry: "BackendRegistry",
-    connection: "Connection",
+    registry: BackendRegistry,
+    connection: Connection,
     credentials: dict,
 ) -> ibis.Table:
     con = registry.duckdb()
@@ -282,8 +283,8 @@ def _load_mongodb(
 
 def _load_rest_api(
     source: Source,
-    registry: "BackendRegistry",
-    connection: "Connection",
+    registry: BackendRegistry,
+    connection: Connection,
     credentials: dict,
 ) -> ibis.Table:
     from dlt.sources.rest_api import rest_api_source
@@ -349,8 +350,8 @@ _MEDIA_TYPES: dict[str, str] = {
 
 def _load_documents(
     source: Source,
-    registry: "BackendRegistry",
-    connection: "Connection",
+    registry: BackendRegistry,
+    connection: Connection,
     credentials: dict,
 ) -> ibis.Table:
     """List documents — one row per file. **Parses nothing.**
@@ -374,7 +375,7 @@ def _load_documents(
             f"No files matched '{file_glob}' in '{bucket_url}'"
         )
 
-    from datetime import datetime, timezone
+    from datetime import datetime
     from pathlib import Path
 
     rows = []
@@ -388,7 +389,7 @@ def _load_documents(
                 "filename": p.name,
                 "ext": ext,
                 "size_bytes": stat.st_size,
-                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=UTC),
                 "media_type": _MEDIA_TYPES.get(ext, "application/octet-stream"),
             }
         )
@@ -421,8 +422,8 @@ LOADERS: dict[str, LoaderFn] = {
 
 def load_source(
     source: Source,
-    registry_or_con: "BackendRegistry | ibis.BaseBackend",
-    connection_or_credentials: "Connection | dict | None" = None,
+    registry_or_con: BackendRegistry | ibis.BaseBackend,
+    connection_or_credentials: Connection | dict | None = None,
     credentials: dict | None = None,
     table: str | None = None,
 ) -> ibis.Table:
@@ -467,7 +468,7 @@ def load_source(
     return loader(source, registry, connection, creds)
 
 
-def _fabricate_legacy_connection(source: Source, credentials: dict) -> "Connection":
+def _fabricate_legacy_connection(source: Source, credentials: dict) -> Connection:
     """Build a minimal in-memory Connection from a legacy 3-arg call.
 
     Only used by pre-registry callers (older tests).  Real API traffic

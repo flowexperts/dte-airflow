@@ -20,7 +20,13 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from dte.api.deps import get_current_user, get_destination_store, get_eval_set_store, get_pipeline_revision_store, get_pipeline_store
+from dte.api.deps import (
+    get_current_user,
+    get_destination_store,
+    get_eval_set_store,
+    get_pipeline_revision_store,
+    get_pipeline_store,
+)
 from dte.compiler.interpolate import ParamValidationError, resolve_context
 from dte.models.pipeline import Pipeline, PipelineBase, PipelineSchedule
 from dte.models.user import User

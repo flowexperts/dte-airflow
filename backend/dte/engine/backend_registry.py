@@ -58,7 +58,7 @@ class BackendRegistry:
         return self._duckdb
 
     def for_connection(
-        self, connection: "Connection", credentials: dict
+        self, connection: Connection, credentials: dict
     ) -> ibis.BaseBackend:
         """Return a cached ibis backend for a DB connection.
 
@@ -77,7 +77,7 @@ class BackendRegistry:
 # ─── Dispatch: Connection → ibis backend ─────────────────────────────────
 
 
-def _open_ibis_backend(connection: "Connection", credentials: dict) -> ibis.BaseBackend:
+def _open_ibis_backend(connection: Connection, credentials: dict) -> ibis.BaseBackend:
     ctype = connection.connection_type
     opener = _OPENERS.get(ctype)
     if opener is None:

@@ -15,7 +15,7 @@ from contextvars import ContextVar
 import httpx
 from fastapi import HTTPException, Request
 
-_auth: ContextVar[dict[str, str]] = ContextVar("dte_airflow_auth", default={})
+_auth: ContextVar[dict[str, str] | None] = ContextVar("dte_airflow_auth", default=None)
 
 
 def airflow_url() -> str:
@@ -37,7 +37,7 @@ def dag_id_for(pipeline_id: str) -> str:
 
 async def _call(method: str, path: str, **kw) -> httpx.Response:
     async with httpx.AsyncClient(timeout=30) as c:
-        return await c.request(method, f"{airflow_url()}/api/v2{path}", headers=_auth.get(), **kw)
+        return await c.request(method, f"{airflow_url()}/api/v2{path}", headers=_auth.get() or {}, **kw)
 
 
 def revision_tag(revision_id: str) -> str:

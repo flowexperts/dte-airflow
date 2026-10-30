@@ -19,7 +19,8 @@ crashes on half the corpus scores perfectly on the half it managed.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from dte.evals.scoring import FieldSpec, score_corpus, wilson_interval
 
@@ -121,7 +122,7 @@ def _score_split(
     if collect_failures:
         from dte.evals.comparators import compare
 
-        for example, (expected, actual) in zip(examples, pairs):
+        for example, (expected, actual) in zip(examples, pairs, strict=True):
             for spec in specs:
                 exp, act = expected.get(spec.name), actual.get(spec.name)
                 if exp is None and act is None:

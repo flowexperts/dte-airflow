@@ -60,7 +60,6 @@ def copy_to(
             backend, table, path, format_clause, credentials, extension, view_of=table
         )
 
-    import duckdb as _duckdb
     import ibis as _ibis
 
     scratch = _ibis.duckdb.connect()

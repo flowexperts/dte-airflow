@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import copy
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from dte.models.pipeline import Pipeline, PipelineParam
+    from dte.models.pipeline import Pipeline
 
 # Fields per op whose string contents may reference `{{...}}` placeholders.
 # Filter/map expression strings are the only user-authored SQL surfaces today;
@@ -136,7 +136,7 @@ def coerce_param_value(raw: str, expected_type: str, as_of: datetime | None = No
 def _system_context(as_of: datetime | None = None) -> dict[str, str]:
     """`as_of` is the run's own time (a scheduled run's logical date), so a
     retry or rerun sees the same dates; None means now."""
-    now = as_of or datetime.now(timezone.utc)
+    now = as_of or datetime.now(UTC)
     today = now.date() if as_of else date.today()
     return {
         "now": now.isoformat(),
@@ -148,7 +148,7 @@ def _system_context(as_of: datetime | None = None) -> dict[str, str]:
 
 
 def resolve_context(
-    pipeline: "Pipeline | None" = None,
+    pipeline: Pipeline | None = None,
     user_values: dict[str, str] | None = None,
     *,
     as_of: datetime | None = None,
@@ -260,7 +260,7 @@ def interpolate_text(text: str, context: dict[str, Any]) -> str:
     return _PLACEHOLDER_RE.sub(_sub, text)
 
 
-def interpolate_pipeline(pipeline: "Pipeline", context: dict[str, Any]) -> "Pipeline":
+def interpolate_pipeline(pipeline: Pipeline, context: dict[str, Any]) -> Pipeline:
     """Return a copy of `pipeline` with `{{var}}` placeholders resolved in
     the string-valued fields of every step. Unknown variables raise
     `InterpolationError`.

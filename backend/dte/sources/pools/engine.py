@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 # Feature flag — same env var as the mongo pool.
 _pool_enabled: bool = os.getenv("DTE_CONNECTION_POOL_ENABLED", "false").lower() in ("1", "true", "yes")
 
-_engine: "_DuckDBEngine | None" = None
+_engine: _DuckDBEngine | None = None
 
 
 def reset_engine() -> None:
@@ -27,7 +27,7 @@ def reset_engine() -> None:
     _engine = None
 
 
-def get_engine() -> "_DuckDBEngine":
+def get_engine() -> _DuckDBEngine:
     """Return the process-wide DuckDBEngine, creating it on first use.
 
     When the pool is disabled a fresh engine is returned on each call (the

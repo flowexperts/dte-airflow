@@ -148,12 +148,11 @@ def model_client(provider: str, conn_id: str | None):
 def model_connections(provider: str) -> list[str]:
     """Conn ids usable by `provider`: every DB connection of its type, plus the
     default when it resolves elsewhere (env var or secrets backend)."""
-    from sqlalchemy import select
-
     from airflow.exceptions import AirflowNotFoundException
     from airflow.hooks.base import BaseHook
     from airflow.models.connection import Connection as AConn
     from airflow.utils.session import create_session
+    from sqlalchemy import select
 
     hook_cls = _hook_class(provider)
     with create_session() as s:

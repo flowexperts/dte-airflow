@@ -1,7 +1,7 @@
 """DtePipelineOperator: run one DTE pipeline (transform, quality or eval)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from airflow.exceptions import AirflowFailException
 from airflow.sdk import BaseOperator
@@ -51,7 +51,12 @@ class DtePipelineOperator(BaseOperator):
     def execute(self, context):
         from dte.models.eval import EvalExample, EvalSet
         from dte.models.pipeline import (
-            Destination, LookupTable, Pipeline, PipelineRevision, Source, coerce_source_refs,
+            Destination,
+            LookupTable,
+            Pipeline,
+            PipelineRevision,
+            Source,
+            coerce_source_refs,
         )
 
         conf = (context["dag_run"].conf or {}) if context.get("dag_run") else {}
@@ -62,7 +67,7 @@ class DtePipelineOperator(BaseOperator):
 
         def on_event(idx, op, status, msg=None):
             # One row per step: "started" is updated in place by its terminal event.
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             done = status in ("completed", "failed", "skipped")
             ev = next((e for e in events if e["step_index"] == idx), None)
             if ev is None:

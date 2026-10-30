@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from dte.api.deps import get_connection_store
-from dte.automap import Field as _AField, automap as _automap
+from dte.automap import Field as _AField
+from dte.automap import automap as _automap
 from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.models.pipeline import SourceBase as Source

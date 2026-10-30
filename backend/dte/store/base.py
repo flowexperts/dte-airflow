@@ -1,13 +1,13 @@
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from dte.models.dashboard import Dashboard, DashboardBase
     from dte.models.eval import (
         EvalExample,
         EvalExampleBase,
         EvalSet,
         EvalSetBase,
     )
-    from dte.models.dashboard import Dashboard, DashboardBase
     from dte.models.pipeline import (
         Connection,
         Destination,

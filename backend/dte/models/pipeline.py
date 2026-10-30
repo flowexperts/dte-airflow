@@ -5,11 +5,10 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
-from sqlalchemy import Column, DateTime, ForeignKey, Text, func
+from sqlalchemy import Column, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as SMField
 from sqlmodel import SQLModel
-
 
 # ─── Connections ─────────────────────────────────────────────────────────
 
@@ -1269,7 +1268,7 @@ class SourceTableRef(BaseModel):
         return v
 
 
-def coerce_source_refs(sources: list) -> list["SourceTableRef"]:
+def coerce_source_refs(sources: list) -> list[SourceTableRef]:
     """Normalise a pipeline's `sources` list to typed `SourceTableRef`s.
 
     Three shapes reach this: a bare source id string (back-compat
@@ -1374,7 +1373,7 @@ class PipelineParam(BaseModel):
             return self
         # Late import — coercion helper lives in the compiler package and we
         # want to avoid a top-level compiler import inside models.
-        from dte.compiler.interpolate import coerce_param_value, ParamValidationError
+        from dte.compiler.interpolate import ParamValidationError, coerce_param_value
         try:
             coerce_param_value(self.default, self.type)
         except ParamValidationError as e:
@@ -1561,8 +1560,8 @@ class PipelineBase(SQLModel):
 
         # Ref check — every {{params.X}} in a filter/map expr must resolve.
         from dte.compiler.interpolate import (
-            extract_param_refs,
             SYSTEM_VAR_NAMES,
+            extract_param_refs,
         )
         declared = {p.name for p in coerced}
         for i, step in enumerate(self.steps or []):
@@ -1595,6 +1594,7 @@ class PipelineBase(SQLModel):
         if not self.quality_contracts:
             return self
         from pydantic import TypeAdapter
+
         from dte.models.quality import Contract
         ta = TypeAdapter(list[Contract])  # type: ignore[type-arg]
         raw = self.quality_contracts

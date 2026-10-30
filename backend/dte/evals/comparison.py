@@ -34,7 +34,8 @@ disagreement worth seeing, not a row to quietly drop.
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 from dte.evals.bootstrap import _values_agree
 from dte.evals.runner import collapse_rows_by_doc

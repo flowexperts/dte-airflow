@@ -190,7 +190,7 @@ class PdfplumberProvider:
                     height=size[1],
                 )
                 for i, (text, words, size) in enumerate(
-                    zip(texts, per_page_words, sizes)
+                    zip(texts, per_page_words, sizes, strict=True)
                 )
             ]
         )

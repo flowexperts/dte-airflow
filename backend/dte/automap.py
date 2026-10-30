@@ -20,7 +20,8 @@ import difflib
 import json
 import os
 import re
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 
 FUZZY_CUTOFF = 0.8
 LLM_CONFIDENCE = 0.6          # the API exposes no per-field confidence
