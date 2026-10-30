@@ -43,19 +43,22 @@ def scratch_table():
         conn.execute(text("DROP TABLE IF EXISTS batched_test"))
 
 
-def test_batched_update_visits_every_row(scratch_table):
+def _run(engine, **kw) -> int:
+    """batched_update runs inside the caller's (Alembic's) transaction, so give
+    it one that commits on exit, as env.py's does."""
     from dte.alembic_util import batched_update
 
     op = MagicMock()
-    op.get_bind.return_value = scratch_table.connect()
+    with engine.begin() as conn:
+        op.get_bind.return_value = conn
+        return batched_update(
+            op, table="batched_test", set_clause="val = 'done'",
+            where_clause="val IS NULL", **kw,
+        )
 
-    total = batched_update(
-        op,
-        table="batched_test",
-        set_clause="val = 'done'",
-        where_clause="val IS NULL",
-        batch_size=50,
-    )
+
+def test_batched_update_visits_every_row(scratch_table):
+    total = _run(scratch_table, batch_size=50)
     assert total == 250
 
     with scratch_table.connect() as conn:
@@ -66,34 +69,11 @@ def test_batched_update_visits_every_row(scratch_table):
 
 
 def test_batched_update_max_batches(scratch_table):
-    from dte.alembic_util import batched_update
-
-    op = MagicMock()
-    op.get_bind.return_value = scratch_table.connect()
-
-    total = batched_update(
-        op,
-        table="batched_test",
-        set_clause="val = 'done'",
-        where_clause="val IS NULL",
-        batch_size=50,
-        max_batches=2,
-    )
+    total = _run(scratch_table, batch_size=50, max_batches=2)
     assert total == 100
 
 
 def test_batched_update_idempotent(scratch_table):
     """Second run with the same filter finds no rows and returns 0."""
-    from dte.alembic_util import batched_update
-
-    op = MagicMock()
-    op.get_bind.return_value = scratch_table.connect()
-
-    batched_update(op, table="batched_test", set_clause="val = 'done'",
-                   where_clause="val IS NULL", batch_size=50)
-
-    op2 = MagicMock()
-    op2.get_bind.return_value = scratch_table.connect()
-    total_second = batched_update(op2, table="batched_test", set_clause="val = 'done'",
-                                  where_clause="val IS NULL", batch_size=50)
-    assert total_second == 0
+    _run(scratch_table, batch_size=50)
+    assert _run(scratch_table, batch_size=50) == 0

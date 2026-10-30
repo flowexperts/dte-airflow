@@ -92,7 +92,7 @@ def test_end_to_end_nested_json_flatten_aggregate(tmp_path):
     assert categories["clothing"] == 50
 
 
-def test_api_trigger_and_poll(tmp_path):
+def test_api_trigger_and_poll(tmp_path, monkeypatch):
     from dte.api.main import app
     from dte.api.deps import (
         get_pipeline_store, get_run_store,
@@ -145,23 +145,19 @@ def test_api_trigger_and_poll(tmp_path):
     assert r.status_code == 200
     assert r.json()["name"] == "api_test"
 
+    # Trigger no longer executes in-process: it validates, then starts an
+    # Airflow dag run (plan 065). Execution is covered by tests/airflow/test_runner.py.
+    started = {}
+
+    async def fake_trigger(pipeline_id, conf, wait=0):
+        started["pipeline_id"] = pipeline_id
+        return "airflow-run-1"
+
+    monkeypatch.setattr("dte.airflow.trigger.trigger_dag_run", fake_trigger)
     r = client.post(f"/api/pipelines/{pid}/trigger")
-    assert r.status_code == 200
-    run_id = r.json()["run_id"]
-
-    import time
-    for _ in range(20):
-        r = client.get(f"/api/runs/{run_id}")
-        assert r.status_code == 200
-        status = r.json()["status"]
-        if status in ("completed", "failed"):
-            break
-        time.sleep(0.1)
-
-    assert r.json()["status"] == "completed", r.json()
-    assert r.json()["rows_written"] == 1
-    result = json.loads(out.read_text())
-    assert result[0]["name"] == "alice"
+    assert r.status_code == 200, r.text
+    assert r.json() == {"run_id": "airflow-run-1"}
+    assert started["pipeline_id"] == "api-p1"
     app.dependency_overrides.clear()
 
 

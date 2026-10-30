@@ -88,7 +88,7 @@ async def test_step_schemas_reports_dialect_and_transpiled_fragment(
     # blob, which is not what the user typed and not what belongs beside it.
     assert "AGE(" in payload["step_expr_sql"]["0"].upper()
     assert [w["code"] for w in payload["warnings"]] == [
-        "date_diff_calendar_vs_anniversary"
+        "date_diff_unit_semantics"
     ]
     assert payload["warnings"][0]["step"] == 0
 

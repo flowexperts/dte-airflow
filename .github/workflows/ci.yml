@@ -77,7 +77,7 @@ jobs:
         run: uv sync --frozen --extra dev --extra trino
       - name: Migrate
         run: DTE_DATABASE_URL=postgresql://dte:dte@localhost:5432/dte uv run alembic upgrade head
-      - name: Integration tests (Postgres store + RLS enforcement)
+      - name: Integration tests (Postgres store)
         run: uv run pytest tests/integration -m integration -v
 
   frontend:
