@@ -10,7 +10,7 @@ export function DemoVideo() {
     const v = ref.current;
     if (!v || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const io = new IntersectionObserver(
-      ([e]) => (e.isIntersecting ? v.play().catch(() => {}) : v.pause()),
+      ([e]) => (e?.isIntersecting ? v.play().catch(() => {}) : v.pause()),
       { threshold: 0.5 },
     );
     io.observe(v);

@@ -35,13 +35,60 @@ Into an existing Airflow 3.3+, with Airflow's constraints file unmodified:
 
 Add the one-line DAG file (`from dte.airflow.dag_factory import build_dags;
 globals().update(build_dags())`), restart Airflow; DTE is under Plugins ▸ DTE
-Pipelines. Guide: https://github.com/flowexperts/dte-airflow/blob/main/docs/user/self-hosting/install-plugin.md
+Pipelines. Guide: https://dte.flowexperts.ai/docs/self-hosting/install-plugin
+
+## Common questions
+
+- **Is there a visual, no-code ETL builder for Airflow?** Yes: DTE. Build a pipeline in the Airflow UI; it becomes a DAG Airflow schedules and runs.
+- **DTE vs dbt?** dbt models data already in the warehouse. DTE gets it there: files, APIs and PDFs, mapped and checked on the way in.
+- **DTE vs Airbyte / Fivetran?** Those copy data as-is, as a separate service. DTE maps, joins and checks data inside the Airflow you already run.
+- **Airflow 2?** No. Airflow 3.3+ only. Batch, not streaming.
+- **Astronomer, MWAA, Cloud Composer?** Yes, any Airflow 3.3+ that lets you pip install `dte-airflow`.
+- **How much data?** One run is one Airflow task with DuckDB, so one worker's memory and disk. Millions of rows per run is comfortable; file-to-file goes furthest. Output capped at `DTE_RUN_MAX_ROWS` (default 10M). SQL sources push work down to the database; an experimental Trino engine (`DTE_TRINO_ENABLED=true`) runs transforms on a Trino cluster.
+- **PDFs and invoices?** Extract text, then Structure fields with Claude, OpenAI or an offline regex provider.
+- **Paid support?** Yes, from flowexperts.ai, for running DTE and Airflow in production: https://cal.com/bhavaniravi/dte-demo-call
+
+More: https://dte.flowexperts.ai/docs/faq
+
+## Docs
+
+Full docs as one Markdown file: https://dte.flowexperts.ai/docs/llms-full.txt
+Docs index for LLMs: https://dte.flowexperts.ai/docs/llms.txt
+
+- [Install into your own Airflow](https://dte.flowexperts.ai/docs/self-hosting/install-plugin): pip install into Airflow 3.3+, database setup, the DAG file
+- [Try it with Docker Compose](https://dte.flowexperts.ai/docs/self-hosting/install): a full local stack in one command
+- [Your first pipeline](https://dte.flowexperts.ai/docs/getting-started/02-first-pipeline): source to destination, step by step
+- [Core ideas](https://dte.flowexperts.ai/docs/getting-started/03-concepts): pipelines, steps, field names, runs
+- [Steps](https://dte.flowexperts.ai/docs/steps/): every transform and quality step
+- [Sources](https://dte.flowexperts.ai/docs/sources/) and [Destinations](https://dte.flowexperts.ai/docs/destinations/): what DTE reads and writes
+- [Connections](https://dte.flowexperts.ai/docs/connections/): how DTE uses Airflow connections
+- [Scheduling](https://dte.flowexperts.ai/docs/pipelines/scheduling), [Preview & run](https://dte.flowexperts.ai/docs/pipelines/preview-and-run)
+- [Architecture overview](https://dte.flowexperts.ai/docs/architecture/overview)
+- [FAQ](https://dte.flowexperts.ai/docs/faq), [Troubleshooting](https://dte.flowexperts.ai/docs/troubleshooting)
+
+## Use cases
+
+- [Invoice processing & 3-way matching](https://dte.flowexperts.ai/use-cases/invoice-matching/)
+- [Purchase requisition & PO compliance](https://dte.flowexperts.ai/use-cases/purchase-compliance/)
+- [Employee document & background-check review](https://dte.flowexperts.ai/use-cases/employee-documents/)
+- [Claims processing & medical bill review](https://dte.flowexperts.ai/use-cases/claims-processing/)
+- [KYC document verification](https://dte.flowexperts.ai/use-cases/kyc-verification/)
+- [Integrations](https://dte.flowexperts.ai/integrations/): every supported source, destination and Airflow provider
+
+## Built on
+
+- Apache Airflow: schedules, runs and records every pipeline
+- DuckDB: executes each step, in process, on the Airflow worker
+- ibis: compiles steps to SQL and pushes work down to your database
+- sqlglot: translates SQL between dialects
+- dlt: loads REST APIs and MongoDB, and writes to SQL destinations
+- Full list with licenses: https://dte.flowexperts.ai/open-source/
 
 ## Links
 
 - Source: https://github.com/flowexperts/dte-airflow
-- Docs: https://github.com/flowexperts/dte-airflow/tree/main/docs/user
-- Help running it in production: /#book (30-minute call)
+- Package: https://pypi.org/project/dte-airflow/
+- Paid support / demo call: https://cal.com/bhavaniravi/dte-demo-call
 
 Apache Airflow and Airflow are trademarks of the Apache Software Foundation.
 DTE is an independent project, not affiliated with or endorsed by the ASF.

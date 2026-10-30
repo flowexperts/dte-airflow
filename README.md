@@ -190,6 +190,18 @@ Full documentation: **[dte.flowexperts.ai/docs](https://dte.flowexperts.ai/docs/
 - **[Try it with Docker Compose](https://dte.flowexperts.ai/docs/self-hosting/install)** — local stack.
 - **[Architecture](https://dte.flowexperts.ai/docs/architecture/overview)** — how it fits together.
 
+## Built on
+
+DTE is a thin layer over open-source projects other people build and maintain:
+
+- [Apache Airflow](https://airflow.apache.org) schedules, runs and records every pipeline.
+- [DuckDB](https://duckdb.org) executes each step, in process, on the Airflow worker.
+- [ibis](https://ibis-project.org) compiles steps to SQL and pushes work down to your database.
+- [sqlglot](https://github.com/tobymao/sqlglot) translates SQL between dialects.
+- [dlt](https://dlthub.com) loads REST APIs and MongoDB, and writes to SQL destinations.
+
+Every project and its license: https://dte.flowexperts.ai/open-source/
+
 ## Contributing and security
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md) and the [Code of Conduct](./CODE_OF_CONDUCT.md).

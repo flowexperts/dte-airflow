@@ -13,7 +13,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly",
       priority: 1,
     },
-    ...["/use-cases/", "/integrations/"].map((path) => ({
+    ...["/use-cases/", "/integrations/", "/open-source/"].map((path) => ({
       url: `${SITE_URL}${path}`,
       lastModified,
       changeFrequency: "monthly" as const,

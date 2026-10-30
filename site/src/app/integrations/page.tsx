@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
 import { InstallBox, SiteFooter, TopNav } from "@/components/marketing/site-chrome";
 import { PageHero } from "@/components/marketing/page-hero";
+import { pageMeta } from "@/lib/site";
 
 const LEDE =
   "If an Airflow provider is installed, DTE can use its connections. IAM roles, service accounts and secrets backends work the same as in your other DAGs.";
 
-export const metadata: Metadata = {
-  title: "Integrations",
-  description: LEDE,
-  alternates: { canonical: "/integrations/" },
-};
+export const metadata: Metadata = pageMeta("Integrations", LEDE, "/integrations/");
 
 // What ships in dte-airflow today — keep in step with the README's feature tables.
 export default function Page() {
