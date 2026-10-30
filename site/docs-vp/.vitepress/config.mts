@@ -39,7 +39,6 @@ export default defineConfig({
     nav: [
       { text: "Use cases", link: "https://dte.flowexperts.ai/use-cases/", target: "_self" },
       { text: "Integrations", link: "https://dte.flowexperts.ai/integrations/", target: "_self" },
-      { text: "Install", link: "/self-hosting/install-plugin" },
     ],
     socialLinks: [{ icon: "github", link: "https://github.com/flowexperts/dte-airflow" }],
     search: { provider: "local" },

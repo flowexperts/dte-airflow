@@ -5,9 +5,8 @@ export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://dte.flowex
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://dte.flowexperts.ai";
 
 export const REPO_URL = "https://github.com/flowexperts/dte-airflow";
-// Docs are a VitePress build served at /docs/ (docs-vp/). In dev they run on
-// their own server: NEXT_PUBLIC_DOCS_URL=http://localhost:3101/docs/
-export const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL || "/docs/";
+// Docs are a VitePress build served at /docs/ (docs-vp/).
+export const DOCS_URL = "/docs/";
 export const INSTALL_URL = `${DOCS_URL}self-hosting/install-plugin`;
 
 export const SITE_NAME = "DTE";

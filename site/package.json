@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.26.1",
   "scripts": {
-    "dev": "next dev",
+    "dev": "sh -c 'vitepress dev docs-vp --port 3101 & trap \"kill $!\" EXIT INT TERM; next dev \"$@\"' sh",
     "build": "next build && vitepress build docs-vp",
     "typecheck": "tsc --noEmit",
     "lint": "eslint",

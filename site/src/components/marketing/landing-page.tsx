@@ -52,6 +52,14 @@ export function LandingPage() {
           </div>
         </div></section>
 
+        <section className="s"><div className="in">
+          <ol className="how">
+            <li><b>Install it into Airflow</b><span>One pip install into Airflow 3.3+, with Airflow&apos;s own constraints file. There&apos;s no new service to run.</span></li>
+            <li><b>Hand over the mapping</b><span>Finance, ops or whoever owns the data builds the pipeline in the browser and previews real rows before saving.</span></li>
+            <li><b>Airflow runs it</b><span>Each pipeline is a <code>dte__</code> DAG. Schedules, retries, alerts and run history work the way they already do.</span></li>
+          </ol>
+        </div></section>
+
         <section className="s" id="demo"><div className="in">
           <p className="kicker">The demo</p>
           <h2>Watch one go from ticket to DAG</h2>
@@ -59,16 +67,6 @@ export function LandingPage() {
             <source src="/demo/dte-airflow.mp4" type="video/mp4" />
             <source src="/demo/dte-airflow.webm" type="video/webm" />
           </video>
-        </div></section>
-
-        <section className="s"><div className="in">
-          <p className="kicker">How it works</p>
-          <h2>Install once. Hand it over.</h2>
-          <ol className="how">
-            <li><b>Install it into Airflow</b><span>One pip install into Airflow 3.3+, with Airflow&apos;s own constraints file. There&apos;s no new service to run.</span></li>
-            <li><b>Hand over the mapping</b><span>Finance, ops or whoever owns the data builds the pipeline in the browser and previews real rows before saving.</span></li>
-            <li><b>Airflow runs it</b><span>Each pipeline is a <code>dte__</code> DAG. Schedules, retries, alerts and run history work the way they already do.</span></li>
-          </ol>
         </div></section>
 
         <section className="s" id="install"><div className="in">
