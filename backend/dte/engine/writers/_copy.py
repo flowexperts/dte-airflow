@@ -11,6 +11,8 @@ is what lets multi-GB results write without blowing up memory.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import ibis
 
 from dte.sources.object_store import register
@@ -100,6 +102,9 @@ def _copy_from_duckdb(
             raise ValueError(f"destination '{path}' is remote but its connection is not an "
                              "Airflow storage connection (aws, google_cloud_platform, wasb, sftp, …)")
         target = register(raw, path, conn_id)
+    else:
+        # COPY doesn't create folders; a fresh `out/` would fail the run.
+        Path(path.removeprefix("file://")).parent.mkdir(parents=True, exist_ok=True)
 
     if extension:
         from dte.sources.duckdb_secrets import _ensure_ext

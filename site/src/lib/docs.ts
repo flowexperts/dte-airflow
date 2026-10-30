@@ -26,6 +26,7 @@ export const NAV: { section: string; slugs: string[] }[] = [
     section: "Build",
     slugs: [
       "pipelines/building",
+      "pipelines/types",
       "steps/index",
       "pipelines/field-refs",
       "pipelines/preview-and-run",

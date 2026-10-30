@@ -165,6 +165,14 @@ def test_remote_write_lands_through_the_connections_filesystem(monkeypatch, samp
 
 # ─── writers round-trip locally for every format ─────────────────────────────
 
+def test_local_write_creates_missing_folders(tmp_path, sample_table):
+    from dte.engine.writers import write
+
+    out = tmp_path / "out" / "nested" / "orders.json"
+    write(sample_table, _adapter.validate_python({"type": "json", "path": str(out)}))
+    assert out.exists()
+
+
 @pytest.mark.parametrize("type_name,ext,reader", [
     ("json", ".json", "read_json_auto"),
     ("csv", ".csv", "read_csv_auto"),

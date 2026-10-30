@@ -26,17 +26,67 @@ const tok = await fetch(`${AF}/auth/token`, {
 }).then((r) => r.json()).then((j) => j.access_token);
 const get = (p) => fetch(`${AF}/dte/api${p}`, { headers: { Authorization: `Bearer ${tok}` } }).then((r) => r.json());
 
+// The Extract example: invoice PDFs → typed columns, from the committed
+// corpus compose mounts at /opt/dte/backend/sample_data.
+const post = (p, body) => fetch(`${AF}/dte/api${p}`, {
+  method: "POST", headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+}).then(async (r) => { if (!r.ok) throw new Error(`POST ${p}: ${r.status} ${await r.text()}`); return r.json(); });
+if (!(await get("/pipelines")).some((x) => x.name === "Invoice extract")) {
+  const src = (await get("/sources")).find((x) => x.name === "invoices") ?? await post("/sources", {
+    name: "invoices", connection_id: "local", source_type: "documents", table: "invoices",
+    config: { bucket_url: "/opt/dte/backend/sample_data/eval-demo/invoices/", file_glob: "*.pdf" },
+  });
+  if (!(await get("/destinations")).some((x) => x.id === "invoice_fields")) await post("/destinations", {
+    id: "invoice_fields", connection_id: "local", config: { type: "json", path: "/tmp/dte-samples/out/invoices.json" },
+  });
+  await post("/pipelines", {
+    name: "Invoice extract", sources: [{ source_id: src.id, alias: "invoices" }], output_id: "invoice_fields",
+    steps: [
+      { op: "extract", source_field: "path", provider: "pdfplumber", granularity: "document", output_field: "content" },
+      { op: "structure", input_field: "content", provider: "claude", on_error: "null", model: {
+        instructions: "Vendor freight invoices. Read totals as plain numbers.",
+        fields: [
+          { name: "invoice_number", type: "string", required: true, description: "The invoice id, e.g. INV-1001." },
+          { name: "vendor", type: "string", required: true, description: "The company that issued the invoice." },
+          { name: "total", type: "float", required: true, description: "The invoice total." },
+        ] } },
+      { op: "select", fields: ["filename", "invoice_number", "vendor", "total"].map((field) => ({ field })) },
+    ],
+  });
+}
 const pipes = await get("/pipelines");
 const byName = (n) => pipes.find((p) => p.name === n)?.id ?? (() => { throw new Error(`no pipeline ${n}`); })();
 const main = byName("orders_clean");
 const checks = byName("orders_clean_checks");
+const extract = byName("Invoice extract");
 const [run] = await get(`/pipelines/${main}/runs`);
+const [checksRun] = await get(`/pipelines/${checks}/runs`);
+/** Mark the smallest ancestor of `loc` at least `h` px tall and return it, to shoot one panel. */
+const panelOf = async (p, loc, h = 150) => {
+  await p.locator("[data-shot]").evaluateAll((es) => es.forEach((e) => delete e.dataset.shot));
+  await loc.first().evaluate((el, h) => {
+    while (el.getBoundingClientRect().height < h) el = el.parentElement;
+    el.dataset.shot = "";
+  }, h);
+  return p.locator("[data-shot]");
+};
 
 const D = `${AF}/plugin/dte`;
 const SHOTS = [
   ["pipelines/list.png", `${D}/pipelines`, (p) => p.getByText("orders_clean").first().waitFor()],
   ["pipelines/builder.png", `${D}/pipelines/detail?id=${main}`, (p) => p.getByRole("heading", { name: /Live preview/ }).waitFor()],
   ["pipelines/quality-check.png", `${D}/pipelines/detail?id=${checks}`, (p) => p.getByText(/CHECK/i).first().waitFor()],
+  ["pipelines/quality-steps.png", `${D}/pipelines/detail?id=${checks}`, (p) =>
+    panelOf(p, p.getByText(/^(ordered steps|steps|checks)$/i).last(), 300)],
+  ["pipelines/quality-run.png", `${D}/runs/detail?id=${encodeURIComponent(checksRun.id)}&pipeline=${checks}`, (p) => p.getByText(/Completed|passed/i).first().waitFor()],
+  ["pipelines/extract-steps.png", `${D}/pipelines/detail?id=${extract}`, async (p) => {
+    await p.setViewportSize({ width: 1440, height: 3000 }); // the panel is taller than a screen
+    return panelOf(p, p.getByText(/^(ordered steps|steps)$/i).last(), 300);
+  }],
+  ["pipelines/extract-preview.png", `${D}/pipelines/detail?id=${extract}`, async (p) => {
+    // Structure makes one model call per document (cached after the first).
+    await p.getByRole("columnheader", { name: /invoice_number/i }).first().waitFor({ timeout: 300_000 });
+  }],
   ["pipelines/history.png", `${D}/pipelines/detail?id=${main}`, async (p) => {
     await p.getByRole("tab", { name: /History/ }).click();
   }],
@@ -157,8 +207,9 @@ await ctx.addInitScript(() => { try { localStorage.setItem("chakra-ui-color-mode
 const page = await ctx.newPage();
 page.setDefaultTimeout(20_000);
 let failed = 0;
-for (const [name, url, ready] of process.env.SKIP_SHOTS ? [] : SHOTS) {
+for (const [name, url, ready] of process.env.SKIP_SHOTS ? [] : SHOTS.filter(([n]) => n.includes(process.env.ONLY ?? ""))) {
   try {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(url, { waitUntil: "domcontentloaded" });
     const el = await ready(page);
     await page.waitForTimeout(1500); // charts, fonts, the grid's fade-in

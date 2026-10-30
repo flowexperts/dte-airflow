@@ -59,13 +59,13 @@ Save. DTE gives the pipeline an id, and the dag-processor picks up `dte__<pipeli
 
 The live preview on the right runs the steps on a sample as you edit: three paid orders, three columns. A red panel names what's wrong.
 
-![The pipeline builder with live preview](../assets/pipelines/builder.png)
+![Live preview: three paid orders, three columns](../assets/getting-started/first-5-preview.png)
 
 ## 6. Run
 
 Click **▶ Run** and confirm. The run goes `pending` → `running` → `completed` on the page, and `/tmp/dte-samples/out/orders_paid.json` is written. The same dag run is in Airflow with its task log.
 
-![The dte DAG in Airflow](../assets/airflow/dag-grid.png)
+![The run completed: 3 rows written](../assets/getting-started/first-6-run.png)
 
 To run it automatically, [add a schedule](../pipelines/scheduling.md).
 
