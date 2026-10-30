@@ -153,6 +153,7 @@
 .site .founder .sig { font-family: var(--display); font-size: 14px; color: var(--accent-on-paper); }
 .site .term.small { box-shadow: none; padding: 14px; font-size: 12px; }
 .site .plain { color: var(--head); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+.site .founder .plain { color: var(--ink); margin-left: 12px; }
 @media (max-width: 980px) {
 .site .cards.c3, .site .how { grid-template-columns: 1fr; }
  }

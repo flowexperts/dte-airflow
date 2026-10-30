@@ -1,13 +1,13 @@
 import { HeroDemo } from "./hero-demo";
-import { InstallBox, SiteFooter, TopNav } from "./site-chrome";
-import { INSTALL_URL } from "@/lib/site";
+import { CAL_LINK, InstallBox, SiteFooter, TopNav } from "./site-chrome";
+import { INSTALL_URL, REPO_URL } from "@/lib/site";
 
 const FAQ = [
   ["Is it ready for production?", <>It&apos;s in beta. Interfaces and the <code>dte</code> schema can still change between releases, so back up before you upgrade.</>],
   ["Do I need to run another service?", <>No. DTE is an Airflow plugin. It runs in your api-server and scheduler and keeps its tables in a <code>dte</code> schema in Postgres.</>],
   ["Does our data leave our network?", <>No. It runs in your Airflow, on your connections. PDF extraction calls the model provider you configure, or a regex provider when nothing may leave.</>],
   ["Where does it sit next to dbt?", <>dbt models data that&apos;s already in your warehouse. DTE gets it there: files, APIs and PDFs, mapped and checked on the way in.</>],
-  ["What does it cost?", <>Nothing. It&apos;s Apache-2.0. If you&apos;d like help deploying it, you can book time with me.</>],
+  ["What does it cost?", <>Nothing. DTE is open source under Apache-2.0, and the code is on <a href={REPO_URL}>GitHub</a>. If you want help running it, or Airflow itself, in production, that&apos;s what flowexperts.ai does.</>],
 ] as const;
 
 export function LandingPage() {
@@ -21,7 +21,7 @@ export function LandingPage() {
             <div>
               <p className="kicker">Data transformation engine</p>
               <h1>Visual Builder <span className="hi">for Data &amp; AI pipelines</span></h1>
-              <p className="powered">Powered by Apache Airflow<sup>®</sup></p>
+              <p className="powered">Apache Airflow<sup>®</sup> plugin · 100% Open-Source</p>
               <div className="ctas">
                 <a className="btn go" href={INSTALL_URL}>Install DTE in your Airflow</a>
                 <a className="btn ghost" href="#demo">Watch the demo</a>
@@ -65,6 +65,26 @@ export function LandingPage() {
 
         <section className="s" id="install"><div className="in">
           <InstallBox />
+        </div></section>
+
+        <section className="s" id="production"><div className="in">
+          <p className="kicker">Open source, with backup</p>
+          <h2>Airflow in production is the hard part</h2>
+          <div className="founder">
+            <p>
+              DTE is free and open source, and it always will be. Installing it takes a minute.
+              Running Airflow well (upgrades, scaling the scheduler, deployments, the 3am failed
+              DAG) is the work I do every day at flowexperts.ai.
+            </p>
+            <p>
+              If your team wants DTE and the Airflow under it running in production without
+              becoming the bottleneck, talk to us.
+            </p>
+            <p>
+              <a className="btn go" href={`https://cal.com/${CAL_LINK}`} target="_blank" rel="noopener noreferrer">Talk about your Airflow</a>{" "}
+              <a className="plain" href="https://flowexperts.ai">or see flowexperts.ai</a>
+            </p>
+          </div>
         </div></section>
         <section className="s" id="faq"><div className="in">
           <h2>FAQ</h2>
