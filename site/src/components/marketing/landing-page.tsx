@@ -51,7 +51,7 @@ const DEST_TILES = [
 const QUICKSTART = [
   "curl -fsSLo constraints.txt https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt",
   "pip install dte-airflow --constraint constraints.txt",
-  "export DTE_DATABASE_URL=postgresql://user:pass@host/airflow",
+  "export DTE_DATABASE_URL=postgresql://user:pass@host/dte",
   "dte db upgrade",
 ];
 

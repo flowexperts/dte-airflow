@@ -56,6 +56,11 @@ until docker exec "$NAME-pg" pg_isready -U airflow -d airflow >/dev/null 2>&1; d
 sleep 2  # pg_isready passes during initdb's restart
 docker exec "$NAME-pg" psql -qU airflow -d airflow -c 'CREATE DATABASE wh' >/dev/null
 docker exec "$NAME-pg" psql -qU airflow -d wh -c "CREATE TABLE orders(id int, amount int); INSERT INTO orders VALUES (1,50),(2,150),(3,250)" >/dev/null
+# DTE gets its own database and role, with no way into Airflow's (plan 075).
+docker exec "$NAME-pg" psql -qU airflow -d airflow -c "CREATE ROLE dte LOGIN PASSWORD 'dte'" \
+  -c 'CREATE DATABASE dte OWNER dte' -c 'REVOKE CONNECT ON DATABASE airflow FROM PUBLIC' >/dev/null
+docker exec -e PGPASSWORD=dte "$NAME-pg" psql -h localhost -U dte -d airflow -c 'SELECT 1' >/dev/null 2>&1 \
+  && { echo "FAIL: the dte role can reach the airflow database"; exit 1; }
 
 MINIO_CONN=$(python3 -c "import json;print(json.dumps({'conn_type':'aws','login':'minioadmin','password':'minioadmin','extra':{'endpoint_url':'$MINIO'}}))")
 docker run -d --name "$NAME-af" --network "$NAME" -p "127.0.0.1:$PORT:8080" \
@@ -72,7 +77,7 @@ docker run -d --name "$NAME-af" --network "$NAME" -p "127.0.0.1:$PORT:8080" \
   -e AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE=/smoke/passwords.json \
   -e AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL=5 \
   -e "AIRFLOW_CONN_MINIO=$MINIO_CONN" \
-  -e DTE_DATABASE_URL=postgresql://airflow:airflow@$NAME-pg/airflow \
+  -e DTE_DATABASE_URL=postgresql://dte:dte@$NAME-pg/dte \
   -e DTE_ARTIFACT_DIR=/tmp/dte-artifacts \
   "apache/airflow:$AIRFLOW-python$PY" bash -c "
     set -e
@@ -190,5 +195,9 @@ run sftp; ids_in "$WORK/sftp/big.json" && check "SFTP read + write through the s
 run pg
 [ "$(docker exec "$NAME-pg" psql -tAU airflow -d wh -c 'SELECT id FROM public.big_orders ORDER BY id' | paste -sd, -)" = "2,3" ] \
   && check "Postgres -> Postgres through the postgres provider hook" || fail "postgres output"
+
+RUNS=$(get "/dte/api/pipelines/pg/runs")
+python3 -c "import json,sys;r=json.loads(sys.argv[1]);assert len(r)==1 and r[0]['status']=='completed' and r[0]['rows_written']==2,r" "$RUNS" \
+  && check "run history merges Airflow dag runs with DTE's own database" || fail "runs: $RUNS"
 
 echo "PASS"

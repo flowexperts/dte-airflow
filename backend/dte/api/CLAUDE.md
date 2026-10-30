@@ -55,5 +55,5 @@ POST   /api/eval-sets:for-pipeline        eval set derived from a pipeline (idem
 GET    /api/sweeps/{sweep_id}/comparison  configs side by side; works with no labels
 ```
 
-A **run** is an Airflow dag run of a `dte__*` DAG left-joined to `dte.run_results` (`PostgresRunStore._RUNS_SQL`). Status and timing come from `dag_run`; rows, quality, SQL, scores and per-step events come from the operator's `run_results` row. `status` is `pending`/`running`/`completed`/`completed_with_warnings`/`failed_quality`/`failed`.
+A **run** is an Airflow dag run of a `dte__*` DAG merged with its `dte.run_results` row (`PostgresRunStore`, `_merge`; dag runs come through Airflow's session, plan 075). Status and timing come from `dag_run`; rows, quality, SQL, scores and per-step events come from the operator's `run_results` row. `status` is `pending`/`running`/`completed`/`completed_with_warnings`/`failed_quality`/`failed`.
 

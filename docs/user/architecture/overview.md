@@ -24,7 +24,7 @@ In Airflow. Connections are Airflow connections (metadata DB, `AIRFLOW_CONN_*` v
 
 ## Storage layout
 
-- **Postgres** — Airflow's metadata database. dte's tables (`pipelines`, `sources`, `destinations`, `lookup_tables`, `run_results`, …) are in its `dte` schema; connections, users and run history are Airflow's own tables.
+- **Postgres** — dte's tables (`pipelines`, `sources`, `destinations`, `lookup_tables`, `run_results`, …) are in a `dte` schema of the database `DTE_DATABASE_URL` names: its own database, or Airflow's metadata database. Connections, users and run history stay in Airflow's tables; the api-server reads dag runs through Airflow and merges them with `run_results`.
 - **`/data` volume** — files served by the **Local files** connection.
 - **In-process** — an ephemeral DuckDB connection per pipeline run. Nothing persists here.
 

@@ -7,8 +7,9 @@ environment variable. To try DTE without an Airflow of your own, use the
 
 ## Requirements
 
-- Airflow 3.3 or later on Python 3.12, with a **Postgres** metadata database. DTE keeps
-  its tables in a `dte` schema in that database.
+- Airflow 3.3 or later on Python 3.12.
+- A **Postgres** database for DTE's tables (a `dte` schema). Its own database
+  is the recommended setup; Airflow's metadata database also works.
 - The package installed on every Airflow component: api-server, scheduler,
   dag-processor and workers.
 
@@ -54,15 +55,24 @@ lines as `RUN` steps.
 
 ## 2. Set `DTE_DATABASE_URL`
 
-Set it on every component, pointing at the metadata database:
+Set it on every component, pointing at a Postgres database for DTE. Give DTE
+its own database and role, with no access to Airflow's:
 
-```bash
-DTE_DATABASE_URL=postgresql://user:pass@host:5432/airflow
+```sql
+CREATE ROLE dte LOGIN PASSWORD '...';
+CREATE DATABASE dte OWNER dte;
 ```
 
-Airflow 3 hides its own database URL from DAG parsing and tasks. DTE reads its
-pipelines there, so it needs the URL passed explicitly. Without it, the DAG
-file fails to import with an error that names `DTE_DATABASE_URL`.
+```bash
+DTE_DATABASE_URL=postgresql://dte:...@host:5432/dte
+```
+
+DTE reads its pipelines in DAG parsing and tasks, where Airflow 3 hides its own
+database URL, so the URL has to be passed explicitly. Without it, the DAG file
+fails to import with an error that names `DTE_DATABASE_URL`. Run history still
+comes from Airflow: the api-server reads dag runs through Airflow's own session
+and merges them with DTE's results, so DTE's role never needs Airflow's tables.
+Pointing `DTE_DATABASE_URL` at Airflow's metadata database works too.
 
 Optional:
 

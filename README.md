@@ -16,7 +16,7 @@ AIRFLOW=3.3.2 PY=3.12
 curl -fsSLo constraints.txt \
   https://raw.githubusercontent.com/apache/airflow/constraints-$AIRFLOW/constraints-$PY.txt
 pip install dte-airflow --constraint constraints.txt
-export DTE_DATABASE_URL=postgresql://user:pass@host:5432/airflow   # Airflow's metadata DB
+export DTE_DATABASE_URL=postgresql://user:pass@host:5432/dte   
 dte db upgrade
 ```
 
