@@ -2,7 +2,7 @@ name: Deploy site
 
 on:
   push:
-    branches: [main]
+    branches: [main, dte-airflow]
     paths:
       - "site/**"
       - "docs/user/**"
@@ -38,4 +38,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: site
-          command: pages deploy out --project-name=dte-site
+          # main is the Pages production branch; any other branch gets a preview URL.
+          command: pages deploy out --project-name=dte-site --branch=${{ github.ref_name }}
