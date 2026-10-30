@@ -659,26 +659,28 @@ def _apply_profile(
 
     con = engine.con
     columns = list(step.get("columns") or [])
-    view_name = f"__profile_v_{idx}__"
+    view_name = f"__profile_v_{idx}__"  # internal constant + int index
     sql_str = ibis.to_sql(table)
     con.con.execute(f"CREATE OR REPLACE TEMP VIEW {view_name} AS {sql_str}")
 
     try:
         if not columns:
             schema_result = con.con.execute(
-                f"SELECT column_name FROM information_schema.columns WHERE table_name = '{view_name}'"
+                "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
+                [view_name],
             ).fetchall()
             columns = [row[0] for row in schema_result]
 
         for col in columns:
             try:
+                qcol = '"' + col.replace('"', '""') + '"'
                 stats = con.con.execute(
                     f"""SELECT COUNT(*) total,
-                               COUNT("{col}") non_null,
-                               COUNT(DISTINCT "{col}") distinct_count,
-                               MIN(CAST("{col}" AS VARCHAR)) min_val,
-                               MAX(CAST("{col}" AS VARCHAR)) max_val
-                        FROM {view_name}"""
+                               COUNT({qcol}) non_null,
+                               COUNT(DISTINCT {qcol}) distinct_count,
+                               MIN(CAST({qcol} AS VARCHAR)) min_val,
+                               MAX(CAST({qcol} AS VARCHAR)) max_val
+                        FROM {view_name}"""  # col is quoted; view_name internal  # nosec B608
                 ).fetchone()
                 detail_dict = {
                     "total": stats[0],

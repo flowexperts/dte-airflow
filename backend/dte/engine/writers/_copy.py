@@ -70,7 +70,7 @@ def copy_to(
     staged = f"_dte_staged_{next(_SEQ)}"
     scratch.con.register(f"{staged}_reader", reader)
     scratch.con.execute(
-        f"CREATE TABLE {_sql_ident(staged)} AS SELECT * FROM {_sql_ident(staged + '_reader')}"
+        f"CREATE TABLE {_sql_ident(staged)} AS SELECT * FROM {_sql_ident(staged + '_reader')}"  # quoted identifiers, escaped literals  # nosec B608
     )
     try:
         return _copy_from_duckdb(
@@ -117,9 +117,9 @@ def _copy_from_duckdb(
         created_view = True
 
     try:
-        (rows,) = raw.execute(f"SELECT COUNT(*) FROM {_sql_ident(view_name)}").fetchone()
+        (rows,) = raw.execute(f"SELECT COUNT(*) FROM {_sql_ident(view_name)}").fetchone()  # quoted identifiers, escaped literals  # nosec B608
         raw.execute(
-            f"COPY (SELECT * FROM {_sql_ident(view_name)}) TO {_sql_str(target)} ({format_clause})"
+            f"COPY (SELECT * FROM {_sql_ident(view_name)}) TO {_sql_str(target)} ({format_clause})"  # quoted identifiers, escaped literals  # nosec B608
         )
     finally:
         if created_view:
