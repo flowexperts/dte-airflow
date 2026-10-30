@@ -218,3 +218,5 @@
 .site .outcomes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
 @media (max-width: 980px) { .site .outcomes { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .site .outcomes { grid-template-columns: 1fr; } }
+.site .nav .gh { display: flex; opacity: .9; }
+.site .nav .gh:hover, .site .nav a:hover { opacity: 1; color: var(--hi); }
