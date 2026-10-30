@@ -141,9 +141,7 @@ export function LandingPage() {
               Data&nbsp;Transformation<br />Engine.
             </h1>
             <p className="lede lede-hero">
-              Build data pipelines without{" "}
-              <em>burning tokens</em> or <em>developer time</em>.
-              Every pipeline runs as an Airflow DAG.
+              Powered by <em>Apache Airflow</em>.
             </p>
             <div className="hero-ctas">
               <a href="#quickstart" className="btn primary">
