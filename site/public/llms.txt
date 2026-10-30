@@ -44,6 +44,7 @@ Pipelines. Guide: https://dte.flowexperts.ai/docs/self-hosting/install-plugin
 - **DTE vs Airbyte / Fivetran?** Those copy data as-is, as a separate service. DTE maps, joins and checks data inside the Airflow you already run.
 - **Airflow 2?** No. Airflow 3.3+ only. Batch, not streaming.
 - **Astronomer, MWAA, Cloud Composer?** Yes, any Airflow 3.3+ that lets you pip install `dte-airflow`.
+- **How much data?** One run is one Airflow task with DuckDB, so one worker's memory and disk. Millions of rows per run is comfortable; file-to-file goes furthest. Output capped at `DTE_RUN_MAX_ROWS` (default 10M).
 - **PDFs and invoices?** Extract text, then Structure fields with Claude, OpenAI or an offline regex provider.
 - **Paid support?** Yes, from flowexperts.ai, for running DTE and Airflow in production: https://cal.com/bhavaniravi/dte-demo-call
 

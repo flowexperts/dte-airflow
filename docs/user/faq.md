@@ -52,6 +52,19 @@ Yes. Trigger or wait on its `dte__<pipeline id>` DAG, or use `DtePipelineOperato
 
 A run is an Airflow task, so it runs on whatever executor Airflow uses: Local, Celery or Kubernetes. Cap concurrent runs with Airflow pools. See [Scaling and execution](self-hosting/scaling.md).
 
+## How much data can one run handle?
+
+One run is one Airflow task on one worker, with DuckDB as the engine, so the limit is that worker's memory and disk, not a cluster. Millions of rows per run is the comfortable range. Where the data sits matters more than its size:
+
+- **File sources** (local, S3, GCS, Azure, SFTP) are read in place by DuckDB, and **file destinations** are streamed out in batches, so files-to-files is the path that goes furthest.
+- **SQL sources** push filters, joins and aggregates down to the source database when the tables share a connection.
+- **SQL destinations** (Postgres, MySQL, SQL Server, Snowflake, BigQuery) hold the final result in worker memory before loading it. Size the worker for the output, not the input.
+- **MongoDB and REST API sources** are copied into the worker first.
+- **Extract text** and **Structure fields** work document by document; model calls, not bytes, set the pace.
+- A run writes at most `DTE_RUN_MAX_ROWS` rows (default 10,000,000).
+
+For more, filter early, give the task more memory (pod resources on Kubernetes), or split the work across runs, for example one per day.
+
 ## Is paid support available?
 
 Yes. flowexperts.ai, who build dte, offer paid support for running dte and Airflow in production. [Book a call](https://cal.com/bhavaniravi/dte-demo-call).
