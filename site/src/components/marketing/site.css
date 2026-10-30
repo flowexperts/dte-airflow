@@ -222,3 +222,4 @@
 .site .nav .gh { display: flex; opacity: .9; }
 .site .nav .gh:hover, .site .nav a:hover { opacity: 1; color: var(--hi); }
 .site #demo .how { margin-bottom: 40px; }
+.site .hero .kicker { color: var(--hi); font-size: 15px; font-weight: 600; margin-bottom: 16px; }

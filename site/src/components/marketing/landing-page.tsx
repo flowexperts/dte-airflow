@@ -19,6 +19,7 @@ export function LandingPage() {
           <div className="glyph" aria-hidden="true" />
           <div className="in">
             <div>
+              <p className="kicker">Data transformation engine</p>
               <h1>Visual pipeline builder <span className="hi">for Apache Airflow</span></h1>
               <p className="lede">
                 Stop hand-writing mapping DAGs. The people who know the data build the pipeline in
