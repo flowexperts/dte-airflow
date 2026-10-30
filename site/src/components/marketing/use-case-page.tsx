@@ -19,7 +19,7 @@ export function UseCasePage({ uc }: { uc: UseCase }) {
               <Link href="/#quickstart" className="btn primary">
                 Quickstart <span className="kbd">↵</span>
               </Link>
-              <Link href="/#demo" className="btn ghost">See the builder</Link>
+              <Link href="/docs/getting-started/02-first-pipeline/" className="btn ghost">See the builder</Link>
             </div>
           </div>
         </section>

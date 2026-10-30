@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CalEmbed } from "./cal-embed";
-import { DemoPlayer } from "./demo-player";
 import { SiteFooter, TopNav } from "./site-chrome";
 import { UseCaseCards } from "./use-case-cards";
 import { DOCS_URL, INSTALL_URL, REPO_URL } from "@/lib/site";
@@ -285,21 +284,6 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section id="demo" className="demo">
-        <div className="wrap">
-          <div className="section-head">
-            <div className="section-head-copy">
-              <h2>
-                Transformation Pipeline in minutes.{" "}<br className="brk" />No code, no scripts.
-              </h2>
-            </div>
-          </div>
-          <div className="demo-frame">
-            <DemoPlayer />
-          </div>
-        </div>
-      </section>
-
       <section id="quickstart" className="steps-section">
         <div className="wrap">
           <div className="section-head">
@@ -432,9 +416,6 @@ export function LandingPage() {
                 <span className="steps-card-hint">{t.sub}</span>
               </div>
             ))}
-          </div>
-          <div className="demo-frame">
-            <DemoPlayer src="dte-unstructured" label="Extracting invoices from PDFs" />
           </div>
         </div>
       </section>
