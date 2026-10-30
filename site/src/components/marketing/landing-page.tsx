@@ -20,7 +20,8 @@ export function LandingPage() {
           <div className="in">
             <div>
               <p className="kicker">Data transformation engine</p>
-              <h1>Visual Builder <span className="hi">for Apache Airflow Pipelines</span></h1>
+              <h1>Visual Builder <span className="hi">for Data &amp; AI pipelines</span></h1>
+              <p className="powered">Powered by Apache Airflow<sup>®</sup></p>
               <div className="ctas">
                 <a className="btn go" href={INSTALL_URL}>Install DTE in your Airflow</a>
                 <a className="btn ghost" href="#demo">Watch the demo</a>
