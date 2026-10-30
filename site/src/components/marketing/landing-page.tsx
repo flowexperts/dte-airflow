@@ -21,11 +21,6 @@ export function LandingPage() {
             <div>
               <p className="kicker">Data transformation engine</p>
               <h1>Visual Builder <span className="hi">for Apache Airflow Pipelines</span></h1>
-              <p className="lede">
-                Stop hand-writing mapping DAGs. The people who know the data build the pipeline in
-                the browser, from files, tables or even PDFs. Each one runs as a DAG in the Airflow
-                you already have.
-              </p>
               <div className="ctas">
                 <a className="btn go" href={INSTALL_URL}>Install DTE in your Airflow</a>
                 <a className="btn ghost" href="#demo">Watch the demo</a>
