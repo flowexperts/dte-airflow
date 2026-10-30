@@ -57,11 +57,13 @@ A run is an Airflow task, so it runs on whatever executor Airflow uses: Local, C
 One run is one Airflow task on one worker, with DuckDB as the engine, so the limit is that worker's memory and disk, not a cluster. Millions of rows per run is the comfortable range. Where the data sits matters more than its size:
 
 - **File sources** (local, S3, GCS, Azure, SFTP) are read in place by DuckDB, and **file destinations** are streamed out in batches, so files-to-files is the path that goes furthest.
-- **SQL sources** push filters, joins and aggregates down to the source database when the tables share a connection.
+- **SQL sources** (Postgres, MySQL, SQL Server, Snowflake, BigQuery) push filters, joins and aggregates down to the source database when the tables share a connection, so the input can be far larger than the worker.
 - **SQL destinations** (Postgres, MySQL, SQL Server, Snowflake, BigQuery) hold the final result in worker memory before loading it. Size the worker for the output, not the input.
 - **MongoDB and REST API sources** are copied into the worker first.
 - **Extract text** and **Structure fields** work document by document; model calls, not bytes, set the pace.
 - A run writes at most `DTE_RUN_MAX_ROWS` rows (default 10,000,000).
+
+**Trino (experimental).** Set `DTE_TRINO_ENABLED=true` and a pipeline can run its transforms on a Trino cluster instead of DuckDB. It is early: raw SQL filters, expression maps, pivot and the PDF steps aren't supported on it, and the output is still written from the worker.
 
 For more, filter early, give the task more memory (pod resources on Kubernetes), or split the work across runs, for example one per day.
 
