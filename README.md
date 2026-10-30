@@ -21,7 +21,7 @@ dte db upgrade
 ```
 
 Then drop the one-line DAG file into your DAGs folder and restart Airflow. Full
-steps, extras and environment: [Install into your own Airflow](./docs/user/self-hosting/install-plugin.md).
+steps, extras and environment: [Install into your own Airflow](https://dte.flowexperts.ai/docs/self-hosting/install-plugin).
 
 DTE is under **Plugins ▸ DTE Pipelines** in Airflow's left nav (Transform, Quality
 Check); sources, destinations and lookup tables are under **Admin**. Eval and
@@ -77,7 +77,7 @@ Three tiers — run only what the change touches:
 pipelines through Airflow, each through its provider: MinIO (S3, amazon),
 Azurite (Azure, microsoft-azure), fake-gcs-server (GCS, google), an SFTP server
 (sftp) and Postgres (postgres). See
-[Install into your own Airflow](./docs/user/self-hosting/install-plugin.md).
+[Install into your own Airflow](https://dte.flowexperts.ai/docs/self-hosting/install-plugin).
 
 ## Features
 
@@ -182,10 +182,13 @@ Airflow's `[core] test_connection`).
 
 ## Docs
 
-- **[User guide](./docs/user/README.md)** — start here if you're using the app.
-- **[Install into your Airflow](./docs/user/self-hosting/install-plugin.md)** — the pip install.
-- **[Try it with Docker Compose](./docs/user/self-hosting/install.md)** — local stack.
-- **[Architecture](./docs/user/architecture/overview.md)** — how it fits together.
+Full documentation: **[dte.flowexperts.ai/docs](https://dte.flowexperts.ai/docs/)**. The source lives in
+[`docs/user/`](./docs/user/); edits there publish on merge to `main`.
+
+- **[User guide](https://dte.flowexperts.ai/docs/)** — start here if you're using the app.
+- **[Install into your Airflow](https://dte.flowexperts.ai/docs/self-hosting/install-plugin)** — the pip install.
+- **[Try it with Docker Compose](https://dte.flowexperts.ai/docs/self-hosting/install)** — local stack.
+- **[Architecture](https://dte.flowexperts.ai/docs/architecture/overview)** — how it fits together.
 
 ## Contributing and security
 
