@@ -153,3 +153,11 @@ So `notify_conn_id` and its smtp/Slack-only code were removed from the schedule,
 
 Retries and timeout stay on the schedule for now, even though they too apply to
 manual runs.
+
+## Revision: a form, not JSON
+
+The params JSON editor became one field per notifier argument, from `/api/notifiers`'
+signature: required ones, `*_conn_id`, recipients, subject and message up front, the rest
+under "More options". Blank fields are omitted, so the notifier's default applies. A value
+that parses as a JSON list or object is sent as one (`cc`, Slack `blocks`).
+Branch `feature/notify-form`; `components/builder/notifications/params.ts` (+ test).
