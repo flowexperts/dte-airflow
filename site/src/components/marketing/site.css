@@ -220,3 +220,4 @@
 @media (max-width: 560px) { .site .outcomes { grid-template-columns: 1fr; } }
 .site .nav .gh { display: flex; opacity: .9; }
 .site .nav .gh:hover, .site .nav a:hover { opacity: 1; color: var(--hi); }
+.site #demo .how { margin-bottom: 40px; }
