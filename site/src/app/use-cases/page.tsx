@@ -4,15 +4,12 @@ import { InstallBox, SiteFooter, TopNav } from "@/components/marketing/site-chro
 import { PageHero } from "@/components/marketing/page-hero";
 import { PipelineCard } from "@/components/marketing/pipeline-card";
 import { USE_CASES } from "@/lib/use-cases";
+import { pageMeta } from "@/lib/site";
 
 const LEDE =
   "Five pipelines, each built in the browser by the team that owns the numbers. Every one ends in a check, so bad data fails the run instead of reaching the report.";
 
-export const metadata: Metadata = {
-  title: "Use cases",
-  description: LEDE,
-  alternates: { canonical: "/use-cases/" },
-};
+export const metadata: Metadata = pageMeta("Use cases", LEDE, "/use-cases/");
 
 export default function Page() {
   return (

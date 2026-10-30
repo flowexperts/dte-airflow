@@ -1,3 +1,4 @@
+import { isValidElement, type ReactNode } from "react";
 import { DemoVideo } from "./demo-video";
 import { HeroDemo } from "./hero-demo";
 import { CAL_LINK, InstallBox, SiteFooter, TopNav } from "./site-chrome";
@@ -10,6 +11,24 @@ const FAQ = [
   ["Where does it sit next to dbt?", <>dbt models data that&apos;s already in your warehouse. DTE gets it there: files, APIs and PDFs, mapped and checked on the way in.</>],
   ["What does it cost?", <>Nothing. DTE is open source under Apache-2.0, and the code is on <a href={REPO_URL}>GitHub</a>. If you want help running it, or Airflow itself, in production, that&apos;s what flowexperts.ai does.</>],
 ] as const;
+
+/** Plain text of an FAQ answer, for the FAQPage JSON-LD. */
+function text(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(text).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return text(node.props.children);
+  return "";
+}
+
+const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQ.map(([q, a]) => ({
+    "@type": "Question",
+    name: q,
+    acceptedAnswer: { "@type": "Answer", text: text(a) },
+  })),
+};
 
 export function LandingPage() {
   return (
@@ -86,6 +105,10 @@ export function LandingPage() {
         </div></section>
         <section className="s" id="faq"><div className="in">
           <h2>FAQ</h2>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+          />
           <div className="faq">
             {FAQ.map(([q, a], i) => (
               <details key={q} open={i === 0}><summary>{q}</summary><p>{a}</p></details>
