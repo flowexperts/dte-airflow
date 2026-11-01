@@ -333,7 +333,9 @@ def _merge_rest_credentials(config: dict, credentials: dict) -> dict:
     resolved = copy.deepcopy(config)
     client = resolved.setdefault("client", {})
     for key in ("auth", "headers"):
-        if key in credentials and isinstance(credentials[key], dict):
+        # Skip empty dicts: dlt reads any `auth` dict as bearer, so an
+        # unauthenticated http connection's `{}` failed on a missing token.
+        if isinstance(credentials.get(key), dict) and credentials[key]:
             merged = dict(client.get(key) or {})
             for k, v in credentials[key].items():
                 merged[k] = resolve_secret(v)
