@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import os
 import tempfile
 from collections.abc import Callable
@@ -296,9 +297,13 @@ def _load_rest_api(
         raise ValueError("rest_api source produced no resources")
     resource = resources[0].with_name(source.table)
     if sample:
-        # Rows, not pages; dlt keeps the whole last page. The time cap
-        # bounds an API that pages slowly or returns empty pages forever.
+        # The limit stops paginating (and caps an API that pages slowly or
+        # returns empty pages forever); it never trims inside a page. The
+        # filter does: a single-page source (PyPI's simple index, ~700k
+        # rows) otherwise normalises every row for a 20-row preview.
         resource.add_limit(max_items=sample, max_time=SAMPLE_MAX_SECONDS, count_rows=True)
+        seen = itertools.count()
+        resource.add_filter(lambda _row: next(seen) < sample)
     return _run_dlt_hop(source.id, resource, con, source.table)
 
 

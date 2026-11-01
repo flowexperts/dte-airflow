@@ -26,10 +26,12 @@ def paged_api():
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            page = int(parse_qs(urlparse(self.path).query).get("page", ["1"])[0])
+            q = parse_qs(urlparse(self.path).query)
+            page = int(q.get("page", ["1"])[0])
+            per_page = int(q.get("per_page", [PER_PAGE])[0])
             served.append(page)
             rows = [] if page > PAGES else [
-                {"id": (page - 1) * PER_PAGE + i, "page": page} for i in range(PER_PAGE)
+                {"id": (page - 1) * per_page + i, "page": page} for i in range(per_page)
             ]
             body = json.dumps({"data": rows}).encode()
             self.send_response(200)
@@ -72,6 +74,17 @@ def test_rest_api_sample_stops_paginating(paged_api):
     # dlt counts rows per page and does not trim the last one: 2 pages.
     assert 15 <= len(df) <= 2 * PER_PAGE
     assert len(served) <= 3
+
+
+def test_rest_api_sample_trims_a_single_huge_page(paged_api):
+    """PyPI's simple index is one page of ~700k projects: no page boundary
+    to stop at, and normalising every row was most of a 50 s preview."""
+    base_url, _ = paged_api
+    src = _rest_source(base_url)
+    src.config["client"]["paginator"] = "single_page"
+    src.config["resources"][0]["endpoint"]["path"] = "items?page=1&per_page=500"
+    df = load_source(src, ibis.duckdb.connect(), {}, sample=15).execute()
+    assert len(df) == 15
 
 
 def test_concurrent_loads_of_one_source_do_not_collide(paged_api):
