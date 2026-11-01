@@ -1199,18 +1199,24 @@ WriteStep = Annotated[
 ]
 
 
-# Which ops each pipeline type may hold. The validator enforces it and the
-# builder's "Add step" menu reads it (`GET /api/allowed-ops`), so the two
-# cannot drift.
-#  - quality: aggregate/pivot would collapse the rows the checks assert on.
-#  - transform/eval: check/profile report results instead of shaping rows;
-#    they belong in a quality pipeline.
-#  - eval additionally needs a structure step; that is a "must have", not an
-#    "may have", so it stays in the validator.
+# Which ops each pipeline type may hold. The validator enforces it on save
+# and the builder's "Add step" menu reads it (`GET /api/allowed-ops`), so the
+# two cannot drift. These are the builder menus as they were before the table
+# existed, now enforced on save too.
+#  - quality asserts on rows: its checks plus the ops that pick and line up
+#    the rows to check (filter, rename, select, join).
+#  - transform/eval: check/profile report results instead of shaping rows.
+#  - eval: no aggregate/pivot either — scoring aggregates the corpus itself,
+#    and a pipeline-level aggregate collapses the rows labels join against.
+#    Eval also needs a structure step; that is a "must have", so it stays in
+#    the validator.
+#  - viz: anything.
+# Reads stay lenient: a row saved before a rule tightened still loads and
+# compiles; only a re-save hits the rule.
 ALLOWED_OPS: dict[str, frozenset[str]] = {
     "transform": STEP_OPS - {"check", "profile"},
-    "quality": STEP_OPS - {"aggregate", "pivot"},
-    "eval": STEP_OPS - {"check", "profile"},
+    "quality": frozenset({"check", "profile", "filter", "rename", "select", "join"}),
+    "eval": STEP_OPS - {"check", "profile", "aggregate", "pivot"},
     "viz": STEP_OPS,
 }
 

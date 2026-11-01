@@ -92,20 +92,72 @@ def test_allowed_ops_covers_every_pipeline_type():
     assert ALLOWED_OPS["viz"] == STEP_OPS
 
 
-@pytest.mark.parametrize("ptype,op", [
-    ("quality", "aggregate"), ("quality", "pivot"),
-    ("transform", "check"), ("transform", "profile"),
-    ("eval", "check"), ("eval", "profile"),
-])
+# The old builder menus, now the one rule set (save enforces it).
+_EXPECTED = {
+    "quality": {"check", "profile", "filter", "rename", "select", "join"},
+    "eval": STEP_OPS - {"check", "profile", "aggregate", "pivot"},
+    "transform": STEP_OPS - {"check", "profile"},
+    "viz": STEP_OPS,
+}
+
+
+def test_allowed_ops_match_the_old_builder_menus():
+    assert ALLOWED_OPS == _EXPECTED
+
+
+_STRUCTURE = next(s for s in _EXAMPLES if s["op"] == "structure")
+_DISALLOWED = [(t, op) for t in ("quality", "eval", "transform") for op in sorted(STEP_OPS - _EXPECTED[t])]
+
+
+@pytest.mark.parametrize("ptype,op", _DISALLOWED)
 def test_validator_enforces_allowed_ops(ptype, op):
     step = next(s for s in _EXAMPLES if s["op"] == op)
+    extra = [_STRUCTURE] if ptype == "eval" else []
     with pytest.raises(ValidationError, match=f"not allowed in {ptype} pipelines"):
-        _pipeline([step], ptype)
+        _pipeline([step, *extra], ptype)
 
 
 def test_quality_still_takes_check_and_transform_still_takes_filter():
     _pipeline([{"op": "check", "expr": "a > 0"}], "quality")
     _pipeline([{"op": "filter", "expr": "a > 0"}], "transform")
+
+
+@pytest.mark.parametrize("ptype,op", [("quality", "sort"), ("eval", "aggregate"), ("transform", "check")])
+def test_api_save_rejects_a_disallowed_op_with_422(ptype, op):
+    step = next(s for s in _EXAMPLES if s["op"] == op)
+    steps = [step, _STRUCTURE] if ptype == "eval" else [step]
+    body = {"id": "p", "name": "p", "sources": ["s"], "steps": steps,
+            "pipeline_type": ptype, "output_id": "o"}
+    c = TestClient(app)
+    for r in (c.post("/api/pipelines", json=body), c.put("/api/pipelines/p", json=body)):
+        assert r.status_code == 422, r.text
+        assert f"not allowed in {ptype} pipelines" in r.text
+
+
+def test_old_revision_with_a_now_disallowed_op_still_loads():
+    """Lenient read: rows saved before the rule tightened keep loading and
+    compiling; only a re-save hits the rule."""
+    import asyncio
+
+    from dte.api.deps import get_pipeline_store
+    from dte.models.pipeline import Pipeline
+    from tests.fakes import FakePipelineStore
+
+    steps = [{"op": "sort", "by": ["a"]},
+             {"op": "aggregate", "group_by": ["a"],
+              "aggregations": [{"field": "b", "func": "sum", "alias": "s"}]}]
+    store = FakePipelineStore()
+    asyncio.get_event_loop().run_until_complete(store.save(Pipeline(
+        id="old", name="old", sources=["s"], pipeline_type="quality", steps=steps)))
+    app.dependency_overrides[get_pipeline_store] = lambda: store
+    try:
+        c = TestClient(app)
+        assert c.get("/api/pipelines/old").json()["steps"] == steps
+        assert c.get("/api/pipelines").status_code == 200
+        assert c.get("/api/pipelines/old/schedule").status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_pipeline_store, None)
+    assert [type(parse_step(s)).__name__ for s in steps] == ["SortStep", "AggregateStep"]
 
 
 def test_eval_still_needs_a_structure_step():
@@ -115,4 +167,4 @@ def test_eval_still_needs_a_structure_step():
 
 def test_allowed_ops_endpoint():
     body = TestClient(app).get("/api/allowed-ops").json()
-    assert body == {k: sorted(v) for k, v in ALLOWED_OPS.items()}
+    assert body == {k: sorted(v) for k, v in _EXPECTED.items()}

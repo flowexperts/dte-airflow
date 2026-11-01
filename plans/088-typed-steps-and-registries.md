@@ -49,16 +49,20 @@
   the JSONB (no spurious revision diffs) and every dict consumer is untouched.
   The compiler parses with `parse_step`.
 - **`ALLOWED_OPS: dict[pipeline_type, set[op]]`** lives next to the union and
-  is the only place op-per-type rules live:
-  - quality: everything but `aggregate`, `pivot` (existing rule);
-  - transform, eval: everything but `check`, `profile` (the rule plan 086
-    adds to the validator — encoded here so the merge is a superset);
+  is the only place op-per-type rules live. It is the builder's old op menus,
+  now also enforced on save (user decision):
+  - quality: only `check`, `profile`, `filter`, `rename`, `select`, `join`;
+  - eval: everything but `check`, `profile`, `aggregate`, `pivot`;
+  - transform: everything but `check`, `profile` (a superset of the rule
+    plan 086 adds to the validator);
   - viz: everything.
   The eval "needs a structure step" rule stays in the validator (it is a
-  must-have, not a may-have). The backend validator enforces the table;
-  `GET /api/allowed-ops` exposes it, and the builder's op menus
+  must-have, not a may-have). The backend validator enforces the table on
+  POST/PUT (422); `GET /api/allowed-ops` exposes it, and the builder's op menus
   (`pipeline/steps-column.tsx`, `builder/steps/StepsPanel.tsx`) use it in
-  place of their hand-written filters.
+  place of their hand-written filters. Reads stay lenient: a pipeline or
+  revision saved before a rule tightened still loads (GET, list, schedule)
+  and compiles; only a re-save is refused.
 - **Type generation needs no server.** `gen-api-types.sh` dumps
   `app.openapi()` from Python and feeds that to openapi-typescript.
 
