@@ -162,3 +162,34 @@ def test_url_column_must_exist(api):
     with pytest.raises(CompilerError, match="nope"):
         _run(base, ["requests"], url=base + "/pypi/{nope}/json")
     assert hits == []
+
+
+def test_two_lookups_keep_separate_meta(api):
+    """The squat scan chains two lookups (PyPI, then pypistats); one shared
+    `http_meta` column let the second overwrite the first's status."""
+    base, _ = api
+    engine = DuckDBEngine()
+    engine.con.create_table("pkgs", ibis.memtable({"name": ["requests"]}).to_pyarrow())
+    steps = [
+        {"op": "http_lookup", "url": base + "/pypi/{name}/json",
+         "fields": [FIELDS[0]]},
+        {"op": "http_lookup", "url": base + "/pypi/missing-{name}/json",
+         "fields": [{"name": "other", "path": "info.summary", "type": "string"}],
+         "meta_field": "stats_meta"},
+    ]
+    pipeline = Pipeline(id="p", name="p", sources=["pkgs"], output_id="o", steps=steps)
+    row = compile_pipeline(pipeline, {"pkgs": engine.con.table("pkgs")}, engine=engine).execute().iloc[0]
+    assert json.loads(row["http_meta"])["status"] == 200
+    assert json.loads(row["stats_meta"])["status"] == 404
+
+
+def test_meta_field_must_not_clash_with_a_field():
+    from pydantic import ValidationError
+
+    from dte.models.pipeline import HttpLookupStep
+
+    with pytest.raises(ValidationError, match="meta_field"):
+        HttpLookupStep.model_validate({
+            "op": "http_lookup", "url": "http://x/{name}", "meta_field": "summary",
+            "fields": [FIELDS[0]],
+        })

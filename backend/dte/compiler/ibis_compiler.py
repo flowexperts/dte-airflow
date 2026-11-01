@@ -567,16 +567,16 @@ def _apply_http_lookup(
         nulls = [c for c in columns if row.get(c) is None]
         if nulls:
             meta = {"status": None, "cached": False, "error": f"null {nulls} in url", "ms": 0}
-            return [{**blank, "http_meta": json.dumps(meta)}]
+            return [{**blank, step.meta_field: json.dumps(meta)}]
         payload, meta = _fetch(_render(row))
         body = payload.get("body")
         values = blank if body is None else {
             f.name: _coerce_http_value(paths[f.name].search(body), f.type) for f in step.fields
         }
-        return [{**values, "http_meta": json.dumps(meta)}]
+        return [{**values, step.meta_field: json.dumps(meta)}]
 
     out_schema = {f.name: "VARCHAR" for f in step.fields}
-    out_schema["http_meta"] = "VARCHAR"  # JSON-encoded; see _mapper
+    out_schema[step.meta_field] = "VARCHAR"  # JSON-encoded; see _mapper
     result = engine.apply_enrichment(
         table, EnrichmentSpec(name=f"http_lookup_{idx}", mapper=_mapper, output_schema=out_schema),
     )

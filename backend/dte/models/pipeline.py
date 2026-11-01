@@ -979,6 +979,10 @@ class HttpLookupStep(BaseModel):
     fields: list[HttpLookupField]
     max_rows: int = Field(500, ge=1)
     on_error: Literal["null", "fail"] = "null"
+    # Column for the per-row JSON status (status, cached, error, ms). Two
+    # lookups in one pipeline need different names or the second overwrites
+    # the first's.
+    meta_field: str = "http_meta"
 
     @model_validator(mode="after")
     def _validate(self) -> HttpLookupStep:
@@ -998,6 +1002,10 @@ class HttpLookupStep(BaseModel):
         dupes = sorted({n for n in names if names.count(n) > 1})
         if dupes:
             raise ValueError(f"duplicate field names: {dupes}")
+        if not _IDENT_RE.match(self.meta_field) or self.meta_field in names:
+            raise ValueError(
+                f"meta_field {self.meta_field!r} must be an identifier and not one of the fields"
+            )
         for f in self.fields:
             try:
                 jmespath.compile(f.path)
