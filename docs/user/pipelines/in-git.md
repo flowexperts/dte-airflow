@@ -59,3 +59,12 @@ dte run pipelines/big_orders.yaml --sample 100
 Environments differ only in their Airflow Connections. The pipeline file doesn't change. To promote, copy the file into the other environment's `DTE_PIPELINES_DIR`, by merging a branch or copying it in a deploy step. The dag-processor picks it up on its next parse.
 
 Make sure the sources and destinations the file names exist in the target environment with the same ids.
+
+## The `dte` command
+
+| Command | Does |
+| --- | --- |
+| `dte db upgrade` | Migrates dte's `dte` schema. Needs `DTE_DATABASE_URL`. See [Upgrading](../self-hosting/upgrading.md). |
+| `dte validate <file>...` | Checks pipeline files; non-zero exit if any fails. |
+| `dte run <file> [--sample N] [--refs DIR]` | Runs one file locally, no database or Airflow services. Exits non-zero on `failed_quality`. |
+| `dte export [--out DIR]` | Writes every pipeline, source and destination from the database as files (default `pipelines/`). |
