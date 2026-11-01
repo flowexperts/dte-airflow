@@ -36,6 +36,7 @@ from dte.api.deps import (
     get_run_store,
     get_source_store,
 )
+from dte.api.interactive import run_interactive
 from dte.compiler.dialect_notes import (
     SOURCE_DIALECT,
     execution_dialect_of,
@@ -51,7 +52,7 @@ from dte.compiler.interpolate import (
     resolve_context,
 )
 from dte.engine.backend_registry import BackendRegistry
-from dte.engine.duckdb_engine import DuckDBEngine  # noqa: F401 — still used as type hint fallback
+from dte.engine.duckdb_engine import DuckDBEngine
 from dte.logging import decrypt_context_var, get_logger
 from dte.models.pipeline import (
     Connection,
@@ -720,6 +721,54 @@ async def _resolve_sources(
     return sources
 
 
+def _load_compile(
+    pipeline: Pipeline,
+    sources,
+    destination,
+    lookups,
+    *,
+    sample: int | None = None,
+    on_tables=None,
+    **callbacks,
+) -> dict | None:
+    """Load sources, compile, and with `sample` execute that many rows.
+
+    Sync, and owns the DuckDB connection from creation to last read — call it
+    through `run_interactive` (plan 084), never inline in a route. A load or
+    compile failure raises; an execution failure is the returned `error`,
+    matching what the preview body has always reported.
+    """
+    engine = DuckDBEngine()
+    registry = BackendRegistry(duckdb_con=engine.con)
+    tables = {
+        ref.alias: load_source(s, registry, conn, creds, table=ref.table)
+        for ref, s, conn, creds in sources
+    }
+    # Fired before compilation, so a caller still learns which backend
+    # the pipeline runs on when a later step fails to compile — that is
+    # exactly when the editor most needs to explain itself.
+    if on_tables is not None:
+        on_tables(tables)
+    compiled = compile_pipeline(
+        pipeline, tables,
+        output=destination.config if destination else None,
+        lookup_tables=lookups, engine=engine, **callbacks,
+    )
+    if sample is None:
+        return None
+    out: dict = {"rows": [], "final_sql": None, "error": None}
+    try:
+        out["final_sql"] = str(ibis.to_sql(compiled.limit(sample), dialect=getattr(engine, "dialect", "duckdb")))
+    except Exception:
+        pass
+    try:
+        df = compiled.limit(sample).execute()
+        out["rows"] = json.loads(df.to_json(orient="records", date_format="iso"))
+    except Exception as e:
+        out["error"] = str(e)
+    return out
+
+
 async def _compile_body_pipeline(
     body: PipelineBase,
     s_store: SourceStore,
@@ -732,12 +781,13 @@ async def _compile_body_pipeline(
     on_step=None,
     on_tables=None,
     params: dict[str, str] | None = None,
-):
+    sample: int | None = None,
+) -> dict | None:
     """Shared plumbing for endpoints that compile an unsaved pipeline body.
 
     Resolves source/destination/connection/lookup refs from the given
-    body, loads sources into a fresh DuckDBEngine, then compiles.  Returns
-    `(compiled_table, destination)` — caller decides how to consume it.
+    body, then loads, compiles and (with `sample`) executes in a thread via
+    `_load_compile`, whose result it returns.
     Compile errors bubble up as `HTTPException(422, str(e))`.
 
     `on_step_schema` is forwarded to :func:`compile_pipeline` (plan 038
@@ -759,29 +809,15 @@ async def _compile_body_pipeline(
         else:
             sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
         lookups = await _resolve_lookups(pipeline, lt_store)
-        engine = DuckDBEngine()
-        registry = BackendRegistry(duckdb_con=engine.con)
-        tables = {
-            ref.alias: load_source(s, registry, conn, creds, table=ref.table)
-            for ref, s, conn, creds in sources
-        }
-        # Fired before compilation, so a caller still learns which backend
-        # the pipeline runs on when a later step fails to compile — that is
-        # exactly when the editor most needs to explain itself.
-        if on_tables is not None:
-            on_tables(tables)
-        compiled = compile_pipeline(
-            pipeline, tables,
-            output=destination.config if destination else None,
-            lookup_tables=lookups, on_step_schema=on_step_schema,
+        return await run_interactive(
+            _load_compile, pipeline, sources, destination, lookups,
+            sample=sample, on_tables=on_tables, on_step_schema=on_step_schema,
             on_step_sql=on_step_sql, on_step=on_step,
-            engine=engine,
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
-    return compiled, destination, engine
 
 
 @router.post("/pipelines/step-schemas", dependencies=[Depends(requires("pipeline:read"))])
@@ -886,8 +922,7 @@ async def dry_run_pipeline(
         step_sqls[idx] = sql
 
     error: str | None = None
-    compiled = None
-    engine = None
+    sampled: dict = {}
     try:
         parsed_params = _parse_params_query(params)
     except HTTPException as e:
@@ -895,27 +930,18 @@ async def dry_run_pipeline(
         parsed_params = None
     if error is None:
         try:
-            compiled, _, engine = await _compile_body_pipeline(
+            sampled = await _compile_body_pipeline(
                 body, s_store, d_store, c_store, lt_store,
                 on_step_sql=_capture_sql,
                 params=parsed_params,
+                sample=limit,
             )
+            error = sampled["error"]
         except HTTPException as e:
             error = str(e.detail)
 
-    rows: list = []
-    final_sql: str | None = None
-    if compiled is not None:
-        dialect = getattr(engine, "dialect", "duckdb")
-        try:
-            final_sql = str(ibis.to_sql(compiled.limit(limit), dialect=dialect))
-        except Exception:
-            final_sql = None
-        try:
-            df = compiled.limit(limit).execute()
-            rows = json.loads(df.to_json(orient="records", date_format="iso"))
-        except Exception as e:
-            error = str(e)
+    rows: list = sampled.get("rows", [])
+    final_sql: str | None = sampled.get("final_sql")
 
     return {
         "rows": rows,
@@ -952,8 +978,7 @@ async def preview_pipeline(
     # missing `output_id` it is never supposed to have.
     needs_output = pipeline_requires_output(pipeline)
     error: str | None = None
-    compiled = None
-    engine = None
+    sampled: dict = {}
     try:
         parsed_params = _parse_params_query(params)
         pipeline = interpolate_pipeline(pipeline, resolve_context(pipeline, parsed_params))
@@ -967,35 +992,18 @@ async def preview_pipeline(
         # (postgres source → postgres pushdown). DuckDBEngine here is just
         # the writer glue + raw-SQL rejection helper; the actual per-source
         # execution locus is picked by BackendRegistry.
-        engine = DuckDBEngine()
-        registry = BackendRegistry(duckdb_con=engine.con)
-        tables = {
-            ref.alias: load_source(s, registry, conn, creds, table=ref.table)
-            for ref, s, conn, creds in sources
-        }
-        compiled = compile_pipeline(
-            pipeline, tables,
-            output=destination.config if destination else None,
-            lookup_tables=lookups, engine=engine, on_step_sql=_capture_sql,
+        sampled = await run_interactive(
+            _load_compile, pipeline, sources, destination, lookups,
+            sample=limit, on_step_sql=_capture_sql,
         )
+        error = sampled["error"]
     except HTTPException:
         raise
     except Exception as e:
         error = str(e)
 
-    rows: list = []
-    final_sql: str | None = None
-    if compiled is not None:
-        dialect = getattr(engine, "dialect", "duckdb")
-        try:
-            final_sql = str(ibis.to_sql(compiled.limit(limit), dialect=dialect))
-        except Exception:
-            final_sql = None
-        try:
-            df = compiled.limit(limit).execute()
-            rows = json.loads(df.to_json(orient="records", date_format="iso"))
-        except Exception as e:
-            error = str(e)
+    rows: list = sampled.get("rows", [])
+    final_sql: str | None = sampled.get("final_sql")
 
     return {
         "rows": rows,
@@ -1079,15 +1087,10 @@ async def materialise_pipeline_rows(
     decrypt_context_var.set("pipeline_preview")
     sources = await _resolve_sources(pipeline, s_store, c_store)
     lookups = await _resolve_lookups(pipeline, lt_store)
-    engine = DuckDBEngine()
-    registry = BackendRegistry(duckdb_con=engine.con)
-    tables = {
-            ref.alias: load_source(s, registry, conn, creds, table=ref.table)
-            for ref, s, conn, creds in sources
-        }
-    compiled = compile_pipeline(pipeline, tables, lookup_tables=lookups, engine=engine)
-    df = compiled.limit(limit).execute()
-    return json.loads(df.to_json(orient="records", date_format="iso"))
+    sampled = await run_interactive(_load_compile, pipeline, sources, None, lookups, sample=limit)
+    if sampled["error"]:
+        raise RuntimeError(sampled["error"])
+    return sampled["rows"]
 
 
 @router.post("/pipelines/{pipeline_id}/trigger", dependencies=[Depends(requires("pipeline:trigger"))])
