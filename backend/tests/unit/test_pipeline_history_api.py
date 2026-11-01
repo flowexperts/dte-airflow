@@ -139,3 +139,25 @@ def test_diff_endpoint_pairs_yaml_lines_side_by_side(client):
     assert all(r["kind"] == "equal" or r["a"] != r["b"] for r in rows)
     same = c.get(f"/api/pipelines/p_hist/diff?from={revs[0].id}&to={revs[0].id}").json()
     assert same["yaml_diff"] == []
+
+
+def test_diff_marks_steps_by_content_not_position():
+    from dte.pipelines.diff import step_marks
+    a, b, c, d = ({"op": "sort", "by": [x]} for x in "abcd")
+    # insert at the front: only the new step is marked, not every later one
+    assert step_marks([a, b], [d, a, b]) == {"added": [0], "changed": [], "removed": []}
+    # b edited, c removed (it sat where after-index 2 now is)
+    b2 = {"op": "sort", "by": ["b2"]}
+    assert step_marks([a, b, c], [a, b2]) == {
+        "added": [], "changed": [1], "removed": [{"at": 2, "step": c}],
+    }
+    assert step_marks([a], [a]) == {"added": [], "changed": [], "removed": []}
+
+
+def test_diff_endpoint_returns_step_marks(client):
+    c, stores = client
+    c.post("/api/pipelines", json=_pipeline(name="v0"))
+    c.put("/api/pipelines/p_hist", json=_pipeline(name="v1", steps=[{"op": "sort", "by": ["x"]}]))
+    revs = _run(stores["pipeline_revision"].list_for_pipeline("p_hist"))
+    body = c.get(f"/api/pipelines/p_hist/diff?from={revs[1].id}&to={revs[0].id}").json()
+    assert body["step_marks"]["added"] == [0]

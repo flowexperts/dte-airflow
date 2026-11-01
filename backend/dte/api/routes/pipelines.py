@@ -70,7 +70,7 @@ from dte.models.pipeline import (
     pipeline_requires_output,
 )
 from dte.models.user import User
-from dte.pipelines.diff import diff_pipeline, side_by_side, summarise_diff
+from dte.pipelines.diff import diff_pipeline, side_by_side, step_marks, summarise_diff
 from dte.security.permissions import requires
 from dte.sources.sample import load_interactive
 from dte.store.base import (
@@ -646,6 +646,7 @@ async def diff_pipeline_revisions(
         "diff": diff,
         "summary": summarise_diff(diff),
         "yaml_diff": side_by_side(dump_yaml(a.config), dump_yaml(b.config)),
+        "step_marks": step_marks(a.config.get("steps"), b.config.get("steps")),
     }
 
 

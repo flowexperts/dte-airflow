@@ -10,6 +10,7 @@ Output is JSON-serialisable so the API can return it directly.
 from __future__ import annotations
 
 import difflib
+import json
 from typing import Any, TypedDict
 
 
@@ -95,6 +96,26 @@ def diff_pipeline(before: dict[str, Any], after: dict[str, Any]) -> PipelineDiff
         "output_id_after": output_after,
         "steps": steps,
     }
+
+
+def step_marks(before: list[dict] | None, after: list[dict] | None) -> dict:
+    """Which of `after`'s steps are new or edited, and which `before` steps
+    are gone, matched by content (difflib) — so inserting one step marks one
+    step, where `diff_pipeline`'s positional diff marks every step after it.
+
+    `removed[].at` is the after-index the removed step would sit before
+    (`len(after)` for the end)."""
+    before, after = before or [], after or []
+    key = [json.dumps(s, sort_keys=True) for s in before], [json.dumps(s, sort_keys=True) for s in after]
+    marks: dict = {"added": [], "changed": [], "removed": []}
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, *key, autojunk=False).get_opcodes():
+        if tag == "equal":
+            continue
+        paired = min(i2 - i1, j2 - j1) if tag == "replace" else 0
+        marks["changed"] += range(j1, j1 + paired)
+        marks["added"] += range(j1 + paired, j2)
+        marks["removed"] += [{"at": j2, "step": before[i]} for i in range(i1 + paired, i2)]
+    return marks
 
 
 def side_by_side(before: str, after: str, context: int = 3) -> list[list[dict]]:

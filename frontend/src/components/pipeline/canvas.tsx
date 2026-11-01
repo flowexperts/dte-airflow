@@ -45,7 +45,7 @@ import {
 } from "./helpers";
 import { StepsColumn } from "./steps-column";
 import { Rail } from "./rail";
-import { RevisionYaml } from "@/components/builder/history/YamlDiff";
+import { RevisionYaml, usePrevDiff } from "@/components/builder/history/YamlDiff";
 import { HistoryPane, RunsPane, usePipelineRuns } from "./activity";
 import { ComparisonsPane, usePipelineComparisons } from "@/components/evals/comparisons-panel";
 
@@ -154,6 +154,10 @@ export function PipelineCanvas({
   const toast = useToast();
   const { can } = usePermissions();
   const canEdit = can("pipeline:write") && !revision;
+  // Revision only: the YAML / Changes panel opens on demand; the step marks
+  // show without it.
+  const [showYaml, setShowYaml] = useState(false);
+  const prevDiff = usePrevDiff(revision);
 
   const [pipeline, setPipeline] = useState<Pipeline>(initialPipeline);
   const [dirty, setDirty] = useState(false);
@@ -245,6 +249,7 @@ export function PipelineCanvas({
       readOnly={!canEdit}
       sources={pipeline.sources ?? []}
       outputId={pipeline.output_id ?? ""}
+      {...(prevDiff ? { marks: prevDiff.step_marks } : {})}
     />
   );
 
@@ -341,7 +346,7 @@ export function PipelineCanvas({
      showing it beside a historical spec would report results the spec on
      screen did not produce. The revision's YAML and diff take the slot. */
   const rail = revision ? (
-    <RevisionYaml revision={revision} />
+    showYaml && <RevisionYaml revision={revision} />
   ) : (
     <Rail
       pipeline={pipeline}
@@ -418,6 +423,14 @@ export function PipelineCanvas({
               {revision.changed_at && ` · ${new Date(revision.changed_at).toLocaleString()}`}
               {revision.changed_by && ` · ${revision.changed_by}`}
             </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto"
+              onClick={() => setShowYaml((v) => !v)}
+            >
+              {showYaml ? "Hide YAML" : "YAML"}
+            </Button>
           </div>
         )}
 

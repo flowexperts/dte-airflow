@@ -544,6 +544,13 @@ export interface RevisionDiffResponse {
   /** Hunks of paired YAML lines; unchanged runs fall between hunks. Empty
    *  when identical. */
   yaml_diff: YamlDiffRow[][];
+  /** After-side step indexes that are new / edited, and the steps that are
+   *  gone (`at` = the after-index they sat before). Matched by content. */
+  step_marks: {
+    added: number[];
+    changed: number[];
+    removed: { at: number; step: Record<string, unknown> }[];
+  };
 }
 
 export const listPipelineRevisions = (id: string, limit = 100) =>

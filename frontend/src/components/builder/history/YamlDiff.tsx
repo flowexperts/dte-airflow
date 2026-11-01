@@ -79,18 +79,25 @@ function Row({ row }: { row: YamlDiffRow }) {
  * a split diff against the revision before it. Sits beside the read-only
  * spec on a revision page.
  */
-export function RevisionYaml({ revision }: { revision: PipelineRevision }) {
-  const [view, setView] = useState<"changes" | "yaml">("changes");
+/** The diff from the revision before this one; `null` for the first.
+ *  Shared by the canvas step marks and the Changes tab (one SWR key, one
+ *  request). */
+export function usePrevDiff(revision: PipelineRevision | undefined) {
   // ponytail: predecessor found in the newest 100 revisions; older ones
   // show "initial" — add a `previous_id` on the revision GET if that bites.
-  const { data: diff } = useSWR(
-    view === "changes" ? ["revision-prev-diff", revision.pipeline_id, revision.id] : null,
+  return useSWR(
+    revision ? ["revision-prev-diff", revision.pipeline_id, revision.id] : null,
     async () => {
-      const revs = await listPipelineRevisions(revision.pipeline_id);
-      const prev = revs[revs.findIndex((r) => r.id === revision.id) + 1];
-      return prev ? diffPipelineRevisions(revision.pipeline_id, prev.id, revision.id) : null;
+      const revs = await listPipelineRevisions(revision!.pipeline_id);
+      const prev = revs[revs.findIndex((r) => r.id === revision!.id) + 1];
+      return prev ? diffPipelineRevisions(revision!.pipeline_id, prev.id, revision!.id) : null;
     },
-  );
+  ).data;
+}
+
+export function RevisionYaml({ revision }: { revision: PipelineRevision }) {
+  const [view, setView] = useState<"changes" | "yaml">("changes");
+  const diff = usePrevDiff(revision);
 
   return (
     <Panel>
