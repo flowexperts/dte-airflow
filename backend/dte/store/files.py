@@ -138,12 +138,12 @@ class FilePipelineStore:
         if path is None:
             raise ValueError(f"pipeline id {pipeline.id!r} can't be a file name")
         if self._index is not None:
-            await self._index.save(pipeline)  # enforces UNIQUE(tenant_id, name)
+            await self._index.save(pipeline)  # enforces UNIQUE(name)
         else:
             # ponytail: O(n) scan per save; the Postgres index does this in prod.
             for other in self._rows():
-                if other.id != pipeline.id and other.tenant_id == pipeline.tenant_id and other.name == pipeline.name:
-                    raise ValueError(f"Pipeline name '{pipeline.name}' already exists for tenant '{pipeline.tenant_id}'")
+                if other.id != pipeline.id and other.name == pipeline.name:
+                    raise ValueError(f"Pipeline name '{pipeline.name}' already exists")
         self.root.mkdir(parents=True, exist_ok=True)
         # Write-then-rename: the dag-processor must never parse half a file.
         tmp = path.with_name(f".{path.name}.tmp")

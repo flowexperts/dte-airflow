@@ -3,6 +3,7 @@
 rest_api and mongodb copy the whole source into DuckDB before anything can
 read it, so a 20-row preview of a paginated API used to fetch every page.
 """
+from dte.engine.backend_registry import BackendRegistry
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -64,13 +65,13 @@ def _rest_source(base_url: str) -> Source:
 
 def test_rest_api_without_sample_reads_every_page(paged_api):
     base_url, served = paged_api
-    df = load_source(_rest_source(base_url), ibis.duckdb.connect(), {}).execute()
+    df = load_source(_rest_source(base_url), BackendRegistry(duckdb_con=ibis.duckdb.connect()), None, {}).execute()
     assert len(df) == PAGES * PER_PAGE
 
 
 def test_rest_api_sample_stops_paginating(paged_api):
     base_url, served = paged_api
-    df = load_source(_rest_source(base_url), ibis.duckdb.connect(), {}, sample=15).execute()
+    df = load_source(_rest_source(base_url), BackendRegistry(duckdb_con=ibis.duckdb.connect()), None, {}, sample=15).execute()
     # dlt counts rows per page and does not trim the last one: 2 pages.
     assert 15 <= len(df) <= 2 * PER_PAGE
     assert len(served) <= 3
@@ -83,7 +84,7 @@ def test_rest_api_sample_trims_a_single_huge_page(paged_api):
     src = _rest_source(base_url)
     src.config["client"]["paginator"] = "single_page"
     src.config["resources"][0]["endpoint"]["path"] = "items?page=1&per_page=500"
-    df = load_source(src, ibis.duckdb.connect(), {}, sample=15).execute()
+    df = load_source(src, BackendRegistry(duckdb_con=ibis.duckdb.connect()), None, {}, sample=15).execute()
     assert len(df) == 15
 
 
@@ -94,7 +95,7 @@ def test_concurrent_loads_of_one_source_do_not_collide(paged_api):
     base_url, _ = paged_api
 
     def go(_):
-        return len(load_source(_rest_source(base_url), ibis.duckdb.connect(), {}, sample=15).execute())
+        return len(load_source(_rest_source(base_url), BackendRegistry(duckdb_con=ibis.duckdb.connect()), None, {}, sample=15).execute())
 
     with ThreadPoolExecutor(4) as pool:
         assert all(n >= 15 for n in pool.map(go, range(8)))
@@ -110,7 +111,7 @@ def test_mongodb_sample_limits_the_cursor(monkeypatch):
         id="m", connection_id="local_fs", source_type="mongodb", table="m",
         config={"database": "db", "collection": "c"},
     )
-    df = load_source(src, ibis.duckdb.connect(), {"url": "mongodb://x"}, sample=7).execute()
+    df = load_source(src, BackendRegistry(duckdb_con=ibis.duckdb.connect()), None, {"url": "mongodb://x"}, sample=7).execute()
     assert len(df) == 7
 
 
@@ -120,4 +121,4 @@ def test_sample_is_ignored_by_lazy_sources(tmp_path):
         id="f", connection_id="local_fs", source_type="filesystem", table="f",
         config={"bucket_url": str(tmp_path), "file_glob": "a.json"},
     )
-    assert len(load_source(src, ibis.duckdb.connect(), {}, sample=5).execute()) == 30
+    assert len(load_source(src, BackendRegistry(duckdb_con=ibis.duckdb.connect()), None, {}, sample=5).execute()) == 30

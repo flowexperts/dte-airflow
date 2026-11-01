@@ -58,7 +58,7 @@ class TestCrud:
         assert c.post("/api/dashboards", json=_body()).status_code == 409
 
     def test_create_rejects_a_duplicate_name(self, client):
-        """UNIQUE (tenant_id, name) — people identify a dashboard by name,
+        """UNIQUE (name) — people identify a dashboard by name,
         and the list is unusable with two called the same thing."""
         c, _ = client
         c.post("/api/dashboards", json=_body())

@@ -328,11 +328,11 @@ class TestVariantNaming:
     ):
         """Two sweeps producing the same cell label must not 500.
 
-        Pipeline names are UNIQUE(tenant_id, name). Rooting the variant name
+        Pipeline names are UNIQUE(name). Rooting the variant name
         so it stops accumulating ("demo · instructions=v3 · provider=regex ·
         provider=claude") means two genuinely different configs — the root
         swept one way, and a variant of it swept the same way — now want the
-        same name. That is a `ux_pipelines_tenant_name` violation and a 500,
+        same name. That is a `ux_pipelines_name` violation and a 500,
         which is never an acceptable answer to a valid request.
         """
         twin = (await client.post(
@@ -387,7 +387,7 @@ class TestVariantNaming:
     ):
         # Rooting the name means a cell can want a name some other pipeline
         # already holds — including rows left by the nesting bug this
-        # replaces. UNIQUE(tenant_id, name) then raises, and a 500 is never
+        # replaces. UNIQUE(name) then raises, and a 500 is never
         # an acceptable answer to a valid sweep.
         twin = (await client.post(
             f"/api/pipelines/{transform_pipeline['pipeline']}/as-eval")).json()

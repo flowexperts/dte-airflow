@@ -1,41 +1,49 @@
-## Connections (three-tier model)
+## Connections are Airflow Connections
 
-Sources and destinations reference a **Connection** by `connection_id`. A Connection holds only credentials (opaque encrypted blob). Sources / destinations hold only the "where inside the target" bits (bucket_url, schema+table, collection, path). Local file targets bind to a no-cred `local_fs` connection so every source and destination has exactly one connection to point at.
-
-Three tiers:
+DTE stores no credentials (plan 065, see `store/CLAUDE.md`). Sources and
+destinations reference a connection by `connection_id`, which is an Airflow
+`conn_id`; they hold only the "where inside the target" bits (bucket_url,
+schema+table, collection, path). Local file targets use an Airflow `fs`
+connection, so every source and destination points at exactly one connection.
 
 ```
-Connection (credentials)
+Airflow Connection (credentials, managed in Airflow)
+    ↑  conn_id
+Source / Destination (connection_id + kind-specific config)
     ↑
-Source / Destination (references connection_id + carries kind-specific config)
-    ↑
-Pipeline (references source ids + destination id)
+Pipeline (source refs + destination id)
 ```
 
-### Credential validation via dlt's `@configspec` classes
+`dte/airflow/connection_store.py` (`AirflowConnectionStore`) is read-only:
+`get` / `list`, no `save`. Create and edit connections in Airflow.
 
-`Connection.credentials` is validated at model-parse time by instantiating the matching dlt spec class (`dlt.common.configuration.specs.AwsCredentials`, `ConnectionStringCredentials`, etc). We do NOT inherit — that would drag in dlt's config-provider machinery. Instead we call the class, extract public fields via `dataclasses.fields()`, drop dlt's built-in defaults and Nones, and store the result as an opaque dict. See `_DLT_CRED_CLASS` in `dte/models/pipeline.py`.
+### Airflow → DTE mapping (plan 074)
 
-**Rule for adding a new integration**: add the connection type to `ConnectionType`, add the dlt cred class to `_DLT_CRED_CLASS`, and (for SQL-family) route through `ConnectionStringCredentials` — dlt destinations accept the resulting URL directly.
+`dte/airflow/connections.py::from_airflow` turns an Airflow Connection into a
+`dte.models.pipeline.Connection` (`id`, `name`, `connection_type`,
+`credentials`). Nothing validates the credentials on the DTE side: the
+installed provider owns auth.
 
-`ConnectionString`-family (postgres/mysql/mssql/sqlite/snowflake/bigquery/mongodb) collapses to `{"url": "..."}` on store — same shape dlt destinations accept.
+- SQL (`postgres`, `mysql`, `mssql`, `sqlite`, `snowflake`) → `{"url": ...}`
+  from the provider hook, driver suffix stripped. `mongo` → `{"url": ...}`.
+- Object storage (`aws`, `google_cloud_platform`, `wasb`/`adls`, `sftp`) →
+  `{"conn_id": ...}` only; the provider's fsspec filesystem is opened at load
+  time (`dte/sources/object_store.py`).
+- BigQuery: `gcpbigquery`, or `google_cloud_platform` with extra
+  `dte_type=bigquery`.
+- `http` → `rest_api` with `{"auth", "headers"}`.
+
+A kind is offered only when its provider (and, for storage, the provider's
+filesystem package) is installed: `available_kinds()`, surfaced at
+`GET /dte/api/capabilities` with an install hint per missing kind.
+
+**Rule for adding a new integration**: add the kind to `ConnectionType`, map
+the Airflow conn_type in `from_airflow` and `KINDS`, and add it to the
+`SOURCE_CONNECTION_COMPAT` / `DESTINATION_CONNECTION_COMPAT` maps.
 
 ### SQL Server (plan 069)
 
 `mssql://user:pw@host:port/db?TrustServerCertificate=yes`. Source (ibis), writer (dlt) and probe (SQLAlchemy) all go through **pyodbc + ODBC Driver 18** — the one driver ibis's mssql backend accepts. Query params pass straight to ODBC, so TLS/auth options need no form fields; `?driver=` overrides the default. Airflow `mssql` connections map extras onto that query. Locally: `brew install msodbcsql18` and `uv sync --extra mssql`.
-
-### Secret resolver seam
-
-`dte/secrets/` — pluggable resolver interface. Two shipped:
-- **EnvSecretResolver** (default in dev): stores plaintext JSON; resolves `{env: "X"}` values from `os.environ` at decrypt time. Preserves the plan-014 env-indirection UX.
-- **FernetSecretResolver** (prod): symmetric encryption via `cryptography.fernet.Fernet`. Key from `DTE_SECRETS_KEY` env var (generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`).
-
-`get_secret_resolver()` in `dte/secrets/__init__.py` picks:
-1. `DTE_SECRETS_BACKEND=env|fernet` — explicit override.
-2. `DTE_SECRETS_KEY` set → Fernet.
-3. else → Env resolver, with a startup warning if `DTE_DATABASE_URL` is also set (prod signal).
-
-External adapters (Vault, AWS SM, GCP SM) plug in as new resolvers without touching loaders or writers.
 
 ### Connection type ↔ Source/Destination compatibility
 
@@ -43,11 +51,7 @@ Enforced in the API save layer (`SOURCE_CONNECTION_COMPAT` / `DESTINATION_CONNEC
 
 ### Test endpoint
 
-`POST /dte/api/connections/{id}/test` — lightweight connectivity probe. Returns `{ok: bool, elapsed_ms: int, detail: str}`. Per-type probes in `dte/sources/connection_test.py`. UI shows the result inline on `/connections`.
-
-### Migration
-
-Legacy plan-015 sources/destinations (creds inline in `config`) migrate via `backend/scripts/migrate_extract_connections.py`. Extracts unique cred blobs into Connection rows (sha1-deduped), rewrites source/dest configs to reference by id. `filesystem`/`json_file`/`csv_file` all share a singleton `local_fs_default` connection. Idempotent.
+`POST /dte/api/connections/{id}/test` — lightweight connectivity probe. Returns `{ok: bool, elapsed_ms: int, detail: str}`. Per-type probes in `dte/sources/connection_test.py`.
 
 ## First-class sources and destinations
 

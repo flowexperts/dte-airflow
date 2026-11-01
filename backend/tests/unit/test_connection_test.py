@@ -10,7 +10,7 @@ from dte.sources import connection_test as ct
 
 
 def _conn(kind="postgres"):
-    return Connection.model_construct(id="c", connection_type=kind, credentials={}, tenant_id="default")
+    return Connection.model_construct(id="c", connection_type=kind, credentials={})
 
 
 @pytest.fixture
@@ -57,9 +57,9 @@ def test_respects_airflows_switch(airflow):
 def test_endpoint_returns_probe_result(fake_stores, airflow):
     import asyncio
 
-    from dte.models.pipeline import ConnectionBase
+    from dte.models.pipeline import Connection
 
-    asyncio.get_event_loop().run_until_complete(fake_stores["connection"].save(ConnectionBase(
+    asyncio.get_event_loop().run_until_complete(fake_stores["connection"].save(Connection(
         id="db", connection_type="postgres", credentials={"url": "postgresql://u:p@h/db"})))
     body = TestClient(app).post("/api/connections/db/test").json()
     assert body["ok"] is True and "elapsed_ms" in body

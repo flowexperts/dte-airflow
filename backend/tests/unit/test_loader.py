@@ -1,7 +1,8 @@
 import pytest
 import json
 import ibis
-from dte.models.pipeline import Source, SourceCreate
+from dte.engine.backend_registry import BackendRegistry
+from dte.models.pipeline import Connection, Source, SourceCreate
 from dte.sources.loader import UnsupportedFileFormat, _detect_format, load_source
 
 
@@ -17,7 +18,7 @@ def test_load_local_json_via_dlt(tmp_path):
         table="input",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con, {})
+    result = load_source(src, BackendRegistry(duckdb_con=con), None, {})
 
     df = result.execute()
     assert set(df.columns).issuperset({"name", "age"})
@@ -42,7 +43,7 @@ def test_load_jsonl_nested_as_struct(tmp_path):
         table="orders",
     )
     con = ibis.duckdb.connect()
-    table = load_source(src, con, {})
+    table = load_source(src, BackendRegistry(duckdb_con=con), None, {})
 
     # DuckDB native readers expose nested JSON as STRUCT columns.
     schema = table.schema()
@@ -65,7 +66,7 @@ def test_load_csv(tmp_path):
         table="people",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con, {}).execute()
+    df = load_source(src, BackendRegistry(duckdb_con=con), None, {}).execute()
     assert sorted(df["name"].tolist()) == ["alice", "bob"]
 
 
@@ -91,7 +92,7 @@ def test_load_xlsx(tmp_path):
         table="people",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con, {}).execute()
+    df = load_source(src, BackendRegistry(duckdb_con=con), None, {}).execute()
     assert sorted(df["name"].tolist()) == ["alice", "bob"]
 
 
@@ -109,7 +110,7 @@ def test_load_parquet(tmp_path):
         table="people",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con, {}).execute()
+    df = load_source(src, BackendRegistry(duckdb_con=con), None, {}).execute()
     assert sorted(df["name"].tolist()) == ["alice", "bob"]
 
 
@@ -124,7 +125,7 @@ def test_load_jsonl_ignores_blank_lines(tmp_path):
         table="orders",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con, {}).execute()
+    df = load_source(src, BackendRegistry(duckdb_con=con), None, {}).execute()
     assert sorted(df["id"].tolist()) == ["a", "b"]
 
 
@@ -144,7 +145,7 @@ def test_load_explicit_format_overrides_extension(tmp_path):
         table="orders",
     )
     con = ibis.duckdb.connect()
-    df = load_source(src, con, {}).execute()
+    df = load_source(src, BackendRegistry(duckdb_con=con), None, {}).execute()
     assert sorted(df["id"].tolist()) == ["x", "y"]
 
 
@@ -207,7 +208,7 @@ def test_load_pdf_glob_raises_actionable_error(tmp_path):
     )
     con = ibis.duckdb.connect()
     with pytest.raises(UnsupportedFileFormat) as exc:
-        load_source(src, con, {})
+        load_source(src, BackendRegistry(duckdb_con=con), None, {})
     assert ".pdf" in str(exc.value)
 
 
@@ -223,7 +224,7 @@ def test_load_returns_ibis_table(tmp_path):
         table="data",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con, {})
+    result = load_source(src, BackendRegistry(duckdb_con=con), None, {})
     assert isinstance(result, ibis.Table)
 
 
@@ -236,7 +237,7 @@ def test_missing_file_raises(tmp_path):
     )
     con = ibis.duckdb.connect()
     with pytest.raises(Exception):
-        load_source(src, con, {})
+        load_source(src, BackendRegistry(duckdb_con=con), None, {})
 
 
 def test_unknown_source_type_rejected_at_model():
@@ -300,7 +301,7 @@ def test_sql_database_loader_end_to_end(tmp_path):
         table="customers_out",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con, {"url": f"sqlite:///{db_path}"}, table="customers")
+    result = load_source(src, BackendRegistry(duckdb_con=con), Connection(id="c", connection_type="sqlite"), {"url": f"sqlite:///{db_path}"}, table="customers")
     df = result.execute()
     assert len(df) == 3
     assert set(df.columns).issuperset({"id", "name", "age"})
@@ -327,7 +328,7 @@ def test_sql_database_credentials_resolved_from_env(monkeypatch, tmp_path):
     con = ibis.duckdb.connect()
     # Credentials come from the connection; env-indirection still supported on
     # individual values for the env-backed SecretResolver.
-    result = load_source(src, con, {"url": {"env": "DTE_SQL_DSN"}}, table="t")
+    result = load_source(src, BackendRegistry(duckdb_con=con), Connection(id="c", connection_type="sqlite"), {"url": {"env": "DTE_SQL_DSN"}}, table="t")
     df = result.execute()
     assert df["x"].tolist() == [42]
 
@@ -350,7 +351,7 @@ def test_sql_database_snowflake_without_extra_raises_helpfully():
     con = ibis.duckdb.connect()
     # Extra not installed in the dev env → RuntimeError mentioning the extra.
     with pytest.raises(RuntimeError, match="snowflake-source"):
-        load_source(src, con, {"url": "snowflake://user:pw@acct"}, table="t")
+        load_source(src, BackendRegistry(duckdb_con=con), Connection(id="c", connection_type="snowflake"), {"url": "snowflake://user:pw@acct"}, table="t")
 
 
 def test_mongodb_loader_end_to_end(monkeypatch):
@@ -374,7 +375,7 @@ def test_mongodb_loader_end_to_end(monkeypatch):
         table="mongo_out",
     )
     con = ibis.duckdb.connect()
-    result = load_source(src, con, {"url": "mongodb://ignored"})
+    result = load_source(src, BackendRegistry(duckdb_con=con), None, {"url": "mongodb://ignored"})
     df = result.execute()
     assert len(df) == 3
     assert sorted(df["name"].tolist()) == ["alice", "bob", "carol"]
@@ -403,7 +404,7 @@ def test_mongodb_connection_url_from_env(monkeypatch):
         table="m2",
     )
     con = ibis.duckdb.connect()
-    load_source(src, con, {"url": {"env": "DTE_MONGO_URL"}})
+    load_source(src, BackendRegistry(duckdb_con=con), None, {"url": {"env": "DTE_MONGO_URL"}})
     assert captured["url"] == "mongodb://prod-host:27017"
 
 
@@ -440,7 +441,7 @@ def test_rest_api_loader_end_to_end(monkeypatch):
             table="items",
         )
         con = ibis.duckdb.connect()
-        result = load_source(src, con, {})
+        result = load_source(src, BackendRegistry(duckdb_con=con), None, {})
         df = result.execute()
 
     assert len(df) == 2
@@ -473,7 +474,7 @@ def test_rest_api_resource_name_overridden_to_source_table(monkeypatch):
             table="renamed_output",
         )
         con = ibis.duckdb.connect()
-        result = load_source(src, con, {})
+        result = load_source(src, BackendRegistry(duckdb_con=con), None, {})
         df = result.execute()
     assert len(df) == 1
     assert df["x"].tolist() == [1]
@@ -569,12 +570,12 @@ def test_blank_id_generated_for_every_model_with_the_pattern():
     """Connection, Destination and LookupTable share the default_factory
     idiom, so they shared the bug."""
     from dte.models.pipeline import (
-        ConnectionBase,
+        Connection,
         DestinationBase,
         LookupTableBase,
     )
 
-    conn = ConnectionBase(id="", name="c", connection_type="local_fs", credentials={})
+    conn = Connection(id="", name="c", connection_type="local_fs", credentials={})
     dest = DestinationBase(
         id="", name="d", connection_id="local_fs",
         config={"type": "json_file", "path": "/tmp/o.json"},
@@ -602,7 +603,7 @@ def test_object_store_source_reads_through_the_connections_filesystem(monkeypatc
     monkeypatch.setattr(object_store, "_provider_fs", lambda url, conn_id: seen.append(conn_id) or fs)
 
     conn = Connection.model_construct(id="aws_prod", connection_type="s3",
-                                      credentials={"conn_id": "aws_prod"}, tenant_id="default")
+                                      credentials={"conn_id": "aws_prod"})
     src = Source(id="o", source_type="s3", table="orders",
                  config={"bucket_url": "s3://b/orders", "file_glob": "**/*.json"})
     t = load_source(src, BackendRegistry(), conn, conn.credentials)

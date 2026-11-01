@@ -24,7 +24,6 @@ from dte.api.deps import (
     get_destination_store,
     get_connection_store,
     get_current_user,
-    get_current_tenant_id,
     get_dashboard_store,
     get_lookup_table_store,
     get_eval_example_store,
@@ -99,8 +98,6 @@ def fake_stores():
     app.dependency_overrides[get_eval_example_store] = lambda: ee
     # Bypass auth for existing tests — auth-flow tests opt out per-test.
     app.dependency_overrides[get_current_user] = lambda: _fake_test_user()
-    # Bypass tenant_id dep — tests always use the "default" tenant.
-    app.dependency_overrides[get_current_tenant_id] = lambda: "default"
     yield {
         "pipeline": p,
         "run": r,

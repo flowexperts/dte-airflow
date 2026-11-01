@@ -1,9 +1,9 @@
-from dte.models.pipeline import Connection, ConnectionBase
+from dte.models.pipeline import Connection
 from tests.fakes import FakeConnectionStore
 
 
-def _conn(cid="c1") -> ConnectionBase:
-    return ConnectionBase(
+def _conn(cid="c1") -> Connection:
+    return Connection(
         id=cid,
         connection_type="s3",
         credentials={"aws_access_key_id": "AKIA", "aws_secret_access_key": "wow"},

@@ -82,7 +82,3 @@ def get_eval_set_store():
 def get_eval_example_store():
     return PostgresEvalExampleStore(_session_factory())
 
-
-async def get_current_tenant_id() -> str:
-    """Tenancy is gone (plan 065); kept so route signatures don't churn."""
-    return "default"

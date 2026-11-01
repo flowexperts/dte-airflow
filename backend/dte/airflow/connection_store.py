@@ -49,5 +49,5 @@ class AirflowConnectionStore:
             return [c for c in rows if c][offset:offset + limit]
 
         return [Connection.model_construct(id=c.id, name=c.name, connection_type=c.connection_type,
-                                           credentials={}, tenant_id="default")
+                                           credentials={})
                 for c in await asyncio.to_thread(_list)]

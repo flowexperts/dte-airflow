@@ -163,7 +163,6 @@ backend/dte/
     store/       Protocols in base.py; PostgresStore implementations in postgres.py
     sources/     loader.py — dispatch by source_type; connection_test.py — probes
     engine/      duckdb_engine.py + writers/ — expression -> output
-    secrets/     Pluggable secret resolver + EncryptedJSON TypeDecorator
     security/    JWT, password hashing, permission checks
     schema/      Schema inference for the field-picker UI
     admin/       Optional FastAdmin mount at /admin
@@ -226,12 +225,7 @@ Every `Postgres*Store` (except `PostgresRunStore`, which still hand-writes SQL) 
 
 ### Secrets
 
-`Connection.credentials` is stored via an `EncryptedJSON` TypeDecorator that maps a Python `dict` to a `BYTEA` column, transparently encrypting on write and decrypting on read. The active `SecretResolver` is chosen at process start:
-
-- `EnvSecretResolver` — dev default. Stores plaintext JSON; resolves `{env: "X"}` values from `os.environ`.
-- `FernetSecretResolver` — production. Symmetric encryption via `cryptography.fernet.Fernet`, key from `DTE_SECRETS_KEY`.
-
-External adapters (Vault, AWS Secrets Manager, GCP Secret Manager) plug in as new `SecretResolver` implementations without touching loaders or writers.
+DTE stores no credentials. Connections are Airflow Connections, read through `dte/airflow/connections.py`; secrets live wherever Airflow's secrets backend keeps them.
 
 ### Migrations
 
@@ -241,7 +235,7 @@ Alembic. `DATABASE_URL` must be a sync driver (e.g. `postgresql://`) for migrati
 - `004` — first-class `sources` and `destinations` tables.
 - `009` — `sources.format` column for filesystem-family reader override.
 
-One-off data migrations (rather than schema migrations) live under `backend/scripts/`. They are idempotent by convention: `migrate_field_refs.py` rewrites `parent__child` field references to dot syntax; `migrate_extract_connections.py` pulls inline credentials out of legacy source/destination configs into `Connection` rows; `migrate_embedded_endpoints.py` splits pipelines with embedded source/destination configs into the three-tier model.
+One-off data migrations (rather than schema migrations) live under `backend/scripts/`. They are idempotent by convention: `migrate_field_refs.py` rewrites `parent__child` field references to dot syntax; `migrate_embedded_endpoints.py` splits pipelines with embedded source/destination configs into the three-tier model.
 
 ## Execution and observability
 

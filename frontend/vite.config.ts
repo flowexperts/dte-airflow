@@ -23,7 +23,7 @@ export default defineConfig({
       external: ["react", "react-dom", "react/jsx-runtime", "react-router-dom"],
       output: {
         exports: "default",
-        // Bundled CJS deps (use-sync-external-store, via swr + recharts) keep
+        // Bundled CJS deps (use-sync-external-store, via swr) keep
         // a literal `require("react")` that `globals` does not rewrite; there
         // is no `require` in a browser, so resolve externals to the globals.
         intro: `var require = (m) => ({ react: globalThis.React, "react-dom": globalThis.ReactDOM, "react/jsx-runtime": globalThis.ReactJSXRuntime, "react-router-dom": globalThis.ReactRouterDOM })[m];`,

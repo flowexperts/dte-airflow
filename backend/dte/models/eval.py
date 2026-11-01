@@ -65,7 +65,6 @@ class EvalSetBase(SQLModel):
     source_id: str
     field_specs: list[dict] = SMField(default_factory=list)
     labels_version: int = 1
-    tenant_id: str = "default"
 
     _blank_id = model_validator(mode="before")(_blank_id_means_generate)
 
@@ -125,9 +124,6 @@ class EvalSet(EvalSetBase, table=True):
     labels_version: int = SMField(  # type: ignore[override]
         default=1, sa_column=Column(Integer, nullable=False, server_default="1")
     )
-    tenant_id: str = SMField(  # type: ignore[override]
-        default="default", sa_column=Column(Text, nullable=False, server_default="default")
-    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(DateTime(timezone=True), server_default=func.now())
     )
@@ -158,7 +154,6 @@ class EvalExampleBase(SQLModel):
     label_source: LabelSource = "human"
     split: Split = "train"
     labels_version: int | None = None
-    tenant_id: str = "default"
 
     _blank_id = model_validator(mode="before")(_blank_id_means_generate)
 
@@ -201,9 +196,6 @@ class EvalExample(EvalExampleBase, table=True):
     )
     labels_version: int | None = SMField(  # type: ignore[override]
         default=None, sa_column=Column(Integer, nullable=True)
-    )
-    tenant_id: str = SMField(  # type: ignore[override]
-        default="default", sa_column=Column(Text, nullable=False, server_default="default")
     )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(DateTime(timezone=True), server_default=func.now())

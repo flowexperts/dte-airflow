@@ -1,3 +1,4 @@
+from dte.engine.backend_registry import BackendRegistry
 import pytest
 import json
 from pathlib import Path
@@ -51,7 +52,7 @@ def test_end_to_end_filter_rename(tmp_path):
         {"op": "rename", "mappings": {"first_name": "name"}},
     ])
     engine = DuckDBEngine()
-    tables = {"src": load_source(src, engine.con, {})}
+    tables = {"src": load_source(src, BackendRegistry(duckdb_con=engine.con), None, {})}
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     rows = engine.execute_to_json(compiled, str(out))
 
@@ -80,7 +81,7 @@ def test_end_to_end_nested_json_flatten_aggregate(tmp_path):
         "aggregations": [{"field": "order.amount", "func": "sum", "alias": "total"}]
     }])
     engine = DuckDBEngine()
-    tables = {"src": load_source(src, engine.con, {})}
+    tables = {"src": load_source(src, BackendRegistry(duckdb_con=engine.con), None, {})}
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     rows = engine.execute_to_json(compiled, str(out))
 
@@ -189,8 +190,8 @@ def test_end_to_end_join_two_sources(tmp_path):
     }])
     engine = DuckDBEngine()
     tables = {
-        "users": load_source(users_src, engine.con, {}),
-        "orders": load_source(orders_src, engine.con, {}),
+        "users": load_source(users_src, BackendRegistry(duckdb_con=engine.con), None, {}),
+        "orders": load_source(orders_src, BackendRegistry(duckdb_con=engine.con), None, {}),
     }
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     df = compiled.execute()
@@ -224,7 +225,7 @@ def test_end_to_end_pivot(tmp_path):
         "agg": "sum",
     }])
     engine = DuckDBEngine()
-    tables = {"src": load_source(src, engine.con, {})}
+    tables = {"src": load_source(src, BackendRegistry(duckdb_con=engine.con), None, {})}
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     df = compiled.execute()
 
@@ -248,7 +249,7 @@ def test_select_drop_step_passes_new_columns_through(tmp_path):
     dest = _json_dest("out1", "local_fs", out)
     pipeline = make_pipeline(["src"], [{"op": "select", "drop": ["ssn"]}])
     engine = DuckDBEngine()
-    tables = {"src": load_source(src, engine.con, {})}
+    tables = {"src": load_source(src, BackendRegistry(duckdb_con=engine.con), None, {})}
     compiled = compile_pipeline(pipeline, tables, output=dest.config)
     engine.execute_to_json(compiled, str(out))
 

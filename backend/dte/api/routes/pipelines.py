@@ -304,7 +304,7 @@ async def create_pipeline(
     await validate_notifications(pipeline.notifications)
     try:
         await store.save(Pipeline(**pipeline.model_dump()))
-    except ValueError as e:  # name collision on UNIQUE(tenant_id, name)
+    except ValueError as e:  # name collision on UNIQUE(name)
         raise HTTPException(status_code=409, detail=str(e))
     await _record_revision(pipeline, rev_store, user)
     return {"id": pipeline.id}

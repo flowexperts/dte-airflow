@@ -10,7 +10,6 @@ new failure or a stale mitigation.
 | 2 | `/readyz` returning 503 | [postgres-unreachable.md](postgres-unreachable.md) |
 | 3 | Run fails with `Out of Memory Error` from DuckDB | [duckdb-oom.md](duckdb-oom.md) |
 | 4 | Spike in `dte_pipeline_runs_total{status="failed"}` on one source_type | [source-auth-spike.md](source-auth-spike.md) |
-| 5 | Post-rotation decrypt failures | [fernet-key-mismatch.md](fernet-key-mismatch.md) |
 
 ## First response for anything
 

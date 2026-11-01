@@ -36,7 +36,7 @@ async def create_dashboard(
         )
     try:
         await store.save(dashboard)
-    except ValueError as e:  # UNIQUE (tenant_id, name)
+    except ValueError as e:  # UNIQUE (name)
         raise HTTPException(status_code=409, detail=str(e))
     return dashboard.model_dump()
 
@@ -76,7 +76,7 @@ async def update_dashboard(
         raise HTTPException(status_code=404, detail="Dashboard not found")
     try:
         await store.save(dashboard)
-    except ValueError as e:  # UNIQUE (tenant_id, name)
+    except ValueError as e:  # UNIQUE (name)
         raise HTTPException(status_code=409, detail=str(e))
     return dashboard.model_dump()
 

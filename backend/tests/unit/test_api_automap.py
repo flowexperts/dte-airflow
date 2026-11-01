@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from dte.api.main import app
 from dte.api.deps import get_connection_store, get_destination_store
-from dte.models.pipeline import ConnectionBase
+from dte.models.pipeline import Connection
 from tests.fakes import FakeConnectionStore, FakeDestinationStore
 
 
@@ -18,7 +18,7 @@ def _run(coro):
 def client():
     d_store = FakeDestinationStore()
     c_store = FakeConnectionStore()
-    _run(c_store.save(ConnectionBase(
+    _run(c_store.save(Connection(
         id="pg", connection_type="postgres",
         credentials={"url": "postgresql://u:p@localhost:5432/db"},
     )))
