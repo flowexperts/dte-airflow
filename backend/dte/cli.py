@@ -91,7 +91,7 @@ def export(out: str) -> int:
     from dte.models.pipeline import Destination, Source
     from dte.store.files import dump_yaml, export_pipelines
 
-    paths, errors = export_pipelines([r.config for r in _latest_revisions()], out)
+    paths, errors = export_pipelines([r.config for r in _latest_revisions()[0]], out)
     with Session(sync_engine()) as s:
         for kind, model in (("sources", Source), ("destinations", Destination)):
             (Path(out) / kind).mkdir(parents=True, exist_ok=True)

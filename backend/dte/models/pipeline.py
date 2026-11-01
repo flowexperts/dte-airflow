@@ -1555,16 +1555,12 @@ class PipelineBase(SQLModel):
     @model_validator(mode="after")
     def _validate_steps(self):
         # Each step's own shape is checked by `WriteStep`; this is the
-        # cross-step part: which ops the pipeline type allows.
+        # cross-step part: which ops the pipeline type allows. (Only a quality
+        # run collects check/profile results; anywhere else they would be
+        # evaluated and silently dropped, plan 086.)
         allowed = ALLOWED_OPS[self.pipeline_type]
         for step in self.steps:
             if step["op"] not in allowed:
-                raise ValueError(
-                    f"Step op {step['op']!r} is not allowed in {self.pipeline_type} pipelines"
-                )
-            # Only a quality run collects check/profile results; anywhere else
-            # they evaluate and are silently dropped (plan 086).
-            if self.pipeline_type in ("transform", "eval") and step["op"] in ("check", "profile"):
                 raise ValueError(
                     f"Step op {step['op']!r} is not allowed in {self.pipeline_type} pipelines"
                 )
