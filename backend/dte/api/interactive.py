@@ -23,6 +23,10 @@ from functools import partial
 import anyio
 import anyio.to_thread
 
+# Rows an eager source (rest_api, mongodb) loads for the editor. Runs read
+# everything; schema, step schemas and previews read this much.
+SAMPLE_ROWS = int(os.environ.get("DTE_SAMPLE_ROWS", "1000"))
+
 LIMITER = anyio.CapacityLimiter(int(os.environ.get("DTE_INTERACTIVE_CONCURRENCY", "4")))
 
 

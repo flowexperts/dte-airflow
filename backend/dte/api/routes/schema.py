@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from dte.api.deps import get_connection_store
-from dte.api.interactive import run_interactive
+from dte.api.interactive import SAMPLE_ROWS, run_interactive
 from dte.automap import Field as _AField
 from dte.automap import automap as _automap
 from dte.engine.backend_registry import BackendRegistry
@@ -73,7 +73,9 @@ def source_fields(source: Source, conn, table: str | None) -> InferSchemaRespons
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     try:
-        result_table = load_source(source, registry, conn, conn.credentials, table=table)
+        result_table = load_source(
+            source, registry, conn, conn.credentials, table=table, sample=SAMPLE_ROWS,
+        )
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 

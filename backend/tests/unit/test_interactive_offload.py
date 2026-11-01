@@ -74,3 +74,22 @@ def test_slow_source_does_not_block_other_requests(seeded, method, path, body):
     r, elapsed = _run(go())
     assert r.status_code == 200
     assert elapsed < SLOW / 2, f"/healthz waited {elapsed:.2f}s behind {path}"
+
+
+@pytest.mark.parametrize("method,path,body", ROUTES, ids=[p for _, p, _ in ROUTES])
+def test_interactive_routes_load_a_bounded_sample(seeded, monkeypatch, method, path, body):
+    """Runs read the whole source; the editor reads `SAMPLE_ROWS` of it."""
+    from fastapi.testclient import TestClient
+
+    from dte.api.interactive import SAMPLE_ROWS
+
+    seen = []
+
+    def capture(*args, **kwargs):
+        seen.append(kwargs.get("sample"))
+        raise ValueError("stop here")
+
+    for mod in ("pipelines", "schema"):
+        monkeypatch.setattr(f"dte.api.routes.{mod}.load_source", capture)
+    TestClient(app).request(method, path, json=body)
+    assert seen == [SAMPLE_ROWS]

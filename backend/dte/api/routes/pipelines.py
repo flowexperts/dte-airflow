@@ -36,7 +36,7 @@ from dte.api.deps import (
     get_run_store,
     get_source_store,
 )
-from dte.api.interactive import run_interactive
+from dte.api.interactive import SAMPLE_ROWS, run_interactive
 from dte.compiler.dialect_notes import (
     SOURCE_DIALECT,
     execution_dialect_of,
@@ -741,7 +741,7 @@ def _load_compile(
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     tables = {
-        ref.alias: load_source(s, registry, conn, creds, table=ref.table)
+        ref.alias: load_source(s, registry, conn, creds, table=ref.table, sample=SAMPLE_ROWS)
         for ref, s, conn, creds in sources
     }
     # Fired before compilation, so a caller still learns which backend
