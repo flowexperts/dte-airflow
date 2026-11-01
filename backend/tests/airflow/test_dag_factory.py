@@ -43,3 +43,11 @@ def test_one_active_run_by_default_even_unscheduled():
 
 def test_overlap_allow_lifts_the_limit():
     assert _dag_for(_rev({"cron_expr": "0 1 * * *", "overlap": "allow"})).max_active_runs == 16
+
+
+def test_assets_mode_triggers_on_upstream_assets():
+    from airflow.sdk.definitions.timetables.assets import AssetTriggeredTimetable
+
+    dag = _dag_for(_rev({"mode": "assets", "assets": ["dte://pg/mart/orders"]}))
+    assert isinstance(dag.timetable, AssetTriggeredTimetable)
+    assert [a.uri for a in dag.timetable.asset_condition.objects] == ["dte://pg/mart/orders"]

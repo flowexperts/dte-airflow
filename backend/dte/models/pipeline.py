@@ -1369,8 +1369,14 @@ class PipelineSchedule(BaseModel):
     this model doesn't have (a clock, the pipeline's declared params, the
     eval-set store). Airflow does the firing: the pipeline's one DAG gets
     this cron (`dte.airflow.dag_factory`).
+
+    `mode="assets"` (plan 089) fires after upstream pipelines write: the DAG
+    schedules on `assets`, their output URIs (`dte.airflow.assets`). A saved
+    schedule with no mode is a cron one.
     """
-    cron_expr: str
+    mode: Literal["cron", "assets"] = "cron"
+    cron_expr: str | None = None
+    assets: list[str] = Field(default_factory=list)
     timezone: str = "UTC"
     params: dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
@@ -1383,6 +1389,14 @@ class PipelineSchedule(BaseModel):
     retries: int = Field(0, ge=0, le=10)
     retry_delay_s: int = Field(300, ge=10)
     timeout_s: int | None = Field(None, ge=60)
+
+    @model_validator(mode="after")
+    def _has_trigger(self):
+        if self.mode == "cron" and not self.cron_expr:
+            raise ValueError("a cron schedule needs cron_expr")
+        if self.mode == "assets" and not self.assets:
+            raise ValueError("an assets schedule needs at least one upstream asset")
+        return self
 
 
 NotifyEvent = Literal["failure", "success", "retry"]

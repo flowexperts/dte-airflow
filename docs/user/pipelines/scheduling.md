@@ -1,6 +1,6 @@
 # Scheduling
 
-Airflow does the scheduling. A pipeline is one DAG, `dte__<pipeline id>`, and has at most one schedule: that DAG's cron. Manual and scheduled runs share the DAG, run history and logs.
+Airflow does the scheduling. A pipeline is one DAG, `dte__<pipeline id>`, and has at most one schedule: that DAG's cron, or the outputs of the pipelines it waits on. Manual and scheduled runs share the DAG, run history and logs.
 
 The schedule is part of the pipeline, so changing it is a new revision (and a new Airflow DAG version). Each run records the revision it started against.
 
@@ -16,6 +16,8 @@ Open a pipeline, find the **Schedule** panel, choose **Set schedule**.
 | **Daily** | Once a day, at the time you choose |
 | **Weekly** | Once a week, on the day and time you choose |
 | **Custom** | A standard 5-field cron expression, e.g. `0 2 * * 1-5` |
+
+These are the **On a timer** trigger. The other trigger is **After upstream**: see [Chaining](#chaining).
 
 The DAG picks up the cron on the next dag-processor parse.
 
@@ -36,7 +38,7 @@ The panel shows the **next run time**. Scheduled runs are marked **Scheduled** i
 ## Rules
 
 - Missed runs aren't made up (`catchup=False`).
-- Overlapping runs are skipped by default. **Overlap** *Skip* sets `max_active_runs=1`. Manual runs share the DAG, so a manual trigger queues behind a running scheduled one. Set *Allow* if concurrent runs are safe.
+- One run at a time by default, scheduled or not: two runs writing the same destination at once is never what you want. **Overlap** *Skip* sets `max_active_runs=1`, and a pipeline with no schedule gets it too. Manual runs share the DAG, so a manual trigger queues behind a running one. Set *Allow* if concurrent runs are safe.
 - Disabling keeps the schedule and leaves the DAG manual-only. Deleting a pipeline deletes its schedule.
 
 ## Failures
@@ -56,8 +58,19 @@ PUT    /dte/api/pipelines/{id}/schedule    set or replace
 DELETE /dte/api/pipelines/{id}/schedule    remove
 ```
 
-Body: `cron_expr`, `timezone`, `params`, `enabled`, `overlap` (`skip` | `allow`), `retries` (0–10), `retry_delay_s`, `timeout_s`, and `eval_set_id` for eval pipelines. The schedule is also the `schedule` field of the pipeline; a pipeline `PUT` that omits it keeps the current one. A bad cron, unknown timezone, missing required parameter or retries on an append destination returns 422 with the reason.
+Body: `mode` (`cron` | `assets`, default `cron`), `cron_expr` (cron mode), `assets` (assets mode: upstream URIs from `GET /dte/api/assets`), `timezone`, `params`, `enabled`, `overlap` (`skip` | `allow`), `retries` (0–10), `retry_delay_s`, `timeout_s`, and `eval_set_id` for eval pipelines. The schedule is also the `schedule` field of the pipeline; a pipeline `PUT` that omits it keeps the current one. A bad cron, unknown timezone, missing required parameter or retries on an append destination returns 422 with the reason.
 
 ## Chaining
 
-"Run B after A" is plain Airflow: a DAG that triggers or depends on the `dte__<pipeline id>` DAGs.
+"Run B after A": give B the **After upstream** trigger and tick A. B runs whenever a successful run of A updates its output. Tick several and B waits until each has updated since its last run.
+
+This is Airflow's data-aware scheduling. Every pipeline's `run` task declares its sources as inlets and its destination as an outlet [Asset](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/asset-scheduling.html), so Airflow's **Assets** view is the lineage graph across pipelines. URIs:
+
+| What | Asset URI |
+| --- | --- |
+| Database table (destination or `sql_database` source) | `dte://<conn_id>/<schema>/<table>` |
+| MongoDB collection | `dte://<conn_id>/<database>/<collection>` |
+| Local file | `file:///<path>` |
+| Object storage | the configured URL, e.g. `s3://bucket/key` |
+
+A table read and written through the same connection id gets the same URI, which is what links the two pipelines. URIs carry the connection id, never credentials. REST API sources have no Asset.

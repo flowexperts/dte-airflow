@@ -38,7 +38,7 @@ router = APIRouter()
 
 
 def _next_run_at(sc: PipelineSchedule) -> datetime | None:
-    if not sc.enabled:
+    if not sc.enabled or sc.mode == "assets":
         return None
     try:
         return next_fire_after(sc.cron_expr, sc.timezone, datetime.now(UTC))
@@ -140,3 +140,21 @@ async def delete_schedule(
         pipeline.schedule = None
         await _save(pipeline, p_store, rev_store, user)
     return Response(status_code=204)
+
+
+@router.get("/assets", dependencies=[Depends(requires("pipeline:read"))])
+async def list_assets(
+    p_store: PipelineStore = Depends(get_pipeline_store),
+    d_store=Depends(get_destination_store),
+):
+    """Each transform pipeline's output Asset (plan 089): what an "after
+    upstream" schedule can wait on."""
+    from dte.airflow.assets import asset_uri
+
+    dests = {d.id: d for d in await d_store.list(limit=10_000)}
+    out = []
+    for p in await p_store.list(limit=10_000):
+        d = dests.get(p.output_id)
+        if (p.pipeline_type or "transform") == "transform" and d and (uri := asset_uri(d)):
+            out.append({"pipeline_id": p.id, "pipeline_name": p.name or p.id, "uri": uri})
+    return out

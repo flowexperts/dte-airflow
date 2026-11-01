@@ -45,7 +45,10 @@ def _dag_for(rev, inlets=(), outlets=()):
     sc = p.get("schedule") or {}
     cron = None
     if sc and sc.get("enabled", True):
-        cron = CronTriggerTimetable(sc["cron_expr"], timezone=sc.get("timezone", "UTC"))
+        if sc.get("mode") == "assets":
+            cron = [Asset(u) for u in sc["assets"]]
+        else:
+            cron = CronTriggerTimetable(sc["cron_expr"], timezone=sc.get("timezone", "UTC"))
     ptype = p.get("pipeline_type") or "transform"
     with DAG(
         dag_id=dag_id_for(pid), schedule=cron, start_date=datetime(2024, 1, 1), catchup=False,

@@ -896,6 +896,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Assets
+         * @description Each transform pipeline's output Asset (plan 089): what an "after
+         *     upstream" schedule can wait on.
+         */
+        get: operations["list_assets_api_assets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifiers": {
         parameters: {
             query?: never;
@@ -1695,10 +1716,22 @@ export interface components {
          *     this model doesn't have (a clock, the pipeline's declared params, the
          *     eval-set store). Airflow does the firing: the pipeline's one DAG gets
          *     this cron (`dte.airflow.dag_factory`).
+         *
+         *     `mode="assets"` (plan 089) fires after upstream pipelines write: the DAG
+         *     schedules on `assets`, their output URIs (`dte.airflow.assets`). A saved
+         *     schedule with no mode is a cron one.
          */
         PipelineSchedule: {
+            /**
+             * Mode
+             * @default cron
+             * @enum {string}
+             */
+            mode: "cron" | "assets";
             /** Cron Expr */
-            cron_expr: string;
+            cron_expr?: string | null;
+            /** Assets */
+            assets?: string[];
             /**
              * Timezone
              * @default UTC
@@ -3816,6 +3849,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assets_api_assets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

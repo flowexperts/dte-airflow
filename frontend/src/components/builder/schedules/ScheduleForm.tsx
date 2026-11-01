@@ -7,12 +7,15 @@ import { useMounted } from "@/components/ui/use-mounted";
 import { Button, Dropdown, Field, Input, Segmented } from "@/components/ui";
 import {
   ApiError,
+  listAssets,
   listEvalSets,
   putSchedule,
   type EvalSet,
   type OverlapPolicy,
+  type PipelineAsset,
   type PipelineParam,
   type Schedule,
+  type ScheduleTrigger,
   type ScheduleWriteRequest,
 } from "@/lib/api";
 import {
@@ -30,6 +33,11 @@ const MODE_OPTIONS: { value: ScheduleMode; label: string }[] = [
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
   { value: "custom", label: "Custom" },
+];
+
+const TRIGGER_OPTIONS: { value: ScheduleTrigger; label: string }[] = [
+  { value: "cron", label: "On a timer" },
+  { value: "assets", label: "After upstream" },
 ];
 
 const OVERLAP_OPTIONS: { value: OverlapPolicy; label: string }[] = [
@@ -84,10 +92,12 @@ export function ScheduleForm({
 }) {
   const declaredParams = pipelineParams ?? [];
   const [form, setForm] = useState<ScheduleFormState>(() =>
-    schedule
+    schedule?.cron_expr
       ? { ...parseCron(schedule.cron_expr) }
       : { mode: "daily", minute: 0, hour: 2, weekday: 1, custom: "0 2 * * *" },
   );
+  const [trigger, setTrigger] = useState<ScheduleTrigger>(schedule?.mode ?? "cron");
+  const [assets, setAssets] = useState<string[]>(schedule?.assets ?? []);
   const [timezone, setTimezone] = useState(() => schedule?.timezone ?? browserTimezone());
   const [paramValues, setParamValues] = useState<Record<string, string>>(() => {
     const seed: Record<string, string> = {};
@@ -114,6 +124,11 @@ export function ScheduleForm({
     pipelineType === "eval" ? ["eval-sets", "schedule-form"] : null,
     () => listEvalSets(),
   );
+  // Other pipelines' outputs, fetched only once "After upstream" is picked.
+  const { data: upstream } = useSWR<PipelineAsset[]>(
+    open && trigger === "assets" ? ["assets", "schedule-form"] : null,
+    () => listAssets(),
+  );
 
   // Re-seed on open — mirrors ParamsModal's guarded re-sync so switching
   // which schedule is being edited doesn't leak stale state across opens.
@@ -123,10 +138,12 @@ export function ScheduleForm({
   }
   function reseed() {
     setForm(
-      schedule
+      schedule?.cron_expr
         ? { ...parseCron(schedule.cron_expr) }
         : { mode: "daily", minute: 0, hour: 2, weekday: 1, custom: "0 2 * * *" },
     );
+    setTrigger(schedule?.mode ?? "cron");
+    setAssets(schedule?.assets ?? []);
     setTimezone(schedule?.timezone ?? browserTimezone());
     const seed: Record<string, string> = {};
     for (const p of declaredParams) seed[p.name] = schedule?.params?.[p.name] ?? "";
@@ -153,7 +170,9 @@ export function ScheduleForm({
   );
   const isEval = pipelineType === "eval";
   const submittable =
-    cronExpr.trim() !== "" && missingRequired.length === 0 && (!isEval || evalSetId !== "");
+    (trigger === "cron" ? cronExpr.trim() !== "" : assets.length > 0) &&
+    missingRequired.length === 0 &&
+    (!isEval || evalSetId !== "");
 
   const submit = async () => {
     setBusy(true);
@@ -165,7 +184,9 @@ export function ScheduleForm({
       params[p.name] = raw;
     }
     const body: ScheduleWriteRequest = {
-      cron_expr: cronExpr,
+      mode: trigger,
+      cron_expr: trigger === "cron" ? cronExpr : null,
+      assets: trigger === "assets" ? assets : [],
       timezone,
       params,
       enabled,
@@ -202,134 +223,177 @@ export function ScheduleForm({
         </div>
 
         <div className="space-y-4">
-          <Field label="Frequency">
-            <Segmented
-              value={form.mode}
-              onChange={(mode) => setForm((f) => ({ ...f, mode }))}
-              options={MODE_OPTIONS}
-            />
+          <Field label="Trigger">
+            <Segmented value={trigger} onChange={setTrigger} options={TRIGGER_OPTIONS} />
           </Field>
 
-          {form.mode === "hourly" && (
-            <Field label="At minute" hint="Runs every hour, at this minute past the hour.">
-              <Input
-                type="number"
-                min={0}
-                max={59}
-                value={form.minute}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, minute: clamp(Number(e.target.value), 0, 59) }))
-                }
-                className="w-24"
-              />
-            </Field>
-          )}
-
-          {form.mode === "daily" && (
-            <Field label="At time">
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={form.hour}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, hour: clamp(Number(e.target.value), 0, 23) }))
-                  }
-                  className="w-20"
-                />
-                <span className="text-subtle text-[13px]">:</span>
-                <Input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={form.minute}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, minute: clamp(Number(e.target.value), 0, 59) }))
-                  }
-                  className="w-20"
-                />
-                <span className="font-mono text-[11px] text-subtle">
-                  {pad2(form.hour)}:{pad2(form.minute)}
-                </span>
+          {trigger === "assets" && (
+            <Field
+              label="After these pipelines finish"
+              hint="Runs once every ticked output has been updated since its last run."
+            >
+              <div className="space-y-1.5">
+                {upstream === undefined && (
+                  <div className="text-[12px] text-subtle">Loading pipelines…</div>
+                )}
+                {upstream?.length === 0 && (
+                  <div className="text-[12px] text-subtle">
+                    No other pipeline writes an output yet.
+                  </div>
+                )}
+                {upstream
+                  ?.filter((a) => a.pipeline_id !== pipelineId)
+                  .map((a) => (
+                    <label key={a.pipeline_id} className="flex items-center gap-2 text-[13px]">
+                      <input
+                        type="checkbox"
+                        checked={assets.includes(a.uri)}
+                        onChange={(e) =>
+                          setAssets((cur) =>
+                            e.target.checked ? [...cur, a.uri] : cur.filter((u) => u !== a.uri),
+                          )
+                        }
+                      />
+                      <span>{a.pipeline_name}</span>
+                      <span className="font-mono text-[11px] text-subtle truncate">{a.uri}</span>
+                    </label>
+                  ))}
               </div>
             </Field>
           )}
 
-          {form.mode === "weekly" && (
-            <Field label="On day, at time">
-              <div className="flex items-center gap-2">
-                <Dropdown<string>
-                  value={String(form.weekday)}
-                  onChange={(v) => setForm((f) => ({ ...f, weekday: Number(v) }))}
-                  options={WEEKDAY_LABELS.map((label, i) => ({ value: String(i), label }))}
-                  className="w-36"
+          {trigger === "cron" && (
+            <>
+              <Field label="Frequency">
+                <Segmented
+                  value={form.mode}
+                  onChange={(mode) => setForm((f) => ({ ...f, mode }))}
+                  options={MODE_OPTIONS}
                 />
-                <Input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={form.hour}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, hour: clamp(Number(e.target.value), 0, 23) }))
-                  }
-                  className="w-20"
-                />
-                <span className="text-subtle text-[13px]">:</span>
-                <Input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={form.minute}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, minute: clamp(Number(e.target.value), 0, 59) }))
-                  }
-                  className="w-20"
-                />
-              </div>
-            </Field>
-          )}
+              </Field>
 
-          {form.mode === "custom" ? (
-            /* No "Composed cron" echo here — on Custom it restated the box
+              {form.mode === "hourly" && (
+                <Field label="At minute" hint="Runs every hour, at this minute past the hour.">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={form.minute}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, minute: clamp(Number(e.target.value), 0, 59) }))
+                    }
+                    className="w-24"
+                  />
+                </Field>
+              )}
+
+              {form.mode === "daily" && (
+                <Field label="At time">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={form.hour}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, hour: clamp(Number(e.target.value), 0, 23) }))
+                      }
+                      className="w-20"
+                    />
+                    <span className="text-subtle text-[13px]">:</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={form.minute}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, minute: clamp(Number(e.target.value), 0, 59) }))
+                      }
+                      className="w-20"
+                    />
+                    <span className="font-mono text-[11px] text-subtle">
+                      {pad2(form.hour)}:{pad2(form.minute)}
+                    </span>
+                  </div>
+                </Field>
+              )}
+
+              {form.mode === "weekly" && (
+                <Field label="On day, at time">
+                  <div className="flex items-center gap-2">
+                    <Dropdown<string>
+                      value={String(form.weekday)}
+                      onChange={(v) => setForm((f) => ({ ...f, weekday: Number(v) }))}
+                      options={WEEKDAY_LABELS.map((label, i) => ({ value: String(i), label }))}
+                      className="w-36"
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={form.hour}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, hour: clamp(Number(e.target.value), 0, 23) }))
+                      }
+                      className="w-20"
+                    />
+                    <span className="text-subtle text-[13px]">:</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={form.minute}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, minute: clamp(Number(e.target.value), 0, 59) }))
+                      }
+                      className="w-20"
+                    />
+                  </div>
+                </Field>
+              )}
+
+              {form.mode === "custom" ? (
+                /* No "Composed cron" echo here — on Custom it restated the box
                directly above it, character for character. The explainer is
                the useful readback; the raw string is already on screen. */
-            <Field label="Cron expression" hint="Standard 5-field cron. Validated server-side.">
-              <Input
-                value={form.custom}
-                onChange={(e) => setForm((f) => ({ ...f, custom: e.target.value }))}
-                placeholder="0 2 * * *"
-                className="font-mono"
-              />
-              <CronExplainer expr={cronExpr} timezone={timezone} />
-            </Field>
-          ) : (
-            /* On the friendly tabs the cron string is derived and otherwise
+                <Field label="Cron expression" hint="Standard 5-field cron. Validated server-side.">
+                  <Input
+                    value={form.custom}
+                    onChange={(e) => setForm((f) => ({ ...f, custom: e.target.value }))}
+                    placeholder="0 2 * * *"
+                    className="font-mono"
+                  />
+                  <CronExplainer expr={cronExpr} timezone={timezone} />
+                </Field>
+              ) : (
+                /* On the friendly tabs the cron string is derived and otherwise
                invisible, so it is worth showing alongside the reading. */
-            <Field label="Composed cron" hint="What actually gets saved.">
-              <div className="font-mono text-[12px] text-text bg-bg border border-border rounded-[var(--radius)] px-2.5 py-1.5">
-                {cronExpr || "—"}
-              </div>
-              <CronExplainer expr={cronExpr} timezone={timezone} />
-            </Field>
-          )}
+                <Field label="Composed cron" hint="What actually gets saved.">
+                  <div className="font-mono text-[12px] text-text bg-bg border border-border rounded-[var(--radius)] px-2.5 py-1.5">
+                    {cronExpr || "—"}
+                  </div>
+                  <CronExplainer expr={cronExpr} timezone={timezone} />
+                </Field>
+              )}
 
-          <Field label="Timezone" hint="Defaults to your browser's timezone, not UTC.">
-            <Dropdown<string>
-              value={timezone}
-              onChange={setTimezone}
-              options={timezoneOptions().map((tz) => ({ value: tz, label: tz }))}
-            />
-          </Field>
+              <Field label="Timezone" hint="Defaults to your browser's timezone, not UTC.">
+                <Dropdown<string>
+                  value={timezone}
+                  onChange={setTimezone}
+                  options={timezoneOptions().map((tz) => ({ value: tz, label: tz }))}
+                />
+              </Field>
 
-          {schedule?.next_run_at && (
-            <Field label="Next run">
-              <div className="font-mono text-[12px] text-text">
-                {new Date(schedule.next_run_at).toLocaleString(undefined, {
-                  timeZoneName: "short",
-                })}
-              </div>
-            </Field>
+              {schedule?.next_run_at && (
+                <Field label="Next run">
+                  <div className="font-mono text-[12px] text-text">
+                    {new Date(schedule.next_run_at).toLocaleString(undefined, {
+                      timeZoneName: "short",
+                    })}
+                  </div>
+                </Field>
+              )}
+            </>
           )}
 
           {declaredParams.length > 0 && (
