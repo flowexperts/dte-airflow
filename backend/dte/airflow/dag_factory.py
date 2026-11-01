@@ -75,6 +75,7 @@ def _dag_for(rev, inlets=(), outlets=()):
     from dte.airflow.operators import DtePipelineOperator
     from dte.airflow.trigger import dag_id_for, revision_tag
     from dte.config import get_settings
+    from dte.store.files import dump_yaml
 
     p, pid = rev.config, rev.pipeline_id
     sc = p.get("schedule") or {}
@@ -91,6 +92,10 @@ def _dag_for(rev, inlets=(), outlets=()):
         params=dict(sc.get("params") or {}),
         tags=["dte", f"dte-pipeline:{pid}", f"dte-type:{ptype}", revision_tag(rev.id)],
         dag_display_name=p.get("name") or pid,
+        # The DAG page's Docs: the pipeline as YAML (what `dte export` writes)
+        # and a way back to the editor. Relative, like the UI's Airflow links,
+        # so Airflow's <base href> resolves it under any subpath.
+        doc_md=f"[Open in DTE](plugin/dte/pipelines/detail?id={pid})\n\n```yaml\n{dump_yaml(p)}```\n",
         # A paused DAG queues manual runs forever. Per DAG, so an existing
         # Airflow needn't change its global default (plan 073).
         is_paused_upon_creation=False,
