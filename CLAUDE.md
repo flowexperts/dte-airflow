@@ -47,7 +47,7 @@ dte db upgrade                     # migrate the `dte` schema (needs DTE_DATABAS
 
 # Frontend (Airflow plugin bundle; rebuild the image to ship it)
 cd frontend && pnpm install && pnpm build
-DTE_API_URL=http://localhost:8080/dte ./scripts/gen-api-types.sh   # regen types
+./scripts/gen-api-types.sh   # regen api-types.ts from app.openapi(); no server
 ```
 
 ## Architecture in one paragraph

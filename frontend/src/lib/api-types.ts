@@ -41,6 +41,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/allowed-ops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Allowed Ops
+         * @description Which step ops each pipeline type may hold — the builder's Add-step
+         *     menu reads this, so it offers exactly what save accepts.
+         */
+        get: operations["allowed_ops_api_allowed_ops_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pipelines": {
         parameters: {
             query?: never;
@@ -1233,6 +1254,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AggSpec */
+        AggSpec: {
+            /** Field */
+            field: string;
+            /**
+             * Func
+             * @enum {string}
+             */
+            func: "sum" | "count" | "avg" | "min" | "max" | "count_distinct";
+            /** Alias */
+            alias: string;
+        };
+        /** AggregateStep */
+        AggregateStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "aggregate";
+            /** Group By */
+            group_by: (string | components["schemas"]["DatePartGroupBy"])[];
+            /** Aggregations */
+            aggregations: components["schemas"]["AggSpec"][];
+        };
         /** AutomapField */
         AutomapField: {
             /** Name */
@@ -1310,6 +1355,66 @@ export interface components {
             ids: string[];
         };
         /**
+         * CaseBranch
+         * @description One WHEN/THEN arm of a `case` step.
+         */
+        CaseBranch: {
+            /** When */
+            when: components["schemas"]["CaseCondition"][];
+            /** Then */
+            then?: boolean | number | string | null;
+        };
+        /**
+         * CaseCondition
+         * @description One predicate row, mirroring the builder's condition UI.
+         *
+         *     Structured rather than a SQL string on purpose: the compiler turns these
+         *     into ibis expressions, so a `case` step runs on Postgres/MySQL/DuckDB
+         *     alike. A SQL string would force the raw-SQL escape hatch, which is
+         *     DuckDB-dialect only and is refused on every `sql_database` source.
+         */
+        CaseCondition: {
+            /** Field */
+            field: string;
+            /**
+             * Op
+             * @default =
+             * @enum {string}
+             */
+            op: "=" | "!=" | ">" | "<" | ">=" | "<=" | "LIKE" | "IN" | "IS NULL" | "IS NOT NULL" | "BETWEEN";
+            /**
+             * Value
+             * @default
+             */
+            value: string;
+            /**
+             * Join
+             * @default AND
+             * @enum {string}
+             */
+            join: "AND" | "OR";
+        };
+        /**
+         * CaseStep
+         * @description Conditional column: if / else if / otherwise.
+         *
+         *     Compiles to `ibis.cases`, the same portable construct the lookup step
+         *     uses — no raw SQL, so it works on natively-bound DB sources.
+         */
+        CaseStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "case";
+            /** Output Field */
+            output_field: string;
+            /** Branches */
+            branches: components["schemas"]["CaseBranch"][];
+            /** Otherwise */
+            otherwise?: boolean | number | string | null;
+        };
+        /**
          * ChartSpec
          * @description How to draw a tile's rows. Presentational only — never aggregates.
          *
@@ -1339,6 +1444,27 @@ export interface components {
              * @default false
              */
             stacked: boolean;
+        };
+        /** CheckStep */
+        CheckStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "check";
+            /** Expr */
+            expr: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Severity
+             * @default fail
+             * @enum {string}
+             */
+            severity: "warn" | "fail";
         };
         /**
          * DashboardBase
@@ -1393,6 +1519,61 @@ export interface components {
              * @default 1000
              */
             limit: number;
+        };
+        /**
+         * DataModelField
+         * @description One column the user wants extracted from a document.
+         */
+        DataModelField: {
+            /** Name */
+            name: string;
+            /**
+             * Type
+             * @default string
+             * @enum {string}
+             */
+            type: "string" | "int" | "float" | "boolean" | "date" | "timestamp";
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /** Examples */
+            examples?: string[];
+            /** Pattern */
+            pattern?: string | null;
+        };
+        /** DataModelSpec */
+        DataModelSpec: {
+            /** Fields */
+            fields: components["schemas"]["DataModelField"][];
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+        };
+        /**
+         * DatePartGroupBy
+         * @description Group by a date/timestamp field extracted to a component (year, month, ...).
+         *
+         *     Emitted column defaults to `<field>_<part>` unless `alias` is provided.
+         */
+        DatePartGroupBy: {
+            /** Field */
+            field: string;
+            /**
+             * Part
+             * @enum {string}
+             */
+            part: "year" | "quarter" | "month" | "week" | "day" | "date" | "dow" | "hour";
+            /** Alias */
+            alias?: string | null;
         };
         /**
          * DestinationBase
@@ -1473,6 +1654,77 @@ export interface components {
              */
             split: string;
         };
+        /** ExpressionMapStep */
+        ExpressionMapStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "map";
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "expression" | "calculation";
+            /** Output Field */
+            output_field: string;
+            /** Expr */
+            expr: string;
+        };
+        /**
+         * ExtractStep
+         * @description Documents in, extracted text blocks out.
+         *
+         *     The only op besides `join` that changes row cardinality: at `page`
+         *     granularity one input row fans out to one row per page.
+         *
+         *     A per-document failure fills `extract_meta.error` and leaves the output
+         *     field NULL — it does **not** fail the run. One bad PDF in 10k must not
+         *     cost the batch; add a downstream `check` step if you want it fatal.
+         */
+        ExtractStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "extract";
+            /**
+             * Source Field
+             * @default path
+             */
+            source_field: string;
+            /**
+             * Provider
+             * @default pdfplumber
+             * @enum {string}
+             */
+            provider: "pypdf" | "pdfplumber";
+            /**
+             * Granularity
+             * @default page
+             * @enum {string}
+             */
+            granularity: "page" | "document";
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Output Field
+             * @default content
+             */
+            output_field: string;
+        };
+        /** FilterStep */
+        FilterStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "filter";
+            /** Expr */
+            expr: string;
+        };
         /**
          * ForPipelineRequest
          * @description Derive the eval set a pipeline implies, or find the one it already has.
@@ -1485,6 +1737,57 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HttpLookupField */
+        HttpLookupField: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /**
+             * Type
+             * @default string
+             * @enum {string}
+             */
+            type: "string" | "int" | "float" | "boolean" | "timestamp";
+        };
+        /**
+         * HttpLookupStep
+         * @description One GET per row, JSON fields out as typed columns (plan 085).
+         *
+         *     `url` carries `{column}` placeholders filled from each row. Responses are
+         *     cached per URL per day in the artifact store, so a preview and a run on
+         *     the same day pay once. `max_rows` refuses to fan out over a large table:
+         *     narrow first (filter, join), then look up.
+         */
+        HttpLookupStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "http_lookup";
+            /** Url */
+            url: string;
+            /** Connection Id */
+            connection_id?: string | null;
+            /** Fields */
+            fields: components["schemas"]["HttpLookupField"][];
+            /**
+             * Max Rows
+             * @default 500
+             */
+            max_rows: number;
+            /**
+             * On Error
+             * @default null
+             * @enum {string}
+             */
+            on_error: "null" | "fail";
+            /**
+             * Meta Field
+             * @default http_meta
+             */
+            meta_field: string;
         };
         /**
          * ImportRequest
@@ -1519,6 +1822,56 @@ export interface components {
             /** Fields */
             fields: components["schemas"]["SchemaFieldNode"][];
         };
+        /** JoinStep */
+        JoinStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "join";
+            /** Left */
+            left: string;
+            /** Right */
+            right: string;
+            /** On */
+            on: string | string[] | {
+                [key: string]: string;
+            };
+            /**
+             * How
+             * @default inner
+             * @enum {string}
+             */
+            how: "inner" | "left" | "right" | "outer";
+            /** Output Id */
+            output_id: string;
+        };
+        /**
+         * LookupMapStep
+         * @description Applies a saved LookupTable to a column.
+         *
+         *     The mapping table itself lives in the `lookup_tables` store (referenced by
+         *     `lookup_id`). At compile time the caller resolves the id → LookupTable and
+         *     passes them to `compile_pipeline(..., lookup_tables=...)`.
+         */
+        LookupMapStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "map";
+            /**
+             * Mode
+             * @constant
+             */
+            mode: "lookup";
+            /** Field */
+            field: string;
+            /** Lookup Id */
+            lookup_id: string;
+            /** Output Field */
+            output_field?: string | null;
+        };
         /**
          * LookupTableBase
          * @description API/domain fields.
@@ -1543,6 +1896,13 @@ export interface components {
              * @default default
              */
             tenant_id: string;
+        };
+        /** OutputField */
+        OutputField: {
+            /** Field */
+            field: string;
+            /** Alias */
+            alias?: string | null;
         };
         /** Pipeline */
         Pipeline: {
@@ -1607,9 +1967,7 @@ export interface components {
             /** Sources */
             sources?: components["schemas"]["SourceTableRef"][];
             /** Steps */
-            steps?: {
-                [key: string]: unknown;
-            }[];
+            steps?: (components["schemas"]["FilterStep"] | components["schemas"]["RenameStep"] | components["schemas"]["RetypeStep"] | components["schemas"]["LookupMapStep"] | components["schemas"]["ExpressionMapStep"] | components["schemas"]["CaseStep"] | components["schemas"]["SortStep"] | components["schemas"]["AggregateStep"] | components["schemas"]["SelectStep"] | components["schemas"]["JoinStep"] | components["schemas"]["PivotStep"] | components["schemas"]["CheckStep"] | components["schemas"]["ProfileStep"] | components["schemas"]["ExtractStep"] | components["schemas"]["StructureStep"] | components["schemas"]["HttpLookupStep"])[];
             /** Output Id */
             output_id?: string | null;
             /**
@@ -1734,6 +2092,36 @@ export interface components {
             /** Timeout S */
             timeout_s?: number | null;
         };
+        /** PivotStep */
+        PivotStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "pivot";
+            /** Index */
+            index: string | string[];
+            /** Columns */
+            columns: string;
+            /** Values */
+            values: string;
+            /**
+             * Agg
+             * @default sum
+             * @enum {string}
+             */
+            agg: "sum" | "count" | "avg" | "min" | "max";
+        };
+        /** ProfileStep */
+        ProfileStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "profile";
+            /** Columns */
+            columns?: string[];
+        };
         /**
          * PromoteRequest
          * @description Turn the winning eval config into a shippable transform pipeline.
@@ -1773,6 +2161,33 @@ export interface components {
              */
             confirm: boolean;
         };
+        /** RenameStep */
+        RenameStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "rename";
+            /** Mappings */
+            mappings: {
+                [key: string]: string;
+            };
+        };
+        /** RetypeStep */
+        RetypeStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "retype";
+            /** Field */
+            field: string;
+            /**
+             * To Type
+             * @enum {string}
+             */
+            to_type: "string" | "int" | "float" | "boolean" | "date" | "timestamp";
+        };
         /**
          * SchemaFieldNode
          * @description One node in the schema tree.
@@ -1787,6 +2202,39 @@ export interface components {
             type: string;
             /** Children */
             children?: components["schemas"]["SchemaFieldNode"][] | null;
+        };
+        /** SelectStep */
+        SelectStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "select";
+            /**
+             * Fields
+             * @default []
+             */
+            fields: components["schemas"]["OutputField"][];
+            /**
+             * Drop
+             * @default []
+             */
+            drop: string[];
+        };
+        /** SortStep */
+        SortStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "sort";
+            /** By */
+            by: string[];
+            /**
+             * Ascending
+             * @default true
+             */
+            ascending: boolean[] | boolean;
         };
         /**
          * SourceBase
@@ -1844,6 +2292,46 @@ export interface components {
             table?: string | null;
             /** Alias */
             alias: string;
+        };
+        /**
+         * StructureStep
+         * @description Extracted text in, the user's declared data model out.
+         *
+         *     The declared fields become real typed columns. From this step onward the
+         *     row is ordinary tabular data and every existing step — filter, join,
+         *     aggregate, check, pivot — works on it unchanged. That is the whole point
+         *     of splitting extract from structure.
+         */
+        StructureStep: {
+            /**
+             * Op
+             * @constant
+             */
+            op: "structure";
+            /**
+             * Input Field
+             * @default content
+             */
+            input_field: string;
+            /**
+             * Provider
+             * @default claude
+             * @enum {string}
+             */
+            provider: "claude" | "openai" | "regex";
+            /** Connection Id */
+            connection_id?: string | null;
+            model: components["schemas"]["DataModelSpec"];
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * On Error
+             * @default null
+             * @enum {string}
+             */
+            on_error: "null" | "fail";
         };
         /**
          * SweepRequest
@@ -1937,6 +2425,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    allowed_ops_api_allowed_ops_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string[];
+                    };
                 };
             };
         };
