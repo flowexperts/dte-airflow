@@ -4,20 +4,36 @@ Pipeline revision = DAG version: the revision id is a DAG tag, so every save
 changes the serialized DAG and Airflow records a new DagVersion. The
 pipeline's one schedule (if any, and enabled) is the DAG's cron.
 
-Read from the `dte` schema at parse time. # ponytail: parse-time DB read;
-if pipeline count makes dag-processor parsing slow, write DAG files on save.
+`DTE_PIPELINE_STORE=postgres`: read from the `dte` schema at parse time.
+`file` (plan 090): read `DTE_PIPELINES_DIR/*.yaml`, no DB; each file is its
+own revision (id = content hash) and parses in its own try/except, so a
+broken file drops only its own DAG.
 """
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from sqlmodel import Session, select
+
+log = logging.getLogger(__name__)
 
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def build_dags() -> dict:
+    from dte.config import get_settings
+
+    settings = get_settings()
+    if settings.pipeline_store == "file":
+        return _dags_from_files(Path(settings.pipelines_dir))
+    dags = (_dag_for(rev) for rev in _latest_revisions() if _SAFE.match(rev.pipeline_id))
+    return {d.dag_id: d for d in dags}
+
+
+def _latest_revisions() -> list:
     from dte.airflow.db import sync_engine
     from dte.models.pipeline import PipelineRevision
 
@@ -26,8 +42,23 @@ def build_dags() -> dict:
         # Revisions cascade-delete with their pipeline, so this is "every pipeline".
         latest = list(s.exec(select(R).distinct(R.pipeline_id).order_by(R.pipeline_id, R.changed_at.desc())).all())
         s.expunge_all()
-    dags = (_dag_for(rev) for rev in latest if _SAFE.match(rev.pipeline_id))
-    return {d.dag_id: d for d in dags}
+    return latest
+
+
+def _dags_from_files(root: Path) -> dict:
+    from dte.store.files import read_revision
+
+    dags = {}
+    for path in sorted(root.glob("*.yaml")):
+        if not _SAFE.match(path.stem):
+            continue
+        try:
+            dag = _dag_for(read_revision(path))
+        except Exception:
+            log.exception("DTE pipeline file %s skipped: no DAG until it is fixed", path)
+            continue
+        dags[dag.dag_id] = dag
+    return dags
 
 
 def _dag_for(rev):

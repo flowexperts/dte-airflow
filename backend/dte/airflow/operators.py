@@ -11,6 +11,7 @@ from dte.airflow.connections import to_dte
 from dte.airflow.db import sync_engine
 from dte.airflow.results import eval_history, record_result
 from dte.airflow.runner import run_pipeline
+from dte.store.files import file_revision
 
 
 def run_as_of(context, config: dict):
@@ -87,7 +88,9 @@ class DtePipelineOperator(BaseOperator):
         record_result(engine, run_id, status="running", **base)
         try:
             with Session(engine) as s:
-                rev = s.get(PipelineRevision, revision_id) if revision_id else None
+                # File mode (plan 090): the revision is the file's content hash.
+                rev = file_revision(self.pipeline_id, revision_id) or (
+                    s.get(PipelineRevision, revision_id) if revision_id else None)
                 if rev is None or rev.pipeline_id != self.pipeline_id:
                     raise AirflowFailException(f"revision {revision_id!r} of pipeline {self.pipeline_id} not found")
                 pipeline = Pipeline(**rev.config)
