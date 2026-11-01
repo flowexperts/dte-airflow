@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import importlib
 from typing import TypedDict
 
 import ibis
 
-from dte.models.pipeline import (
-    CsvTarget,
-    ExcelTarget,
-    JsonTarget,
-    ParquetTarget,
-    PostgresTarget,
-    SqlDatabaseTarget,
-)
+# Output target `type` -> writer module. Imported on use: each pulls in its
+# own heavy deps (dlt, openpyxl, ...).
+_WRITERS: dict[str, str] = {
+    "json": "json_file",
+    "csv": "csv_file",
+    "excel": "excel_file",
+    "parquet": "parquet",
+    "postgres": "postgres",
+    "sql_database": "sql_database",
+}
 
 
 class WriteResult(TypedDict):
@@ -40,25 +43,10 @@ def write(
         from dte.engine.writers.provenance import split_off_provenance
         table, _ = split_off_provenance(table, run_id, con=con)
 
-    if isinstance(target, JsonTarget):
-        from dte.engine.writers import json_file
-        return json_file.write(table, target, con, creds)
-    if isinstance(target, CsvTarget):
-        from dte.engine.writers import csv_file
-        return csv_file.write(table, target, con, creds)
-    if isinstance(target, ExcelTarget):
-        from dte.engine.writers import excel_file
-        return excel_file.write(table, target, con, creds)
-    if isinstance(target, ParquetTarget):
-        from dte.engine.writers import parquet
-        return parquet.write(table, target, con, creds)
-    if isinstance(target, PostgresTarget):
-        from dte.engine.writers import postgres
-        return postgres.write(table, target, con, creds)
-    if isinstance(target, SqlDatabaseTarget):
-        from dte.engine.writers import sql_database
-        return sql_database.write(table, target, con, creds)
-    raise ValueError(f"Unknown output target type: {type(target).__name__}")
+    module = _WRITERS.get(getattr(target, "type", None))
+    if module is None:
+        raise ValueError(f"Unknown output target type: {type(target).__name__}")
+    return importlib.import_module(f"dte.engine.writers.{module}").write(table, target, con, creds)
 
 
 __all__ = ["write", "WriteResult"]
