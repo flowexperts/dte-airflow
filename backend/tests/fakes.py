@@ -6,7 +6,10 @@ Postgres store exclusively.
 Use via `app.dependency_overrides[get_pipeline_store] = lambda: FakePipelineStore()`.
 """
 from __future__ import annotations
+import shutil
+import tempfile
 import uuid
+import weakref
 from datetime import datetime, timezone
 
 from dte.models.dashboard import Dashboard, DashboardBase
@@ -18,10 +21,10 @@ from dte.models.pipeline import (
     Connection,
     Destination, DestinationBase,
     LookupTable, LookupTableBase,
-    Pipeline, PipelineBase,
     PipelineRevision, PipelineRevisionBase,
     Source, SourceBase,
 )
+from dte.store.files import FilePipelineStore
 
 
 def _utcnow_iso() -> str:
@@ -32,47 +35,12 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class FakePipelineStore:
+class FakePipelineStore(FilePipelineStore):
+    """The real file store (plan 090) over a throwaway directory."""
+
     def __init__(self):
-        self._data: dict[str, Pipeline] = {}
-
-    async def get(self, id: str, tenant_id: str | None = None) -> Pipeline | None:
-        row = self._data.get(id)
-        if row is None:
-            return None
-        if tenant_id is not None and row.tenant_id != tenant_id:
-            return None
-        return row
-
-    async def save(self, pipeline: Pipeline) -> None:
-        existing = self._data.get(pipeline.id)
-        # UNIQUE(tenant_id, name) — mirrors DB constraint from migration 024.
-        for other in self._data.values():
-            if other.id == pipeline.id:
-                continue
-            if other.tenant_id == pipeline.tenant_id and other.name == pipeline.name:
-                raise ValueError(
-                    f"Pipeline name '{pipeline.name}' already exists for tenant '{pipeline.tenant_id}'"
-                )
-        pipeline.created_at = existing.created_at if existing else _utcnow()
-        pipeline.updated_at = _utcnow()
-        self._data[pipeline.id] = pipeline
-
-    async def list(self, limit: int = 50, offset: int = 0, tenant_id: str | None = None) -> list[Pipeline]:
-        items = list(self._data.values())
-        if tenant_id is not None:
-            items = [p for p in items if p.tenant_id == tenant_id]
-        items = sorted(items, key=lambda p: p.created_at or _utcnow(), reverse=True)
-        return items[offset:offset + limit]
-
-    async def delete(self, id: str, tenant_id: str | None = None) -> bool:
-        row = self._data.get(id)
-        if row is None:
-            return False
-        if tenant_id is not None and row.tenant_id != tenant_id:
-            return False
-        del self._data[id]
-        return True
+        super().__init__(tempfile.mkdtemp(prefix="dte-pipelines-"))
+        weakref.finalize(self, shutil.rmtree, self.root, True)
 
 
 _TERMINAL_STATUSES = frozenset({

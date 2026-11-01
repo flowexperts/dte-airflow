@@ -41,6 +41,9 @@ dependencies = [
     "croniter>=2.0,<7.0",
     # http_lookup field paths (plan 085). No pin: Airflow's constraints own it.
     "jmespath",
+    # Pipeline files (plan 090). Already there via dlt and Airflow; declared
+    # because dte.store.files imports it. No pin: Airflow's constraints own it.
+    "pyyaml",
 ]
 
 [project.scripts]
