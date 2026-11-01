@@ -15,7 +15,7 @@ GET/PUT /api/pipelines/{id}/notifications    Airflow provider notifiers on run e
 GET    /api/notifiers                     installed provider notifiers + their constructor params
 POST   /api/runs/{run_id}/cancel           mark the dag run failed
 GET    /api/me                            Airflow user + derived DTE permissions
-GET    /api/pipelines/{id}/preview?limit&live  compile + execute on sample rows (live=true: read metered sources live)
+GET    /api/pipelines/{id}/preview?limit&live  compile + execute on sample rows (live=true: read metered sources live; without confirm=true it returns only {estimate}, no rows — same on dry-run)
 GET    /api/pipelines/{id}/runs?limit     latest runs per pipeline (no offset; full history is Airflow's grid)
 GET    /api/allowed-ops                   ALLOWED_OPS: step ops each pipeline type may hold
 GET    /api/assets                        each transform pipeline's output Asset URI, for "after upstream" schedules

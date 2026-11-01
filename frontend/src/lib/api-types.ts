@@ -2920,6 +2920,7 @@ export interface operations {
                 limit?: number;
                 params?: string | null;
                 live?: boolean;
+                confirm?: boolean;
             };
             header?: never;
             path?: never;
@@ -2957,6 +2958,7 @@ export interface operations {
                 limit?: number;
                 params?: string | null;
                 live?: boolean;
+                confirm?: boolean;
             };
             header?: never;
             path: {

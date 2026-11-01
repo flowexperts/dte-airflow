@@ -756,6 +756,7 @@ def _load_compile(
     sample: int | None = None,
     on_tables=None,
     live: bool = False,
+    confirm: bool = False,
     **callbacks,
 ) -> dict | None:
     """Load sources, compile, and with `sample` execute that many rows.
@@ -766,8 +767,13 @@ def _load_compile(
     matching what the preview body has always reported.
 
     `live` skips the cached samples and reads every source the way a run
-    does — on a metered source that is a billed query (plan 093).
+    does — on a metered source that is a billed query (plan 093), so without
+    `confirm` it returns only the estimate and runs nothing. The server gates
+    it, not the UI: any API caller has to see the price first.
     """
+    if live and not confirm and any(metered.is_metered(s, c) for _, s, c, _ in sources):
+        return {"rows": [], "final_sql": None, "error": None, "samples": [],
+                "estimate": _estimate(pipeline, sources, destination, lookups).model_dump()}
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     tables = {
@@ -880,6 +886,7 @@ async def _compile_body_pipeline(
     params: dict[str, str] | None = None,
     sample: int | None = None,
     live: bool = False,
+    confirm: bool = False,
 ) -> dict | None:
     """Shared plumbing for endpoints that compile an unsaved pipeline body.
 
@@ -910,7 +917,7 @@ async def _compile_body_pipeline(
         return await run_interactive(
             _load_compile, pipeline, sources, destination, lookups,
             sample=sample, on_tables=on_tables, on_step_schema=on_step_schema,
-            on_step_sql=on_step_sql, on_step=on_step, live=live,
+            on_step_sql=on_step_sql, on_step=on_step, live=live, confirm=confirm,
         )
     except HTTPException:
         raise
@@ -998,6 +1005,7 @@ async def dry_run_pipeline(
     limit: int = 20,
     params: str | None = None,
     live: bool = False,
+    confirm: bool = False,
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
@@ -1035,6 +1043,7 @@ async def dry_run_pipeline(
                 params=parsed_params,
                 sample=limit,
                 live=live,
+                confirm=confirm,
             )
             error = sampled["error"]
         except HTTPException as e:
@@ -1050,6 +1059,7 @@ async def dry_run_pipeline(
         "final_sql": final_sql,
         "error": error,
         "samples": sampled.get("samples", []),
+        "estimate": sampled.get("estimate"),
     }
 
 
@@ -1059,6 +1069,7 @@ async def preview_pipeline(
     limit: int = 100,
     params: str | None = None,
     live: bool = False,
+    confirm: bool = False,
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
@@ -1096,7 +1107,7 @@ async def preview_pipeline(
         # execution locus is picked by BackendRegistry.
         sampled = await run_interactive(
             _load_compile, pipeline, sources, destination, lookups,
-            sample=limit, on_step_sql=_capture_sql, live=live,
+            sample=limit, on_step_sql=_capture_sql, live=live, confirm=confirm,
         )
         error = sampled["error"]
     except HTTPException:
@@ -1114,6 +1125,7 @@ async def preview_pipeline(
         "final_sql": final_sql,
         "error": error,
         "samples": sampled.get("samples", []),
+        "estimate": sampled.get("estimate"),
     }
 
 

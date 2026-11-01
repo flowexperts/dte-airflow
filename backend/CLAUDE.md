@@ -386,7 +386,9 @@ sources on those connections are "metered" (`dte/sources/metered.py`).
   (free), Snowflake `TABLESAMPLE SYSTEM` falling back to `LIMIT` — into the
   same parquet cache as eager sources, with a `<key>.json` sidecar holding the
   partition columns. Steps then run in DuckDB. `?live=true` on preview /
-  dry-run reads the warehouse; runs always do.
+  dry-run reads the warehouse, but only with `confirm=true`;
+  without it `_load_compile` returns `{estimate}` and runs nothing, so every
+  API caller (not just the UI) sees the price first. Runs always read live.
 - **Estimate before Run.** `routes/pipelines._estimate` compiles against the
   live backends (metadata only) and dry-runs the compiled SQL when it runs on
   the warehouse; otherwise (mixed sources, an eager step) it prices each

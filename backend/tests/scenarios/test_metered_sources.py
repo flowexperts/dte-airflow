@@ -77,11 +77,26 @@ async def test_preview_reads_the_sample_and_says_so(client, scenario_ids, out_di
 
 async def test_live_preview_reads_the_table(client, scenario_ids, out_dir, warehouse):
     _, pid, _ = await _seed(client, scenario_ids, out_dir)
-    body = (await client.get(f"/api/pipelines/{pid}/preview?limit=20&live=true")).json()
+    body = (await client.get(f"/api/pipelines/{pid}/preview?limit=20&live=true&confirm=true")).json()
     assert body["error"] is None
     assert sorted(r["n"] for r in body["rows"]) == [0, 1, 2, 3, 4]
     assert body["samples"] == []
     assert warehouse["fetch"] == 0
+
+
+async def test_live_preview_without_confirm_only_estimates(client, scenario_ids, out_dir, warehouse):
+    """The server, not the UI, gates the billed query: no confirm → estimate, no rows."""
+    _, pid, _ = await _seed(client, scenario_ids, out_dir)
+    pipeline = (await client.get(f"/api/pipelines/{pid}")).json()
+    for r in (await client.get(f"/api/pipelines/{pid}/preview?limit=20&live=true"),
+              await client.post("/api/pipelines/dry-run?limit=20&live=true", json=pipeline)):
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["rows"] == [] and body["error"] is None
+        assert body["estimate"]["bytes"] == 3 * 2**40 and body["estimate"]["engine"] == "bigquery"
+    # Unmetered work is untouched: a sample preview needs no confirm and carries no estimate.
+    body = (await client.get(f"/api/pipelines/{pid}/preview?limit=20")).json()
+    assert body["rows"] and body.get("estimate") is None
 
 
 async def test_refresh_drops_the_sample(client, scenario_ids, out_dir, warehouse):

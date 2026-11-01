@@ -329,6 +329,9 @@ export interface PreviewResponse {
   /** Plan 093: sources this preview read from a cached sample (metered
    *  warehouse tables). Empty on a live preview and for every other source. */
   samples?: PreviewSample[];
+  /** Set (and no rows run) when a live preview of metered sources arrives
+   *  without `confirm`. */
+  estimate?: PipelineEstimate | null;
 }
 
 export interface PreviewSample {
@@ -505,10 +508,16 @@ export const previewPipeline = (
   id: string,
   limit = 100,
   params?: Record<string, string>,
-  live = false,
+  /** Read metered sources live. Pass only after the user accepted the
+   *  estimate: it sends `confirm`, without which the server returns just
+   *  the estimate (plan 093). */
+  liveConfirmed = false,
 ) => {
   const q = new URLSearchParams({ limit: String(limit) });
-  if (live) q.set("live", "true");
+  if (liveConfirmed) {
+    q.set("live", "true");
+    q.set("confirm", "true");
+  }
   if (params && Object.keys(params).length > 0) {
     q.set("params", JSON.stringify(params));
   }
@@ -522,10 +531,16 @@ export const dryRunPipeline = (
   pipeline: Pipeline,
   limit = 20,
   params?: Record<string, string>,
-  live = false,
+  /** Read metered sources live. Pass only after the user accepted the
+   *  estimate: it sends `confirm`, without which the server returns just
+   *  the estimate (plan 093). */
+  liveConfirmed = false,
 ) => {
   const q = new URLSearchParams({ limit: String(limit) });
-  if (live) q.set("live", "true");
+  if (liveConfirmed) {
+    q.set("live", "true");
+    q.set("confirm", "true");
+  }
   if (params && Object.keys(params).length > 0) {
     q.set("params", JSON.stringify(params));
   }
