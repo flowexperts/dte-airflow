@@ -59,3 +59,30 @@ Changed: `backend/dte/airflow/operators.py`, `backend/dte/airflow/runner.py`,
 
 Deleted: `plans/070-airflow-task-logs.md` (on the old branch), then the
 `feature/airflow-task-logs` branch and worktree once this merges.
+
+## Task log shape (folded in from the old `070-airflow-task-logs.md`)
+
+ibis is lazy, so `compile_pipeline` fires "started/completed" for every lazy
+step within milliseconds; the real work happens in `engine.execute()`.
+`run_pipeline(..., log=)` (the operator passes `self.log`) writes the run as
+timed phases, using Airflow's `::group::` / `::endgroup::` markers:
+
+- **Header**: pipeline type, engine, source and step counts, param *keys*
+  only (values may be secrets).
+- **Load source** (one group each): connection type, table, columns.
+- **One group per step**: columns after the step, its SQL, enrichment stats
+  for eager steps, and `step #N op took Xs`. The compiler reports schema and
+  SQL after "completed", so a step's group closes when the next one starts.
+- **Final SQL** (group), then **execute + write** with rows written.
+- **Quality**: one line per check, INFO/WARNING/ERROR by verdict.
+- **Eval**: compile, execute, score phases and the numeric scores.
+
+Each phase also reaches `on_event` as `(None, title, status, msg)`, so
+`run_results.events` holds steps *and* phases (`step_index: null`).
+
+### Deliberately not doing
+- Per-step row counts: each is a separate query, so cost grows with steps.
+- Anchoring a failed step to its log group: Airflow numbers groups, it does
+  not name them, so `FailedSteps` links to the task log page.
+- A step-timing UI that assumes `check`/`profile` run in transform
+  pipelines (plan 086 makes them invalid there).
