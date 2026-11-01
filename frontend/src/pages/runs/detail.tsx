@@ -316,8 +316,11 @@ function TransformRunBody({
   );
 }
 
-function RunDetail() {
-  const id = useSearchParams().get("id") ?? "";
+/** `id`/`embedded` come from the Airflow dag-run tab (plugin.tsx), which
+ *  already shows the run's header and has no `?id=` of its own. */
+export function RunDetail({ id: idProp, embedded = false }: { id?: string; embedded?: boolean }) {
+  const queryId = useSearchParams().get("id");
+  const id = idProp ?? queryId ?? "";
 
   const { data, error, isLoading } = useSWR<Run>(id ? ["run", id] : null, () => getRun(id), {
     refreshInterval: (latest) => (isTerminal(latest?.status) ? 0 : 2000),
@@ -359,48 +362,52 @@ function RunDetail() {
 
   return (
     <>
-      <Topbar
-        /* "Runs" was a dead label under a Workspace root, so the trail
-           described nowhere you could go back to — and skipped the pipeline
-           entirely, which is the only thing a run belongs to. Now it walks
-           the real containment: workspace → pipelines → this pipeline →
-           its Runs tab → this run. */
-        crumbs={[
-          { label: "DTE Pipelines", href: "/pipelines" },
-          ...(data?.pipeline_id
-            ? [
-                {
-                  label: pipeline?.name ?? data.pipeline_id,
-                  href: `/pipelines/detail?id=${encodeURIComponent(data.pipeline_id)}`,
-                },
-                {
-                  label: "Runs",
-                  href: `/pipelines/detail?id=${encodeURIComponent(data.pipeline_id)}&tab=runs`,
-                },
-              ]
-            : [{ label: "Runs" }]),
-          { label: id.slice(0, 8) },
-        ]}
-        actions={
-          data?.pipeline_id ? (
-            <Link href={`/pipelines/detail?id=${encodeURIComponent(data.pipeline_id)}`}>
-              <Button size="sm">Back to pipeline</Button>
-            </Link>
-          ) : null
-        }
-      />
-      <PageHeader
-        title={
-          <>
-            Run <span className="font-mono text-[18px] text-subtle">{id.slice(0, 8)}</span>
-          </>
-        }
-        sub={isQuality ? "quality" : "transform"}
-        lede={data?.pipeline_id}
-        actions={data ? <Pill status={pillStatus}>{STATUS_LABEL[data.status]}</Pill> : null}
-      />
+      {!embedded && (
+        <>
+          <Topbar
+            /* "Runs" was a dead label under a Workspace root, so the trail
+               described nowhere you could go back to — and skipped the pipeline
+               entirely, which is the only thing a run belongs to. Now it walks
+               the real containment: workspace → pipelines → this pipeline →
+               its Runs tab → this run. */
+            crumbs={[
+              { label: "DTE Pipelines", href: "/pipelines" },
+              ...(data?.pipeline_id
+                ? [
+                    {
+                      label: pipeline?.name ?? data.pipeline_id,
+                      href: `/pipelines/detail?id=${encodeURIComponent(data.pipeline_id)}`,
+                    },
+                    {
+                      label: "Runs",
+                      href: `/pipelines/detail?id=${encodeURIComponent(data.pipeline_id)}&tab=runs`,
+                    },
+                  ]
+                : [{ label: "Runs" }]),
+              { label: id.slice(0, 8) },
+            ]}
+            actions={
+              data?.pipeline_id ? (
+                <Link href={`/pipelines/detail?id=${encodeURIComponent(data.pipeline_id)}`}>
+                  <Button size="sm">Back to pipeline</Button>
+                </Link>
+              ) : null
+            }
+          />
+          <PageHeader
+            title={
+              <>
+                Run <span className="font-mono text-[18px] text-subtle">{id.slice(0, 8)}</span>
+              </>
+            }
+            sub={isQuality ? "quality" : "transform"}
+            lede={data?.pipeline_id}
+            actions={data ? <Pill status={pillStatus}>{STATUS_LABEL[data.status]}</Pill> : null}
+          />
+        </>
+      )}
 
-      <div className="px-14 py-8">
+      <div className={embedded ? "py-4" : "px-14 py-8"}>
         <div className="space-y-5">
           {error ? (
             <div className="p-4 border border-red rounded-[var(--radius)] bg-code-bg text-red font-mono text-sm">

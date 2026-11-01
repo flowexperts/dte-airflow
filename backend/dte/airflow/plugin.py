@@ -33,4 +33,8 @@ class DtePlugin(AirflowPlugin):
                 ("DTE Lookup tables", "lookup-tables"),
             ]
         ),
+        # A tab on every dag run page: the run_results view for that run.
+        # Airflow passes {dagId, runId} as props; non-DTE DAGs get a note.
+        {"name": "DTE Run", "bundle_url": _BUNDLE, "destination": "dag_run",
+         "url_route": "dte-run"},
     ]
