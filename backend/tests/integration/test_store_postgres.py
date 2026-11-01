@@ -70,7 +70,6 @@ async def test_postgres_runs_merge_dag_runs_with_run_results(session_factory):
         assert run["rows_written"] == 42
         assert (await r_store.get("pg-r2"))["status"] == "pending"
         assert len(await r_store.list_for_pipeline("pg-rp1")) == 2
-        assert await r_store.count_for_pipeline("pg-rp1") == 2
     finally:
         assert await r_store.delete_for_pipeline("pg-rp1") == 1
 

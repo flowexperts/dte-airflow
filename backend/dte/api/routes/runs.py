@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 
 from dte.api.deps import get_destination_store, get_pipeline_store, get_run_store
 from dte.security.permissions import requires
@@ -23,18 +23,11 @@ async def get_run(run_id: str, store: RunStore = Depends(get_run_store)):
 @router.get("/pipelines/{pipeline_id}/runs", dependencies=[Depends(requires("run:read"))])
 async def list_runs_for_pipeline(
     pipeline_id: str,
-    response: Response,
     limit: int = 50,
-    offset: int = 0,
     store: RunStore = Depends(get_run_store),
 ):
-    # Total in a header, not an envelope: the body stays a plain array so
-    # existing callers are untouched, and the pager gets what it needs to
-    # say "page 3 of 12" instead of guessing from a short page.
-    response.headers["X-Total-Count"] = str(
-        await store.count_for_pipeline(pipeline_id)
-    )
-    return await store.list_for_pipeline(pipeline_id, limit=limit, offset=offset)
+    # Latest runs only, no total: Airflow's grid is the run history (plan 087).
+    return await store.list_for_pipeline(pipeline_id, limit=limit)
 
 
 @router.get("/runs/{run_id}/quality", dependencies=[Depends(requires("run:read"))])

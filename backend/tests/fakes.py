@@ -142,9 +142,6 @@ class FakeRunStore:
         rows.reverse()
         return rows[:limit]
 
-    async def count_for_pipeline(self, pipeline_id: str) -> int:
-        return sum(1 for r in self._data.values() if r["pipeline_id"] == pipeline_id)
-
     async def delete_for_pipeline(self, pipeline_id: str) -> int:
         to_remove = [rid for rid, r in self._data.items() if r["pipeline_id"] == pipeline_id]
         for rid in to_remove:

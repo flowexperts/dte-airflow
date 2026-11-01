@@ -36,22 +36,6 @@ def test_store_offset_past_the_end_is_empty(seeded):
     assert _run(seeded.list_for_pipeline("p_paged", limit=10, offset=99)) == []
 
 
-def test_route_accepts_offset(seeded):
-    with TestClient(app) as client:
-        page1 = client.get(
-            "/api/pipelines/p_paged/runs?limit=10&offset=0", )
-        page2 = client.get(
-            "/api/pipelines/p_paged/runs?limit=10&offset=10", )
-
-    assert page1.status_code == 200
-    assert page2.status_code == 200
-    ids1 = {r["id"] for r in page1.json()}
-    ids2 = {r["id"] for r in page2.json()}
-    assert len(ids1) == 10
-    assert len(ids2) == 10
-    assert ids1.isdisjoint(ids2)
-
-
 def test_revisions_store_offset(fake_stores):
     """Revisions had the same limit-only shape as runs."""
     from dte.models.pipeline import Pipeline, PipelineRevision

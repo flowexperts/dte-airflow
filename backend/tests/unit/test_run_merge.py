@@ -100,9 +100,8 @@ async def test_list_for_pipeline_reads_only_its_dag_newest_first(store):
     assert runs[0]["status"] == "pending" and runs[0]["rows_written"] is None
 
 
-async def test_pagination_and_count(store):
+async def test_pagination(store):
     assert [r["id"] for r in await store.list_for_pipeline("p1", limit=1, offset=1)] == ["a2"]
-    assert await store.count_for_pipeline("p1") == 3
 
 
 async def test_get(store):

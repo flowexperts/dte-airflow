@@ -4,6 +4,10 @@ Offset alone lets a client walk forward blindly — it can't say "page 3 of 12"
 or know it has reached the end except by getting a short page. The count
 rides in `X-Total-Count` rather than an envelope so no existing response
 shape changes.
+
+Runs are the exception (plan 087): Airflow's grid is the run history, the DTE
+Runs tab shows only the latest few, and counting meant reading every dag run
+of the pipeline from Airflow on each request.
 """
 import asyncio
 
@@ -50,23 +54,17 @@ def seeded_revs(fake_stores):
     return store
 
 
-def test_run_store_counts_only_its_pipeline(seeded_runs):
-    _run(seeded_runs.create("other_pipeline"))
-    assert _run(seeded_runs.count_for_pipeline("p_count")) == 23
-
-
 def test_revision_store_counts_only_its_pipeline(seeded_revs):
     assert _run(seeded_revs.count_for_pipeline("p_count")) == 7
     assert _run(seeded_revs.count_for_pipeline("nope")) == 0
 
 
-def test_runs_route_sets_total_count_header(seeded_runs):
+def test_runs_route_returns_latest_without_a_count(seeded_runs):
     with TestClient(app) as client:
-        res = client.get("/api/pipelines/p_count/runs?limit=10&offset=10")
+        res = client.get("/api/pipelines/p_count/runs?limit=10")
     assert res.status_code == 200
     assert len(res.json()) == 10
-    # The count is of everything, not of the page.
-    assert res.headers["x-total-count"] == "23"
+    assert "x-total-count" not in res.headers
 
 
 def test_revisions_route_sets_total_count_header(seeded_revs):

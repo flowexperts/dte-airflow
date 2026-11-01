@@ -260,9 +260,6 @@ class PostgresRunStore:
             limit=limit,
         )
 
-    async def count_for_pipeline(self, pipeline_id: str) -> int:
-        return len(await self._dag_runs(dag_ids=[f"dte__{pipeline_id}"]))
-
     async def delete_for_pipeline(self, pipeline_id: str) -> int:
         """Drops DTE's results only; Airflow keeps its own dag run history."""
         async with _session(self._factory) as s:
