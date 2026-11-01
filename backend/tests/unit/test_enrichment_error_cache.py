@@ -1,3 +1,4 @@
+
 """A failure is a property of the attempt, not of the input.
 
 Reported as "the claude columns are all blank". The cause was an unset
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import json
 
+import pandas as pd
 import pytest
 
 from dte.models.pipeline import Pipeline
@@ -97,7 +99,7 @@ class TestStructureErrorsAreNotCached:
     def test_a_failed_call_is_retried_on_the_next_run(self, engine, flaky):
         first = _run(engine)
         assert _meta(first)["error"] is not None
-        assert first.iloc[0]["total"] is None
+        assert pd.isna(first.iloc[0]["total"])  # typed float column: NULL reads as NaN
 
         second = _run(engine)
         # Without this, the second run is a cache hit returning the same
@@ -144,6 +146,7 @@ class TestExtractErrorsAreNotCached:
         doc = engine.con  # noqa: F841 - fixture forces artifact dir
 
         import ibis
+
         from dte.compiler.ibis_compiler import compile_pipeline
 
         pdf = __import__("pathlib").Path(

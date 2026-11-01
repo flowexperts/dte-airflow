@@ -12,7 +12,8 @@ export type StepOp =
   | "check"
   | "profile"
   | "extract"
-  | "structure";
+  | "structure"
+  | "http_lookup";
 
 /** One column a `structure` step pulls out of a document. Mirrors the
  *  backend's `DataModelField`. */
@@ -23,6 +24,14 @@ export interface DataModelField {
   required: boolean;
   /** Only read by the deterministic `regex` provider. */
   pattern?: string | null;
+}
+
+/** One column an `http_lookup` step reads out of each JSON response.
+ *  Mirrors the backend's `HttpLookupField`; `path` is JMESPath. */
+export interface HttpLookupField {
+  name: string;
+  path: string;
+  type: "string" | "int" | "float" | "boolean" | "timestamp";
 }
 
 export type MapMode = "lookup" | "expression" | "calculation";
@@ -65,6 +74,7 @@ export const STEP_OPS: {
   { op: "aggregate", label: "Aggregate", category: "transform" },
   { op: "join", label: "Join", category: "transform" },
   { op: "pivot", label: "Pivot", category: "transform" },
+  { op: "http_lookup", label: "HTTP lookup", category: "transform" },
   { op: "select", label: "Select / Drop fields", category: "transform" },
   { op: "extract", label: "Extract text", category: "extract" },
   { op: "structure", label: "Structure fields", category: "extract" },
@@ -130,6 +140,15 @@ export function emptyStep(op: StepOp, mode?: MapMode): StepShape {
           instructions: "",
         },
         params: {},
+        on_error: "null",
+      };
+    // Same starter-field reasoning as `structure`: no fields is rejected.
+    case "http_lookup":
+      return {
+        op,
+        url: "https://",
+        fields: [{ name: "", path: "", type: "string" }] satisfies HttpLookupField[],
+        max_rows: 500,
         on_error: "null",
       };
   }

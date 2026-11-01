@@ -1,3 +1,5 @@
+import pandas as pd
+
 """The `structure` step — blocks in, the user's declared data model out.
 
 This is the op that earns plan 050. Once it runs, the row is ordinary tabular
@@ -280,8 +282,8 @@ def _bind(engine, rows):
     single-backend check needs one — real pipelines always come from a loaded
     source, so binding here matches production.
     """
+
     import ibis
-    import itertools
 
     name = f"_t{next(_bind.seq)}"
     engine.con.create_table(name, ibis.memtable(rows), overwrite=True)
@@ -325,8 +327,10 @@ def test_structure_emits_per_field_provenance(engine):
 
 def test_missing_values_are_null_not_invented(engine):
     df = _rows(engine, ["nothing useful here"])
-    assert df.iloc[0]["total"] is None
-    assert df.iloc[0]["vendor"] is None
+    # NULL, not invented. The columns are typed now (float, string), so
+    # pandas shows their NULLs as NaN; a typeless column used to show None.
+    assert pd.isna(df.iloc[0]["total"])
+    assert pd.isna(df.iloc[0]["vendor"])
 
 
 def test_blank_input_is_recorded_not_raised(engine):

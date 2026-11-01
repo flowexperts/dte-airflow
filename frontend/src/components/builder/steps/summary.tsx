@@ -90,6 +90,13 @@ export function stepTitle(step: StepShape): string {
       if (fields.length === 0) return "no fields declared";
       return `${n(fields.length, "field")} via ${str(step.provider) ?? "?"}`;
     }
+    case "http_lookup": {
+      const fields = list(step.fields);
+      const host = (str(step.url) ?? "").replace(/^https?:\/\//, "").split("/")[0] || "?";
+      return fields.length === 0
+        ? `GET ${host} · no fields`
+        : `GET ${host} · ${n(fields.length, "field")}`;
+    }
     default:
       return String(step.op);
   }
@@ -258,6 +265,24 @@ export function StepSummary({ step }: { step: StepShape }): ReactNode {
     case "structure": {
       const model = step.model as { fields?: { name?: string; type?: string }[] } | undefined;
       const fields = (list(model?.fields) as { name?: string; type?: string }[]).filter(
+        (f) => f.name,
+      );
+      if (fields.length === 0) return null;
+      const shown = fields.slice(0, 8);
+      return (
+        <KV>
+          {shown.map((f, i) => (
+            <KVItem key={i} label={f.name ?? "?"} value={f.type ?? "string"} />
+          ))}
+          {fields.length > shown.length && (
+            <KVItem label={`+${fields.length - shown.length} more`} />
+          )}
+        </KV>
+      );
+    }
+
+    case "http_lookup": {
+      const fields = (list(step.fields) as { name?: string; type?: string }[]).filter(
         (f) => f.name,
       );
       if (fields.length === 0) return null;

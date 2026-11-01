@@ -19,7 +19,8 @@ import useSWR from "swr";
 import { usePipelineParams } from "../params-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import type { StepShape, GroupByEntry, DatePart, DataModelField } from "./types";
+import type { StepShape, GroupByEntry, DatePart, DataModelField, HttpLookupField } from "./types";
+import { missingPlaceholders } from "@/lib/http-lookup";
 import { LookupTablePicker } from "../LookupTablePicker";
 import { SYSTEM_VARS, type SystemVar } from "@/lib/system-vars";
 import { quoteIdent, safeLiteral } from "@/lib/sql-literal";
@@ -2395,6 +2396,159 @@ function StructureEditor({ step, set }: StepEditorProps) {
   );
 }
 
+// No `date`: JSON has no date type, and a timestamp covers ISO strings.
+const HTTP_FIELD_TYPES: DropdownOption<string>[] = [
+  { value: "string", label: "string" },
+  { value: "int", label: "int" },
+  { value: "float", label: "float" },
+  { value: "boolean", label: "boolean" },
+  { value: "timestamp", label: "timestamp" },
+];
+
+const HTTP_ON_ERROR: DropdownOption<string>[] = [
+  { value: "null", label: "Null the row", meta: "run continues" },
+  { value: "fail", label: "Fail the run", meta: "stops everything" },
+];
+
+function HttpLookupEditor({ step, set }: StepEditorProps) {
+  const columns = useStepFields().map((f) => f.name);
+  const url = (step.url as string) ?? "";
+  const fields = (step.fields as HttpLookupField[] | undefined) ?? [];
+  const missing = missingPlaceholders(url, columns);
+
+  const setFields = (next: HttpLookupField[]) => set({ ...step, fields: next });
+  const updateField = (i: number, patch: Partial<HttpLookupField>) => {
+    const copy = [...fields];
+    const current = copy[i];
+    if (!current) return;
+    copy[i] = { ...current, ...patch };
+    setFields(copy);
+  };
+  const setOptional = (key: "connection_id" | "meta_field", v: string) => {
+    const next = { ...step };
+    if (v.trim()) next[key] = v.trim();
+    else delete next[key];
+    set(next);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Field
+        label="URL"
+        hint="one GET per row. {column} is replaced by that row's value, URL-encoded. Responses are cached per URL per day, so previews and re-runs the same day are free."
+      >
+        <Input
+          value={url}
+          onChange={(e) => set({ ...step, url: e.target.value })}
+          placeholder="https://pypi.org/pypi/{name}/json"
+          className="font-mono"
+        />
+      </Field>
+      {missing.length > 0 && (
+        <p className="font-mono text-[11px] text-red">
+          No column {missing.map((m) => `{${m}}`).join(", ")} at this step — those rows will get
+          nulls.
+        </p>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <div className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
+          Fields from the response
+        </div>
+        {fields.map((f, i) => (
+          <div
+            key={i}
+            className="flex flex-col gap-1.5 rounded border border-border bg-code-bg px-2.5 py-2"
+          >
+            <div className="flex items-start gap-1.5">
+              <Input
+                value={f.name}
+                onChange={(e) => updateField(i, { name: e.target.value })}
+                placeholder="last_upload"
+                className="basis-[180px] grow"
+              />
+              <div className="w-[130px] shrink-0">
+                <Dropdown<string>
+                  value={f.type}
+                  onChange={(v) => updateField(i, { type: v as HttpLookupField["type"] })}
+                  options={HTTP_FIELD_TYPES}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setFields(fields.filter((_, j) => j !== i))}
+                className="w-[28px] shrink-0 pt-1.5 text-subtle hover:text-red text-sm"
+                aria-label="Remove field"
+              >
+                ×
+              </button>
+            </div>
+            <Input
+              value={f.path}
+              onChange={(e) => updateField(i, { path: e.target.value })}
+              placeholder="max(urls[].upload_time)     ← JMESPath into the JSON body"
+              className="font-mono"
+            />
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => setFields([...fields, { name: "", path: "", type: "string" }])}
+          className="self-start font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent hover:text-accent-h"
+        >
+          + Add field
+        </button>
+        {fields.length === 0 && (
+          <p className="font-mono text-[11px] text-red">
+            At least one field is required — with none the step produces no columns.
+          </p>
+        )}
+      </div>
+
+      <div className="grid gap-3 @lg:grid-cols-2">
+        <Field
+          label="Connection"
+          hint="optional Airflow HTTP connection: its password is sent as a Bearer token, plus any headers in its extras"
+        >
+          <Input
+            value={(step.connection_id as string) ?? ""}
+            onChange={(e) => setOptional("connection_id", e.target.value)}
+            placeholder="none — unauthenticated"
+          />
+        </Field>
+        <Field
+          label="Max rows"
+          hint="refuses to run over more rows than this, before any request. Narrow first (filter, join), then look up."
+        >
+          <Input
+            type="number"
+            min={1}
+            value={String((step.max_rows as number) ?? 500)}
+            onChange={(e) => set({ ...step, max_rows: Math.max(1, Number(e.target.value) || 1) })}
+          />
+        </Field>
+        <Field
+          label="Status column"
+          hint="per-row JSON: HTTP status, cached, error, ms. Give each lookup its own name."
+        >
+          <Input
+            value={(step.meta_field as string) ?? ""}
+            onChange={(e) => setOptional("meta_field", e.target.value)}
+            placeholder="http_meta"
+          />
+        </Field>
+        <Field label="On error" hint="a 404 is a result (nulls), not an error">
+          <Dropdown<string>
+            value={(step.on_error as string) ?? "null"}
+            onChange={(v) => set({ ...step, on_error: v })}
+            options={HTTP_ON_ERROR}
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
   switch (step.op) {
     case "filter":
@@ -2429,5 +2583,7 @@ export function StepEditor({ step, set }: { step: StepShape; set: Setter }) {
       return <ExtractEditor step={step} set={set} />;
     case "structure":
       return <StructureEditor step={step} set={set} />;
+    case "http_lookup":
+      return <HttpLookupEditor step={step} set={set} />;
   }
 }
