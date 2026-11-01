@@ -127,3 +127,7 @@ def test_bigquery_authenticates_with_the_airflow_providers_credentials(monkeypat
     monkeypatch.setattr(br, "ibis", NS(bigquery=NS(connect=lambda **kw: seen.update(kw) or "con")))
     br._open_bigquery({"url": "bigquery://prj/ds", "conn_id": "gcp"})
     assert seen == {"project_id": "prj", "dataset_id": "ds", "credentials": "creds-of-gcp"}
+    # An Airflow connection carries only the project; ibis needs "" (not None)
+    # for "no default dataset" or parse_project_and_dataset crashes.
+    br._open_bigquery({"url": "bigquery://prj", "conn_id": "gcp"})
+    assert seen["dataset_id"] == ""

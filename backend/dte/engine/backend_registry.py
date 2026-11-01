@@ -178,11 +178,11 @@ def _open_bigquery(credentials: dict) -> ibis.BaseBackend:
     if url:
         parsed = urlparse(url)
         project = parsed.hostname
-        dataset = (parsed.path or "").lstrip("/") or None
+        dataset = (parsed.path or "").lstrip("/")  # ibis wants "" for none, not None
         extra = {"credentials": _gcp_credentials(credentials["conn_id"])} if credentials.get("conn_id") else {}
         return ibis.bigquery.connect(project_id=project, dataset_id=dataset, **extra)
     project = resolve_secret(credentials["project_id"])
-    dataset = resolve_secret(credentials.get("dataset_id")) if credentials.get("dataset_id") else None
+    dataset = resolve_secret(credentials.get("dataset_id")) if credentials.get("dataset_id") else ""
     return ibis.bigquery.connect(project_id=project, dataset_id=dataset)
 
 
