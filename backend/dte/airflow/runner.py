@@ -6,7 +6,10 @@ No stores, no HTTP, no Airflow imports. Callers resolve sources/destination
 from __future__ import annotations
 
 import json
+import logging
+import time
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,7 +23,8 @@ from dte.engine.registry import get_engine
 from dte.models.pipeline import resolve_pipeline_engine
 from dte.sources.loader import load_source
 
-# on_event(step_idx, op, status, message)
+# on_event(step_idx, op, status, message). A run phase (source load, write,
+# contracts) arrives with step_idx=None and its title as `op`.
 EventCb = Callable[[int, str, str, "str | None"], None]
 
 
@@ -34,6 +38,34 @@ class RunResult:
     sql_query: dict | None = None
     labels_version: int | None = None
     config_digest: str | None = None
+
+
+@contextmanager
+def _phase(log, emit, title: str, group: bool = True):
+    """A timed phase, folded into an Airflow collapsible log group and reported
+    to `emit` as a step_idx=None event. Groups don't nest, so a phase that
+    contains per-step groups passes group=False."""
+    log.info("::group::%s" if group else "== %s", title)
+    emit(None, title, "started")
+    t0 = time.monotonic()
+    try:
+        yield
+    except Exception as e:
+        emit(None, title, "failed", f"{type(e).__name__}: {e}")
+        raise
+    else:
+        emit(None, title, "completed")
+    finally:
+        if group:
+            log.info("::endgroup::")
+        log.info("%s took %.2fs", title, time.monotonic() - t0)
+
+
+def _log_quality(log, results) -> None:
+    for r in results:
+        verdict = "PASS" if r.passed else r.severity.upper()
+        level = logging.INFO if r.passed else (logging.ERROR if r.severity == "fail" else logging.WARNING)
+        log.log(level, "check %s [%s]: %s %s", r.label or r.contract_id, r.severity, verdict, r.detail or "")
 
 
 def _quality_status(results) -> str:
@@ -55,37 +87,89 @@ def run_pipeline(
     run_id: str = "",
     eval_set=None,
     eval_examples: list | None = None,
+    log: logging.Logger | None = None,
 ) -> RunResult:
     """`sources` = [(SourceTableRef, Source, Connection, creds)],
     `destination` = (Destination, creds) for transform pipelines only."""
     settings = get_settings()
+    log = log or logging.getLogger("dte.runner")
     lookups = lookups or {}
     pipeline = interpolate_pipeline(pipeline, params or resolve_context(pipeline))
     ptype = getattr(pipeline, "pipeline_type", "transform") or "transform"
+
+    def emit(idx, op, status, msg=None):
+        if on_event:
+            on_event(idx, op, status, msg)
+
+    def phase(title, group=True):
+        return _phase(log, emit, title, group)
 
     engine_name = resolve_pipeline_engine(
         getattr(pipeline, "engine", None) or "auto",
         [conn.connection_type for _, _, conn, _ in sources],
     )
     engine = get_engine(engine_name)
+    # Keys only: resolved params may carry secrets.
+    log.info("%s pipeline on %s: %d source(s), %d step(s), params=%s", ptype, engine_name,
+             len(sources), len(pipeline.steps or []), sorted((params or {}).keys()))
     registry = BackendRegistry(duckdb_con=engine.con)
-    tables = {
-        ref.alias: load_source(s, registry, conn, creds, table=ref.table)
-        for ref, s, conn, creds in sources
-    }
+    tables = {}
+    for ref, s, conn, creds in sources:
+        with phase(f"load source {ref.alias}"):
+            tables[ref.alias] = t = load_source(s, registry, conn, creds, table=ref.table)
+            log.info("source %s: %s table=%s, %d cols %s", ref.alias, conn.connection_type,
+                     ref.table or getattr(s, "table", None), len(t.columns), list(t.columns))
 
     step_sqls: dict[int, str] = {}
+    ops = {i: st.get("op") for i, st in enumerate(pipeline.steps or [])}
+    # One log group per step. The compiler reports a step's schema and SQL
+    # after "completed", so a group stays open until the next step starts.
+    step_t0: dict[int, float] = {}
+    open_group = []
+
+    def close_group():
+        if open_group:
+            log.info("::endgroup::")
+            open_group.clear()
+
+    def _on_step(idx, op, status, msg=None):
+        if status == "started":
+            close_group()
+            log.info("::group::step #%d %s", idx, op)
+            open_group.append(idx)
+            step_t0[idx] = time.monotonic()
+        else:
+            if status == "failed":
+                log.error("step #%d %s failed: %s", idx, op, msg)
+            log.info("step #%d %s took %.2fs", idx, op, time.monotonic() - step_t0.get(idx, time.monotonic()))
+        emit(idx, op, status, msg)
+
+    def _on_sql(idx, sql):
+        step_sqls[idx] = sql
+        log.info("SQL:\n%s", sql)
+
+    def compile_steps(**extra):
+        try:
+            return compile_pipeline(pipeline, tables, **kw, **extra)
+        finally:
+            close_group()
+
     kw: dict[str, Any] = dict(
         lookup_tables=lookups,
         engine=engine,
-        on_step=on_event or (lambda *a: None),
-        on_step_sql=lambda i, sql: step_sqls.__setitem__(i, sql),
+        on_step=_on_step,
+        on_step_sql=_on_sql,
+        on_step_schema=lambda i, cols: log.info("step #%d %s -> %d cols %s", i, ops.get(i), len(cols), cols),
+        on_enrichment_stats=lambda i, st: log.info("step #%d %s enrichment: %s", i, ops.get(i), st),
     )
     steps_sql = lambda: {str(k): v for k, v in step_sqls.items()}  # noqa: E731
 
     if ptype == "quality":
         results: list = []
-        compile_pipeline(pipeline, tables, on_quality_result=lambda _i, r: results.append(r), **kw)
+        # Checks execute while compiling, so this phase is real work here.
+        with phase("compile + run checks", group=False):
+            compile_steps(on_quality_result=lambda _i, r: results.append(r))
+        _log_quality(log, results)
         return RunResult(
             status=_quality_status(results),
             quality=[r.model_dump() for r in results],
@@ -93,23 +177,34 @@ def run_pipeline(
         )
 
     if ptype == "eval":
-        return _run_eval(pipeline, tables, kw, engine, eval_set, eval_examples or [])
+        return _run_eval(pipeline, compile_steps, phase, log, eval_set, eval_examples or [])
 
     dest, dest_creds = destination
-    compiled = compile_pipeline(pipeline, tables, output=dest.config, **kw)
+    # Lazy: most steps only build the query (eager ones like extract/structure
+    # run here), so the real cost of the rest lands in "execute + write".
+    with phase("compile steps", group=False):
+        compiled = compile_steps(output=dest.config)
     final_sql = None
     try:
         final_sql = str(ibis.to_sql(compiled.limit(settings.run_max_rows), dialect=getattr(engine, "dialect", "duckdb")))
     except Exception:
         pass
     compiled = compiled.limit(settings.run_max_rows)
-    result = engine.execute(compiled, dest.config, credentials=dest_creds, run_id=run_id)
+    if final_sql:
+        log.info("::group::final SQL")
+        log.info("%s", final_sql)
+        log.info("::endgroup::")
+    with phase(f"execute + write to {getattr(dest.config, 'type', dest.dest_type)}", group=False):
+        result = engine.execute(compiled, dest.config, credentials=dest_creds, run_id=run_id)
+        log.info("rows written: %s -> %s", result["rows_written"], result["location"])
 
     quality = []
     contracts = getattr(pipeline, "quality_contracts", []) or []
     if contracts:
         from dte.quality.evaluator import evaluate_contracts
-        quality = evaluate_contracts(contracts, dest.config, engine.con)
+        with phase(f"quality contracts ({len(contracts)})"):
+            quality = evaluate_contracts(contracts, dest.config, engine.con)
+        _log_quality(log, quality)
     return RunResult(
         status=_quality_status(quality),
         rows_written=result["rows_written"],
@@ -119,7 +214,7 @@ def run_pipeline(
     )
 
 
-def _run_eval(pipeline, tables, kw, engine, eval_set, examples) -> RunResult:
+def _run_eval(pipeline, compile_steps, phase, log, eval_set, examples) -> RunResult:
     from dte.evals.cost import throughput_stats
     from dte.evals.digest import config_digest
     from dte.evals.runner import join_and_score
@@ -128,11 +223,16 @@ def _run_eval(pipeline, tables, kw, engine, eval_set, examples) -> RunResult:
         raise ValueError("eval pipeline run without an eval set — nothing to score against")
     # Pin before compiling: labels may be edited mid-run.
     labels_version = eval_set.labels_version
-    compiled = compile_pipeline(pipeline, tables, **kw)
-    df = compiled.limit(get_settings().run_max_rows).execute()
-    rows = json.loads(df.to_json(orient="records", date_format="iso"))
-    scores = join_and_score(rows, examples, eval_set.to_field_specs(), collect_failures=True)
-    scores["throughput"] = throughput_stats(rows)
+    with phase("compile steps", group=False):
+        compiled = compile_steps()
+    with phase("execute"):
+        df = compiled.limit(get_settings().run_max_rows).execute()
+        rows = json.loads(df.to_json(orient="records", date_format="iso"))
+        log.info("rows produced: %d", len(rows))
+    with phase(f"score against {len(examples)} labelled example(s)"):
+        scores = join_and_score(rows, examples, eval_set.to_field_specs(), collect_failures=True)
+        scores["throughput"] = throughput_stats(rows)
+    log.info("scores: %s", {k: v for k, v in scores.items() if isinstance(v, (int, float))})
     return RunResult(
         status="completed",
         rows_written=scores.get("n", 0),

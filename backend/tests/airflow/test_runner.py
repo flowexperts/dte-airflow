@@ -33,3 +33,64 @@ def test_quality_fail_and_warn(tmp_path):
         p, srcs, _, _ = _setup(tmp_path, "quality", [{"op": "check", "expr": "age > 18", "severity": sev, "label": "adult"}])
         res = run_pipeline(p, srcs)
         assert res.status == status and res.quality
+
+
+def test_run_logs_phases(tmp_path, caplog):
+    import logging
+    p, srcs, dest, _ = _setup(tmp_path, steps=[{"op": "filter", "expr": "age > 18"}])
+    p.quality_contracts = []
+    with caplog.at_level(logging.INFO, logger="dte.runner"):
+        run_pipeline(p, srcs, dest)
+    text = caplog.text
+    assert "::group::" in text and "::endgroup::" in text
+    assert "source s1" in text and "1 cols" in text
+    assert "step #0 filter" in text and "SELECT" in text
+    assert "rows written: 1" in text
+
+
+def test_quality_logs_by_severity(tmp_path, caplog):
+    import logging
+    p, srcs, _, _ = _setup(tmp_path, "quality", [{"op": "check", "expr": "age > 18", "severity": "fail", "label": "adult"}])
+    with caplog.at_level(logging.INFO, logger="dte.runner"):
+        run_pipeline(p, srcs)
+    assert any(r.levelno == logging.ERROR and "adult" in r.getMessage() for r in caplog.records)
+
+
+def test_one_log_group_per_step_with_duration(tmp_path, caplog):
+    import logging
+    p, srcs, dest, _ = _setup(tmp_path, steps=[{"op": "filter", "expr": "age > 18"},
+                                               {"op": "sort", "by": ["age"]}])
+    with caplog.at_level(logging.INFO, logger="dte.runner"):
+        run_pipeline(p, srcs, dest)
+    msgs = [r.getMessage() for r in caplog.records]
+    assert "::group::step #0 filter" in msgs and "::group::step #1 sort" in msgs
+    assert any(m.startswith("step #0 filter took ") for m in msgs)
+    assert any(m.startswith("step #1 sort took ") for m in msgs)
+    assert msgs.count("::endgroup::") == sum(m.startswith("::group::") for m in msgs)
+
+
+def _collect():
+    events = []
+    return events, lambda idx, op, status, msg=None: events.append((idx, op, status, msg))
+
+
+def test_phases_reach_on_event(tmp_path):
+    p, srcs, dest, _ = _setup(tmp_path, steps=[{"op": "filter", "expr": "age > 18"}])
+    events, on_event = _collect()
+    run_pipeline(p, srcs, dest, on_event=on_event)
+    phases = [(op, st) for idx, op, st, _ in events if idx is None]
+    for title in ("load source s1", "compile steps", "execute + write to json"):
+        assert (title, "started") in phases and (title, "completed") in phases
+    assert (0, "filter", "completed", None) in events
+
+
+def test_failed_phase_reaches_on_event(tmp_path):
+    p, srcs, dest, out = _setup(tmp_path)
+    out.mkdir()  # the writer can't open a directory as a file
+    events, on_event = _collect()
+    try:
+        run_pipeline(p, srcs, dest, on_event=on_event)
+    except Exception:
+        pass
+    assert any(idx is None and op.startswith("execute + write") and st == "failed" and msg
+               for idx, op, st, msg in events)
