@@ -86,12 +86,20 @@ def evaluate_contracts(
 
     view = "__dq_output__"
     _create_quality_view(con, target, view)
+    return [_evaluate_one(c, view, con) for c in contracts]
 
-    results: list[QualityResult] = []
-    for contract in contracts:
-        result = _evaluate_one(contract, view, con)
-        results.append(result)
-    return results
+
+def evaluate_contracts_on_table(contracts: list, table, con) -> list[QualityResult]:
+    """Evaluate `contracts` against an ibis `table` bound to DuckDB `con`,
+    before anything is written (plan 086)."""
+    if not contracts:
+        return []
+    view = "__dq_pre__"
+    con.create_view(view, table, overwrite=True)
+    try:
+        return [_evaluate_one(c, view, con) for c in contracts]
+    finally:
+        con.drop_view(view, force=True)
 
 
 def _evaluate_one(contract: Contract, view: str, con) -> QualityResult:

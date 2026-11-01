@@ -53,3 +53,25 @@ def test_postgres_source_to_parquet_file(tmp_path, pg_table):
 
     assert res.status == "completed" and res.rows_written == 2
     assert sorted(pq.read_table(out).column("id").to_pylist()) == [2, 3]
+
+
+def test_pre_contracts_on_postgres_result(tmp_path, pg_table):
+    """Task 3's staging branch: checks run on a Postgres-bound result, a
+    failing one blocks the write, a passing one writes the staged rows."""
+    conn = Connection(id="pg", connection_type="postgres", credentials={"url": _pg_url()})
+    src = Source(id="s", connection_id="pg", source_type="sql_database", config={}, table=pg_table)
+    ref = SourceTableRef(source_id="s", alias="s", table=pg_table)
+    out = tmp_path / "out.parquet"
+    dest = Destination(id="d", connection_id="local_fs", dest_type="parquet",
+                       config={"type": "parquet", "path": str(out)})
+    dest.narrow_config()
+
+    def run(max_rows):
+        p = Pipeline(id="p", name="p", sources=[ref.model_dump()], steps=[], output_id="d",
+                     quality_contracts=[{"type": "row_count_between", "id": "rc", "min": 1, "max": max_rows}])
+        return run_pipeline(p, [(ref, src, conn, conn.credentials)], (dest, {}))
+
+    assert run(2).status == "failed_quality" and not out.exists()
+    res = run(3)
+    assert res.status == "completed" and res.rows_written == 3
+    assert pq.read_table(out).num_rows == 3
