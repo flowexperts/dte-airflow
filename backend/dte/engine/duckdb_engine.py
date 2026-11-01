@@ -3,6 +3,7 @@ from __future__ import annotations
 from itertools import count
 
 import ibis
+import pyarrow as pa
 
 from dte.engine.base import BaseEngine, EnrichmentSpec
 from dte.engine.writers import WriteResult
@@ -17,6 +18,15 @@ class RawSqlNotSupportedOnBackend(RuntimeError):
     transpiles the fragment through sqlglot to whatever dialect the table's
     own backend speaks.
     """
+
+
+# `EnrichmentSpec.output_schema` SQL type names → Arrow. JSON columns are
+# carried as encoded strings (see the `*_meta` columns).
+_ARROW_TYPES = {
+    "VARCHAR": pa.string(), "JSON": pa.string(), "BIGINT": pa.int64(),
+    "INTEGER": pa.int32(), "DOUBLE": pa.float64(), "BOOLEAN": pa.bool_(),
+    "TIMESTAMP": pa.timestamp("us"), "DATE": pa.date32(),
+}
 
 
 class DuckDBEngine(BaseEngine):
@@ -63,9 +73,8 @@ class DuckDBEngine(BaseEngine):
         already been paid for, and a view would re-run nothing but would let
         the name outlive the data it describes.
         """
-        import pyarrow as pa
-
-        rows = table.to_pyarrow().to_pylist()
+        src = table.to_pyarrow()
+        rows = src.to_pylist()
 
         out_rows: list[dict] = []
         for row in rows:
@@ -74,14 +83,24 @@ class DuckDBEngine(BaseEngine):
 
         name = f"_enrich_{spec.name}_{next(self._view_seq)}"
 
+        # Known types: the input's own, overlaid with what the step declares.
+        # Inferring from Python values instead turned an empty input, or a
+        # column NULL in every row, into int32 — and a writer then created
+        # timestamp/text destination columns as integer.
+        declared = {f.name: f.type for f in src.schema}
+        declared.update({c: _ARROW_TYPES.get(t.upper(), pa.string())
+                         for c, t in spec.output_schema.items()})
+
         if out_rows:
             arrow = pa.Table.from_pylist(out_rows)
+            for i, f in enumerate(arrow.schema):
+                if pa.types.is_null(f.type) and f.name in declared:
+                    arrow = arrow.set_column(i, f.name, arrow.column(i).cast(declared[f.name]))
         else:
-            # Nothing survived. Build an empty table with the right columns so
-            # downstream steps see a schema instead of a missing-column error.
-            empty = {c: [] for c in table.columns}
-            empty.update({c: [] for c in spec.output_schema})
-            arrow = pa.Table.from_pydict(empty)
+            # Nothing survived: an empty table with the right columns and
+            # types, so downstream steps see a schema, not a missing column.
+            arrow = pa.Table.from_pydict(
+                {c: pa.array([], type=t) for c, t in declared.items()})
 
         self._con.con.register(name, arrow)
         return self._con.table(name)
