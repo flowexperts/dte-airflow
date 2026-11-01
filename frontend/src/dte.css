@@ -29,6 +29,9 @@
   --green: var(--chakra-colors-success-fg);
   --red: var(--chakra-colors-danger-fg);
   --code-bg: var(--chakra-colors-bg-subtle);
+  /* Diff rows: removed / added lines. */
+  --red-tint: color-mix(in oklab, var(--red) 14%, transparent);
+  --green-tint: color-mix(in oklab, var(--green) 14%, transparent);
 
   /* Categorical chart series (plan 064). Assigned in fixed order, never
      cycled — colour follows the series, so filtering one out must not
@@ -75,6 +78,8 @@
   --color-green: var(--green);
   --color-red: var(--red);
   --color-code-bg: var(--code-bg);
+  --color-red-tint: var(--red-tint);
+  --color-green-tint: var(--green-tint);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);

@@ -528,33 +528,22 @@ export interface PipelineRevision {
   yaml?: string;
 }
 
-export interface StepChange {
-  index: number;
-  kind: "added" | "removed" | "changed";
-  op: string;
-  before: Record<string, unknown> | null;
-  after: Record<string, unknown> | null;
-}
-
-export interface PipelineDiff {
-  name_changed: boolean;
-  name_before: string | null;
-  name_after: string | null;
-  sources_added: string[];
-  sources_removed: string[];
-  output_id_changed: boolean;
-  output_id_before: string | null;
-  output_id_after: string | null;
-  steps: StepChange[];
+/** One before | after line pair; a side with no line is null. */
+export interface YamlDiffRow {
+  kind: "equal" | "replace" | "delete" | "insert";
+  a_no: number | null;
+  a: string | null;
+  b_no: number | null;
+  b: string | null;
 }
 
 export interface RevisionDiffResponse {
   from: { id: string; changed_at: string | null; changed_by: string | null };
   to: { id: string; changed_at: string | null; changed_by: string | null };
-  diff: PipelineDiff;
   summary: string;
-  /** Unified diff of the two revisions' YAML. Empty when identical. */
-  yaml_diff: string;
+  /** Hunks of paired YAML lines; unchanged runs fall between hunks. Empty
+   *  when identical. */
+  yaml_diff: YamlDiffRow[][];
 }
 
 export const listPipelineRevisions = (id: string, limit = 100) =>

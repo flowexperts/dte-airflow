@@ -13,11 +13,15 @@ in the UI, so what a reviewer sees in a git PR doesn't match anything in DTE.
   function `dte export` and `FilePipelineStore` use, so the UI shows
   byte-for-byte what lands in the file. No YAML library in the frontend.
 - `GET /pipelines/{id}/revisions/{rev}` adds `yaml`.
-- `GET /pipelines/{id}/diff` adds `yaml_diff`: a unified diff from stdlib
-  `difflib` over the two YAMLs. No diff library in the frontend.
-- Revision page: a **YAML** panel and a **Changes** panel (the diff against
-  the previous revision, found from the revision list) under the canvas.
-- History tab diff: the YAML diff renders above the structural one.
+- `GET /pipelines/{id}/diff` adds `yaml_diff`: hunks of before/after line
+  pairs (`pipelines/diff.side_by_side`, stdlib `difflib`, 3 lines of
+  context). No diff library in the frontend.
+- **YAML diff, not JSON, and side by side.** The revision page splits 50/50:
+  read-only spec on the left, a panel with **Changes** (split before | after
+  diff against the previous revision) and **YAML** tabs on the right. Each
+  line pair is one grid row, so wrapped lines keep both sides aligned.
+- **The History list carries no diff.** No pick-two selection; a row opens
+  the revision. The JSON structural diff (`DiffView`) is deleted.
 
 ## Tasks
 
@@ -27,15 +31,18 @@ in the UI, so what a reviewer sees in a git PR doesn't match anything in DTE.
   empty diff.
 
 ### 2. Frontend — same branch
-- `YamlDiff` component (one line per diff line, coloured by prefix), used by
-  `DiffView` and the revision page. `YamlBlock` for the plain YAML.
+- `RevisionYaml` (Changes / YAML tabs) in the canvas rail slot on a revision.
+  `--red-tint` / `--green-tint` tokens for changed rows.
 - Revision page fetches the revision list to find the predecessor.
 
 ## Files
 
 Changed: `backend/dte/api/routes/pipelines.py`,
 `backend/tests/unit/test_pipeline_history_api.py`, `frontend/src/lib/api.ts`,
-`frontend/src/components/builder/history/DiffView.tsx`,
+`frontend/src/components/builder/history/HistoryPanel.tsx`,
+`frontend/src/components/pipeline/canvas.tsx`, `frontend/src/dte.css`,
 `frontend/src/pages/pipelines/revision.tsx`.
 
 New: `frontend/src/components/builder/history/YamlDiff.tsx`.
+
+Deleted: `frontend/src/components/builder/history/DiffView.tsx`.
