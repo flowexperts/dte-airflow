@@ -48,7 +48,7 @@ def _slow_load(*args, **kwargs):
 @pytest.fixture
 def seeded(fake_stores, monkeypatch, tmp_path):
     for mod in ("pipelines", "schema"):
-        monkeypatch.setattr(f"dte.api.routes.{mod}.load_source", _slow_load)
+        monkeypatch.setattr(f"dte.api.routes.{mod}.load_interactive", _slow_load)
     _run(fake_stores["source"].save(SourceCreate(**SOURCE)))
     _run(fake_stores["destination"].save(DestinationCreate(
         id="out1", connection_id="local_fs",
@@ -90,6 +90,6 @@ def test_interactive_routes_load_a_bounded_sample(seeded, monkeypatch, method, p
         raise ValueError("stop here")
 
     for mod in ("pipelines", "schema"):
-        monkeypatch.setattr(f"dte.api.routes.{mod}.load_source", capture)
+        monkeypatch.setattr(f"dte.api.routes.{mod}.load_interactive", capture)
     TestClient(app).request(method, path, json=body)
     assert seen == [SAMPLE_ROWS]

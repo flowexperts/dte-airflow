@@ -12,7 +12,7 @@ from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.models.pipeline import SourceBase as Source
 from dte.security.permissions import requires
-from dte.sources.loader import load_source
+from dte.sources.sample import load_interactive
 from dte.store.base import ConnectionStore
 
 router = APIRouter()
@@ -73,7 +73,7 @@ def source_fields(source: Source, conn, table: str | None) -> InferSchemaRespons
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     try:
-        result_table = load_source(
+        result_table = load_interactive(
             source, registry, conn, conn.credentials, table=table, sample=SAMPLE_ROWS,
         )
     except Exception as e:

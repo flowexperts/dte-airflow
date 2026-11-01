@@ -71,7 +71,7 @@ from dte.models.pipeline import (
 from dte.models.user import User
 from dte.pipelines.diff import diff_pipeline, summarise_diff
 from dte.security.permissions import requires
-from dte.sources.loader import load_source
+from dte.sources.sample import load_interactive
 from dte.store.base import (
     ConnectionStore,
     DestinationStore,
@@ -741,7 +741,7 @@ def _load_compile(
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     tables = {
-        ref.alias: load_source(s, registry, conn, creds, table=ref.table, sample=SAMPLE_ROWS)
+        ref.alias: load_interactive(s, registry, conn, creds, table=ref.table, sample=SAMPLE_ROWS)
         for ref, s, conn, creds in sources
     }
     # Fired before compilation, so a caller still learns which backend
