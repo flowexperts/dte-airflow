@@ -19,6 +19,7 @@ from dte.models.pipeline import (
     ExpressionMapStep,
     ExtractStep,
     FilterStep,
+    HttpLookupStep,
     JoinStep,
     LookupMapStep,
     LookupTable,
@@ -279,6 +280,11 @@ def _dispatch_single_table_step(
             table, StructureStep(**step), engine=engine, idx=idx,
             on_enrichment_stats=on_enrichment_stats,
         )
+    elif op == "http_lookup":
+        return _apply_http_lookup(
+            table, HttpLookupStep(**step), engine=engine, idx=idx,
+            on_enrichment_stats=on_enrichment_stats,
+        )
     raise CompilerError(f"unknown step op {op!r}")
 
 
@@ -439,6 +445,149 @@ def _apply_structure(
         except Exception:  # never let telemetry crash a run
             pass
     return result_table
+
+
+_URL_COLUMN_RE = re.compile(r"\{(\w+)\}")
+
+
+def _coerce_http_value(value, type_: str):
+    """A JMESPath result as the declared type; None when it can't be one.
+    Typing happens again in SQL (`cast`), this only keeps each column to one
+    Python type so Arrow can build it."""
+    if value is None:
+        return None
+    try:
+        if type_ == "string":
+            return value if isinstance(value, str) else json.dumps(value)
+        if type_ == "int":
+            return int(value)
+        if type_ == "float":
+            return float(value)
+        if type_ == "boolean":
+            return bool(value)
+        return str(value)  # timestamp: ISO string, cast in SQL
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_http_lookup(
+    table: ibis.Table,
+    step: HttpLookupStep,
+    engine: BaseEngine | None = None,
+    idx: int = 0,
+    on_enrichment_stats=None,
+) -> ibis.Table:
+    """One GET per row, JMESPath fields out as typed columns (plan 085).
+
+    Materialises like every enrichment step. The response *body* is cached
+    per URL per UTC day, so a preview and a run that day pay once and editing
+    a field path re-reads the cache instead of the API. A 404 is a result
+    (the thing is not there — for a package, that is evidence) and is cached;
+    any other failure is a property of the attempt and is not, the rule
+    `_apply_structure` explains.
+    """
+    import hashlib
+    import time
+    import urllib.parse
+    from datetime import UTC, datetime
+
+    import httpx
+    import jmespath
+
+    from dte.artifacts import derived_key, get_artifact_store
+    from dte.engine.base import EnrichmentSpec
+
+    if engine is None:
+        raise CompilerError("http_lookup steps require an engine")
+    columns = _URL_COLUMN_RE.findall(step.url)
+    missing = sorted(set(columns) - set(table.columns))
+    if missing:
+        raise CompilerError(
+            f"http_lookup step {idx}: url references unknown column(s) {missing}; "
+            f"available: {sorted(table.columns)}"
+        )
+    # Before any request: this op must never fan out over a whole source.
+    rows = int(table.count().execute())
+    if rows > step.max_rows:
+        raise CompilerError(
+            f"http_lookup step {idx}: {rows} input rows exceeds max_rows="
+            f"{step.max_rows} — filter or join down to the rows worth looking up first"
+        )
+    headers: dict[str, str] = {}
+    if step.connection_id:
+        from dte.airflow import connections
+
+        try:
+            headers = connections.http_headers(step.connection_id)
+        except connections.ModelConnectionMissing as exc:
+            raise CompilerError(str(exc)) from None
+
+    store = get_artifact_store()
+    day = datetime.now(UTC).date().isoformat()
+    paths = {f.name: jmespath.compile(f.path) for f in step.fields}
+    blank = {f.name: None for f in step.fields}
+    stats = {"calls": 0, "cached": 0, "errors": 0}
+
+    def _render(row: dict) -> str:
+        return _URL_COLUMN_RE.sub(
+            lambda m: urllib.parse.quote(str(row[m.group(1)]), safe=""), step.url,
+        )
+
+    def _fetch(url: str) -> tuple[dict, dict]:
+        key = derived_key(hashlib.sha256(url.encode()).hexdigest(), "http_lookup", "get", {"day": day})
+        if store.exists(key):
+            stats["cached"] += 1
+            payload = json.loads(store.get(key).decode("utf-8"))
+            return payload, {"status": payload["status"], "cached": True, "error": None, "ms": 0}
+        t0 = time.monotonic()
+        status, body, error = None, None, None
+        try:
+            resp = httpx.get(url, headers=headers, timeout=10, follow_redirects=True)
+            status = resp.status_code
+            if status == 200:
+                body = resp.json()
+            elif status != 404:
+                error = f"HTTP {status}"
+        except (httpx.HTTPError, ValueError) as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        stats["calls"] += 1
+        payload = {"status": status, "body": body}
+        if error:
+            stats["errors"] += 1
+            if step.on_error == "fail":
+                raise CompilerError(f"http_lookup step {idx} failed for {url}: {error}")
+        else:
+            store.put(key, json.dumps(payload).encode("utf-8"), "application/json")
+        return payload, {"status": status, "cached": False, "error": error,
+                         "ms": int((time.monotonic() - t0) * 1000)}
+
+    # ponytail: sequential GETs, fine for the dozens of rows a narrowed funnel
+    # yields; a thread pool with a per-host rate limit if lookups grow.
+    def _mapper(row: dict) -> list[dict]:
+        nulls = [c for c in columns if row.get(c) is None]
+        if nulls:
+            meta = {"status": None, "cached": False, "error": f"null {nulls} in url", "ms": 0}
+            return [{**blank, "http_meta": json.dumps(meta)}]
+        payload, meta = _fetch(_render(row))
+        body = payload.get("body")
+        values = blank if body is None else {
+            f.name: _coerce_http_value(paths[f.name].search(body), f.type) for f in step.fields
+        }
+        return [{**values, "http_meta": json.dumps(meta)}]
+
+    out_schema = {f.name: "VARCHAR" for f in step.fields}
+    out_schema["http_meta"] = "VARCHAR"  # JSON-encoded; see _mapper
+    result = engine.apply_enrichment(
+        table, EnrichmentSpec(name=f"http_lookup_{idx}", mapper=_mapper, output_schema=out_schema),
+    )
+    result = result.mutate(**{f.name: result[f.name].cast(_TYPE_MAP[f.type]) for f in step.fields})
+
+    if on_enrichment_stats is not None:
+        try:
+            on_enrichment_stats(idx, {**stats, "provider": "http"})
+        except Exception:  # never let telemetry crash a run
+            pass
+    return result
 
 
 def _apply_extract(

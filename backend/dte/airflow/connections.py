@@ -110,6 +110,26 @@ def to_dte(conn_id: str) -> tuple[Connection, dict]:
     return conn, conn.credentials
 
 
+def http_headers(conn_id: str) -> dict[str, str]:
+    """Request headers for an `http_lookup` step (plan 085) from an Airflow
+    connection: `headers` in its extras, plus the password as a Bearer token.
+    A missing connection raises `ModelConnectionMissing`."""
+    from airflow.exceptions import AirflowNotFoundException
+    from airflow.hooks.base import BaseHook
+
+    try:
+        conn = BaseHook.get_connection(conn_id)
+    except AirflowNotFoundException:
+        raise ModelConnectionMissing(
+            f"airflow connection {conn_id!r} not found — create it in Airflow → "
+            "Admin → Connections (type 'http', token as password)"
+        ) from None
+    headers = {str(k): str(v) for k, v in (conn.extra_dejson.get("headers") or {}).items()}
+    if conn.password:
+        headers.setdefault("Authorization", f"Bearer {conn.password}")
+    return headers
+
+
 # Model keys (plan 072). The official providers' hooks own the conn type, the
 # default conn id and client construction (password = key, host = base_url,
 # Bedrock/Vertex via extras); DTE only picks the hook.

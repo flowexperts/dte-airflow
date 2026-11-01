@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid as _uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
@@ -950,6 +951,61 @@ class StructureStep(BaseModel):
         return self
 
 
+class HttpLookupField(BaseModel):
+    name: str
+    # JMESPath over the JSON response, e.g. `max(urls[].upload_time)`.
+    path: str
+    type: Literal["string", "int", "float", "boolean", "timestamp"] = "string"
+
+
+_URL_PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class HttpLookupStep(BaseModel):
+    """One GET per row, JSON fields out as typed columns (plan 085).
+
+    `url` carries `{column}` placeholders filled from each row. Responses are
+    cached per URL per day in the artifact store, so a preview and a run on
+    the same day pay once. `max_rows` refuses to fan out over a large table:
+    narrow first (filter, join), then look up.
+    """
+
+    op: Literal["http_lookup"]
+    url: str
+    # Airflow HTTP connection: password → `Authorization: Bearer`, plus any
+    # `headers` in its extras. None → unauthenticated.
+    connection_id: str | None = None
+    fields: list[HttpLookupField]
+    max_rows: int = Field(500, ge=1)
+    on_error: Literal["null", "fail"] = "null"
+
+    @model_validator(mode="after")
+    def _validate(self) -> HttpLookupStep:
+        import jmespath
+
+        if not self.url.startswith(("http://", "https://")):
+            raise ValueError(f"url must be http:// or https://, got {self.url!r}")
+        for ph in _URL_PLACEHOLDER_RE.findall(self.url):
+            if not _IDENT_RE.match(ph):
+                raise ValueError(f"url placeholder {{{ph}}} must name a column (an identifier)")
+        if not self.fields:
+            raise ValueError("an http_lookup step must declare at least one field")
+        names = [f.name for f in self.fields]
+        bad = [n for n in names if not _IDENT_RE.match(n)]
+        if bad:
+            raise ValueError(f"field names must be identifiers: {bad}")
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        if dupes:
+            raise ValueError(f"duplicate field names: {dupes}")
+        for f in self.fields:
+            try:
+                jmespath.compile(f.path)
+            except jmespath.exceptions.JMESPathError as e:
+                raise ValueError(f"field {f.name!r}: invalid JMESPath {f.path!r}: {e}") from None
+        return self
+
+
 class OutputField(BaseModel):
     field: str
     alias: str | None = None
@@ -1206,6 +1262,7 @@ _STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
     ("profile", None): ProfileStep,
     ("extract", None): ExtractStep,
     ("structure", None): StructureStep,
+    ("http_lookup", None): HttpLookupStep,
 }
 
 
