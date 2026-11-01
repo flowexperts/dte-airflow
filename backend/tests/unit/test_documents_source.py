@@ -6,6 +6,7 @@ automatically from the builder, so if listing parsed PDFs, every keystroke in
 the UI would cost money.
 """
 
+from dte.engine.backend_registry import BackendRegistry
 import ibis
 import pytest
 from pydantic import ValidationError
@@ -72,14 +73,14 @@ def test_documents_default_glob_is_pdf():
 
 def test_lists_one_row_per_matching_file(corpus):
     con = ibis.duckdb.connect()
-    df = load_source(_src(corpus), con, {}).execute()
+    df = load_source(_src(corpus), BackendRegistry(duckdb_con=con), None, {}).execute()
     assert len(df) == 3
     assert sorted(df["filename"].tolist()) == ["a.pdf", "b.pdf", "c.pdf"]
 
 
 def test_listing_columns(corpus):
     con = ibis.duckdb.connect()
-    table = load_source(_src(corpus), con, {})
+    table = load_source(_src(corpus), BackendRegistry(duckdb_con=con), None, {})
     assert set(table.columns) >= {
         "path", "filename", "ext", "size_bytes", "modified_at", "media_type",
     }
@@ -87,7 +88,7 @@ def test_listing_columns(corpus):
 
 def test_sizes_and_media_type_are_real(corpus):
     con = ibis.duckdb.connect()
-    df = load_source(_src(corpus), con, {}).execute()
+    df = load_source(_src(corpus), BackendRegistry(duckdb_con=con), None, {}).execute()
     row = df[df["filename"] == "a.pdf"].iloc[0]
     assert row["size_bytes"] == len(b"%PDF-1.4 aaa")
     assert row["media_type"] == "application/pdf"
@@ -96,14 +97,14 @@ def test_sizes_and_media_type_are_real(corpus):
 
 def test_glob_is_honoured(corpus):
     con = ibis.duckdb.connect()
-    df = load_source(_src(corpus, glob="*.pdf"), con, {}).execute()
+    df = load_source(_src(corpus, glob="*.pdf"), BackendRegistry(duckdb_con=con), None, {}).execute()
     # Top level only — the nested c.pdf must not appear.
     assert sorted(df["filename"].tolist()) == ["a.pdf", "b.pdf"]
 
 
 def test_non_matching_files_are_excluded(corpus):
     con = ibis.duckdb.connect()
-    df = load_source(_src(corpus), con, {}).execute()
+    df = load_source(_src(corpus), BackendRegistry(duckdb_con=con), None, {}).execute()
     assert "ignore.txt" not in df["filename"].tolist()
 
 
@@ -115,7 +116,7 @@ def test_listing_does_not_read_file_contents(corpus):
     """
     (corpus / "corrupt.pdf").write_bytes(b"\x00\x01\x02 not a pdf at all")
     con = ibis.duckdb.connect()
-    df = load_source(_src(corpus), con, {}).execute()
+    df = load_source(_src(corpus), BackendRegistry(duckdb_con=con), None, {}).execute()
     assert "corrupt.pdf" in df["filename"].tolist()
     assert len(df) == 4
 
@@ -123,13 +124,13 @@ def test_listing_does_not_read_file_contents(corpus):
 def test_empty_directory_raises_a_named_error(tmp_path):
     con = ibis.duckdb.connect()
     with pytest.raises(FileNotFoundError) as exc:
-        load_source(_src(tmp_path), con, {})
+        load_source(_src(tmp_path), BackendRegistry(duckdb_con=con), None, {})
     assert "*.pdf" in str(exc.value)
 
 
 def test_returns_an_ibis_table(corpus):
     con = ibis.duckdb.connect()
-    assert isinstance(load_source(_src(corpus), con, {}), ibis.Table)
+    assert isinstance(load_source(_src(corpus), BackendRegistry(duckdb_con=con), None, {}), ibis.Table)
 
 
 def test_non_pdf_extensions_are_listed_with_their_media_type(tmp_path):
@@ -138,7 +139,7 @@ def test_non_pdf_extensions_are_listed_with_their_media_type(tmp_path):
     (tmp_path / "clip.mp3").write_bytes(b"ID3")
     (tmp_path / "pic.png").write_bytes(b"\x89PNG")
     con = ibis.duckdb.connect()
-    df = load_source(_src(tmp_path, glob="**/*"), con, {}).execute()
+    df = load_source(_src(tmp_path, glob="**/*"), BackendRegistry(duckdb_con=con), None, {}).execute()
     by_name = {r["filename"]: r for _, r in df.iterrows()}
     assert by_name["clip.mp3"]["media_type"] == "audio/mpeg"
     assert by_name["pic.png"]["media_type"] == "image/png"
@@ -147,6 +148,6 @@ def test_non_pdf_extensions_are_listed_with_their_media_type(tmp_path):
 def test_table_is_queryable_like_any_other_source(corpus):
     """Once listed, it's ordinary tabular data — every existing step works."""
     con = ibis.duckdb.connect()
-    table = load_source(_src(corpus), con, {})
+    table = load_source(_src(corpus), BackendRegistry(duckdb_con=con), None, {})
     big = table.filter(table.size_bytes > 12).execute()
     assert big["filename"].tolist() == ["b.pdf"]

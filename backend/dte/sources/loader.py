@@ -443,8 +443,8 @@ LOADERS: dict[str, LoaderFn] = {
 
 def load_source(
     source: Source,
-    registry_or_con: BackendRegistry | ibis.BaseBackend,
-    connection_or_credentials: Connection | dict | None = None,
+    registry: BackendRegistry,
+    connection: Connection | None,
     credentials: dict | None = None,
     table: str | None = None,
     sample: int | None = None,
@@ -455,7 +455,8 @@ def load_source(
     - ``sql_database`` uses ``registry.for_connection(connection, creds)``
       so subsequent compilation pushes down into the source engine.
 
-    Signature: ``load_source(source, registry, connection, credentials)``.
+    ``connection`` is only read by ``sql_database`` and the object-store
+    kinds; every other loader ignores it, so callers may pass ``None``.
 
     ``table`` — the pipeline-level `SourceTableRef.table` (or an explicit
     override, e.g. for schema introspection). Only meaningful for
@@ -469,23 +470,8 @@ def load_source(
     honour it; every other loader is a view or pushdown, so a downstream
     LIMIT already bounds its work. Interactive paths pass it (plan 084);
     runs never do.
-
-    A legacy 3-arg call — ``load_source(source, con, credentials)`` where
-    ``con`` is an ``ibis.BaseBackend`` — is still accepted for one release
-    to give call sites time to migrate.  The connection is fabricated from
-    the source's ``source_type`` and (for ``sql_database``) the URL scheme.
     """
-    if isinstance(registry_or_con, ibis.BaseBackend):
-        # Legacy: (source, con, credentials).
-        from dte.engine.backend_registry import BackendRegistry
-        creds: dict = connection_or_credentials or {}  # type: ignore[assignment]
-        registry = BackendRegistry(duckdb_con=registry_or_con)
-        connection = _fabricate_legacy_connection(source, creds)
-    else:
-        registry = registry_or_con
-        connection = connection_or_credentials  # type: ignore[assignment]
-        creds = credentials or {}
-
+    creds = credentials or {}
     loader = LOADERS.get(source.source_type)
     if loader is None:
         raise NotImplementedError(
@@ -497,50 +483,3 @@ def load_source(
         return loader(source, registry, connection, creds, sample=sample)
     return loader(source, registry, connection, creds)
 
-
-def _fabricate_legacy_connection(source: Source, credentials: dict) -> Connection:
-    """Build a minimal in-memory Connection from a legacy 3-arg call.
-
-    Only used by pre-registry callers (older tests).  Real API traffic
-    passes a real Connection through the routes.
-    """
-    from dte.models.pipeline import Connection
-
-    ctype: str
-    if source.source_type == "sql_database":
-        # Resolve env-indirection {"env": "X"} so URL-scheme sniffing works.
-        raw_url = credentials.get("url")
-        try:
-            resolved_url = resolve_secret(raw_url) if raw_url else ""
-        except KeyError:
-            resolved_url = ""
-        url = str(resolved_url)
-        if url.startswith("sqlite:"):
-            ctype = "sqlite"
-        elif url.startswith(("postgres:", "postgresql:")):
-            ctype = "postgres"
-        elif url.startswith("mysql:"):
-            ctype = "mysql"
-        elif url.startswith("mssql:"):
-            ctype = "mssql"
-        elif url.startswith("snowflake:"):
-            ctype = "snowflake"
-        elif url.startswith("bigquery:"):
-            ctype = "bigquery"
-        else:
-            scheme = url.split("://", 1)[0] if "://" in url else url
-            raise NotImplementedError(
-                f"sql_database: unsupported credentials scheme '{scheme}://'. "
-                "Supported: sqlite, postgresql, mysql, mssql, snowflake, bigquery."
-            )
-    else:
-        # filesystem-family, mongodb, rest_api — all route through DuckDB;
-        # connection type is nominal.
-        ctype = source.source_type if source.source_type in (
-            "s3", "gcs", "azure", "mongodb", "rest_api",
-        ) else "local_fs"
-    return Connection(
-        id=f"legacy_{source.id}",
-        connection_type=ctype,  # type: ignore[arg-type]
-        credentials=credentials,
-    )

@@ -241,7 +241,7 @@ Alembic. `DATABASE_URL` must be a sync driver (e.g. `postgresql://`) for migrati
 - `004` — first-class `sources` and `destinations` tables.
 - `009` — `sources.format` column for filesystem-family reader override.
 
-One-off data migrations (rather than schema migrations) live under `backend/scripts/`. They are idempotent by convention: `migrate_field_refs.py` rewrites `parent__child` field references to dot syntax; `migrate_extract_connections.py` pulls inline credentials out of legacy source/destination configs into `Connection` rows; `migrate_embedded_endpoints.py` splits pipelines with embedded source/destination configs into the three-tier model.
+One-off data migrations (rather than schema migrations) live under `backend/scripts/`. They are idempotent by convention: `migrate_field_refs.py` rewrites `parent__child` field references to dot syntax; `migrate_embedded_endpoints.py` splits pipelines with embedded source/destination configs into the three-tier model.
 
 ## Execution and observability
 

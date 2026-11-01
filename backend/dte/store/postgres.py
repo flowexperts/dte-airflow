@@ -112,14 +112,13 @@ class PostgresPipelineStore:
         # 200 and changed nothing — no error anywhere, and the fake store
         # (a plain dict) could not reproduce it.
         #
-        # `id` is the conflict target. `tenant_id` is held out on purpose: a
-        # re-save must never be able to move a row into another tenant.
+        # `id` is the conflict target.
         stmt = stmt.on_conflict_do_update(
             index_elements=[Pipeline.id],
             set_={
                 k: stmt.excluded[k]
                 for k in values
-                if k not in ("id", "tenant_id")
+                if k != "id"
             },
         )
         async with _session(self._factory) as s:

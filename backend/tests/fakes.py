@@ -36,40 +36,34 @@ class FakePipelineStore:
     def __init__(self):
         self._data: dict[str, Pipeline] = {}
 
-    async def get(self, id: str, tenant_id: str | None = None) -> Pipeline | None:
+    async def get(self, id: str) -> Pipeline | None:
         row = self._data.get(id)
         if row is None:
-            return None
-        if tenant_id is not None and row.tenant_id != tenant_id:
             return None
         return row
 
     async def save(self, pipeline: Pipeline) -> None:
         existing = self._data.get(pipeline.id)
-        # UNIQUE(tenant_id, name) — mirrors DB constraint from migration 024.
+        # UNIQUE(name) — mirrors DB constraint from migration 024.
         for other in self._data.values():
             if other.id == pipeline.id:
                 continue
-            if other.tenant_id == pipeline.tenant_id and other.name == pipeline.name:
+            if other.name == pipeline.name:
                 raise ValueError(
-                    f"Pipeline name '{pipeline.name}' already exists for tenant '{pipeline.tenant_id}'"
+                    f"Pipeline name '{pipeline.name}' already exists"
                 )
         pipeline.created_at = existing.created_at if existing else _utcnow()
         pipeline.updated_at = _utcnow()
         self._data[pipeline.id] = pipeline
 
-    async def list(self, limit: int = 50, offset: int = 0, tenant_id: str | None = None) -> list[Pipeline]:
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Pipeline]:
         items = list(self._data.values())
-        if tenant_id is not None:
-            items = [p for p in items if p.tenant_id == tenant_id]
         items = sorted(items, key=lambda p: p.created_at or _utcnow(), reverse=True)
         return items[offset:offset + limit]
 
-    async def delete(self, id: str, tenant_id: str | None = None) -> bool:
+    async def delete(self, id: str) -> bool:
         row = self._data.get(id)
         if row is None:
-            return False
-        if tenant_id is not None and row.tenant_id != tenant_id:
             return False
         del self._data[id]
         return True
@@ -287,7 +281,6 @@ def _make_source(s: "SourceBase | Source | dict") -> Source:
             config=s.get("config", {}),
             table=s.get("table", ""),
             format=s.get("format"),
-            tenant_id=s.get("tenant_id", "default"),
         )
     return Source(
         id=s.id,
@@ -297,7 +290,6 @@ def _make_source(s: "SourceBase | Source | dict") -> Source:
         config=s.config,
         table=s.table,
         format=s.format,
-        tenant_id=getattr(s, "tenant_id", "default"),
     )
 
 
@@ -311,11 +303,9 @@ class FakeSourceStore:
     def __init__(self):
         self._data: dict[str, Source] = {}
 
-    async def get(self, id: str, tenant_id: str | None = None) -> Source | None:
+    async def get(self, id: str) -> Source | None:
         row = self._data.get(id)
         if row is None:
-            return None
-        if tenant_id is not None and row.tenant_id != tenant_id:
             return None
         return row
 
@@ -323,30 +313,26 @@ class FakeSourceStore:
         source_id = source["id"] if isinstance(source, dict) else source.id
         existing = self._data.get(source_id)
         row = _make_source(source)
-        # UNIQUE(tenant_id, name) — mirrors DB constraint from migration 021.
+        # UNIQUE(name) — mirrors DB constraint from migration 021.
         for other in self._data.values():
             if other.id == row.id:
                 continue
-            if other.tenant_id == row.tenant_id and (other.name or other.id) == (row.name or row.id):
+            if (other.name or other.id) == (row.name or row.id):
                 raise ValueError(
-                    f"Source name '{row.name}' already exists for tenant '{row.tenant_id}'"
+                    f"Source name '{row.name}' already exists"
                 )
         row.created_at = existing.created_at if existing else _utcnow()
         row.updated_at = _utcnow()
         self._data[source_id] = row
 
-    async def list(self, limit: int = 50, offset: int = 0, tenant_id: str | None = None) -> list[Source]:
+    async def list(self, limit: int = 50, offset: int = 0) -> list[Source]:
         items = list(self._data.values())
-        if tenant_id is not None:
-            items = [s for s in items if s.tenant_id == tenant_id]
         items = sorted(items, key=lambda src: src.created_at or _utcnow(), reverse=True)
         return items[offset:offset + limit]
 
-    async def delete(self, id: str, tenant_id: str | None = None) -> bool:
+    async def delete(self, id: str) -> bool:
         row = self._data.get(id)
         if row is None:
-            return False
-        if tenant_id is not None and row.tenant_id != tenant_id:
             return False
         del self._data[id]
         return True
@@ -412,13 +398,13 @@ class FakeDestinationStore:
         dest_id = destination["id"] if isinstance(destination, dict) else destination.id
         existing = self._data.get(dest_id)
         row = _make_destination(destination)
-        # UNIQUE(tenant_id, name) — mirrors DB constraint from migration 022.
+        # UNIQUE(name) — mirrors DB constraint from migration 022.
         for other in self._data.values():
             if other.id == row.id:
                 continue
-            if other.tenant_id == row.tenant_id and (other.name or other.id) == (row.name or row.id):
+            if (other.name or other.id) == (row.name or row.id):
                 raise ValueError(
-                    f"Destination name '{row.name}' already exists for tenant '{row.tenant_id}'"
+                    f"Destination name '{row.name}' already exists"
                 )
         row.created_at = existing.created_at if existing else _utcnow()
         row.updated_at = _utcnow()
@@ -457,15 +443,14 @@ class FakeDashboardStore:
                 t if isinstance(t, dict) else t.model_dump(mode="json")
                 for t in (dashboard.tiles or [])
             ],
-            tenant_id=getattr(dashboard, "tenant_id", "default"),
         )
-        # UNIQUE(tenant_id, name) — mirrors the DB constraint in migration 038.
+        # UNIQUE(name) — mirrors the DB constraint in migration 038.
         for other in self._data.values():
             if other.id == row.id:
                 continue
-            if other.tenant_id == row.tenant_id and other.name == row.name:
+            if other.name == row.name:
                 raise ValueError(
-                    f"Dashboard name '{row.name}' already exists for tenant '{row.tenant_id}'"
+                    f"Dashboard name '{row.name}' already exists"
                 )
         existing = self._data.get(row.id)
         row.created_at = existing.created_at if existing else _utcnow()
@@ -503,7 +488,6 @@ class FakeLookupTableStore:
                 name=lookup.get("name") or lid,
                 mappings=lookup.get("mappings", {}),
                 default=lookup.get("default"),
-                tenant_id=lookup.get("tenant_id", "default"),
             )
         else:
             row = LookupTable(
@@ -511,15 +495,14 @@ class FakeLookupTableStore:
                 name=lookup.name or lookup.id,
                 mappings=lookup.mappings,
                 default=lookup.default,
-                tenant_id=getattr(lookup, "tenant_id", "default"),
             )
-        # UNIQUE(tenant_id, name) — mirrors DB constraint from migration 023.
+        # UNIQUE(name) — mirrors DB constraint from migration 023.
         for other in self._data.values():
             if other.id == row.id:
                 continue
-            if other.tenant_id == row.tenant_id and (other.name or other.id) == (row.name or row.id):
+            if (other.name or other.id) == (row.name or row.id):
                 raise ValueError(
-                    f"Lookup table name '{row.name}' already exists for tenant '{row.tenant_id}'"
+                    f"Lookup table name '{row.name}' already exists"
                 )
         existing = self._data.get(row.id)
         row.created_at = existing.created_at if existing else _utcnow()
@@ -556,7 +539,7 @@ class FakeConnectionStore:
         self._data[connection.id] = Connection.model_construct(
             id=connection.id, name=connection.name or connection.id,
             connection_type=connection.connection_type,
-            credentials=connection.credentials, tenant_id="default",
+            credentials=connection.credentials,
         )
 
     async def delete(self, id: str) -> bool:
@@ -565,7 +548,7 @@ class FakeConnectionStore:
     async def list(self, limit: int = 50, offset: int = 0) -> list[Connection]:
         return [
             Connection.model_construct(id=c.id, name=c.name, connection_type=c.connection_type,
-                                       credentials={}, tenant_id="default")
+                                       credentials={})
             for c in list(self._data.values())[offset:offset + limit]
         ]
 

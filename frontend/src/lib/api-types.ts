@@ -1353,11 +1353,6 @@ export interface components {
             description?: string | null;
             /** Tiles */
             tiles?: components["schemas"]["DashboardTile"][];
-            /**
-             * Tenant Id
-             * @default default
-             */
-            tenant_id: string;
         };
         /**
          * DashboardTile
@@ -1403,7 +1398,7 @@ export interface components {
          *     to the typed `OutputTarget` union by `_narrow_config` at validation time.
          *
          *     Identity: `id` is server-generated (UUID4 by default). `name` is the
-         *     editable, unique-per-tenant label; defaults to `id` when omitted so
+         *     editable, unique label; defaults to `id` when omitted so
          *     historic callers keep working.
          */
         DestinationBase: {
@@ -1417,11 +1412,6 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             };
-            /**
-             * Tenant Id
-             * @default default
-             */
-            tenant_id: string;
         };
         /**
          * EvalSetBase
@@ -1443,11 +1433,6 @@ export interface components {
              * @default 1
              */
             labels_version: number;
-            /**
-             * Tenant Id
-             * @default default
-             */
-            tenant_id: string;
         };
         /**
          * ExampleWrite
@@ -1524,7 +1509,7 @@ export interface components {
          * @description API/domain fields.
          *
          *     Identity: `id` is server-generated (UUID4 by default). `name` is the
-         *     editable, unique-per-tenant label; defaults to `id` when omitted so
+         *     editable, unique label; defaults to `id` when omitted so
          *     historic callers keep working.
          */
         LookupTableBase: {
@@ -1538,11 +1523,6 @@ export interface components {
             };
             /** Default */
             default?: string | null;
-            /**
-             * Tenant Id
-             * @default default
-             */
-            tenant_id: string;
         };
         /** Pipeline */
         Pipeline: {
@@ -1576,11 +1556,6 @@ export interface components {
             } | null;
             /** Params */
             params?: unknown[];
-            /**
-             * Tenant Id
-             * @default default
-             */
-            tenant_id: string;
             /** Schedule */
             schedule?: {
                 [key: string]: unknown;
@@ -1597,7 +1572,7 @@ export interface components {
          * @description API/domain fields.
          *
          *     Identity: `id` is server-generated (UUID4 by default). `name` is the
-         *     editable, unique-per-tenant label — required from day one.
+         *     editable, unique label — required from day one.
          */
         PipelineBase: {
             /** Id */
@@ -1632,11 +1607,6 @@ export interface components {
             } | null;
             /** Params */
             params?: components["schemas"]["PipelineParam"][];
-            /**
-             * Tenant Id
-             * @default default
-             */
-            tenant_id: string;
             schedule?: components["schemas"]["PipelineSchedule"] | null;
             /** Notifications */
             notifications?: components["schemas"]["PipelineNotification"][];
@@ -1796,7 +1766,7 @@ export interface components {
          *     `format` is the strict `_FileFormat | None` Literal.
          *
          *     Identity: `id` is server-generated (UUID4 by default). `name` is the
-         *     editable, unique-per-tenant label; defaults to `id` when omitted so
+         *     editable, unique label; defaults to `id` when omitted so
          *     historic callers keep working.
          */
         SourceBase: {
@@ -1819,11 +1789,6 @@ export interface components {
             table: string;
             /** Format */
             format?: ("json" | "jsonl" | "ndjson" | "csv" | "parquet" | "excel") | null;
-            /**
-             * Tenant Id
-             * @default default
-             */
-            tenant_id: string;
         };
         /**
          * SourceTableRef

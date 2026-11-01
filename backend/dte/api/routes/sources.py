@@ -164,8 +164,7 @@ async def source_schema(
             status_code=422,
             detail=(
                 f"Source '{source_id}' is missing required field(s): connection_id. "
-                f"This looks like a legacy row — open it in the source editor and re-save, "
-                f"or run backend/scripts/migrate_extract_connections.py."
+                f"This looks like a legacy row — open it in the source editor and re-save."
             ),
         )
     conn = await c_store.get(source.connection_id)

@@ -77,7 +77,7 @@ def from_airflow(c) -> Connection:
     else:
         raise ValueError(f"airflow connection type {t!r} has no DTE mapping (conn_id={c.conn_id!r})")
     return Connection.model_construct(id=c.conn_id, name=c.conn_id, connection_type=kind,
-                                      credentials=creds, tenant_id="default")
+                                      credentials=creds)
 
 
 @lru_cache(maxsize=1)

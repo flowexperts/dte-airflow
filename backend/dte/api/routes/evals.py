@@ -1180,7 +1180,7 @@ async def _corpus_size(eval_set, ex_store, r_store) -> int:
 
 
 async def _unique_variant_name(p_store, name: str, variant_id_: str) -> str:
-    """A display name for one cell that will not violate UNIQUE(tenant, name).
+    """A display name for one cell that will not violate UNIQUE(name).
 
     Cell names are derived from the root config plus this cell's overrides,
     which is what stops them accumulating into "demo · instructions=v3 ·

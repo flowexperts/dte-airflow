@@ -100,7 +100,6 @@ class DashboardBase(SQLModel):
     name: str
     description: str | None = None
     tiles: list[DashboardTile] = SMField(default_factory=list)
-    tenant_id: str = "default"
 
     @model_validator(mode="after")
     def _unique_tile_titles(self):
@@ -121,9 +120,6 @@ class Dashboard(DashboardBase, table=True):
     description: str | None = SMField(default=None, sa_column=Column(Text, nullable=True))
     tiles: list = SMField(  # type: ignore[override]
         default_factory=list, sa_column=Column(JSONB, nullable=False)
-    )
-    tenant_id: str = SMField(  # type: ignore[override]
-        default="default", sa_column=Column(Text, nullable=False, server_default="default")
     )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())

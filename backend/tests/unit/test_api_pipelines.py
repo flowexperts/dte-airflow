@@ -43,7 +43,7 @@ def _run(coro):
 
 def _pipeline(pipeline_id: str = "p1", name: str | None = None, sources=("s1",), output_id="out1"):
     # Default name derives from id so tests that seed multiple pipelines get
-    # distinct names (UNIQUE(tenant_id, name) is enforced by the fake store).
+    # distinct names (UNIQUE(name) is enforced by the fake store).
     return {
         "id": pipeline_id,
         "name": name if name is not None else pipeline_id,

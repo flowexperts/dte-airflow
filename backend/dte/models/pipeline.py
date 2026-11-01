@@ -22,152 +22,6 @@ ConnectionType = Literal[
 ]
 
 
-# ─── Credential spec sourcing ──────────────────────────────────────────
-# We DELEGATE credential validation + field naming to dlt's `@configspec`
-# dataclasses. Standardization win: when dlt adds a new integration, we
-# add one line to `_DLT_CRED_CLASS` and get validation + field alignment
-# for free — a `dlt.destinations.<x>(credentials=creds)` call at the
-# writer site just works.
-#
-# We do NOT inherit from those classes. They're not Pydantic — they're
-# `@configspec` dataclasses with internal dunders (`__is_resolved__` etc)
-# and dlt-specific machinery. Inheriting drags all of that into our API
-# schemas. Instead, at Connection.model_validator time we:
-#   1. instantiate the dlt class (raises TypeError on bad fields),
-#   2. extract only public fields via `dataclasses.fields()`,
-#   3. store those as an opaque dict on the Connection.
-# Loaders / writers then reconstruct the dlt object (or hand a URL/dict
-# straight to dlt.destinations.<x>) at call time.
-
-from dataclasses import fields as _dc_fields
-
-from dlt.common.configuration.specs import (
-    AwsCredentials as _DltAws,
-)
-from dlt.common.configuration.specs import (
-    ConnectionStringCredentials as _DltConnStr,
-)
-
-
-class _AzureSpec:
-    """Local mini-spec for Azure Blob credentials.
-    Accepts `connection_string` (for Azurite / custom endpoints) OR the
-    standard dlt AzureCredentials fields (account_name + key/sas)."""
-    _fields = (
-        "azure_storage_account_name",
-        "azure_storage_account_key",
-        "azure_storage_sas_token",
-        "connection_string",
-    )
-
-    def __init__(self, **kw):
-        extra = set(kw) - set(self._fields)
-        if extra:
-            raise TypeError(f"unexpected azure credential keys: {sorted(extra)}")
-        for k in self._fields:
-            setattr(self, k, kw.get(k))
-        if not self.connection_string and not self.azure_storage_account_name:
-            raise TypeError(
-                "azure credentials require `connection_string` or "
-                "`azure_storage_account_name` + `azure_storage_account_key`/`azure_storage_sas_token`"
-            )
-
-
-class _GcsHmacSpec:
-    """Local mini-spec: DuckDB / S3-compatible GCS uses HMAC keys, which
-    dlt's `GcpServiceAccountCredentials` (JSON-key auth) can't express.
-    `endpoint_url` is optional — used for fake-gcs-server in local tests."""
-    _fields = ("hmac_key_id", "hmac_secret", "endpoint_url")
-
-    def __init__(self, **kw):
-        extra = set(kw) - set(self._fields)
-        if extra:
-            raise TypeError(f"unexpected keys: {sorted(extra)}")
-        for k in self._fields:
-            setattr(self, k, kw.get(k))
-        if not self.hmac_key_id or not self.hmac_secret:
-            raise TypeError("gcs credentials require `hmac_key_id` and `hmac_secret`")
-
-
-class _RestApiSpec:
-    """rest_api auth+headers dict, merged into source config at load time.
-    `auth` shape matches dlt's rest_api dict form (e.g. `{"type": "bearer",
-    "token": "..."}`) — dlt does its own validation on it."""
-    _fields = ("auth", "headers")
-
-    def __init__(self, **kw):
-        extra = set(kw) - set(self._fields)
-        if extra:
-            raise TypeError(f"unexpected keys: {sorted(extra)}")
-        self.auth = kw.get("auth") or {}
-        self.headers = kw.get("headers") or {}
-
-
-_DLT_CRED_CLASS: dict[str, type | None] = {
-    "local_fs": None,  # no creds
-    "s3": _DltAws,
-    "gcs": _GcsHmacSpec,
-    "azure": _AzureSpec,
-    "sftp": None,  # auth is the Airflow sftp provider's (plan 074)
-    "postgres": _DltConnStr,
-    "mysql": _DltConnStr,
-    "mssql": _DltConnStr,
-    "sqlite": _DltConnStr,
-    "snowflake": _DltConnStr,
-    "bigquery": _DltConnStr,
-    "mongodb": _DltConnStr,
-    "rest_api": _RestApiSpec,
-}
-
-
-def _instantiate_dlt_cred(cls: type, creds: dict):
-    """dlt's `@configspec` classes override __init__ to take one positional
-    'native value' (usually a URL). They don't accept kwargs. We probe:
-    kwargs first (works for @dataclass-style specs), then fall back to
-    passing the dict positionally (works for ConnectionString-style)."""
-    try:
-        return cls(**creds)
-    except TypeError:
-        # ConnectionStringCredentials(dict(...)) or ConnectionStringCredentials("url").
-        if "url" in creds and len(creds) == 1:
-            return cls(creds["url"])
-        return cls(creds)
-
-
-def _public_fields(instance) -> dict:
-    """Return field values from a `@configspec` dataclass, skipping
-    dlt-internal dunder fields, dlt's built-in defaults, and Nones.
-
-    We drop defaults so a `PUT` with empty credentials leaves the stored
-    row minimal (no `aws_sts_token_expiration_hours: 24.0` noise from a
-    freshly-constructed AwsCredentials)."""
-    # ConnectionString-family: collapse to the URL (loaders and dlt
-    # destinations both accept URL strings; single blob is easier to
-    # encrypt + audit than the exploded fields).
-    if isinstance(instance, _DltConnStr):
-        return {"url": instance.to_native_representation()}
-    try:
-        specced = _dc_fields(instance)
-    except TypeError:
-        specced = None
-    if specced is not None:
-        out: dict = {}
-        for f in specced:
-            if f.name.startswith("__"):
-                continue
-            v = getattr(instance, f.name)
-            if v is None:
-                continue
-            # Skip dlt's built-in defaults — user didn't set them.
-            if f.default is not None and v == f.default:
-                continue
-            out[f.name] = v
-    else:
-        out = {name: getattr(instance, name) for name in instance._fields}
-        out = {k: v for k, v in out.items() if v is not None}
-    return out
-
-
 def _blank_id_means_generate(data):
     """Drop `id` when it is blank so the UUID4 `default_factory` fires.
 
@@ -187,29 +41,13 @@ def _blank_id_means_generate(data):
 
 
 # ─── Connection ───────────────────────────────────────────────────────────────
-#
-# Two-class shape:
-#   ConnectionBase — API/domain fields + credential validator.  `id: str`
-#       required here so FastAPI raises 422 on missing.  `connection_type`
-#       uses the strict `ConnectionType` Literal for API-edge validation;
-#       the table class overrides it with `str` because SQLModel 0.0.x
-#       can't map a Literal to a TEXT column.
-#   Connection(table=True) — persistence identity + EncryptedJSON column.
-#       Encryption/decryption happens inside the TypeDecorator; the store
-#       needs NO SecretResolver — `credentials` is a real mapped column.
 
-class ConnectionBase(SQLModel):
-    """API/domain fields.  `credentials` is validated against the dlt spec
-    class for the given `connection_type` and stored as a cleaned dict.
+class Connection(SQLModel):
+    """An Airflow Connection viewed through DTE's types (plan 065).
 
-    Identity model
-    --------------
-    - `id`: opaque, server-generated (default: UUID4 string). Clients that
-      omit it get a fresh one; clients that supply it (legacy migration
-      scripts, historic tests) keep working. Never edited after creation.
-    - `name`: user-facing label, editable, unique per (tenant_id, class).
-      If omitted at construction we default to `id` so historic call
-      sites (e.g. `ConnectionBase(id="local_fs", ...)`) still round-trip.
+    Not persisted here: `dte.airflow.connections.from_airflow` builds it from
+    the Airflow connection, and `id` is the Airflow `conn_id`. Credentials
+    arrive already in DTE's shape, so nothing validates them here.
     """
 
     _generate_blank_id = model_validator(mode="before")(
@@ -218,47 +56,14 @@ class ConnectionBase(SQLModel):
 
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str | None = None
-    connection_type: ConnectionType  # strict Literal for API validation
+    connection_type: ConnectionType
     credentials: dict = SMField(default_factory=dict)
-    tenant_id: str = "default"
 
     @model_validator(mode="after")
     def _default_name_to_id(self):
         if not self.name:
             self.name = self.id
         return self
-
-    @model_validator(mode="after")
-    def _validate_credentials(self):
-        cls = _DLT_CRED_CLASS[self.connection_type]
-        if cls is None:  # local_fs
-            self.credentials = {}
-            return self
-        try:
-            instance = _instantiate_dlt_cred(cls, self.credentials)
-        except (TypeError, ValueError) as e:
-            raise ValueError(
-                f"{self.connection_type} credentials invalid: {e}"
-            ) from e
-        self.credentials = _public_fields(instance)
-        return self
-
-
-class Connection(ConnectionBase):
-    """An Airflow Connection viewed through DTE's types (plan 065).
-
-    Not persisted here: `dte.airflow.connections.from_airflow` builds it from
-    the Airflow connection, and `id` is the Airflow `conn_id`. Credentials are
-    already in DTE's shape, so the dlt spec validation on `ConnectionBase`
-    is skipped.
-    """
-
-    def _validate_credentials(self):  # overrides ConnectionBase's validator
-        return self
-
-
-# Back-compat alias — ConnectionCreate was the old 3-class name.
-ConnectionCreate = ConnectionBase
 
 
 # ─── Source configs (per source_type) ─────────────────────────────────────
@@ -453,7 +258,7 @@ class SourceBase(SQLModel):
     `format` is the strict `_FileFormat | None` Literal.
 
     Identity: `id` is server-generated (UUID4 by default). `name` is the
-    editable, unique-per-tenant label; defaults to `id` when omitted so
+    editable, unique label; defaults to `id` when omitted so
     historic callers keep working.
     """
 
@@ -467,7 +272,6 @@ class SourceBase(SQLModel):
     config: dict = SMField(default_factory=dict)
     table: str
     format: _FileFormat | None = None
-    tenant_id: str = "default"
 
     @model_validator(mode="after")
     def _default_name_to_id(self):
@@ -562,9 +366,6 @@ class Source(SourceBase, table=True):
     format: str | None = SMField(  # type: ignore[override]
         default=None, sa_column=Column(Text, nullable=True)
     )
-    tenant_id: str = SMField(  # type: ignore[override]
-        default="default", sa_column=Column(Text, nullable=False, server_default="default")
-    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
     )
@@ -591,7 +392,7 @@ class LookupTableBase(SQLModel):
     """API/domain fields.
 
     Identity: `id` is server-generated (UUID4 by default). `name` is the
-    editable, unique-per-tenant label; defaults to `id` when omitted so
+    editable, unique label; defaults to `id` when omitted so
     historic callers keep working.
     """
 
@@ -602,7 +403,6 @@ class LookupTableBase(SQLModel):
     name: str | None = None
     mappings: dict[str, str] = SMField(default_factory=dict)
     default: str | None = None
-    tenant_id: str = "default"
 
     @model_validator(mode="after")
     def _default_name_to_id(self):
@@ -622,9 +422,6 @@ class LookupTable(LookupTableBase, table=True):
         default_factory=dict, sa_column=Column(JSONB, nullable=False)
     )
     default: str | None = SMField(default=None, sa_column=Column(Text, nullable=True))
-    tenant_id: str = SMField(  # type: ignore[override]
-        default="default", sa_column=Column(Text, nullable=False, server_default="default")
-    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
     )
@@ -1147,7 +944,7 @@ class DestinationBase(SQLModel):
     to the typed `OutputTarget` union by `_narrow_config` at validation time.
 
     Identity: `id` is server-generated (UUID4 by default). `name` is the
-    editable, unique-per-tenant label; defaults to `id` when omitted so
+    editable, unique label; defaults to `id` when omitted so
     historic callers keep working.
     """
 
@@ -1158,7 +955,6 @@ class DestinationBase(SQLModel):
     name: str | None = None
     connection_id: str
     config: dict = SMField(default_factory=dict, sa_column=Column(JSONB, nullable=False))
-    tenant_id: str = "default"
 
     @model_validator(mode="after")
     def _default_name_to_id(self):
@@ -1216,9 +1012,6 @@ class Destination(DestinationBase, table=True):
         default_factory=dict, sa_column=Column(JSONB, nullable=False)
     )
     dest_type: str = SMField(sa_column=Column(Text, nullable=False))
-    tenant_id: str = SMField(  # type: ignore[override]
-        default="default", sa_column=Column(Text, nullable=False, server_default="default")
-    )
     created_at: datetime | None = SMField(
         default=None, sa_column=Column(server_default=func.now())
     )
@@ -1472,7 +1265,7 @@ class PipelineBase(SQLModel):
     """API/domain fields.
 
     Identity: `id` is server-generated (UUID4 by default). `name` is the
-    editable, unique-per-tenant label — required from day one.
+    editable, unique label — required from day one.
     """
 
     # Same guard every other named entity carries. Pipelines were the one
@@ -1533,7 +1326,6 @@ class PipelineBase(SQLModel):
     # Declared trigger-time inputs. Referenced from filter/map expressions as
     # {{params.<name>}}; validated against declared types on trigger.
     params: list[PipelineParam] = SMField(default_factory=list)
-    tenant_id: str = "default"
     # At most one schedule: a pipeline is one DAG and a DAG has one schedule
     # (plan 068). Part of the spec, so a schedule edit is a revision.
     schedule: PipelineSchedule | None = None
@@ -1704,9 +1496,6 @@ class Pipeline(PipelineBase, table=True):
     )
     params: list = SMField(  # type: ignore[override]
         default_factory=list, sa_column=Column(JSONB, nullable=False, server_default="'[]'::jsonb")
-    )
-    tenant_id: str = SMField(  # type: ignore[override]
-        default="default", sa_column=Column(Text, nullable=False, server_default="default")
     )
     # Nullable with no default: "no matrix" (a single-config eval run) must
     # stay distinguishable from "an empty matrix" — the same rule the eval
