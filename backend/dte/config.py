@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     run_timeout_seconds: int = 60 * 30  # 30 min default
     run_max_rows: int = 10_000_000
 
+    # DuckDB resource limits, applied to every connection (plan 086). Unset
+    # means DuckDB's own default: 80% of RAM and every core, per connection.
+    duckdb_memory_limit: str | None = None  # e.g. "4GB"
+    duckdb_threads: int | None = None
+    duckdb_temp_dir: str | None = None  # where DuckDB spills past memory_limit
+
     # Hard stop on sweep size. Read via getattr by the sweep route since
     # plan 051, but never declared here — so `extra="ignore"` swallowed
     # DTE_EVAL_MAX_SWEEP_CELLS and the cap the error message told users to

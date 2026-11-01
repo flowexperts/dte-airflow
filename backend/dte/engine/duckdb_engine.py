@@ -6,6 +6,7 @@ import ibis
 import pyarrow as pa
 
 from dte.engine.base import BaseEngine, EnrichmentSpec
+from dte.engine.connect import connect_duckdb
 from dte.engine.writers import WriteResult
 from dte.engine.writers import write as _write
 
@@ -33,7 +34,7 @@ class DuckDBEngine(BaseEngine):
     dialect = "duckdb"
 
     def __init__(self):
-        self._con = ibis.duckdb.connect()
+        self._con = connect_duckdb()
         self._view_seq = count()
 
     @property
