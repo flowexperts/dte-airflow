@@ -22,6 +22,7 @@ import { cn } from "@/lib/cn";
 import type { StepShape, GroupByEntry, DatePart, DataModelField, HttpLookupField } from "./types";
 import { missingPlaceholders } from "@/lib/http-lookup";
 import { LookupTablePicker } from "../LookupTablePicker";
+import { ConnectionPicker } from "../ConnectionPicker";
 import { SYSTEM_VARS, type SystemVar } from "@/lib/system-vars";
 import { quoteIdent, safeLiteral } from "@/lib/sql-literal";
 import {
@@ -2506,16 +2507,12 @@ function HttpLookupEditor({ step, set }: StepEditorProps) {
       </div>
 
       <div className="grid gap-3 @lg:grid-cols-2">
-        <Field
-          label="Connection"
-          hint="optional Airflow HTTP connection: its password is sent as a Bearer token, plus any headers in its extras"
-        >
-          <Input
-            value={(step.connection_id as string) ?? ""}
-            onChange={(e) => setOptional("connection_id", e.target.value)}
-            placeholder="none — unauthenticated"
-          />
-        </Field>
+        <ConnectionPicker
+          value={(step.connection_id as string) ?? ""}
+          onChange={(id) => setOptional("connection_id", id)}
+          allowedTypes={["rest_api"]}
+          noneLabel="none — unauthenticated"
+        />
         <Field
           label="Max rows"
           hint="refuses to run over more rows than this, before any request. Narrow first (filter, join), then look up."

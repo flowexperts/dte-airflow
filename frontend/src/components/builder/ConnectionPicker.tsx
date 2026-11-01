@@ -13,11 +13,14 @@ export function ConnectionPicker({
   onChange,
   allowedTypes,
   label = "Connection",
+  noneLabel,
 }: {
   value: string;
   onChange: (id: string) => void;
   allowedTypes: readonly ConnectionType[];
   label?: string;
+  /** Set to offer a "no connection" choice (value `""`) with this label. */
+  noneLabel?: string;
 }) {
   const { data: all = [], isLoading } = useSWR<Connection[]>("/api/connections");
   const candidates = all.filter((c) => allowedTypes.includes(c.connection_type));
@@ -43,6 +46,7 @@ export function ConnectionPicker({
         onChange={onChange}
         placeholder={isLoading ? "loading…" : "— pick a connection —"}
         options={[
+          ...(noneLabel ? [{ value: "", label: noneLabel }] : []),
           ...candidates.map<DropdownOption<string>>((c) => ({
             value: c.id,
             label: c.id,
