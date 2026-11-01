@@ -33,6 +33,13 @@ installed provider owns auth.
   `dte_type=bigquery`.
 - `http` → `rest_api` with `{"auth", "headers"}`.
 
+**Caps on metered connections (plan 093).** BigQuery and Snowflake
+connections read two extras into their credentials: `dte_max_bytes_billed`
+(BigQuery `maximum_bytes_billed` on the client's `default_query_job_config`,
+so every query is refused before billing past it) and
+`dte_statement_timeout_seconds` (Snowflake `STATEMENT_TIMEOUT_IN_SECONDS`;
+Snowflake has no bytes cap). Other kinds ignore them.
+
 A kind is offered only when its provider (and, for storage, the provider's
 filesystem package) is installed: `available_kinds()`, surfaced at
 `GET /dte/api/capabilities` with an install hint per missing kind.

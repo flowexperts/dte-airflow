@@ -376,6 +376,28 @@ mapping exists. Two consequences worth keeping:
 - Interactive calls return 504 after `DTE_PREVIEW_TIMEOUT_SECONDS` (30); DAG
   tasks default `execution_timeout` to `DTE_RUN_TIMEOUT_SECONDS`.
 
+### Metered sources (plan 093)
+
+On BigQuery and Snowflake a LIMIT bounds rows, not cost, so `sql_database`
+sources on those connections are "metered" (`dte/sources/metered.py`).
+
+- **Interactive paths read a cached sample.** `sample.load_interactive`
+  fetches once per (source, connection, table) — BigQuery `list_rows`
+  (free), Snowflake `TABLESAMPLE SYSTEM` falling back to `LIMIT` — into the
+  same parquet cache as eager sources, with a `<key>.json` sidecar holding the
+  partition columns. Steps then run in DuckDB. `?live=true` on preview /
+  dry-run reads the warehouse; runs always do.
+- **Estimate before Run.** `routes/pipelines._estimate` compiles against the
+  live backends (metadata only) and dry-runs the compiled SQL when it runs on
+  the warehouse; otherwise (mixed sources, an eager step) it prices each
+  metered table in full. Price is BigQuery on-demand `$6.25/TiB`; Snowflake
+  reports bytes from `EXPLAIN` and no price. Trigger returns
+  `{estimate, enqueued: false}` for a metered pipeline until `confirm`.
+- **Caps** come from the Airflow connection's extras (see
+  `dte/sources/CLAUDE.md`) and are enforced by the engine in the openers.
+  `runner._phase` and preview turn a cap hit into `QueryCapExceeded` /
+  a "needs X, cap is Y" message.
+
 ### DAGs, Assets and task logs (plans 087, 089)
 
 - `dag_factory._dag_for` gives the `run` task `inlets`/`outlets` from
