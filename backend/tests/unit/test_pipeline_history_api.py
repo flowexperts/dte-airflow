@@ -114,3 +114,24 @@ def test_put_populates_summary_from_prior_revision(client):
     # First revision has no prior, so its summary stays None.
     first = revs[1]
     assert first.summary is None
+
+
+def test_get_revision_returns_yaml_of_config(client):
+    import yaml
+    c, stores = client
+    c.post("/api/pipelines", json=_pipeline())
+    rev_id = _run(stores["pipeline_revision"].latest_for_pipeline("p_hist")).id
+    body = c.get(f"/api/pipelines/p_hist/revisions/{rev_id}").json()
+    assert yaml.safe_load(body["yaml"]) == body["config"]
+
+
+def test_diff_endpoint_returns_yaml_diff(client):
+    c, stores = client
+    c.post("/api/pipelines", json=_pipeline(name="v0"))
+    c.put("/api/pipelines/p_hist", json=_pipeline(name="v1"))
+    revs = _run(stores["pipeline_revision"].list_for_pipeline("p_hist"))
+    body = c.get(f"/api/pipelines/p_hist/diff?from={revs[1].id}&to={revs[0].id}").json()
+    lines = body["yaml_diff"].splitlines()
+    assert "-name: v0" in lines and "+name: v1" in lines
+    same = c.get(f"/api/pipelines/p_hist/diff?from={revs[0].id}&to={revs[0].id}").json()
+    assert same["yaml_diff"] == ""

@@ -3041,7 +3041,6 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                offset?: number;
             };
             header?: never;
             path: {

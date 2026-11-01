@@ -45,6 +45,7 @@ import {
 } from "./helpers";
 import { StepsColumn } from "./steps-column";
 import { Rail } from "./rail";
+import { RevisionYaml } from "@/components/builder/history/YamlDiff";
 import { HistoryPane, RunsPane, usePipelineRuns } from "./activity";
 import { ComparisonsPane, usePipelineComparisons } from "@/components/evals/comparisons-panel";
 
@@ -336,10 +337,12 @@ export function PipelineCanvas({
     </>
   );
 
-  /* No rail on a revision. Preview compiles the *saved* pipeline, so showing
-     it beside a historical spec would report results the spec on screen did
-     not produce. */
-  const rail = revision ? null : (
+  /* No preview rail on a revision. Preview compiles the *saved* pipeline, so
+     showing it beside a historical spec would report results the spec on
+     screen did not produce. The revision's YAML and diff take the slot. */
+  const rail = revision ? (
+    <RevisionYaml revision={revision} />
+  ) : (
     <Rail
       pipeline={pipeline}
       activeRunId={activeRunId}
