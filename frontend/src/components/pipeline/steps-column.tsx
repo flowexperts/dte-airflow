@@ -1,3 +1,4 @@
+import type { RevisionDiffResponse } from "@/lib/api";
 import { useEffect, useRef, useState } from "react";
 import { AddStep, Panel, PanelHead } from "@/components/ui";
 import { StepEditor } from "@/components/builder/steps/editors";
@@ -35,6 +36,7 @@ export function StepsColumn({
   readOnly,
   sources = [],
   outputId = "",
+  marks,
 }: {
   steps: StepShape[];
   onChange: (steps: StepShape[]) => void;
@@ -48,7 +50,17 @@ export function StepsColumn({
   sources?: SourceTableRef[];
   /** Destination whose table Auto-map matches against. */
   outputId?: string;
+  /** On a revision: what changed since the previous one. New and edited
+   *  steps are tinted green; removed steps show as struck red rows where
+   *  they used to sit. */
+  marks?: RevisionDiffResponse["step_marks"];
 }) {
+  const removedAt = (at: number) =>
+    (marks?.removed ?? [])
+      .filter((r) => r.at === at)
+      .map((r, k) => <RemovedStep key={`removed-${at}-${k}`} step={r.step as StepShape} />);
+  const markFor = (i: number) =>
+    marks?.added.includes(i) ? "added" : marks?.changed.includes(i) ? "changed" : null;
   const aliases = sources.map((r) => r.alias).filter(Boolean);
   const operandsAt = (i: number): string[] => {
     const priorJoinOutputs = steps
@@ -179,15 +191,18 @@ export function StepsColumn({
 
       {steps.map((step, i) => {
         const targeted = openIndex === i;
+        const mark = markFor(i);
         return (
           <div key={i}>
             {steps.length > 0 && i > 0 && <InsertRow at={i} />}
+            {removedAt(i)}
             <div
               id={`step-${i}`}
               ref={targeted ? targetRef : undefined}
               className={cn(
                 "border-b border-border scroll-mt-32 transition-colors",
                 targeted && "bg-[color:var(--accent-tint)]",
+                mark && "bg-green-tint",
               )}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => {
@@ -207,6 +222,11 @@ export function StepsColumn({
                       {labelFor(step)}
                     </span>
                     <span className="text-[13.5px] text-muted truncate">{stepTitle(step)}</span>
+                    {mark && (
+                      <span className="ml-auto font-mono text-[10px] tracking-[0.15em] uppercase text-green shrink-0">
+                        {mark}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -254,6 +274,7 @@ export function StepsColumn({
           </div>
         );
       })}
+      {removedAt(steps.length)}
 
       {!readOnly &&
         (addAt === steps.length ? (
@@ -265,5 +286,25 @@ export function StepsColumn({
           />
         ))}
     </Panel>
+  );
+}
+
+/** A step the previous revision had and this one doesn't. */
+function RemovedStep({ step }: { step: StepShape }) {
+  return (
+    <div className="grid grid-cols-[36px_1fr] border-b border-border bg-red-tint">
+      <div className="py-3 text-center font-mono text-[11px] text-red border-r border-border">
+        −
+      </div>
+      <div className="px-3.5 py-2.5 flex items-center gap-2.5 min-w-0">
+        <span className="font-mono text-[10px] font-bold tracking-[0.15em] uppercase text-red line-through shrink-0">
+          {labelFor(step)}
+        </span>
+        <span className="text-[13.5px] text-muted line-through truncate">{stepTitle(step)}</span>
+        <span className="ml-auto font-mono text-[10px] tracking-[0.15em] uppercase text-red shrink-0">
+          removed
+        </span>
+      </div>
+    </div>
   );
 }
