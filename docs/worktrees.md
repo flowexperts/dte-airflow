@@ -3,15 +3,14 @@
 ### Setting up a fresh worktree
 
 A new worktree is a checkout of tracked files only, so everything ignored or
-generated is missing. Four things, and each fails in a way that does not name
+generated is missing. Three things, and each fails in a way that does not name
 the real cause:
 
 ```bash
 cd worktrees/<name>
-cp ../../.env .                      # 1
-cd frontend && pnpm install          # 2
-pnpm exec next typegen               # 3
-cd ../backend && uv venv && uv pip install -e ".[dev]"   # 4
+cp ../../.env .                                   # 1
+cd frontend && pnpm install --ignore-workspace    # 2
+cd ../backend && uv sync --frozen --extra dev --extra airflow --extra trino   # 3
 ```
 
 1. **`.env` is gitignored, so a new worktree has none.** Compose reads `.env`
@@ -26,10 +25,14 @@ cd ../backend && uv venv && uv pip install -e ".[dev]"   # 4
    `tsc` — which reads as a broken import, not a missing install. The same
    applies to any checkout whose `node_modules` predates a new dependency,
    `main` included.
-3. No venv means `uv run pytest` fails with `Failed to spawn: pytest`. The
-   `[dev]` extra does **not** pull `trino`, so a fresh venv fails 6 tests in
-   `tests/unit/test_engine_seam.py` that read as a Trino regression and are
-   not one — `uv pip install "ibis-framework[trino]"` fixes them.
+   A worktree sits inside the main checkout, so pnpm walks up into the parent's
+   workspace and reports `No package found in this workspace`; pass
+   `--ignore-workspace` to every pnpm command (or call `node_modules/.bin/*`).
+3. No venv means `uv run pytest` fails with `Failed to spawn: pytest`. Each
+   extra closes a different trap: without `airflow`, `tests/airflow` fails at
+   import; without `trino`, 6 tests in `tests/unit/test_engine_seam.py` fail
+   and read as a Trino regression. `--all-extras` doesn't work: the mysql
+   source extra builds `mysqlclient`, which needs a C toolchain.
 
 ### Docker from a worktree
 

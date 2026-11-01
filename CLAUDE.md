@@ -39,10 +39,10 @@ docker compose logs -f airflow-apiserver
 docker compose restart airflow-apiserver airflow-scheduler airflow-dag-processor
 
 # Backend
-cd backend && uv sync --all-extras
-uv run pytest                      # unit; scenarios excluded by default
+cd backend && uv sync --frozen --extra dev --extra airflow --extra trino
+uv run pytest                      # unit + tests/airflow; scenarios and integration excluded
 uv run pytest tests/scenarios -m scenario -v
-uv run pytest -m "not integration" # skip postgres tests
+DTE_DATABASE_URL=... uv run pytest tests/integration   # needs the path: addopts ignores the dir
 dte db upgrade                     # migrate the `dte` schema (needs DTE_DATABASE_URL or Airflow config)
 dte validate pipelines/*.yaml      # pipeline files (plan 090), what CI runs
 dte run <file> [--sample N]        # run a pipeline file locally; no Postgres, conns from AIRFLOW_CONN_*
@@ -84,8 +84,8 @@ git merge feature/<name> --no-ff
 git worktree remove worktrees/<name> && git branch -d feature/<name>
 ```
 
-A fresh worktree needs four setup steps and compose must be run *from* it —
-see `.claude/rules/worktrees.md` before the first run.
+A fresh worktree needs three setup steps and compose must be run *from* it —
+see `docs/worktrees.md` before the first run.
 
 ## TDD convention
 
