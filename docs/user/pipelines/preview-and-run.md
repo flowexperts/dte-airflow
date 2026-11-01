@@ -8,6 +8,7 @@ Runs your steps on a sample and shows a table.
 - Capped at about 20 rows: shape, not totals.
 - A broken step (bad cast, missing field, invalid filter) turns the panel red with the error.
 - Runs in Airflow's api-server, not as a task, so it isn't in run history.
+- Gives up after 30 seconds with a timeout error (`DTE_PREVIEW_TIMEOUT_SECONDS`). Runs have their own, longer [timeout](scheduling.md#failures).
 
 ## Run
 
@@ -23,11 +24,15 @@ A run shows:
 - Quality checks, each passed or failed
 - On failure, the full error
 
+- A timeline of the run's phases (load each source, compile, quality contracts, execute + write) with how long each took
+
 For file destinations the page also shows the first rows of the written file.
 
-The same dag run is in Airflow under `dte__<pipeline id>` (filter by the `dte` tag), with the task log.
+Airflow is where the run lives: history, retries, clearing and logs. **Open in Airflow** goes to the dag run, **Task log** to its log. The same page is a **DTE Run** tab on Airflow's own dag run page, so you can start from either side.
 
 ![The dte DAG's runs in Airflow](../assets/airflow/dag-grid.png)
+
+The task log has a collapsible group per source load and per step (columns after the step, its SQL, how long it took), then the final SQL, rows written and one line per quality check.
 
 ![Task log in Airflow](../assets/airflow/task-log.png)
 
@@ -37,4 +42,4 @@ No cancel button yet. Mark the dag run failed in Airflow, or call `POST /dte/api
 
 ## Run history
 
-The **Runs** tab lists every run, marked **Manual** or **Scheduled**.
+The **Runs** tab lists the latest 20 runs, marked **Manual** or **Scheduled**. **All runs in Airflow →** opens the DAG's grid for the rest, with filters.

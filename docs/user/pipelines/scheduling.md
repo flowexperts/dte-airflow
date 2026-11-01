@@ -46,7 +46,7 @@ The panel shows the **next run time**. Scheduled runs are marked **Scheduled** i
 A failed run lands in run history with the error. The schedule's retry settings apply to every run of the pipeline, manual ones included:
 
 - **Retries** (default 0) and **Retry after**: errors like an unreachable bucket or a dropped connection are retried. A failed `fail`-severity quality check, or a missing source or destination, never is. Retries are refused on **append** destinations: a retry after a partial write would duplicate rows.
-- **Timeout**: a run that takes longer is failed (and retried, if retries are set).
+- **Timeout**: a run that takes longer is failed (and retried, if retries are set). Unset, it's 30 minutes (`DTE_RUN_TIMEOUT_SECONDS`).
 
 To hear about failures (or successes), add a [notification](notifications.md). Notifications belong to the pipeline, not the schedule, so manual runs notify too.
 
@@ -62,7 +62,7 @@ Body: `mode` (`cron` | `assets`, default `cron`), `cron_expr` (cron mode), `asse
 
 ## Chaining
 
-"Run B after A": give B the **After upstream** trigger and tick A. B runs whenever a successful run of A updates its output. Tick several and B waits until each has updated since its last run.
+"Run B after A": give B the **After upstream** trigger and tick A. B runs whenever a successful run of A updates its output. Tick several and B waits for all of them, not any: each must have updated since B's last run.
 
 This is Airflow's data-aware scheduling. Every pipeline's `run` task declares its sources as inlets and its destination as an outlet [Asset](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/asset-scheduling.html), so Airflow's **Assets** view is the lineage graph across pipelines. URIs:
 
@@ -74,3 +74,5 @@ This is Airflow's data-aware scheduling. Every pipeline's `run` task declares it
 | Object storage | the configured URL, e.g. `s3://bucket/key` |
 
 A table read and written through the same connection id gets the same URI, which is what links the two pipelines. URIs carry the connection id, never credentials. REST API sources have no Asset.
+
+With [pipelines in git](in-git.md) (`DTE_PIPELINE_STORE=file`), pipelines don't declare Assets yet, so an **After upstream** schedule never fires. Use cron there for now.

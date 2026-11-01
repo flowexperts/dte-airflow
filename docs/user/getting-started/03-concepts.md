@@ -18,7 +18,7 @@ One or more sources, an ordered list of [steps](../steps/index.md), and a destin
 
 ## Run
 
-One execution of a pipeline, i.e. one Airflow dag run, with a status, row count, and start and end time. The pipeline's **Runs** tab keeps the history; Airflow shows the same runs with task logs.
+One execution of a pipeline, i.e. one Airflow dag run, with a status, row count, and start and end time. The pipeline's **Runs** tab shows the latest ones; Airflow keeps the full history, with task logs.
 
 | Status | Meaning |
 | --- | --- |

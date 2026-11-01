@@ -42,7 +42,7 @@ Batch. Each run reads the source, transforms and writes, on a [schedule](pipelin
 
 ## What happens when a data quality check fails?
 
-A **Check** step with severity **fail** fails the run (`failed_quality`), so bad data never reaches the destination. With **warn**, the run finishes as `completed_with_warnings`.
+A failing check with severity **fail** ends the run as `failed_quality`; with **warn**, it finishes as `completed_with_warnings`. **Check** steps live in [Quality Check pipelines](pipelines/types.md#quality-check), which write nothing. To keep bad rows out of a Transform's destination, give it a [quality contract](pipelines/types.md#quality-contracts): by default it runs before the write, and a failure writes nothing.
 
 ## Can I run a dte pipeline from my own DAG?
 
@@ -65,7 +65,9 @@ One run is one Airflow task on one worker, with DuckDB as the engine, so the lim
 
 **Trino (experimental).** Set `DTE_TRINO_ENABLED=true` and a pipeline can run its transforms on a Trino cluster instead of DuckDB. It is early: raw SQL filters, expression maps, pivot and the PDF steps aren't supported on it, and the output is still written from the worker.
 
-For more, filter early, give the task more memory (pod resources on Kubernetes), or split the work across runs, for example one per day.
+DuckDB is capped at 2GB per run by default and spills to disk past that (`DTE_DUCKDB_MEMORY_LIMIT`, see [Scaling](self-hosting/scaling.md#memory-and-time-limits)).
+
+For more, filter early, give the task more memory (pod resources on Kubernetes) and raise the cap, or split the work across runs, for example one per day.
 
 ## Is paid support available?
 
@@ -81,11 +83,15 @@ For real use, yes: dte is a plugin for Airflow 3.3+ ([install](self-hosting/inst
 
 ## Can I schedule a pipeline?
 
-Yes. A [schedule](pipelines/scheduling.md) is the cron of the pipeline's DAG.
+Yes. A [schedule](pipelines/scheduling.md) is the pipeline DAG's cron, or runs it after other pipelines.
 
 ## Can I run pipeline B after pipeline A?
 
-Write an Airflow DAG that triggers or waits on the `dte__<pipeline id>` DAGs.
+Yes. Give B the **After upstream** schedule and pick A; B runs each time A updates its output. See [Chaining](pipelines/scheduling.md#chaining).
+
+## Can I keep pipelines in git?
+
+Yes, as YAML files you can review, validate in CI and promote by copying. See [Pipelines in git](pipelines/in-git.md).
 
 ## Can I rename a pipeline id?
 

@@ -125,8 +125,8 @@ Azurite (Azure, microsoft-azure), fake-gcs-server (GCS, google), an SFTP server
 | Join | Inner / left / right / outer join across two sources | Available |
 | Pivot | Reshape rows to columns (DuckDB PIVOT) | Available |
 | Select / Drop fields | Keep or drop a set of columns, with optional aliases | Available |
-| Check | Data-quality assertion — fail or warn when the expression is false | Available |
-| Profile columns | Per-column null count, distinct count, min/max stats | Available |
+| Check | Data-quality assertion — fail or warn when the expression is false (Quality Check pipelines only) | Available |
+| Profile columns | Per-column null count, distinct count, min/max stats (Quality Check pipelines only) | Available |
 
 ### Connections
 
@@ -155,7 +155,9 @@ Airflow's `[core] test_connection`).
 | Feature | Status |
 |---------|--------|
 | Runs execute as Airflow dag runs (`dte__<pipeline>`) | Available |
-| Schedules become Airflow cron DAGs | Available |
+| Schedules: cron, or after upstream pipelines (Airflow Assets) | Available |
+| Pipeline lineage as Airflow Assets | Available |
+| Pipelines as YAML files in git (`DTE_PIPELINE_STORE=file`), `dte validate` / `dte run` | Opt-in |
 | Preview / dry run (sample rows, compile-time errors surfaced) | Available |
 | Run history per pipeline | Available |
 | Run output peek (`GET /api/runs/{id}/output`) | Available |
@@ -164,7 +166,8 @@ Airflow's `[core] test_connection`).
 | Schema inference from an in-flight source body | Available |
 | Nested struct fields via dot syntax (`order.amount`) | Available |
 | Lookup tables — CRUD + referenced by Map · Lookup step | Available |
-| Per-step run timeline events | Available |
+| Per-step run timeline events, grouped and timed in the task log | Available |
+| Quality contracts checked before the write | Available |
 
 ### Engines
 

@@ -60,6 +60,8 @@ Optional:
 | `DTE_ARTIFACT_DIR` | `.dte-artifacts` (relative to the process) | Run artifacts. Use a path every component shares. |
 | `DTE_AIRFLOW_URL` | `http://localhost:8080` | How the api-server reaches Airflow's REST API to trigger runs. |
 
+Memory, timeout and pipeline-store settings: [Secrets & environment](secrets.md#env-variables-dte-reads).
+
 ## 3. Migrate
 
 Once per install and after every upgrade, with `DTE_DATABASE_URL` set:

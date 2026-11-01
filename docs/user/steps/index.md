@@ -25,7 +25,7 @@ Each step reads the current data, changes it and hands it to the next, so order 
 | **Check** | Asserts something about every row: `amount >= 0`, `email is not null` | A condition, a label, and a severity: **fail** fails the run (`failed_quality`), **warn** finishes it as `completed_with_warnings` |
 | **Profile Columns** | Records per-column stats: null count, distinct count, min, max | The columns to profile |
 
-A **Quality Check** pipeline (**Plugins ▸ DTE Pipelines ▸ Quality Check**) runs only these steps against a source and writes nothing.
+These steps belong to **Quality Check** pipelines only (**Plugins ▸ DTE Pipelines ▸ Quality Check**), which check a source and write nothing; a Transform with one is refused at save. A Quality Check pipeline can also Filter, Rename, Select and Join, but nothing else. See [Pipeline types](../pipelines/types.md).
 
 ![A quality check pipeline](../assets/pipelines/quality-check.png)
 

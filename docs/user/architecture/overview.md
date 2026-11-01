@@ -43,7 +43,9 @@ In Airflow: the metadata DB, `AIRFLOW_CONN_*` variables or a secrets backend. dt
    - Loads the revision the run started against, with its sources and destination
    - Resolves their connections through Airflow
    - Loads each source into the run's DuckDB connection
-   - Compiles the steps into one ibis expression, executes it, writes to the destination
+   - Compiles the steps into one ibis expression
+   - Runs `pre` quality contracts on the result, and stops there if one fails
+   - Executes it and writes to the destination, then runs any `post` contracts
 4. The outcome (status, rows written, quality results, SQL that ran) goes into `dte.run_results`, keyed by dag run id. Airflow keeps the task state and log.
 5. The UI polls the run every 2 seconds until it finishes.
 

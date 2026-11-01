@@ -20,6 +20,7 @@ $DTE_PIPELINES_DIR/
 - A file holds exactly what the pipeline editor saves: name, sources, steps, output, schedule, notifications. The `id` inside must match the file name.
 - Sources and destinations are referenced by id. Credentials are never in the file. They stay in Airflow Connections.
 - Each file becomes the DAG `dte__<id>`. A file that doesn't parse or validate loses only its own DAG, and the dag-processor log names the file. The rest keep running.
+- File mode doesn't declare Airflow Assets yet, so it can't be combined with [After upstream](scheduling.md#chaining) schedules: those DAGs never run. Use cron schedules.
 - A run records the revision it ran. In file mode that is a hash of the file's contents, so editing the file makes a new Airflow DAG version.
 
 ### Committing on save

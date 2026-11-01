@@ -36,11 +36,18 @@ Set `DTE_DATABASE_URL` on every Airflow component. See [Install](self-hosting/in
 | `cannot cast` | A Retype step can't convert a value (e.g. `"abc"` → int). | Filter out the bad rows first, or pick a different target type. |
 | `syntax error` (Filter Advanced, Map expression) | Your expression isn't valid SQL. | Try the Basic tab, or fix the expression. |
 | `division by zero` | An expression divides by a zero value in the sample. | Guard it with a case: `case when x = 0 then null else y / x end`. |
+| `timed out after 30s` | The sample took longer than `DTE_PREVIEW_TIMEOUT_SECONDS`, usually a slow source or a big join. | Filter earlier, or raise the setting. A run isn't bound by it. |
+
+## Save says a step isn't allowed
+
+Each pipeline type has its own steps: **Check** and **Profile Columns** go only in a Quality Check pipeline, and a Quality Check pipeline takes only those plus Filter, Rename, Select and Join. See [Pipeline types](pipelines/types.md). An older pipeline with such a step still runs; only saving it is refused.
 
 ## A run fails
 
 - Source unreachable: a database down, credentials expired, a file moved. Fix and rerun. Nothing was written.
 - Destination refused the write: schema mismatch, permissions, or an unwritable path. Fix the destination or pipeline.
+- `failed_quality` with nothing written: a `pre` quality contract failed, so the destination kept its old data. The run lists which.
+- `Out of Memory Error`, or the task timed out: see [memory and time limits](self-hosting/scaling.md#memory-and-time-limits).
 
 ## A run stays `pending`
 
