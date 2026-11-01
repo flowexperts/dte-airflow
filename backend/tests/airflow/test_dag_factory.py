@@ -33,3 +33,13 @@ def test_notifications_need_no_schedule():
     task = _dag_for(_rev(None, n)).get_task("run")
     assert task.on_failure_callback and task.on_success_callback
     assert not task.on_retry_callback
+
+
+def test_one_active_run_by_default_even_unscheduled():
+    """Plan 089: manual runs must not write the same destination concurrently."""
+    assert _dag_for(_rev()).max_active_runs == 1
+    assert _dag_for(_rev({"cron_expr": "0 1 * * *"})).max_active_runs == 1
+
+
+def test_overlap_allow_lifts_the_limit():
+    assert _dag_for(_rev({"cron_expr": "0 1 * * *", "overlap": "allow"})).max_active_runs == 16
