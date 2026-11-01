@@ -80,7 +80,7 @@ A blank `id` on any of `Connection`, `Source`, `Destination`, `LookupTable` mean
 
 ### Run detail
 
-Client-only page (`use(params)` + `useSWR`). Polls `/api/runs/{id}` every 2s until `isTerminal(status)`. Shows `MetricRow` (rows written, elapsed = client-computed from timestamps, started_at localised, engine=DuckDB) + error `<pre>` on failure. The `Timeline` component is stubbed with an "events not recorded yet" state — kept in the kit so we don't rewrite it when per-step events land backend-side.
+Client-only page (`use(params)` + `useSWR`). Polls `/api/runs/{id}` every 2s until `isTerminal(status)`. Shows `MetricRow` (rows written, elapsed = client-computed from timestamps, started_at localised, engine=DuckDB) + error `<pre>` on failure. Airflow is the run UI (plan 087): history, retries and logs live there, and this page only adds what Airflow can't show. "Open in Airflow" and "Task log" (and each `FailedSteps` row) are plain `<a>`s to relative `dags/…` hrefs built by `airflowRunHref`/`airflowTaskLogHref` from the run's `dag_id` + `id`; Airflow's `<base href>` resolves them. Airflow numbers log groups rather than naming them, so a step can't be anchored. The Diagnostics timeline reads `run_results.events`: step events plus run phases (`step_index: null`, `op` = phase title, e.g. `execute + write to json`), sorted by start. Step times are compile time; lazy steps cost nothing there and land in the execute phase.
 
 ### Preview / dry run
 

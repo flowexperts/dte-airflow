@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { InlineCode, Panel } from "@/components/ui";
 import type { RunEvent } from "@/lib/api";
-import { toneVar, type Tone } from "./helpers";
+import { elapsedSeconds, timeline, toneVar, type Tone } from "./helpers";
 
 function eventTone(status: RunEvent["status"] | undefined): Tone {
   if (status === "failed") return "err";
@@ -9,20 +9,15 @@ function eventTone(status: RunEvent["status"] | undefined): Tone {
   return "ok";
 }
 
-function duration(event: RunEvent | undefined): string {
-  if (!event) return "";
-  if (event.started_at && event.finished_at) {
-    const ms = Math.max(
-      0,
-      new Date(event.finished_at).getTime() - new Date(event.started_at).getTime(),
-    );
-    return `${ms}ms`;
-  }
+function duration(event: RunEvent): string {
+  if (event.started_at && event.finished_at)
+    return elapsedSeconds(event.started_at, event.finished_at);
   return event.status === "started" ? "…" : "—";
 }
 
-function TimelineRow({ index, event }: { index: number; event: RunEvent | undefined }) {
-  const started = event?.started_at ? new Date(event.started_at) : null;
+function TimelineRow({ event }: { event: RunEvent }) {
+  const started = event.started_at ? new Date(event.started_at) : null;
+  const isPhase = event.step_index === null;
   return (
     <div className="grid grid-cols-[90px_14px_1fr_auto] items-center gap-2.5 py-2">
       <span className="font-mono text-[11.5px] text-subtle tabular-nums">
@@ -30,17 +25,18 @@ function TimelineRow({ index, event }: { index: number; event: RunEvent | undefi
       </span>
       <span
         className="size-1.5 rounded-full justify-self-center"
-        style={{ background: toneVar[eventTone(event?.status)] }}
+        style={{ background: toneVar[eventTone(event.status)] }}
       />
-      <span className="text-[12.5px] text-text">
-        {event ? (
-          <>
-            <InlineCode>{event.op}</InlineCode> step {index} {event.status}
-            {event.message ? ` — ${event.message}` : ""}
-          </>
+      <span className={`text-[12.5px] ${isPhase ? "text-text font-medium" : "text-text"}`}>
+        {isPhase ? (
+          event.op
         ) : (
-          <>step {index}</>
-        )}
+          <>
+            <InlineCode>{event.op}</InlineCode> step {event.step_index}
+          </>
+        )}{" "}
+        {event.status}
+        {event.message ? ` — ${event.message}` : ""}
       </span>
       <span className="font-mono text-[11.5px] text-subtle tabular-nums">{duration(event)}</span>
     </div>
@@ -76,13 +72,11 @@ export function Diagnostics({
   const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<"timeline" | "sql">("timeline");
 
-  const indices = new Set<number>(events.map((e) => e.step_index));
-  stepSqls.forEach((_, i) => indices.add(i));
-  const sorted = [...indices].sort((a, b) => a - b);
-  const eventByIndex = new Map(events.map((e) => [e.step_index, e]));
+  const rows = timeline(events);
+  const stepCount = events.filter((e) => e.step_index !== null).length;
   const hasSql = finalSql !== null || stepSqls.size > 0;
 
-  if (sorted.length === 0 && !hasSql) return null;
+  if (rows.length === 0 && !hasSql) return null;
 
   return (
     <Panel>
@@ -99,8 +93,8 @@ export function Diagnostics({
           </span>
           <span className="text-[15px] font-medium text-text">Diagnostics</span>
           <span className="text-[12px] text-subtle">
-            execution timeline &amp; compiled SQL — {sorted.length} step
-            {sorted.length === 1 ? "" : "s"}
+            execution timeline &amp; compiled SQL — {stepCount} step
+            {stepCount === 1 ? "" : "s"}
           </span>
         </span>
         <span className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-subtle">
@@ -135,10 +129,20 @@ export function Diagnostics({
           </div>
 
           {tab === "timeline" &&
-            (sorted.length === 0 ? (
+            (rows.length === 0 ? (
               <div className="py-6 text-center text-subtle text-sm">No step events recorded.</div>
             ) : (
-              sorted.map((i) => <TimelineRow key={i} index={i} event={eventByIndex.get(i)} />)
+              <>
+                {rows.map((e, i) => (
+                  <TimelineRow key={i} event={e} />
+                ))}
+                {/* Step times are compile time. Lazy steps only build the
+                    query; their real cost is inside the execute phase. */}
+                <div className="pt-2 text-[12px] text-subtle">
+                  Step times cover compiling each step. Most steps only build the query, so their
+                  work shows up in the execute phase.
+                </div>
+              </>
             ))}
 
           {tab === "sql" && hasSql && (

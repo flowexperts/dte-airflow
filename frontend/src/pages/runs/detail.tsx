@@ -38,6 +38,8 @@ import { StatRail, StatRow } from "@/components/run/stat-rail";
 import { VerdictBanner } from "@/components/run/verdict-banner";
 import {
   STATUS_LABEL,
+  airflowRunHref,
+  airflowTaskLogHref,
   elapsedMs,
   elapsedSeconds,
   qualityTally,
@@ -88,6 +90,10 @@ function TriggerParams({ run }: { run: Run }) {
       </KV>
     </Panel>
   );
+}
+
+function taskLogHref(run: Run): string | undefined {
+  return run.dag_id ? airflowTaskLogHref(run.dag_id, run.id) : undefined;
 }
 
 function RunErrorPanel({ run }: { run: Run }) {
@@ -154,7 +160,7 @@ function QualityRunBody({
         )
       )}
 
-      <FailedSteps events={events} pipeline={pipeline} />
+      <FailedSteps events={events} pipeline={pipeline} logHref={taskLogHref(run)} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_268px] xl:grid-cols-[1fr_320px] gap-5 items-start">
         {results.length > 0 ? (
@@ -260,7 +266,7 @@ function TransformRunBody({
         )
       )}
 
-      <FailedSteps events={events} pipeline={pipeline} />
+      <FailedSteps events={events} pipeline={pipeline} logHref={taskLogHref(run)} />
 
       <MetricRow className="lg:grid-cols-4">
         <Metric
@@ -387,11 +393,25 @@ export function RunDetail({ id: idProp, embedded = false }: { id?: string; embed
               { label: id.slice(0, 8) },
             ]}
             actions={
-              data?.pipeline_id ? (
-                <Link href={`/pipelines/detail?id=${encodeURIComponent(data.pipeline_id)}`}>
-                  <Button size="sm">Back to pipeline</Button>
-                </Link>
-              ) : null
+              <>
+                {/* Airflow owns the run's history, retries and logs (plan 087):
+                    this page only adds what Airflow can't show. */}
+                {data?.dag_id && (
+                  <>
+                    <a href={airflowRunHref(data.dag_id, id)}>
+                      <Button size="sm">Open in Airflow</Button>
+                    </a>
+                    <a href={airflowTaskLogHref(data.dag_id, id)}>
+                      <Button size="sm">Task log</Button>
+                    </a>
+                  </>
+                )}
+                {data?.pipeline_id && (
+                  <Link href={`/pipelines/detail?id=${encodeURIComponent(data.pipeline_id)}`}>
+                    <Button size="sm">Back to pipeline</Button>
+                  </Link>
+                )}
+              </>
             }
           />
           <PageHeader

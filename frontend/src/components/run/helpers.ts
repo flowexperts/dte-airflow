@@ -1,4 +1,4 @@
-import type { QualityCheckResult, Run, RunStatus } from "@/lib/api";
+import type { QualityCheckResult, Run, RunEvent, RunStatus } from "@/lib/api";
 
 export function elapsedSeconds(started?: string | null, finished?: string | null): string {
   if (!started) return "—";
@@ -86,4 +86,27 @@ export function qualityTally(
     return { total: passed + failed + warned, failed, warned, passed };
   }
   return { total: 0, failed: 0, warned: 0, passed: 0 };
+}
+
+/** Airflow's own pages for a run. Relative on purpose: Airflow's `<base href>`
+ *  resolves them under any configured base_url. Use a plain `<a>`, not nav's
+ *  `Link`, which would mount them under `/plugin/<page>`. */
+export function airflowRunHref(dagId: string, runId: string): string {
+  return `dags/${encodeURIComponent(dagId)}/runs/${encodeURIComponent(runId)}`;
+}
+
+/** The task instance page opens on its log. Every DTE DAG has one task, `run`
+ *  (`dag_factory.py`). Airflow numbers log groups, it doesn't name them, so
+ *  there's no anchor to a step's group. */
+export function airflowTaskLogHref(dagId: string, runId: string): string {
+  return `${airflowRunHref(dagId, runId)}/tasks/run`;
+}
+
+/** Steps and run phases (`step_index: null`) in the order they started. */
+export function timeline(events: RunEvent[]): RunEvent[] {
+  return [...events].sort((a, b) => (a.started_at ?? "").localeCompare(b.started_at ?? ""));
+}
+
+export function eventLabel(e: RunEvent): string {
+  return e.step_index === null ? e.op : `${e.op} step ${e.step_index}`;
 }

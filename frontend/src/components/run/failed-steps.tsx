@@ -44,9 +44,12 @@ export function FixStepLink({
 export function FailedSteps({
   events,
   pipeline,
+  logHref,
 }: {
   events: RunEvent[];
   pipeline: Pipeline | undefined;
+  /** The run's Airflow task log, where the step's full traceback lives. */
+  logHref?: string | undefined;
 }) {
   const failed = events.filter((e) => e.status === "failed");
   if (failed.length === 0 || !pipeline) return null;
@@ -67,16 +70,23 @@ export function FailedSteps({
             <div className="px-4 py-3">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <span className="font-mono text-[10px] font-bold tracking-[0.15em] uppercase text-accent px-1.5 py-0.5 rounded-sm bg-[color:var(--accent-tint)]">
-                  {step ? labelFor(step) : e.op}
+                  {step ? labelFor(step) : idx >= 0 ? e.op : "run"}
                 </span>
                 <span className="text-[13.5px] text-text font-medium">
-                  {step ? stepTitle(step) : `step ${idx}`}
+                  {/* A null step_index is a run phase (e.g. the write); op is its title. */}
+                  {step ? stepTitle(step) : idx >= 0 ? `step ${idx}` : e.op}
                 </span>
-                {idx >= 0 && (
-                  <span className="ml-auto">
-                    <FixStepLink pipelineId={pipeline.id} index={idx} />
-                  </span>
-                )}
+                <span className="ml-auto flex items-center gap-4">
+                  {logHref && (
+                    <a
+                      href={logHref}
+                      className="font-mono text-[10.5px] tracking-[0.15em] uppercase text-accent no-underline hover:text-accent-h shrink-0"
+                    >
+                      Task log →
+                    </a>
+                  )}
+                  {idx >= 0 && <FixStepLink pipelineId={pipeline.id} index={idx} />}
+                </span>
               </div>
               {e.message && (
                 <div className="text-[12.5px] text-muted mt-1 font-mono break-words">
