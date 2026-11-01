@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from functools import partial
 
 from airflow.exceptions import AirflowFailException
 from airflow.sdk import BaseOperator
@@ -21,6 +22,19 @@ def run_as_of(context, config: dict):
     if ld is None:
         return None
     return ld.in_timezone((config.get("schedule") or {}).get("timezone", "UTC"))
+
+
+def record_event(events: list[dict], idx, op, status, msg=None) -> None:
+    """One row per step (or run phase, idx=None keyed by its title in `op`):
+    "started" is updated in place by its terminal event."""
+    now = datetime.now(UTC).isoformat()
+    done = status in ("completed", "failed", "skipped")
+    ev = next((e for e in events if e["step_index"] == idx and e["op"] == op), None)
+    if ev is None:
+        events.append({"step_index": idx, "op": op, "status": status, "message": msg,
+                       "started_at": now, "finished_at": now if done else None})
+    else:
+        ev.update(status=status, message=msg, finished_at=now if done else ev["finished_at"])
 
 
 class DtePipelineOperator(BaseOperator):
@@ -65,17 +79,7 @@ class DtePipelineOperator(BaseOperator):
         engine = sync_engine()
         events: list[dict] = []
 
-        def on_event(idx, op, status, msg=None):
-            # One row per step: "started" is updated in place by its terminal event.
-            now = datetime.now(UTC).isoformat()
-            done = status in ("completed", "failed", "skipped")
-            ev = next((e for e in events if e["step_index"] == idx), None)
-            if ev is None:
-                events.append({"step_index": idx, "op": op, "status": status, "message": msg,
-                               "started_at": now, "finished_at": now if done else None})
-            else:
-                ev.update(status=status, message=msg, finished_at=now if done else ev["finished_at"])
-            self.log.info("step %s %s: %s %s", idx, op, status, msg or "")
+        on_event = partial(record_event, events)
 
         # Manual runs carry params in conf; scheduled runs carry them as DAG params.
         user_params = conf.get("params")
@@ -121,7 +125,8 @@ class DtePipelineOperator(BaseOperator):
             values = conf.get("context") or resolve_context(
                 pipeline, user_params or None, as_of=run_as_of(context, rev.config))
             res = run_pipeline(pipeline, sources, destination, values, on_event,
-                               lookups=lookups, run_id=run_id, eval_set=eval_set, eval_examples=examples)
+                               lookups=lookups, run_id=run_id, eval_set=eval_set, eval_examples=examples,
+                               log=self.log)
             if res.scores:
                 res.scores["regression"] = self._regression(engine, eval_set_id, res, run_id)
                 if not res.scores["regression"]:

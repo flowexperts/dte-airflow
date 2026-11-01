@@ -121,3 +121,7 @@ async def test_sweep_is_oldest_first(store):
 
 async def test_sweep_runs_for_root_match_variants_only(store):
     assert [r["id"] for r in await store.list_sweep_runs_for_root("root")] == ["s1", "s2"]
+
+
+def test_run_carries_its_dag_id_for_airflow_links():
+    assert _merge(_dr("r", pid="abc", state="queued"), None)["dag_id"] == "dte__abc"

@@ -293,6 +293,8 @@ export interface RunSqlQuery {
 
 export interface Run {
   id: string;
+  /** Airflow DAG the run belongs to; `id` is its Airflow run id. */
+  dag_id?: string;
   pipeline_id: string;
   revision_id?: string | null;
   status: RunStatus;
@@ -525,12 +527,6 @@ export const pipelineStepSchemas = (pipeline: Pipeline) =>
 export const listPipelineRuns = (id: string, limit = 50) =>
   apiFetch<Run[]>(`/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}`);
 
-/** Paged variant — carries the total so the pager can size itself. */
-export const listPipelineRunsPage = (id: string, limit: number, offset: number) =>
-  apiFetchPage<Run>(
-    `/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}&offset=${offset}`,
-  );
-
 // ---------- Pipeline revisions (plan 037) ----------
 
 export interface PipelineRevision {
@@ -727,7 +723,8 @@ export const getRunOutput = (id: string, limit = 5) =>
   apiFetch<PreviewResponse>(`/api/runs/${encodeURIComponent(id)}/output?limit=${limit}`);
 
 export interface RunEvent {
-  step_index: number;
+  /** null = a run phase (source load, execute + write, contracts); `op` is its title. */
+  step_index: number | null;
   op: string;
   status: "started" | "completed" | "failed" | "skipped";
   message: string | null;

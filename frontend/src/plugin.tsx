@@ -20,7 +20,7 @@ import PipelineDetail from "@/pages/pipelines/detail";
 import PipelineNew from "@/pages/pipelines/new";
 import PipelineRevision from "@/pages/pipelines/revision";
 import Preview from "@/pages/preview";
-import RunDetail from "@/pages/runs/detail";
+import RunDetail, { RunDetail as RunDetailBody } from "@/pages/runs/detail";
 import Sources from "@/pages/sources";
 import SourceEdit from "@/pages/sources/edit";
 import SourceNew from "@/pages/sources/new";
@@ -82,6 +82,25 @@ export default function DtePlugin() {
   );
 }
 
+/** The "DTE Run" tab on Airflow's dag run page (destination `dag_run`).
+ *  DTE keys `run_results` by Airflow's run id, so the props are enough. The
+ *  tab shows on every DAG; only `dte__*` DAGs have a DTE run behind them. */
+function DteRunTab({ dagId, runId }: { dagId?: string; runId?: string }) {
+  const body =
+    dagId?.startsWith("dte__") && runId ? (
+      <RunDetailBody id={runId} embedded />
+    ) : (
+      <div className="py-4 text-subtle text-sm">This DAG is not a DTE pipeline.</div>
+    );
+  return (
+    <div className="dte-root">
+      <SwrProvider>
+        <Toaster>{body}</Toaster>
+      </SwrProvider>
+    </div>
+  );
+}
+
 // Airflow 3.3 clears `globalThis.AirflowPlugin` before each `import()` and
 // looks the component up by the react_app's `name`. Every DTE entry shares
 // this bundle, which the browser runs once, so register under every name up
@@ -92,5 +111,7 @@ const ENTRY_NAMES = [
   "DTE Sources",
   "DTE Destinations",
   "DTE Lookup tables",
+  "DTE Run",
 ];
-for (const name of ENTRY_NAMES) (globalThis as Record<string, unknown>)[name] = DtePlugin;
+for (const name of ENTRY_NAMES)
+  (globalThis as Record<string, unknown>)[name] = name === "DTE Run" ? DteRunTab : DtePlugin;

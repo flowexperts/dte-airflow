@@ -49,7 +49,7 @@ def _merge(dag_run: dict, result: dict | None) -> dict:
     else:
         status = "running" if state == "running" else "pending"
     return {
-        "id": dag_run["run_id"],
+        "id": dag_run["run_id"], "dag_id": dag_run["dag_id"],
         "pipeline_id": rr.get("pipeline_id") or dag_run["dag_id"][len("dte__"):],
         "revision_id": rr.get("revision_id") or cf.get("revision_id"),
         "status": status,
