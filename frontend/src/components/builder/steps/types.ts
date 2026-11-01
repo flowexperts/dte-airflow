@@ -1,40 +1,23 @@
-export type StepOp =
-  | "filter"
-  | "rename"
-  | "retype"
-  | "map"
-  | "case"
-  | "sort"
-  | "aggregate"
-  | "join"
-  | "pivot"
-  | "select"
-  | "check"
-  | "profile"
-  | "extract"
-  | "structure"
-  | "http_lookup";
+import useSWR from "swr";
+import type { components } from "@/lib/api-types";
+import type { PipelineTypeFilter } from "@/lib/pipeline-type";
 
-/** One column a `structure` step pulls out of a document. Mirrors the
- *  backend's `DataModelField`. */
-export interface DataModelField {
-  name: string;
-  type: "string" | "int" | "float" | "boolean" | "date" | "timestamp";
-  description: string;
-  required: boolean;
-  /** Only read by the deterministic `regex` provider. */
-  pattern?: string | null;
-}
+type Schemas = components["schemas"];
 
-/** One column an `http_lookup` step reads out of each JSON response.
- *  Mirrors the backend's `HttpLookupField`; `path` is JMESPath. */
-export interface HttpLookupField {
-  name: string;
-  path: string;
-  type: "string" | "int" | "float" | "boolean" | "timestamp";
-}
+/** A step as the backend accepts it — generated from the `Step` union
+ *  (regenerate with `scripts/gen-api-types.sh`). */
+export type Step = NonNullable<Schemas["PipelineBase"]["steps"]>[number];
 
-export type MapMode = "lookup" | "expression" | "calculation";
+export type StepOp = Step["op"];
+
+/** One column a `structure` step pulls out of a document. */
+export type DataModelField = Schemas["DataModelField"];
+
+/** One column an `http_lookup` step reads out of each JSON response;
+ *  `path` is JMESPath. */
+export type HttpLookupField = Schemas["HttpLookupField"];
+
+export type MapMode = Schemas["LookupMapStep"]["mode"] | Schemas["ExpressionMapStep"]["mode"];
 
 /** Group-by entry for the aggregate step.
  *
@@ -42,16 +25,14 @@ export type MapMode = "lookup" | "expression" | "calculation";
  * extracts a temporal component (year/month/etc) from a date/timestamp field.
  * Emitted column defaults to `<field>_<part>` unless `alias` is set.
  */
-export type DatePart = "year" | "quarter" | "month" | "week" | "day" | "date" | "dow" | "hour";
-
-export interface DatePartGroupBy {
-  field: string;
-  part: DatePart;
-  alias?: string;
-}
+export type DatePartGroupBy = Schemas["DatePartGroupBy"];
+export type DatePart = DatePartGroupBy["part"];
 
 export type GroupByEntry = string | DatePartGroupBy;
 
+/** Editor state: a step mid-edit, which need not be a valid `Step` yet
+ *  (an empty filter, a join with no keys). Each editor reads the fields of
+ *  its own op; save is where the backend's union is enforced. */
 export interface StepShape {
   op: StepOp;
   mode?: MapMode;
@@ -62,25 +43,33 @@ export const STEP_OPS: {
   op: StepOp;
   label: string;
   mode?: MapMode;
-  category: "transform" | "quality" | "extract";
 }[] = [
-  { op: "filter", label: "Filter", category: "transform" },
-  { op: "rename", label: "Rename", category: "transform" },
-  { op: "retype", label: "Retype", category: "transform" },
-  { op: "map", label: "Map · lookup", mode: "lookup", category: "transform" },
-  { op: "map", label: "Map · expression", mode: "expression", category: "transform" },
-  { op: "case", label: "Case · if/else", category: "transform" },
-  { op: "sort", label: "Sort", category: "transform" },
-  { op: "aggregate", label: "Aggregate", category: "transform" },
-  { op: "join", label: "Join", category: "transform" },
-  { op: "pivot", label: "Pivot", category: "transform" },
-  { op: "http_lookup", label: "HTTP lookup", category: "transform" },
-  { op: "select", label: "Select / Drop fields", category: "transform" },
-  { op: "extract", label: "Extract text", category: "extract" },
-  { op: "structure", label: "Structure fields", category: "extract" },
-  { op: "check", label: "Check", category: "quality" },
-  { op: "profile", label: "Profile Columns", category: "quality" },
+  { op: "filter", label: "Filter" },
+  { op: "rename", label: "Rename" },
+  { op: "retype", label: "Retype" },
+  { op: "map", label: "Map · lookup", mode: "lookup" },
+  { op: "map", label: "Map · expression", mode: "expression" },
+  { op: "case", label: "Case · if/else" },
+  { op: "sort", label: "Sort" },
+  { op: "aggregate", label: "Aggregate" },
+  { op: "join", label: "Join" },
+  { op: "pivot", label: "Pivot" },
+  { op: "http_lookup", label: "HTTP lookup" },
+  { op: "select", label: "Select / Drop fields" },
+  { op: "extract", label: "Extract text" },
+  { op: "structure", label: "Structure fields" },
+  { op: "check", label: "Check" },
+  { op: "profile", label: "Profile Columns" },
 ];
+
+/** The `STEP_OPS` a pipeline type may hold — the backend's `ALLOWED_OPS`
+ *  (`GET /api/allowed-ops`), the same table save validates against, so the
+ *  menu never offers an op the save would refuse. Empty until it loads. */
+export function useAllowedStepOps(pipelineType: PipelineTypeFilter) {
+  const { data } = useSWR<Record<string, string[]>>("/api/allowed-ops");
+  const allowed = data?.[pipelineType] ?? [];
+  return STEP_OPS.filter((o) => allowed.includes(o.op));
+}
 
 export function emptyStep(op: StepOp, mode?: MapMode): StepShape {
   switch (op) {

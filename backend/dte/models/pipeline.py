@@ -3,13 +3,27 @@ from __future__ import annotations
 import re
 import uuid as _uuid
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, ClassVar, Literal, get_args
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    Discriminator,
+    Field,
+    PlainSerializer,
+    Tag,
+    TypeAdapter,
+    ValidationError,
+    WrapValidator,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy import Column, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field as SMField
 from sqlmodel import SQLModel
+
+from dte.errors import CompilerError
 
 # ─── Connections ─────────────────────────────────────────────────────────
 
@@ -435,6 +449,16 @@ LookupTableCreate = LookupTableBase
 
 
 # ─── Steps ────────────────────────────────────────────────────────────────
+#
+# Each step class compiles itself (`compile(ctx, table)`); the bodies live in
+# `dte.compiler.ibis_compiler`, imported lazily because the compiler imports
+# this module. `join` is the exception: it reads and writes the table
+# registry, which only the compiler's fold owns.
+
+def _compiler():
+    from dte.compiler import ibis_compiler
+    return ibis_compiler
+
 
 class FilterStep(BaseModel):
     op: Literal["filter"]
@@ -449,16 +473,27 @@ class FilterStep(BaseModel):
             )
         return v
 
+    string_fields: ClassVar[tuple[str, ...]] = ("expr",)
+
+    def compile(self, ctx, table):
+        return _compiler()._apply_filter(table, self, engine=ctx.engine)
+
 
 class RenameStep(BaseModel):
     op: Literal["rename"]
     mappings: dict[str, str]
+
+    def compile(self, ctx, table):
+        return _compiler()._apply_rename(table, self)
 
 
 class RetypeStep(BaseModel):
     op: Literal["retype"]
     field: str
     to_type: Literal["string", "int", "float", "boolean", "date", "timestamp"]
+
+    def compile(self, ctx, table):
+        return _compiler()._apply_retype(table, self)
 
 
 class LookupMapStep(BaseModel):
@@ -476,6 +511,9 @@ class LookupMapStep(BaseModel):
     lookup_id: str
     output_field: str | None = None
 
+    def compile(self, ctx, table):
+        return _compiler()._apply_lookup(table, self, ctx.lookups)
+
 
 class ExpressionMapStep(BaseModel):
     op: Literal["map"]
@@ -491,6 +529,11 @@ class ExpressionMapStep(BaseModel):
                 "map step needs a non-empty expression — fill it in or remove the step"
             )
         return v
+
+    string_fields: ClassVar[tuple[str, ...]] = ("expr",)
+
+    def compile(self, ctx, table):
+        return _compiler()._apply_expression(table, self, engine=ctx.engine)
 
 
 CaseOp = Literal[
@@ -556,11 +599,17 @@ class CaseStep(BaseModel):
             raise ValueError("case step needs an output field name")
         return v
 
+    def compile(self, ctx, table):
+        return _compiler()._apply_case(table, self)
+
 
 class SortStep(BaseModel):
     op: Literal["sort"]
     by: list[str]
     ascending: list[bool] | bool = True
+
+    def compile(self, ctx, table):
+        return _compiler()._apply_sort(table, self)
 
 
 class AggSpec(BaseModel):
@@ -587,6 +636,9 @@ class AggregateStep(BaseModel):
     group_by: list[str | DatePartGroupBy]
     aggregations: list[AggSpec]
 
+    def compile(self, ctx, table):
+        return _compiler()._apply_aggregate(table, self)
+
 
 class SelectStep(BaseModel):
     op: Literal["select"]
@@ -600,6 +652,17 @@ class SelectStep(BaseModel):
         if not self.fields and not self.drop:
             raise ValueError("SelectStep: one of `fields` or `drop` is required")
         return self
+
+    def compile(self, ctx, table):
+        c = _compiler()
+        if self.drop:
+            # System columns are exempt from a drop. Drop mode is the more
+            # dangerous of the two: the builder derives the keep-set from the
+            # schema, so a user who never typed `artifact_ref` still strips it.
+            drop_set = set(self.drop) - c.SYSTEM_COLUMNS
+            keep = [col for col in table.columns if col not in drop_set]
+            return table.select(keep)
+        return c._apply_output_fields(table, self.fields, keep_system=True)
 
 
 class JoinStep(BaseModel):
@@ -629,6 +692,9 @@ class PivotStep(BaseModel):
     values: str
     agg: Literal["sum", "count", "avg", "min", "max"] = "sum"
 
+    def compile(self, ctx, table):
+        return _compiler()._apply_pivot(table, self)
+
 
 class CheckStep(BaseModel):
     op: Literal["check"]
@@ -645,10 +711,24 @@ class CheckStep(BaseModel):
             )
         return v
 
+    string_fields: ClassVar[tuple[str, ...]] = ("expr",)
+
+    def compile(self, ctx, table):
+        return _compiler()._apply_check_step(
+            table, self.model_dump(), idx=ctx.idx, engine=ctx.engine,
+            on_quality_result=ctx.on_quality_result, on_step_sql=ctx.on_step_sql,
+        )
+
 
 class ProfileStep(BaseModel):
     op: Literal["profile"]
     columns: list[str] = Field(default_factory=list)
+
+    def compile(self, ctx, table):
+        return _compiler()._apply_profile(
+            table, self.model_dump(), idx=ctx.idx, engine=ctx.engine,
+            on_quality_result=ctx.on_quality_result,
+        )
 
 
 ExtractGranularity = Literal["page", "document"]
@@ -673,6 +753,9 @@ class ExtractStep(BaseModel):
     granularity: ExtractGranularity = "page"
     params: dict = Field(default_factory=dict)
     output_field: str = "content"
+
+    def compile(self, ctx, table):
+        return _compiler()._apply_extract(table, self, engine=ctx.engine, idx=ctx.idx)
 
 
 class DataModelField(BaseModel):
@@ -747,6 +830,12 @@ class StructureStep(BaseModel):
             )
         return self
 
+    def compile(self, ctx, table):
+        return _compiler()._apply_structure(
+            table, self, engine=ctx.engine, idx=ctx.idx,
+            on_enrichment_stats=ctx.on_enrichment_stats,
+        )
+
 
 class HttpLookupField(BaseModel):
     name: str
@@ -810,10 +899,123 @@ class HttpLookupStep(BaseModel):
                 raise ValueError(f"field {f.name!r}: invalid JMESPath {f.path!r}: {e}") from None
         return self
 
+    string_fields: ClassVar[tuple[str, ...]] = ("url",)
+
+    def compile(self, ctx, table):
+        return _compiler()._apply_http_lookup(
+            table, self, engine=ctx.engine, idx=ctx.idx,
+            on_enrichment_stats=ctx.on_enrichment_stats,
+        )
+
 
 class OutputField(BaseModel):
     field: str
     alias: str | None = None
+
+
+def _step_tag(v) -> str | None:
+    """`op`, except `map`, whose two step classes share an op and differ by
+    `mode`. A callable discriminator rather than a nested
+    `Field(discriminator="mode")`: FastAPI's OpenAPI model rejects the
+    nested form's inline mapping."""
+    get = v.get if isinstance(v, dict) else (lambda k: getattr(v, k, None))
+    op = get("op")
+    if op == "map":
+        return "map:lookup" if get("mode") == "lookup" else "map:expression"
+    return op
+
+
+Step = Annotated[
+    Annotated[FilterStep, Tag("filter")]
+    | Annotated[RenameStep, Tag("rename")]
+    | Annotated[RetypeStep, Tag("retype")]
+    | Annotated[LookupMapStep, Tag("map:lookup")]
+    | Annotated[ExpressionMapStep, Tag("map:expression")]
+    | Annotated[CaseStep, Tag("case")]
+    | Annotated[SortStep, Tag("sort")]
+    | Annotated[AggregateStep, Tag("aggregate")]
+    | Annotated[SelectStep, Tag("select")]
+    | Annotated[JoinStep, Tag("join")]
+    | Annotated[PivotStep, Tag("pivot")]
+    | Annotated[CheckStep, Tag("check")]
+    | Annotated[ProfileStep, Tag("profile")]
+    | Annotated[ExtractStep, Tag("extract")]
+    | Annotated[StructureStep, Tag("structure")]
+    | Annotated[HttpLookupStep, Tag("http_lookup")],
+    Discriminator(_step_tag),
+]
+
+_STEP_ADAPTER: TypeAdapter = TypeAdapter(Step)
+_STEP_CLASS_BY_TAG: dict[str, type[BaseModel]] = {
+    get_args(a)[1].tag: get_args(a)[0] for a in get_args(get_args(Step)[0])
+}
+STEP_OPS: frozenset[str] = frozenset(
+    get_args(cls.model_fields["op"].annotation)[0] for cls in _STEP_CLASS_BY_TAG.values()
+)
+
+
+def step_class(raw: dict) -> type[BaseModel] | None:
+    """The class a raw step dict would parse as, without validating it."""
+    return _STEP_CLASS_BY_TAG.get(_step_tag(raw))
+
+
+class UnknownStep(BaseModel):
+    """A stored step whose op this build does not know — a row from a newer
+    build, or a branch since rolled back. Kept so the pipeline still loads;
+    it fails, per step, only when compiled."""
+    raw: dict
+
+    def compile(self, ctx, table):
+        raise CompilerError(f"unknown step op {self.raw.get('op')!r}")
+
+
+def parse_step(raw: dict):
+    """Lenient read: a known op parses strictly (bad config still raises),
+    an unknown one comes back as `UnknownStep`."""
+    try:
+        return _STEP_ADAPTER.validate_python(raw)
+    except ValidationError as e:
+        errs = e.errors()
+        if len(errs) == 1 and errs[0]["type"] in ("union_tag_invalid", "union_tag_not_found"):
+            return UnknownStep(raw=raw)
+        raise
+
+
+def _validate_keep_raw(v, handler):
+    # Strict on write, but what is stored is what was sent: the parsed model
+    # would add every default to the JSONB, and every re-save of an old
+    # pipeline would then read as a revision diff. Consumers read dicts;
+    # the compiler parses them with `parse_step`.
+    handler(v)
+    return v
+
+
+# What POST/PUT bind. Validation and the OpenAPI schema come from `Step`.
+WriteStep = Annotated[
+    Step, WrapValidator(_validate_keep_raw), PlainSerializer(lambda v: v, return_type=dict),
+]
+
+
+# Which ops each pipeline type may hold. The validator enforces it on save
+# and the builder's "Add step" menu reads it (`GET /api/allowed-ops`), so the
+# two cannot drift. These are the builder menus as they were before the table
+# existed, now enforced on save too.
+#  - quality asserts on rows: its checks plus the ops that pick and line up
+#    the rows to check (filter, rename, select, join).
+#  - transform/eval: check/profile report results instead of shaping rows.
+#  - eval: no aggregate/pivot either — scoring aggregates the corpus itself,
+#    and a pipeline-level aggregate collapses the rows labels join against.
+#    Eval also needs a structure step; that is a "must have", so it stays in
+#    the validator.
+#  - viz: anything.
+# Reads stay lenient: a row saved before a rule tightened still loads and
+# compiles; only a re-save hits the rule.
+ALLOWED_OPS: dict[str, frozenset[str]] = {
+    "transform": STEP_OPS - {"check", "profile"},
+    "quality": frozenset({"check", "profile", "filter", "rename", "select", "join"}),
+    "eval": STEP_OPS - {"check", "profile", "aggregate", "pivot"},
+    "viz": STEP_OPS,
+}
 
 
 # ─── Output targets (slimmed — creds live on the Connection) ──────────────
@@ -1046,27 +1248,6 @@ DestinationCreate = DestinationBase
 #   Pipeline(table=True) — persistence identity + JSONB columns +
 #       timestamp columns.
 
-_STEP_MODELS: dict[tuple[str, str | None], type[BaseModel]] = {
-    ("filter", None): FilterStep,
-    ("rename", None): RenameStep,
-    ("retype", None): RetypeStep,
-    ("map", "lookup"): LookupMapStep,
-    ("map", "expression"): ExpressionMapStep,
-    ("map", "calculation"): ExpressionMapStep,
-    ("sort", None): SortStep,
-    ("aggregate", None): AggregateStep,
-    ("select", None): SelectStep,
-    ("join", None): JoinStep,
-    ("pivot", None): PivotStep,
-    ("case", None): CaseStep,
-    ("check", None): CheckStep,
-    ("profile", None): ProfileStep,
-    ("extract", None): ExtractStep,
-    ("structure", None): StructureStep,
-    ("http_lookup", None): HttpLookupStep,
-}
-
-
 EngineChoice = Literal[
     "auto",
     "duckdb", "postgres", "mysql", "mssql", "sqlite", "bigquery", "snowflake", "trino",
@@ -1294,7 +1475,7 @@ class PipelineBase(SQLModel):
     id: str = SMField(default_factory=lambda: str(_uuid.uuid4()))
     name: str
     sources: list[SourceTableRef] = SMField(default_factory=list)
-    steps: list[dict] = SMField(default_factory=list)
+    steps: list[WriteStep] = SMField(default_factory=list)
     output_id: str | None = None
 
     @model_validator(mode="before")
@@ -1373,23 +1554,13 @@ class PipelineBase(SQLModel):
 
     @model_validator(mode="after")
     def _validate_steps(self):
-        # steps is list[dict] (map's mode-discriminator prevents a typed Union).
-        # Dispatch each step through its op-specific model so per-step validators
-        # (e.g. SelectStep._check_exclusive) fire at API save time instead of at
-        # trigger-time compile.
-        for i, step in enumerate(self.steps):
-            if not isinstance(step, dict) or "op" not in step:
-                raise ValueError(f"steps[{i}]: missing 'op' key")
-            key = (step["op"], step.get("mode") if step["op"] == "map" else None)
-            model = _STEP_MODELS.get(key)
-            if model is None:
+        # Each step's own shape is checked by `WriteStep`; this is the
+        # cross-step part: which ops the pipeline type allows.
+        allowed = ALLOWED_OPS[self.pipeline_type]
+        for step in self.steps:
+            if step["op"] not in allowed:
                 raise ValueError(
-                    f"steps[{i}]: unknown op/mode combination {key!r}"
-                )
-            model.model_validate(step)
-            if self.pipeline_type == "quality" and step["op"] in ("aggregate", "pivot"):
-                raise ValueError(
-                    f"Step op {step['op']!r} is not allowed in quality pipelines"
+                    f"Step op {step['op']!r} is not allowed in {self.pipeline_type} pipelines"
                 )
             # Only a quality run collects check/profile results; anywhere else
             # they evaluate and are silently dropped (plan 086).

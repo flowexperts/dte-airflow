@@ -104,3 +104,36 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm format:check
+
+  # src/lib/api-types.ts is generated from the backend's OpenAPI schema. A
+  # model change that skips the regen leaves the frontend typed against an
+  # API that no longer exists; fail here instead.
+  api-types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - name: Install backend (frozen from uv.lock)
+        working-directory: backend
+        run: uv sync --frozen --extra dev
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: api-types.ts is up to date
+        working-directory: frontend
+        run: |
+          ./scripts/gen-api-types.sh
+          git diff --exit-code src/lib/api-types.ts || {
+            echo "::error::src/lib/api-types.ts is stale — run frontend/scripts/gen-api-types.sh and commit"
+            exit 1
+          }

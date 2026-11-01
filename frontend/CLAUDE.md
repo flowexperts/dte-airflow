@@ -43,7 +43,9 @@ with the bug that produced it), and the checklist for new surfaces.
 
 ### API client + typegen
 
-- `src/lib/api-types.ts` is generated from the running API's `/openapi.json`: `DTE_API_URL=http://localhost:8080/dte ./scripts/gen-api-types.sh`.
+- `src/lib/api-types.ts` is generated from the FastAPI app's `app.openapi()` (dumped in Python, no server needed): `./scripts/gen-api-types.sh`. CI regenerates it and fails on a diff, so commit the regen with any model change.
+- Step types come from it: `types.ts` derives `Step`, `StepOp`, `MapMode`, `DataModelField`, … from the generated `Step` union. `StepShape` stays loose on purpose — it is editor state, a step mid-edit that need not validate yet.
+- The Add-step menus (`StepsPanel`, `steps-column`) offer `useAllowedStepOps(pipelineType)`: `STEP_OPS` filtered by `GET /api/allowed-ops`, the backend's `ALLOWED_OPS` that save validates against. Don't filter ops by hand.
 - `src/lib/api.ts` is the hand-written wrapper: `apiFetch<T>`, named helpers (`listPipelines`, `getPipeline`, `createPipeline`, `updatePipeline`, `deletePipeline`, `triggerPipeline`, `previewPipeline`, `listPipelineRuns`, `getRun`, `inferSchema`), `Run` type (backend returns dict; typed here), `isTerminal`, `isJsonFileOutput` narrower.
 - SWR wired in `src/lib/swr-config.tsx` with `fetcher: (path) => apiFetch(path)`. `refreshInterval` on the run page uses `(latest) => isTerminal(latest?.status) ? 0 : 2000`.
 
@@ -110,7 +112,7 @@ own.
 
 ### When adding a new step op
 
-1. Backend: add `Xxx` Pydantic model in `dte/models/pipeline.py`, dispatch in `dte/compiler/ibis_compiler.py`, add compiler tests first.
-2. Regenerate `frontend/src/lib/api-types.ts` (see _API client + typegen_).
-3. Frontend: extend `StepOp` + `STEP_OPS` + `emptyStep()` in `components/builder/steps/types.ts`.
+1. Backend: add `Xxx` Pydantic model with a `compile` method in `dte/models/pipeline.py`, add it to the `Step` union and check `ALLOWED_OPS` (see `backend/CLAUDE.md`, _Step dispatch_), add compiler tests first.
+2. Regenerate `frontend/src/lib/api-types.ts` (see _API client + typegen_) — `StepOp` follows.
+3. Frontend: extend `STEP_OPS` + `emptyStep()` in `components/builder/steps/types.ts`.
 4. Write `XxxEditor` in `editors.tsx`; dispatch from `StepEditor` at the bottom. Use `useSchemas().allFields` for any field references.

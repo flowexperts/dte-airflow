@@ -19,18 +19,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from dte.models.pipeline import Pipeline
 
-# Fields per op whose string contents may reference `{{...}}` placeholders.
-# Filter/map expression strings are the only user-authored SQL surfaces today;
-# other fields (rename mappings, retype targets, sort by) are field identifiers
-# picked from schemas and don't warrant substitution here.
-_STEP_STRING_FIELDS: dict[str, tuple[str, ...]] = {
-    "filter": ("expr",),
-    "map": ("expr",),  # ExpressionMapStep — LookupMapStep has no expr field
-    "check": ("expr",),
-    "case": (),          # branches[] handled separately below
-    "http_lookup": ("url",),  # `{{today}}` in a URL; `{column}` is per-row, not here
-}
-
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
 
 SYSTEM_VAR_NAMES: frozenset[str] = frozenset(
@@ -267,10 +255,14 @@ def interpolate_pipeline(pipeline: Pipeline, context: dict[str, Any]) -> Pipelin
     `InterpolationError`.
     """
     from dte.models.pipeline import Pipeline as _Pipeline
+    from dte.models.pipeline import step_class
+
     resolved_steps: list[dict] = []
     for step in pipeline.steps or []:
         op = step.get("op")
-        fields = _STEP_STRING_FIELDS.get(op, ())
+        # Each step class names its user-authored SQL/text fields
+        # (`string_fields`); identifiers picked from schemas are left alone.
+        fields = getattr(step_class(step), "string_fields", ())
         if not fields and op != "case":
             resolved_steps.append(step)
             continue

@@ -105,7 +105,12 @@ async def _save(pipeline: PipelineBase, p_store, rev_store, user) -> None:
 
 @router.get("/pipelines/{pipeline_id}/schedule", dependencies=[Depends(requires("pipeline:read"))])
 async def get_schedule(pipeline_id: str, p_store: PipelineStore = Depends(get_pipeline_store)):
-    return _out((await _load(pipeline_id, p_store)).schedule)
+    # Read the row as stored, not through the strict PipelineBase: a pipeline
+    # saved before a step rule tightened must still show its schedule.
+    row = await p_store.get(pipeline_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return _out(PipelineSchedule.model_validate(row.schedule) if row.schedule else None)
 
 
 @router.put("/pipelines/{pipeline_id}/schedule", dependencies=[Depends(requires("pipeline:trigger"))])

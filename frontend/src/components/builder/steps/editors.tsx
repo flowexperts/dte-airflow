@@ -20,6 +20,7 @@ import { usePipelineParams } from "../params-context";
 import { toDisplay } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { StepShape, GroupByEntry, DatePart, DataModelField, HttpLookupField } from "./types";
+import type { components } from "@/lib/api-types";
 import { missingPlaceholders } from "@/lib/http-lookup";
 import { LookupTablePicker } from "../LookupTablePicker";
 import { ConnectionPicker } from "../ConnectionPicker";
@@ -280,15 +281,10 @@ function VariablePickerHint({ onInsert }: { onInsert: (token: string) => void })
 
 /* --------------- Filter — Basic + Advanced tabs --------------- */
 
-type FilterOp =
-  "=" | "!=" | ">" | "<" | ">=" | "<=" | "LIKE" | "IN" | "IS NULL" | "IS NOT NULL" | "BETWEEN";
-
-interface FilterRule {
-  field: string;
-  op: FilterOp;
-  value: string;
-  join: "AND" | "OR";
-}
+/** A condition row — the backend's `CaseCondition`, shared by Filter Basic,
+ *  Check Basic and every `case` branch. */
+type FilterRule = components["schemas"]["CaseCondition"];
+type FilterOp = FilterRule["op"];
 
 const FILTER_OPS: FilterOp[] = [
   "=",
@@ -1253,8 +1249,8 @@ export function MapExpressionEditor({ step, set }: { step: StepShape; set: Sette
 /** One WHEN/THEN arm on the wire. `when` is the same rule shape the Filter
  *  tab builds — structured, not SQL, so the compiler can emit portable ibis
  *  and the step runs against a natively-bound DB source. */
-type CaseBranch = { when: FilterRule[]; then: CaseValue };
 type CaseValue = string | number | boolean | null;
+type CaseBranch = Required<components["schemas"]["CaseBranch"]>;
 
 /** Text input → wire scalar. Mirrors safeLiteral's dispatch, minus the
  *  quoting: bare numbers and true/false are those types, blank is NULL. */
@@ -1403,15 +1399,11 @@ export function SortEditor({ step, set }: { step: StepShape; set: Setter }) {
   );
 }
 
-const AGG_FUNCS = ["sum", "count", "avg", "min", "max", "count_distinct"];
+const AGG_FUNCS: AggSpec["func"][] = ["sum", "count", "avg", "min", "max", "count_distinct"];
 
 const DATE_PARTS: DatePart[] = ["year", "quarter", "month", "week", "day", "date", "dow", "hour"];
 
-interface AggSpec {
-  field: string;
-  func: string;
-  alias: string;
-}
+type AggSpec = components["schemas"]["AggSpec"];
 
 // A group_by entry name (string or the .field of a DatePartGroupBy) is
 // considered temporal if the resolved schema type looks like a date/timestamp.
@@ -1546,7 +1538,7 @@ export function AggregateEditor({ step, set }: { step: StepShape; set: Setter })
               />
               <select
                 value={a.func}
-                onChange={(e) => updateAgg(i, { func: e.target.value })}
+                onChange={(e) => updateAgg(i, { func: e.target.value as AggSpec["func"] })}
                 className="bg-bg border border-border rounded px-2.5 py-1.5 text-[13.5px]"
               >
                 {AGG_FUNCS.map((f) => (
@@ -1612,7 +1604,7 @@ function OperandPicker({
   );
 }
 
-type JoinOnValue = string | string[] | Record<string, string>;
+type JoinOnValue = components["schemas"]["JoinStep"]["on"];
 
 function toPairs(value: JoinOnValue | undefined): [string, string][] {
   const entries =
@@ -1856,10 +1848,7 @@ export function PivotEditor({ step, set }: { step: StepShape; set: Setter }) {
 
 /* --------------- Select — pick/drop fields with optional aliases --------------- */
 
-interface SelectField {
-  field: string;
-  alias?: string | null;
-}
+type SelectField = components["schemas"]["OutputField"];
 
 export function SelectEditor({ step, set }: { step: StepShape; set: Setter }) {
   const allFields = useStepFields();

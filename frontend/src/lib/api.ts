@@ -1,9 +1,7 @@
+import type { components } from "./api-types";
+
 /** Per-field projection with optional cast. Matches backend's `OutputField`. */
-export interface OutputField {
-  field: string;
-  as?: string | null;
-  cast?: string | null;
-}
+export type OutputField = components["schemas"]["OutputField"];
 
 /** File-shaped output targets. Kept as plain aliases because the openapi
  *  Destination.config is flattened to `Record<string, unknown>` (JSONB). */
@@ -82,13 +80,7 @@ export interface QualityContract {
 /** Trigger-time typed inputs declared on a pipeline. */
 export type ParamType = "string" | "int" | "float" | "date" | "timestamp" | "boolean";
 
-export interface PipelineParam {
-  name: string;
-  type: ParamType;
-  required?: boolean;
-  default?: string | null;
-  description?: string | null;
-}
+export type PipelineParam = components["schemas"]["PipelineParam"];
 
 /**
  * One use of a `Source` within a pipeline. `alias` is the compiler
@@ -98,11 +90,7 @@ export interface PipelineParam {
  * is `sql_database` and forbidden for every other kind. `alias` is never
  * defaulted server-side — the builder fills it in when a table is picked.
  */
-export interface SourceTableRef {
-  source_id: string;
-  table?: string | null;
-  alias: string;
-}
+export type SourceTableRef = components["schemas"]["SourceTableRef"];
 
 export interface Pipeline {
   id: string;
@@ -1314,13 +1302,7 @@ export const intervalsOverlap = (
   return a[0] <= b[1] && b[0] <= a[1];
 };
 
-export interface AutomapMatch {
-  dest: string;
-  source: string | null;
-  confidence: number;
-  via: "exact" | "fuzzy" | "llm" | null;
-  warning: string | null;
-}
+export type AutomapMatch = components["schemas"]["AutomapMatch"];
 
 /** Propose a source→destination column mapping. `use_llm` adds a model pass
  *  over whatever the name heuristics could not place; its failure comes back
@@ -1344,33 +1326,14 @@ export type ChartKind = "bar" | "line" | "area" | "pie" | "number" | "table";
  * Grouping and summing are the `aggregate` step's job, so the Sample rows
  * table and the tile cannot disagree about the same pipeline.
  */
-export interface ChartSpec {
-  kind: ChartKind;
-  /** Category / time axis column. Null for `number` and `table`. */
-  x: string | null;
-  /** Value columns. Exactly one for `number`; empty only for `table`. */
-  y: string[];
-  /** Group-by column: one series per distinct value, pivoted client-side. */
-  series: string | null;
-  stacked: boolean;
-}
+export type ChartSpec = components["schemas"]["ChartSpec"];
 
 /** Widths are 12-grid spans, not pixels — a free integer leaves gaps no
  *  layout code can close. */
 export type TileWidth = 4 | 6 | 12;
 export type TileHeight = "s" | "m" | "l";
 
-export interface DashboardTile {
-  id: string;
-  title: string;
-  pipeline_id: string;
-  chart: ChartSpec;
-  width: TileWidth;
-  height: TileHeight;
-  /** Rows this tile pulls through the preview endpoint. Capped at 10k
-   *  server-side: preview itself has no upper bound. */
-  limit: number;
-}
+export type DashboardTile = components["schemas"]["DashboardTile"];
 
 export interface Dashboard {
   id: string;

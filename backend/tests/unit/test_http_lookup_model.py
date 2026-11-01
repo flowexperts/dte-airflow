@@ -2,7 +2,7 @@
 import pytest
 from pydantic import ValidationError
 
-from dte.models.pipeline import _STEP_MODELS, HttpLookupStep, Pipeline
+from dte.models.pipeline import HttpLookupStep, Pipeline, parse_step
 
 
 def _step(**over):
@@ -21,7 +21,7 @@ def test_defaults_and_registration():
     assert s.on_error == "null"
     assert s.connection_id is None
     assert s.fields[0].type == "int"
-    assert _STEP_MODELS[("http_lookup", None)] is HttpLookupStep
+    assert isinstance(parse_step(_step()), HttpLookupStep)
 
 
 def test_pipeline_accepts_the_step():

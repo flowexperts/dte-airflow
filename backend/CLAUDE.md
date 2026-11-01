@@ -20,7 +20,7 @@ DuckDBEngine.execute_to_json() → output file + row count
 
 ### Key modules
 
-**`dte/models/pipeline.py`** — the pipeline spec. `Pipeline.steps` is `list[dict]` (not a typed Union) because the `map` op requires a sub-discriminator on `mode` that Pydantic's discriminated union can't handle with a shared `op` key. The compiler parses each step dict by `op`/`mode`.
+**`dte/models/pipeline.py`** — the pipeline spec. Steps are one discriminated union, `Step` (plan 088). `map`'s two classes share an `op`, so the discriminator is a callable (`_step_tag`: `op`, or `map:lookup` / `map:expression`) — a nested `Field(discriminator="mode")` validates but FastAPI's OpenAPI model rejects its inline mapping. `PipelineBase.steps: list[WriteStep]` validates every step strictly on write and the OpenAPI schema gets a `oneOf`, but the **stored value is the dict that was sent**: the parsed model would add every default to the JSONB and make each re-save read as a revision diff. So everything downstream still reads dicts; the compiler turns each into a model with `parse_step`, which returns `UnknownStep(raw)` for an op this build doesn't know (lenient read) and raises for a bad config on a known one. `ALLOWED_OPS` (next to the union) says which ops each `pipeline_type` may hold — the builder's old menus: quality only check/profile/filter/rename/select/join, eval no check/profile/aggregate/pivot, transform no check/profile. The validator enforces it on save and `GET /api/allowed-ops` feeds the builder's Add-step menu. Read paths must not re-validate through `PipelineBase` (that is why `GET .../schedule` reads the row directly): a row saved before a rule tightened still has to load.
 
 **`dte/sources/dlt_loader.py`** — universal source loading. `load_source(DltSource, ibis_con)` returns an `ibis.Table` bound to the shared DuckDB connection. The dispatch splits by source_type:
 
@@ -52,11 +52,19 @@ DuckDBEngine.execute_to_json() → output file + row count
 
 ### Step dispatch
 
-```python
-op = step["op"]    # "filter"|"rename"|"retype"|"map"|"case"|"sort"|"aggregate"|"join"|"pivot"|"select"
-                   # |"check"|"profile"|"extract"|"structure"
-mode = step.get("mode")   # "lookup"|"expression"|"calculation"  — map steps only
-```
+Each step class owns `compile(self, ctx, table)` (a `StepContext` carries the
+lookups, engine, step index and telemetry callbacks); the bodies are the
+`_apply_*` functions in `ibis_compiler.py`, imported lazily. The fold calls
+`parse_step(raw).compile(ctx, table)`; only `join` stays in the fold, because
+it reads and writes the table registry. A class's `string_fields` ClassVar
+names the fields `{{params.x}}` interpolation rewrites.
+
+**Adding a step op:** a model in `pipeline.py` with `op: Literal[...]`, a
+`compile` method and (if it has user-authored SQL/text) `string_fields`; add
+it to `Step` with its `Tag`; decide which pipeline types allow it in `ALLOWED_OPS`
+(transform/eval/viz derive from `STEP_OPS`, so a new op lands there unless
+subtracted; quality is an explicit list). Then regenerate the frontend types
+(`frontend/scripts/gen-api-types.sh`) and add an editor.
 
 `case` (if/else) compiles to `ibis.cases`, so `CaseCondition` carries
 `{field, op, value, join}` rather than a SQL fragment. Two properties follow
@@ -72,7 +80,7 @@ so there is no quoting surface at all.
   own type, so a date column compared against `"2008-01-01"` emits a real
   DATE cast instead of a lexical string comparison.
 - Interpolation reaches `branches[].when[].value` explicitly; the flat
-  op → top-level-field map in `_STEP_STRING_FIELDS` cannot see two levels down.
+  top-level `string_fields` cannot see two levels down.
 
 The builder's condition rows are one component, `ConditionRules` in
 `components/builder/steps/editors.tsx` — shared by Filter Basic, Check Basic
