@@ -52,3 +52,21 @@ op still fails, per step, at compile — which is where it is actionable.
 The override is `mode="before"`. An after-validator on a `table=True` class
 touches instrumented attributes, and under `model_validate` the instance has
 no `_sa_instance_state` yet.
+
+### Pipelines as files (plan 090)
+
+`DTE_PIPELINE_STORE=file` (default `postgres`) makes `DTE_PIPELINES_DIR/<id>.yaml`
+the source of truth. `FilePipelineStore` (`files.py`) implements
+`PipelineStore`; in production it keeps the Postgres `pipelines` row in step as
+an index, which is also what the `pipeline_revisions` foreign key needs.
+`tests/fakes.py::FakePipelineStore` *is* the file store over a temp dir.
+
+- The YAML is `model_dump(mode="json")` and is read back through the model, so
+  the format follows the model. API reads are lenient (`Pipeline(**raw)`);
+  `read_revision` (DAG factory, `dte validate`, `dte run`) is strict.
+- **A file is its own revision**: id = sha256 of its bytes. The DAG factory tags
+  the DAG with it, `trigger_dag_run` pins it, and the operator reads the file
+  back only if the hash still matches (`file_revision`). No DB at parse time.
+  `pipeline_revisions` rows are still written on save, as history for diff.
+- Git commit on save is opt-in (`DTE_PIPELINES_GIT_COMMIT`), via `git -C`,
+  best effort: a failed commit is logged, never raised.
