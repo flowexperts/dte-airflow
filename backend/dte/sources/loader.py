@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import itertools
+import os
+import tempfile
 from collections.abc import Callable
 from datetime import UTC
 from typing import TYPE_CHECKING
@@ -254,9 +257,9 @@ def _load_mongodb(
     registry: BackendRegistry,
     connection: Connection,
     credentials: dict,
+    sample: int | None = None,
 ) -> ibis.Table:
     con = registry.duckdb()
-    raw_con = con.con
     config = source.config
     connection_url = resolve_secret(credentials["url"])
     database = config["database"]
@@ -268,17 +271,12 @@ def _load_mongodb(
 
     @dlt.resource(name=source.table)
     def _mongo_resource():
-        for doc in coll.find(query_filter):
+        cursor = coll.find(query_filter)
+        for doc in cursor.limit(sample) if sample else cursor:
             doc.pop("_id", None)
             yield doc
 
-    pipeline = dlt.pipeline(
-        pipeline_name=source.id,
-        destination=dlt.destinations.duckdb(credentials=raw_con),
-        dataset_name="dte_sources",
-    )
-    pipeline.run(_mongo_resource())
-    return con.table(source.table, database=("memory", "dte_sources"))
+    return _run_dlt_hop(source.id, _mongo_resource(), con, source.table)
 
 
 def _load_rest_api(
@@ -286,11 +284,11 @@ def _load_rest_api(
     registry: BackendRegistry,
     connection: Connection,
     credentials: dict,
+    sample: int | None = None,
 ) -> ibis.Table:
     from dlt.sources.rest_api import rest_api_source
 
     con = registry.duckdb()
-    raw_con = con.con
     config = _merge_rest_credentials(source.config, credentials)
 
     src = rest_api_source(config)
@@ -298,14 +296,33 @@ def _load_rest_api(
     if not resources:
         raise ValueError("rest_api source produced no resources")
     resource = resources[0].with_name(source.table)
+    if sample:
+        # The limit stops paginating (and caps an API that pages slowly or
+        # returns empty pages forever); it never trims inside a page. The
+        # filter does: a single-page source (PyPI's simple index, ~700k
+        # rows) otherwise normalises every row for a 20-row preview.
+        resource.add_limit(max_items=sample, max_time=SAMPLE_MAX_SECONDS, count_rows=True)
+        seen = itertools.count()
+        resource.add_filter(lambda _row: next(seen) < sample)
+    return _run_dlt_hop(source.id, resource, con, source.table)
 
-    pipeline = dlt.pipeline(
-        pipeline_name=source.id,
-        destination=dlt.destinations.duckdb(credentials=raw_con),
-        dataset_name="dte_sources",
-    )
-    pipeline.run(resource)
-    return con.table(source.table, database=("memory", "dte_sources"))
+
+def _run_dlt_hop(name: str, resource, con, table: str) -> ibis.Table:
+    """Load one dlt resource into this load's DuckDB.
+
+    A fresh `pipelines_dir` per load: dlt keeps load packages and state under
+    `<pipelines_dir>/<name>`, so two loads of one source at once (concurrent
+    previews, a preview beside a run) deleted each other's packages. Every
+    load lands in a new in-memory DuckDB, so that state is worthless anyway.
+    """
+    with tempfile.TemporaryDirectory(prefix="dte-dlt-src-") as pipelines_dir:
+        dlt.pipeline(
+            pipeline_name=name,
+            destination=dlt.destinations.duckdb(credentials=con.con),
+            dataset_name="dte_sources",
+            pipelines_dir=pipelines_dir,
+        ).run(resource)
+    return con.table(table, database=("memory", "dte_sources"))
 
 
 def _merge_rest_credentials(config: dict, credentials: dict) -> dict:
@@ -323,6 +340,10 @@ def _merge_rest_credentials(config: dict, credentials: dict) -> dict:
             client[key] = merged
     return resolved
 
+
+# Loaders that copy the whole source into DuckDB before it can be read.
+EAGER = frozenset({"rest_api", "mongodb"})
+SAMPLE_MAX_SECONDS = float(os.environ.get("DTE_SAMPLE_MAX_SECONDS", "30"))
 
 LoaderFn = Callable[[Source, "BackendRegistry", "Connection", dict], ibis.Table]
 
@@ -426,6 +447,7 @@ def load_source(
     connection_or_credentials: Connection | dict | None = None,
     credentials: dict | None = None,
     table: str | None = None,
+    sample: int | None = None,
 ) -> ibis.Table:
     """Load a source into an ibis.Table via the appropriate backend.
 
@@ -441,6 +463,12 @@ def load_source(
     `config` — which table is read is a per-pipeline-per-use decision, not
     part of the source. Every other loader ignores it — the source's own
     config already names what it loads (bucket_url/glob, collection, etc).
+
+    ``sample`` — stop after about that many rows. Only the eager loaders
+    (``EAGER``: they copy the whole source before anything can read it)
+    honour it; every other loader is a view or pushdown, so a downstream
+    LIMIT already bounds its work. Interactive paths pass it (plan 084);
+    runs never do.
 
     A legacy 3-arg call — ``load_source(source, con, credentials)`` where
     ``con`` is an ``ibis.BaseBackend`` — is still accepted for one release
@@ -465,6 +493,8 @@ def load_source(
         )
     if source.source_type == "sql_database":
         return loader(source, registry, connection, creds, table=table)
+    if source.source_type in EAGER:
+        return loader(source, registry, connection, creds, sample=sample)
     return loader(source, registry, connection, creds)
 
 

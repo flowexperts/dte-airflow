@@ -1,6 +1,6 @@
 .git
 worktrees
-.venv
+**/.venv
 **/node_modules
 **/.next
 **/__pycache__

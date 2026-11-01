@@ -5,13 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from dte.api.deps import get_connection_store
+from dte.api.interactive import SAMPLE_ROWS, run_interactive
 from dte.automap import Field as _AField
 from dte.automap import automap as _automap
 from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.models.pipeline import SourceBase as Source
 from dte.security.permissions import requires
-from dte.sources.loader import load_source
+from dte.sources.sample import load_interactive
 from dte.store.base import ConnectionStore
 
 router = APIRouter()
@@ -63,10 +64,18 @@ async def infer_schema(
             status_code=422,
             detail=f"Connection '{source.connection_id}' does not exist",
         )
+    return await run_interactive(source_fields, source, conn, table)
+
+
+def source_fields(source: Source, conn, table: str | None) -> InferSchemaResponse:
+    """Load `source` and return its field tree. Sync — call through
+    `run_interactive`. Shared with `GET /sources/{id}/schema`."""
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     try:
-        result_table = load_source(source, registry, conn, conn.credentials, table=table)
+        result_table = load_interactive(
+            source, registry, conn, conn.credentials, table=table, sample=SAMPLE_ROWS,
+        )
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
 

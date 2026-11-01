@@ -14,9 +14,8 @@ BULK_DELETE_LIMIT = 200
 
 class BulkDeleteRequest(BaseModel):
     ids: list[str] = Field(..., min_length=1, max_length=BULK_DELETE_LIMIT)
-from dte.api.routes.schema import InferSchemaResponse, _walk
-from dte.engine.backend_registry import BackendRegistry
-from dte.engine.duckdb_engine import DuckDBEngine
+from dte.api.interactive import run_interactive
+from dte.api.routes.schema import InferSchemaResponse, source_fields
 from dte.models.pipeline import (
     SOURCE_CONNECTION_COMPAT,
     Source,
@@ -24,7 +23,6 @@ from dte.models.pipeline import (
     coerce_source_refs,
 )
 from dte.security.permissions import requires
-from dte.sources.loader import load_source
 from dte.store.base import ConnectionStore, PipelineStore, SourceStore
 
 router = APIRouter()
@@ -176,14 +174,7 @@ async def source_schema(
             status_code=422,
             detail=f"Source '{source_id}' references missing connection '{source.connection_id}'",
         )
-    engine = DuckDBEngine()
-    registry = BackendRegistry(duckdb_con=engine.con)
-    try:
-        result_table = load_source(source, registry, conn, conn.credentials, table=table)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    fields = [_walk(name, dtype) for name, dtype in result_table.schema().items()]
-    return InferSchemaResponse(fields=fields)
+    return await run_interactive(source_fields, source, conn, table)
 
 
 @router.get("/sources/{source_id}/tables", dependencies=[Depends(requires("source:read"))])
@@ -212,7 +203,9 @@ async def source_tables(
         )
     from dte.sources.loader import list_tables as _list_tables
     try:
-        tables = _list_tables(conn, conn.credentials, schema=source.config.get("schema"))
+        tables = await run_interactive(
+            _list_tables, conn, conn.credentials, schema=source.config.get("schema"),
+        )
     except NotImplementedError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
