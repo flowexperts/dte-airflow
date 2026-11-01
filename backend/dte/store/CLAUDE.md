@@ -12,14 +12,12 @@ Any backfill that could touch > 100k rows **must** use `dte.alembic_util.batched
 
 ### Model + store pattern (SQLModel)
 
-Every Pydantic-modelled persisted entity — `Pipeline`, `Source`, `Destination`, `Connection` — is a **two-class** pair in `dte/models/pipeline.py`:
+Every Pydantic-modelled persisted entity — `Pipeline`, `Source`, `Destination`, `LookupTable` — is a **two-class** pair in `dte/models/pipeline.py`:
 
-- `XxxBase(SQLModel)` — API/domain fields + Pydantic validators. `id: str` is required here so FastAPI raises 422 on missing. Carries the API-strict Literal types (e.g. `connection_type: ConnectionType`, `source_type: SourceKind`) — Pydantic rejects unknown values at the edge. Routes bind POST/PUT bodies to `XxxBase`.
+- `XxxBase(SQLModel)` — API/domain fields + Pydantic validators. `id: str` is required here so FastAPI raises 422 on missing. Carries the API-strict Literal types (e.g. `source_type: SourceKind`) — Pydantic rejects unknown values at the edge. Routes bind POST/PUT bodies to `XxxBase`.
 - `Xxx(XxxBase, table=True)` — persistence identity (overrides `id: str = SMField(primary_key=True)`), timestamp columns, and Literal overrides to plain `str` (SQLModel 0.0.39 can't map Literal to a SA column). Stores save and return typed `Xxx` instances.
 
 Back-compat aliases `XxxCreate = XxxBase` are kept for one release so existing migration scripts don't break.
-
-**`EncryptedJSON` TypeDecorator** (`dte/secrets/encrypted_json.py`) — used for `Connection.credentials`. Maps the logical Python `dict` to a BYTEA column (`credentials_encrypted`), transparently calling `get_secret_resolver().encrypt()` on write and `.decrypt()` on read. `PostgresConnectionStore` needs no `SecretResolver` injection — encryption happens at the column level. Physical column name unchanged; no migration required.
 
 **SQLModel 0.0.39 gotchas hit by this codebase:**
 
