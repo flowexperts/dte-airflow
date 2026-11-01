@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 
 import ibis
@@ -84,6 +85,7 @@ from dte.store.base import (
     RunStore,
     SourceStore,
 )
+from dte.store.files import dump_yaml
 
 router = APIRouter()
 _log = get_logger("dte.pipelines")
@@ -618,7 +620,8 @@ async def get_pipeline_revision(
     rev = await rev_store.get(revision_id)
     if rev is None or rev.pipeline_id != pipeline_id:
         raise HTTPException(status_code=404, detail="Revision not found")
-    return rev
+    # The YAML `dte export` / file mode would write for this revision.
+    return {**rev.model_dump(mode="json"), "yaml": dump_yaml(rev.config)}
 
 
 @router.get(
@@ -643,6 +646,11 @@ async def diff_pipeline_revisions(
         "to": {"id": b.id, "changed_at": b.changed_at, "changed_by": b.changed_by},
         "diff": diff,
         "summary": summarise_diff(diff),
+        "yaml_diff": "".join(difflib.unified_diff(
+            dump_yaml(a.config).splitlines(keepends=True),
+            dump_yaml(b.config).splitlines(keepends=True),
+            f"{a.id[:8]}.yaml", f"{b.id[:8]}.yaml",
+        )),
     }
 
 

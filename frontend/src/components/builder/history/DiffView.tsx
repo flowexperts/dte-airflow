@@ -1,6 +1,7 @@
 import useSWR from "swr";
 import { Panel, PanelHead, Tag } from "@/components/ui";
 import { diffPipelineRevisions, type StepChange } from "@/lib/api";
+import { YamlDiff } from "./YamlDiff";
 
 /**
  * Renders the server-side diff between two revisions of the same
@@ -30,59 +31,65 @@ export function DiffView({
   const { diff, summary } = data;
 
   return (
-    <Panel>
-      <PanelHead label="Diff" count={summary} />
-      <div className="px-3.5 py-3 space-y-4 text-[13px]">
-        {diff.name_changed && (
-          <ChangeRow
-            label="name"
-            before={diff.name_before ?? "(none)"}
-            after={diff.name_after ?? "(none)"}
-          />
-        )}
-        {(diff.sources_added.length > 0 || diff.sources_removed.length > 0) && (
-          <div>
-            <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
-              sources
-            </div>
-            {diff.sources_added.map((s) => (
-              <div key={`+${s}`} className="font-mono text-[12px] text-green">
-                + {s}
-              </div>
-            ))}
-            {diff.sources_removed.map((s) => (
-              <div key={`-${s}`} className="font-mono text-[12px] text-red">
-                - {s}
-              </div>
-            ))}
-          </div>
-        )}
-        {diff.output_id_changed && (
-          <ChangeRow
-            label="output_id"
-            before={diff.output_id_before ?? "(none)"}
-            after={diff.output_id_after ?? "(none)"}
-          />
-        )}
-        {diff.steps.length > 0 && (
-          <div className="space-y-2">
-            <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle">
-              steps
-            </div>
-            {diff.steps.map((s) => (
-              <StepDiffRow key={`${s.index}-${s.kind}`} step={s} />
-            ))}
-          </div>
-        )}
-        {!diff.name_changed &&
-          diff.sources_added.length === 0 &&
-          diff.sources_removed.length === 0 &&
-          !diff.output_id_changed &&
-          diff.steps.length === 0 && (
-            <div className="text-[12px] text-subtle">No structural changes.</div>
+    <>
+      <Panel>
+        <PanelHead label="YAML diff" count={summary} />
+        <YamlDiff diff={data.yaml_diff} />
+      </Panel>
+      <Panel>
+        <PanelHead label="Diff" count={summary} />
+        <div className="px-3.5 py-3 space-y-4 text-[13px]">
+          {diff.name_changed && (
+            <ChangeRow
+              label="name"
+              before={diff.name_before ?? "(none)"}
+              after={diff.name_after ?? "(none)"}
+            />
           )}
-      </div>
-    </Panel>
+          {(diff.sources_added.length > 0 || diff.sources_removed.length > 0) && (
+            <div>
+              <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle mb-1">
+                sources
+              </div>
+              {diff.sources_added.map((s) => (
+                <div key={`+${s}`} className="font-mono text-[12px] text-green">
+                  + {s}
+                </div>
+              ))}
+              {diff.sources_removed.map((s) => (
+                <div key={`-${s}`} className="font-mono text-[12px] text-red">
+                  - {s}
+                </div>
+              ))}
+            </div>
+          )}
+          {diff.output_id_changed && (
+            <ChangeRow
+              label="output_id"
+              before={diff.output_id_before ?? "(none)"}
+              after={diff.output_id_after ?? "(none)"}
+            />
+          )}
+          {diff.steps.length > 0 && (
+            <div className="space-y-2">
+              <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase text-subtle">
+                steps
+              </div>
+              {diff.steps.map((s) => (
+                <StepDiffRow key={`${s.index}-${s.kind}`} step={s} />
+              ))}
+            </div>
+          )}
+          {!diff.name_changed &&
+            diff.sources_added.length === 0 &&
+            diff.sources_removed.length === 0 &&
+            !diff.output_id_changed &&
+            diff.steps.length === 0 && (
+              <div className="text-[12px] text-subtle">No structural changes.</div>
+            )}
+        </div>
+      </Panel>
+    </>
   );
 }
 

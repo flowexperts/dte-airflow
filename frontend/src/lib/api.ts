@@ -524,6 +524,8 @@ export interface PipelineRevision {
   changed_by: string | null;
   changed_at: string | null;
   summary: string | null;
+  /** Only on the single-revision GET: the file `dte export` would write. */
+  yaml?: string;
 }
 
 export interface StepChange {
@@ -551,6 +553,8 @@ export interface RevisionDiffResponse {
   to: { id: string; changed_at: string | null; changed_by: string | null };
   diff: PipelineDiff;
   summary: string;
+  /** Unified diff of the two revisions' YAML. Empty when identical. */
+  yaml_diff: string;
 }
 
 export const listPipelineRevisions = (id: string, limit = 100) =>
