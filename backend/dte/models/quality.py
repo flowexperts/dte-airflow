@@ -12,6 +12,10 @@ Contract types (discriminated union on `type`):
 
 Each contract has a `severity`: "fail" downgrades the run to `failed_quality`;
 "warn" produces `completed_with_warnings`.
+
+And a `phase` (plan 086): "pre" (the default, so saved contracts read as pre)
+runs on the compiled result before the write, and a failing "fail" contract
+stops the write. "post" runs on the written destination afterwards.
 """
 from __future__ import annotations
 
@@ -20,7 +24,11 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 
-class RowCountBetween(BaseModel):
+class _Phased(BaseModel):
+    phase: Literal["pre", "post"] = "pre"
+
+
+class RowCountBetween(_Phased):
     type: Literal["row_count_between"] = "row_count_between"
     id: str
     min: int
@@ -28,21 +36,21 @@ class RowCountBetween(BaseModel):
     severity: Literal["warn", "fail"] = "fail"
 
 
-class ColumnNotNull(BaseModel):
+class ColumnNotNull(_Phased):
     type: Literal["column_not_null"] = "column_not_null"
     id: str
     column: str
     severity: Literal["warn", "fail"] = "fail"
 
 
-class ColumnUnique(BaseModel):
+class ColumnUnique(_Phased):
     type: Literal["column_unique"] = "column_unique"
     id: str
     column: str
     severity: Literal["warn", "fail"] = "fail"
 
 
-class ColumnInRange(BaseModel):
+class ColumnInRange(_Phased):
     type: Literal["column_in_range"] = "column_in_range"
     id: str
     column: str
@@ -51,7 +59,7 @@ class ColumnInRange(BaseModel):
     severity: Literal["warn", "fail"] = "fail"
 
 
-class ColumnMatches(BaseModel):
+class ColumnMatches(_Phased):
     type: Literal["column_matches"] = "column_matches"
     id: str
     column: str

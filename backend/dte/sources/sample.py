@@ -53,8 +53,9 @@ def _fresh(path: Path) -> bool:
 
 def _fetch(source, connection, credentials, table, sample: int, path: Path) -> None:
     from dte.engine.backend_registry import BackendRegistry
+    from dte.engine.connect import connect_duckdb
 
-    scratch = ibis.duckdb.connect()
+    scratch = connect_duckdb()
     t = load_source(source, BackendRegistry(duckdb_con=scratch), connection, credentials,
                     table=table, sample=sample)
     path.parent.mkdir(parents=True, exist_ok=True)

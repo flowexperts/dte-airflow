@@ -5,6 +5,7 @@ No stores, no HTTP, no Airflow imports. Callers resolve sources/destination
 """
 from __future__ import annotations
 
+import itertools
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -19,6 +20,8 @@ from dte.engine.backend_registry import BackendRegistry
 from dte.engine.registry import get_engine
 from dte.models.pipeline import resolve_pipeline_engine
 from dte.sources.loader import load_source
+
+_STAGE_SEQ = itertools.count()
 
 # on_event(step_idx, op, status, message)
 EventCb = Callable[[int, str, str, "str | None"], None]
@@ -103,13 +106,28 @@ def run_pipeline(
     except Exception:
         pass
     compiled = compiled.limit(settings.run_max_rows)
+
+    contracts = _contracts(pipeline)
+    pre = [c for c in contracts if c.phase == "pre"]
+    post = [c for c in contracts if c.phase == "post"]
+    quality: list = []
+    if pre:
+        # Check before publishing (plan 086): a rejected result must never
+        # overwrite the destination.
+        from dte.quality.evaluator import evaluate_contracts_on_table
+        compiled = _on_engine(compiled, engine.con)
+        quality = evaluate_contracts_on_table(pre, compiled, engine.con)
+        if _quality_status(quality) == "failed_quality":
+            return RunResult(
+                status="failed_quality",
+                quality=[r.model_dump() for r in quality],
+                sql_query={"step_sqls": steps_sql(), "final_sql": final_sql} if (step_sqls or final_sql) else None,
+            )
     result = engine.execute(compiled, dest.config, credentials=dest_creds, run_id=run_id)
 
-    quality = []
-    contracts = getattr(pipeline, "quality_contracts", []) or []
-    if contracts:
+    if post:
         from dte.quality.evaluator import evaluate_contracts
-        quality = evaluate_contracts(contracts, dest.config, engine.con)
+        quality += evaluate_contracts(post, dest.config, engine.con)
     return RunResult(
         status=_quality_status(quality),
         rows_written=result["rows_written"],
@@ -117,6 +135,32 @@ def run_pipeline(
         quality=[r.model_dump() for r in quality],
         sql_query={"step_sqls": steps_sql(), "final_sql": final_sql} if (step_sqls or final_sql) else None,
     )
+
+
+def _contracts(pipeline) -> list:
+    """Typed contracts. The `Pipeline` table class skips validators, so a
+    pipeline rebuilt from a revision carries them as plain dicts."""
+    raw = getattr(pipeline, "quality_contracts", None) or []
+    if not raw:
+        return []
+    from pydantic import TypeAdapter
+
+    from dte.models.quality import Contract
+    return TypeAdapter(list[Contract]).validate_python(
+        [c if isinstance(c, dict) else c.model_dump() for c in raw])
+
+
+def _on_engine(table, con):
+    """`table` queryable from DuckDB `con`. A natively-bound result (postgres
+    source) is staged once through Arrow, so checks and the write share it
+    instead of querying the source twice."""
+    if table._find_backend() is con:
+        return table
+    name = f"_dte_checked_{next(_STAGE_SEQ)}"
+    con.con.register(f"{name}_reader", table.to_pyarrow_batches())
+    con.con.execute(f'CREATE TEMP TABLE "{name}" AS SELECT * FROM "{name}_reader"')  # nosec B608
+    con.con.unregister(f"{name}_reader")
+    return con.table(name)
 
 
 def _run_eval(pipeline, tables, kw, engine, eval_set, examples) -> RunResult:

@@ -60,9 +60,9 @@ def copy_to(
             backend, table, path, format_clause, credentials, extension, view_of=table
         )
 
-    import ibis as _ibis
+    from dte.engine.connect import connect_duckdb
 
-    scratch = _ibis.duckdb.connect()
+    scratch = connect_duckdb()
     # Stream batches rather than materialising the frame in Python; DuckDB
     # spills to disk if the result outgrows memory.
     reader = table.to_pyarrow_batches()

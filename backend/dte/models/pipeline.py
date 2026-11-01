@@ -1585,6 +1585,12 @@ class PipelineBase(SQLModel):
                 raise ValueError(
                     f"Step op {step['op']!r} is not allowed in quality pipelines"
                 )
+            # Only a quality run collects check/profile results; anywhere else
+            # they evaluate and are silently dropped (plan 086).
+            if self.pipeline_type in ("transform", "eval") and step["op"] in ("check", "profile"):
+                raise ValueError(
+                    f"Step op {step['op']!r} is not allowed in {self.pipeline_type} pipelines"
+                )
         if self.pipeline_type == "eval" and not any(
             isinstance(s, dict) and s.get("op") == "structure" for s in self.steps
         ):

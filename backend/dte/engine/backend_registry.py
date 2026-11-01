@@ -54,7 +54,8 @@ class BackendRegistry:
         rest_api) that need somewhere to land extracted rows.
         """
         if self._duckdb is None:
-            self._duckdb = ibis.duckdb.connect()
+            from dte.engine.connect import connect_duckdb
+            self._duckdb = connect_duckdb()
         return self._duckdb
 
     def for_connection(

@@ -6,6 +6,7 @@ import ibis
 import pyarrow as pa
 
 from dte.engine.base import BaseEngine, EnrichmentSpec
+from dte.engine.connect import connect_duckdb
 from dte.engine.writers import WriteResult
 from dte.engine.writers import write as _write
 
@@ -33,7 +34,7 @@ class DuckDBEngine(BaseEngine):
     dialect = "duckdb"
 
     def __init__(self):
-        self._con = ibis.duckdb.connect()
+        self._con = connect_duckdb()
         self._view_seq = count()
 
     @property
@@ -41,7 +42,11 @@ class DuckDBEngine(BaseEngine):
         return self._con
 
     def execute(self, table: ibis.Table, target, credentials: dict | None = None, run_id: str | None = None) -> WriteResult:
-        return _write(table, target, self._con, credentials=credentials, run_id=run_id)
+        # Pass our connection only when the table lives in it. A natively-bound
+        # table (postgres source) must reach the writer's Arrow-staging path,
+        # which a DuckDB `con` would skip (plan 086).
+        con = self._con if table._find_backend() is self._con else None
+        return _write(table, target, con, credentials=credentials, run_id=run_id)
 
     # Raw SQL rides on the table's OWN backend via a CTE alias, not on a view
     # created in self._con. Two things follow, and both were bugs before:

@@ -347,6 +347,23 @@ mapping exists. Two consequences worth keeping:
   snowflake and bigquery stay opt-in: large SDKs, neither reachable from a
   self-hosted default.
 
+### Write safety (plan 086)
+
+- **Transform and eval pipelines can't have `check`/`profile` steps** (422 on
+  save). Only a quality run collects their results. Older revisions with one
+  still load and run; the result is dropped.
+- **`quality_contracts` run before the write.** `phase: "pre"` (the default)
+  evaluates on the compiled table; a failing `fail` contract returns
+  `failed_quality` and writes nothing. A natively-bound result is staged into
+  DuckDB once so checks and write share it. `phase: "post"` reads the written
+  file, as before.
+- **Every DuckDB connection goes through `dte/engine/connect.connect_duckdb`**,
+  which applies `DTE_DUCKDB_MEMORY_LIMIT` / `_THREADS` / `_TEMP_DIR`.
+- `DuckDBEngine.execute` passes its connection to the writer only when the
+  table lives in it; otherwise the writer's Arrow-staging path runs.
+- Interactive calls return 504 after `DTE_PREVIEW_TIMEOUT_SECONDS` (30); DAG
+  tasks default `execution_timeout` to `DTE_RUN_TIMEOUT_SECONDS`.
+
 ### Field references and nested columns
 
 Dot syntax is the wire form: `order.amount`, `user.address.city`. `_resolve_field()` splits on `.` and traverses struct members; if the head isn't a top-level column it falls back to the joined `__` name (so `mongodb` / `rest_api` sources — which still flatten via dlt — keep working). `_apply_output_fields` / `_apply_lookup` route through `_resolve_field` so Select and Lookup steps handle struct paths. Struct-path outputs are named after the leaf segment when no alias is given.

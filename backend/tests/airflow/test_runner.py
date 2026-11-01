@@ -33,3 +33,47 @@ def test_quality_fail_and_warn(tmp_path):
         p, srcs, _, _ = _setup(tmp_path, "quality", [{"op": "check", "expr": "age > 18", "severity": sev, "label": "adult"}])
         res = run_pipeline(p, srcs)
         assert res.status == status and res.quality
+
+
+def _with_contracts(p, *contracts):
+    return Pipeline(**{**p.model_dump(), "quality_contracts": list(contracts)})
+
+
+def test_failing_pre_contract_leaves_destination_untouched(tmp_path):
+    """Plan 086: a blocking contract runs on the compiled result before the
+    write, so a rejected run never overwrites the destination."""
+    p, srcs, dest, out = _setup(tmp_path)
+    out.write_text("previous")
+    p = _with_contracts(p, {"type": "row_count_between", "id": "rc", "min": 5, "max": 9})
+    res = run_pipeline(p, srcs, dest)
+    assert res.status == "failed_quality" and res.rows_written == 0
+    assert out.read_text() == "previous"
+    assert res.quality[0]["passed"] is False
+
+
+def test_warning_pre_contract_still_writes(tmp_path):
+    p, srcs, dest, out = _setup(tmp_path)
+    p = _with_contracts(p, {"type": "row_count_between", "id": "rc", "min": 5, "max": 9, "severity": "warn"})
+    res = run_pipeline(p, srcs, dest)
+    assert res.status == "completed_with_warnings" and res.rows_written == 2
+    assert len(json.loads(out.read_text())) == 2
+
+
+def test_post_contract_reads_the_written_destination(tmp_path):
+    p, srcs, dest, out = _setup(tmp_path)
+    p = _with_contracts(
+        p,
+        {"type": "column_not_null", "id": "pre", "column": "age"},
+        {"type": "row_count_between", "id": "post", "min": 2, "max": 2, "phase": "post"},
+    )
+    res = run_pipeline(p, srcs, dest)
+    assert res.status == "completed" and res.rows_written == 2
+    assert [q["contract_id"] for q in res.quality] == ["pre", "post"]
+
+
+def test_saved_contract_without_phase_reads_as_pre():
+    from pydantic import TypeAdapter
+
+    from dte.models.quality import Contract
+    c = TypeAdapter(Contract).validate_python({"type": "column_unique", "id": "u", "column": "x"})
+    assert c.phase == "pre"

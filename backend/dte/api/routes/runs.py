@@ -90,8 +90,8 @@ async def get_run_output(
         elif output_type == "excel":
             # DuckDB's excel extension for read too — keeps openpyxl out
             # of the dep tree and matches how the writer produced it.
-            import ibis
-            con = ibis.duckdb.connect()
+            from dte.engine.connect import connect_duckdb
+            con = connect_duckdb()
             con.raw_sql("INSTALL excel")
             con.raw_sql("LOAD excel")
             df = con.sql(

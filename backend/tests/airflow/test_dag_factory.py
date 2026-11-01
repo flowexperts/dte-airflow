@@ -12,10 +12,10 @@ def _rev(schedule=None, notifications=None):
               config={"name": "P", "schedule": schedule, "notifications": notifications or []})
 
 
-def test_defaults_no_retries_no_timeout_no_callbacks():
+def test_defaults_no_retries_default_timeout_no_callbacks():
     task = _dag_for(_rev()).get_task("run")
     assert task.retries == 0
-    assert task.execution_timeout is None
+    assert task.execution_timeout == timedelta(minutes=30)
     assert not task.on_failure_callback and not task.on_success_callback
 
 
@@ -33,3 +33,10 @@ def test_notifications_need_no_schedule():
     task = _dag_for(_rev(None, n)).get_task("run")
     assert task.on_failure_callback and task.on_success_callback
     assert not task.on_retry_callback
+
+
+def test_timeout_falls_back_to_run_timeout_seconds(monkeypatch):
+    """Plan 086: `run_timeout_seconds` was declared and never read, so an
+    unscheduled run had no timeout at all."""
+    monkeypatch.setenv("DTE_RUN_TIMEOUT_SECONDS", "120")
+    assert _dag_for(_rev()).get_task("run").execution_timeout == timedelta(seconds=120)
