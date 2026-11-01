@@ -36,8 +36,9 @@ Fakes (`tests/fakes.py`) store typed `Xxx` instances and accept `XxxBase | Xxx |
 
 ### Step validation is strict on write, lenient on read
 
-`PipelineBase` — what POST/PUT bind — parses every step through
-`_STEP_MODELS`, so an unknown op or a bad config is rejected at save.
+`PipelineBase` — what POST/PUT bind — validates every step against the
+`Step` discriminated union (and `ALLOWED_OPS` for its pipeline type), so an
+unknown op or a bad config is rejected at save. It stores the dict as sent.
 `Pipeline` (the table class, and the **response** model FastAPI re-validates
 on every read) only checks that a step is a dict naming an op.
 
@@ -47,7 +48,8 @@ raised inside response validation and returned a 500 for **`GET
 /api/pipelines` as a whole**: every other pipeline in the list vanished, and
 the only clue was `('response', 1)` naming a step index. Version skew is
 normal; losing the collection to one row from the future is not. An unknown
-op still fails, per step, at compile — which is where it is actionable.
+op still fails, per step, at compile — `parse_step` reads it as
+`UnknownStep(raw)`, whose `compile` raises — which is where it is actionable.
 
 The override is `mode="before"`. An after-validator on a `table=True` class
 touches instrumented attributes, and under `model_validate` the instance has

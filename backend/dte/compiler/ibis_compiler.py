@@ -4,6 +4,7 @@ import functools
 import json
 import operator
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import ibis
@@ -28,10 +29,10 @@ from dte.models.pipeline import (
     PivotStep,
     RenameStep,
     RetypeStep,
-    SelectStep,
     SortStep,
     StructureStep,
     coerce_source_refs,
+    parse_step,
 )
 
 if TYPE_CHECKING:
@@ -178,20 +179,15 @@ def compile_pipeline(
         op = step["op"]
         _emit(idx, op, "started")
         try:
-            if op == "join":
-                s = JoinStep(**step)
+            s = parse_step(step)
+            if isinstance(s, JoinStep):
                 result = _apply_join(registry[s.left], registry[s.right], s)
                 registry[s.output_id] = result
                 current_key = s.output_id
             else:
-                table = registry[current_key]
-                table = _dispatch_single_table_step(
-                    table, step, lookups, engine=engine,
-                    idx=idx, on_quality_result=on_quality_result,
-                    on_step_sql=on_step_sql,
-                    on_enrichment_stats=on_enrichment_stats,
-                )
-                registry[current_key] = table
+                ctx = StepContext(lookups, engine, idx, on_quality_result,
+                                  on_step_sql, on_enrichment_stats)
+                registry[current_key] = s.compile(ctx, registry[current_key])
         except Exception as e:
             _emit(idx, op, "failed", str(e))
             raise
@@ -225,6 +221,17 @@ def compile_pipeline(
     return result
 
 
+@dataclass
+class StepContext:
+    """What a step's `compile(ctx, table)` may need beyond its own table."""
+    lookups: dict[str, LookupTable]
+    engine: BaseEngine | None = None
+    idx: int = 0
+    on_quality_result: object = None
+    on_step_sql: object = None
+    on_enrichment_stats: object = None
+
+
 def _dispatch_single_table_step(
     table: ibis.Table,
     step: dict,
@@ -235,57 +242,9 @@ def _dispatch_single_table_step(
     on_step_sql=None,
     on_enrichment_stats=None,
 ) -> ibis.Table:
-    op = step["op"]
-    if op == "filter":
-        return _apply_filter(table, FilterStep(**step), engine=engine)
-    elif op == "rename":
-        return _apply_rename(table, RenameStep(**step))
-    elif op == "retype":
-        return _apply_retype(table, RetypeStep(**step))
-    elif op == "map":
-        mode = step["mode"]
-        if mode == "lookup":
-            return _apply_lookup(table, LookupMapStep(**step), lookup_tables)
-        else:
-            return _apply_expression(table, ExpressionMapStep(**step), engine=engine)
-    elif op == "sort":
-        return _apply_sort(table, SortStep(**step))
-    elif op == "aggregate":
-        return _apply_aggregate(table, AggregateStep(**step))
-    elif op == "case":
-        return _apply_case(table, CaseStep(**step))
-    elif op == "pivot":
-        return _apply_pivot(table, PivotStep(**step))
-    elif op == "select":
-        s = SelectStep(**step)
-        if s.drop:
-            # System columns are exempt from a drop. Drop mode is the more
-            # dangerous of the two: the builder derives the keep-set from the
-            # schema, so a user who never typed `artifact_ref` still strips it.
-            drop_set = set(s.drop) - SYSTEM_COLUMNS
-            keep = [c for c in table.columns if c not in drop_set]
-            return table.select(keep)
-        return _apply_output_fields(table, s.fields, keep_system=True)
-    elif op == "check":
-        return _apply_check_step(table, step, idx=idx, engine=engine,
-                                 on_quality_result=on_quality_result,
-                                 on_step_sql=on_step_sql)
-    elif op == "profile":
-        return _apply_profile(table, step, idx=idx, engine=engine,
-                              on_quality_result=on_quality_result)
-    elif op == "extract":
-        return _apply_extract(table, ExtractStep(**step), engine=engine, idx=idx)
-    elif op == "structure":
-        return _apply_structure(
-            table, StructureStep(**step), engine=engine, idx=idx,
-            on_enrichment_stats=on_enrichment_stats,
-        )
-    elif op == "http_lookup":
-        return _apply_http_lookup(
-            table, HttpLookupStep(**step), engine=engine, idx=idx,
-            on_enrichment_stats=on_enrichment_stats,
-        )
-    raise CompilerError(f"unknown step op {op!r}")
+    ctx = StepContext(lookup_tables, engine, idx, on_quality_result, on_step_sql,
+                      on_enrichment_stats)
+    return parse_step(step).compile(ctx, table)
 
 
 def _apply_structure(

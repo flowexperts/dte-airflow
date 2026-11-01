@@ -55,6 +55,7 @@ from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.logging import decrypt_context_var, get_logger
 from dte.models.pipeline import (
+    ALLOWED_OPS,
     Connection,
     Destination,
     LookupTable,
@@ -282,6 +283,13 @@ async def _validate_engine_compat(
         raise HTTPException(status_code=422, detail=e.payload()) from e
 
     return resolved
+
+
+@router.get("/allowed-ops", dependencies=[Depends(requires("pipeline:read"))])
+async def allowed_ops() -> dict[str, list[str]]:
+    """Which step ops each pipeline type may hold — the builder's Add-step
+    menu reads this, so it offers exactly what save accepts."""
+    return {k: sorted(v) for k, v in ALLOWED_OPS.items()}
 
 
 @router.post("/pipelines", dependencies=[Depends(requires("pipeline:write"))])
