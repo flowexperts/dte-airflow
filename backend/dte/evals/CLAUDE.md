@@ -174,6 +174,9 @@ never rendered as zero**.
   output. Affordable only because plan 050 caches by content hash; opening
   the page parses no PDF and calls no model.
 
+> The leaderboard, comparison grid, review panel and promote UI described below were
+> unrouted by plan 067 and deleted in plan 091 (`git log -- frontend/src/components/evals`).
+
 **Shipping the winner is on the comparison, not only the leaderboard**
 (plan 054). `promote` used to be rendered solely on the leaderboard, which
 ranks *scored* runs — so the page that works without labels had no exit,
