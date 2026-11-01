@@ -58,3 +58,12 @@ def test_assets_mode_triggers_on_upstream_assets():
     dag = _dag_for(_rev({"mode": "assets", "assets": ["dte://pg/mart/orders"]}))
     assert isinstance(dag.timetable, AssetTriggeredTimetable)
     assert [a.uri for a in dag.timetable.asset_condition.objects] == ["dte://pg/mart/orders"]
+
+
+def test_doc_md_is_the_pipeline_yaml_with_a_link_back():
+    import yaml
+    rev = _rev()
+    doc = _dag_for(rev).doc_md
+    assert "plugin/dte/pipelines/detail?id=p1" in doc
+    body = doc.split("```yaml\n", 1)[1].rsplit("```", 1)[0]
+    assert yaml.safe_load(body) == rev.config
