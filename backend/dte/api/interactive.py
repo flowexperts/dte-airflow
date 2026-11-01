@@ -22,6 +22,9 @@ from functools import partial
 
 import anyio
 import anyio.to_thread
+from fastapi import HTTPException
+
+from dte.config import get_settings
 
 # Rows an eager source (rest_api, mongodb) loads for the editor. Runs read
 # everything; schema, step schemas and previews read this much.
@@ -31,4 +34,15 @@ LIMITER = anyio.CapacityLimiter(int(os.environ.get("DTE_INTERACTIVE_CONCURRENCY"
 
 
 async def run_interactive[T](fn: Callable[..., T], *args, **kwargs) -> T:
-    return await anyio.to_thread.run_sync(partial(fn, *args, **kwargs), limiter=LIMITER)
+    """504 after `preview_timeout_seconds` (plan 086). The worker thread
+    can't be killed, so it is abandoned and finishes in the background.
+    # ponytail: anyio frees the limiter slot on abandon, so repeated timeouts
+    # can run more than DTE_INTERACTIVE_CONCURRENCY threads; interrupt the
+    # DuckDB connection on timeout if that bites."""
+    timeout = get_settings().preview_timeout_seconds
+    try:
+        with anyio.fail_after(timeout):
+            return await anyio.to_thread.run_sync(
+                partial(fn, *args, **kwargs), limiter=LIMITER, abandon_on_cancel=True)
+    except TimeoutError:
+        raise HTTPException(status_code=504, detail=f"timed out after {timeout:g}s") from None

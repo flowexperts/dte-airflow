@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     database_url: str | None = Field(default=None, alias="DTE_DATABASE_URL")
 
     # Run guardrails
-    run_timeout_seconds: int = 60 * 30  # 30 min default
+    run_timeout_seconds: int = 60 * 30  # 30 min default; a schedule's timeout_s overrides
+    # Schema inference, step schemas, dry-run and preview give up after this
+    # and return 504 (plan 086).
+    preview_timeout_seconds: float = 30
     run_max_rows: int = 10_000_000
 
     # DuckDB resource limits, applied to every connection (plan 086). Unset

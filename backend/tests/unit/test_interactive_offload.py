@@ -93,3 +93,20 @@ def test_interactive_routes_load_a_bounded_sample(seeded, monkeypatch, method, p
         monkeypatch.setattr(f"dte.api.routes.{mod}.load_interactive", capture)
     TestClient(app).request(method, path, json=body)
     assert seen == [SAMPLE_ROWS]
+
+
+def test_slow_preview_times_out_with_504(seeded, monkeypatch):
+    """Plan 086: an interactive call gives up after `preview_timeout_seconds`
+    instead of holding the request (and a limiter slot's caller) forever."""
+    monkeypatch.setenv("DTE_PREVIEW_TIMEOUT_SECONDS", "0.2")
+
+    async def go():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            t0 = time.perf_counter()
+            r = await c.get("/api/pipelines/p1/preview")
+            return r, time.perf_counter() - t0
+
+    r, elapsed = _run(go())
+    assert r.status_code == 504, r.text
+    assert elapsed < SLOW / 2

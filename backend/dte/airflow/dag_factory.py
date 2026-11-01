@@ -37,6 +37,7 @@ def _dag_for(rev):
     from dte.airflow.notify import callbacks
     from dte.airflow.operators import DtePipelineOperator
     from dte.airflow.trigger import dag_id_for, revision_tag
+    from dte.config import get_settings
 
     p, pid = rev.config, rev.pipeline_id
     sc = p.get("schedule") or {}
@@ -59,7 +60,7 @@ def _dag_for(rev):
         DtePipelineOperator(
             task_id="run", pipeline_id=pid, revision_id=rev.id, eval_set_id=sc.get("eval_set_id"),
             retries=sc.get("retries", 0), retry_delay=timedelta(seconds=sc.get("retry_delay_s", 300)),
-            execution_timeout=timedelta(seconds=sc["timeout_s"]) if sc.get("timeout_s") else None,
+            execution_timeout=timedelta(seconds=sc.get("timeout_s") or get_settings().run_timeout_seconds),
             **callbacks(p.get("notifications") or []),
         )
     return dag

@@ -75,12 +75,15 @@ TDD in every step. Each step is its own worktree off `dte-airflow`.
   contracts read as `pre`, which is lenient on read.
 
 ### 4. Atomic file writes — `feature/086-atomic-files`
+- Outcome: didn't reproduce locally. DuckDB's COPY already writes an existing
+  target via a temp file and removes a fresh one on error; the test pins it.
+  Object stores are not covered.
 - Test: inject a failure into `COPY`, and the final path must not exist or
   must keep its old contents.
 - `_copy.py`: temp path plus `os.replace` locally, fsspec `mv` for object stores.
 
 ### 5. Timeouts — `feature/086-timeouts`
-- After 084 merges. Test: a slow fake source returns 504 from preview within
+- 084 is on `dte-airflow`. Test: a slow fake source returns 504 from preview within
   the configured timeout.
 - `dag_factory.py`: `execution_timeout` falls back to `run_timeout_seconds`.
 
