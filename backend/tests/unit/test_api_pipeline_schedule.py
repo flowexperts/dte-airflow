@@ -200,3 +200,30 @@ def test_retries_refused_on_append_destination(client):
     assert r.status_code == 422 and r.json()["detail"]["code"] == "retries_on_append"
     assert _put(c, "ap_pipe").status_code == 200       # no retries: fine
     assert _put(c, retries=1).status_code == 200       # replace destination: fine
+
+
+def test_saved_schedule_without_mode_reads_as_cron():
+    """Plan 089: schedules saved before modes existed keep firing on cron."""
+    from dte.models.pipeline import PipelineSchedule
+    assert PipelineSchedule.model_validate({"cron_expr": "0 2 * * *"}).mode == "cron"
+
+
+def test_assets_mode_needs_no_cron(client):
+    c, _ = client
+    r = c.put("/api/pipelines/tx_pipe/schedule", json={"mode": "assets", "assets": ["dte://pg/mart/orders"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["assets"] == ["dte://pg/mart/orders"] and r.json()["next_run_at"] is None
+
+
+@pytest.mark.parametrize("body", [{"mode": "assets", "assets": []}, {"mode": "cron"}])
+def test_each_mode_needs_its_trigger(client, body):
+    c, _ = client
+    assert c.put("/api/pipelines/tx_pipe/schedule", json=body).status_code == 422
+
+
+def test_assets_lists_pipeline_outputs(client):
+    """What the "after these pipelines finish" picker offers."""
+    c, _ = client
+    r = c.get("/api/assets")
+    assert r.status_code == 200, r.text
+    assert r.json() == [{"pipeline_id": "tx_pipe", "pipeline_name": "tx_pipe", "uri": "file:///tmp/ev_out.json"}]

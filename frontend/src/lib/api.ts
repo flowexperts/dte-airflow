@@ -784,8 +784,15 @@ export const putNotifications = (pipelineId: string, body: PipelineNotification[
  *  and a revision is the Airflow DAG version. */
 export type OverlapPolicy = "skip" | "allow";
 
+/** `assets` (plan 089) fires after the chosen upstream pipelines write their
+ *  outputs; a schedule saved before modes existed reads as `cron`. */
+export type ScheduleTrigger = "cron" | "assets";
+
 export interface Schedule {
-  cron_expr: string;
+  mode: ScheduleTrigger;
+  cron_expr: string | null;
+  /** Upstream output Asset URIs, from `listAssets`. */
+  assets: string[];
   timezone: string;
   params: Record<string, string>;
   enabled: boolean;
@@ -802,7 +809,9 @@ export interface Schedule {
 
 /** Matches `PipelineSchedule` on the backend — the PUT body. */
 export interface ScheduleWriteRequest {
-  cron_expr: string;
+  mode: ScheduleTrigger;
+  cron_expr: string | null;
+  assets: string[];
   timezone: string;
   params: Record<string, string>;
   enabled: boolean;
@@ -824,6 +833,15 @@ export const putSchedule = (pipelineId: string, body: ScheduleWriteRequest) =>
 
 export const deleteSchedule = (pipelineId: string) =>
   apiFetch<void>(schedulePath(pipelineId), { method: "DELETE" });
+
+/** One transform pipeline's output Airflow Asset (plan 089). */
+export interface PipelineAsset {
+  pipeline_id: string;
+  pipeline_name: string;
+  uri: string;
+}
+
+export const listAssets = () => apiFetch<PipelineAsset[]>("/api/assets");
 
 // ── artifacts ───────────────────────────────────────────────────────────────
 //

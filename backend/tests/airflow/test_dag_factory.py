@@ -40,3 +40,21 @@ def test_timeout_falls_back_to_run_timeout_seconds(monkeypatch):
     unscheduled run had no timeout at all."""
     monkeypatch.setenv("DTE_RUN_TIMEOUT_SECONDS", "120")
     assert _dag_for(_rev()).get_task("run").execution_timeout == timedelta(seconds=120)
+
+
+def test_one_active_run_by_default_even_unscheduled():
+    """Plan 089: manual runs must not write the same destination concurrently."""
+    assert _dag_for(_rev()).max_active_runs == 1
+    assert _dag_for(_rev({"cron_expr": "0 1 * * *"})).max_active_runs == 1
+
+
+def test_overlap_allow_lifts_the_limit():
+    assert _dag_for(_rev({"cron_expr": "0 1 * * *", "overlap": "allow"})).max_active_runs == 16
+
+
+def test_assets_mode_triggers_on_upstream_assets():
+    from airflow.sdk.definitions.timetables.assets import AssetTriggeredTimetable
+
+    dag = _dag_for(_rev({"mode": "assets", "assets": ["dte://pg/mart/orders"]}))
+    assert isinstance(dag.timetable, AssetTriggeredTimetable)
+    assert [a.uri for a in dag.timetable.asset_condition.objects] == ["dte://pg/mart/orders"]

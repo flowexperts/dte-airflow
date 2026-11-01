@@ -59,7 +59,8 @@ export function SchedulePanel({
       s.retries > 0 || s.timeout_s != null
         ? "\n\nThis also turns off retries and the timeout, for manual runs too."
         : "";
-    if (!window.confirm(`Remove schedule ${s.cron_expr} (${s.timezone})?${alsoLost}`)) return;
+    const what = s.mode === "assets" ? "after upstream" : `${s.cron_expr} (${s.timezone})`;
+    if (!window.confirm(`Remove schedule ${what}?${alsoLost}`)) return;
     act(async () => {
       await deleteSchedule(pipelineId);
       return null;
@@ -82,8 +83,14 @@ export function SchedulePanel({
         <div className="grid grid-cols-[1fr_auto] gap-2.5 items-center px-3.5 py-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-[13px] text-text">{schedule.cron_expr}</span>
-              <span className="font-mono text-[11px] text-subtle">{schedule.timezone}</span>
+              {schedule.mode === "assets" ? (
+                <span className="text-[13px] text-text">After upstream pipelines</span>
+              ) : (
+                <>
+                  <span className="font-mono text-[13px] text-text">{schedule.cron_expr}</span>
+                  <span className="font-mono text-[11px] text-subtle">{schedule.timezone}</span>
+                </>
+              )}
               <Pill status={schedule.enabled ? "ok" : "pending"}>
                 {schedule.enabled ? "Enabled" : "Disabled"}
               </Pill>
@@ -94,7 +101,9 @@ export function SchedulePanel({
               )}
             </div>
             <div className="mt-1 font-mono text-[11px] text-subtle">
-              Next run: {formatNextRun(schedule.next_run_at)}
+              {schedule.mode === "assets"
+                ? `Runs after ${schedule.assets.join(" and ")} update`
+                : `Next run: ${formatNextRun(schedule.next_run_at)}`}
             </div>
             <div className="mt-0.5 font-mono text-[11px] text-subtle">
               On failure: {failureSummary(schedule)}
