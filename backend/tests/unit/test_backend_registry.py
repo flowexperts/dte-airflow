@@ -131,3 +131,63 @@ def test_bigquery_authenticates_with_the_airflow_providers_credentials(monkeypat
     # for "no default dataset" or parse_project_and_dataset crashes.
     br._open_bigquery({"url": "bigquery://prj", "conn_id": "gcp"})
     assert seen["dataset_id"] == ""
+
+
+def _fake_bigquery_module(monkeypatch):
+    """A stand-in `google.cloud.bigquery` that records what the opener builds."""
+    import sys
+    from types import ModuleType
+
+    bq = ModuleType("google.cloud.bigquery")
+
+    class QueryJobConfig:
+        def __init__(self, **kw):
+            self.kw = kw
+
+    class Client:
+        def __init__(self, **kw):
+            self.kw = kw
+
+    bq.QueryJobConfig, bq.Client = QueryJobConfig, Client
+    for m in ("google", "google.cloud"):
+        monkeypatch.setitem(sys.modules, m, sys.modules.get(m) or ModuleType(m))
+    monkeypatch.setitem(sys.modules, "google.cloud.bigquery", bq)
+    sys.modules["google.cloud"].bigquery = bq
+    return bq
+
+
+def test_bigquery_cap_rides_on_the_clients_default_job_config(monkeypatch):
+    """Plan 093: every query the backend runs (preview, run, introspection)
+    goes through this client, so BigQuery itself refuses past the cap."""
+    from types import SimpleNamespace as NS
+
+    from dte.engine import backend_registry as br
+
+    _fake_bigquery_module(monkeypatch)
+    seen = {}
+    monkeypatch.setattr(br, "_gcp_credentials", lambda conn_id: "creds")
+    monkeypatch.setattr(br, "ibis", NS(bigquery=NS(connect=lambda **kw: seen.update(kw) or "con")))
+    br._open_bigquery({"url": "bigquery://prj", "conn_id": "gcp", "max_bytes_billed": 1000})
+    client = seen["client"]
+    assert client.kw["project"] == "prj"
+    assert client.kw["credentials"] == "creds"
+    assert client.kw["default_query_job_config"].kw == {"maximum_bytes_billed": 1000}
+
+
+def test_snowflake_statement_timeout_is_a_session_parameter(monkeypatch):
+    import sys
+    from types import ModuleType
+    from types import SimpleNamespace as NS
+
+    from dte.engine import backend_registry as br
+
+    for m in ("snowflake", "snowflake.connector"):
+        monkeypatch.setitem(sys.modules, m, sys.modules.get(m) or ModuleType(m))
+    seen = {}
+    monkeypatch.setattr(br, "ibis", NS(connect=lambda url, **kw: seen.update(url=url, **kw) or "con"))
+    br._open_snowflake({"url": "snowflake://u:p@acct/db", "statement_timeout_seconds": 30})
+    assert seen == {"url": "snowflake://u:p@acct/db",
+                    "session_parameters": {"STATEMENT_TIMEOUT_IN_SECONDS": 30}}
+    seen.clear()
+    br._open_snowflake({"url": "snowflake://u:p@acct/db"})
+    assert seen == {"url": "snowflake://u:p@acct/db"}

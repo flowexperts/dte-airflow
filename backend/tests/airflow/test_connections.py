@@ -98,3 +98,16 @@ def test_storage_kind_needs_the_provider_filesystem(monkeypatch):
     # amazon provider installed but its s3 filesystem (s3fs) isn't.
     monkeypatch.setattr(connections, "_installed", lambda: ({"aws"}, set()))
     assert "s3" not in available_kinds()
+
+
+def test_metered_connections_carry_their_caps_from_extras():
+    """Plan 093: the cap lives on the Airflow connection and reaches the opener."""
+    bq = from_airflow(c("gcpbigquery", NS(project_id="prj"), extra_dejson={"dte_max_bytes_billed": "1000000"}))
+    assert bq.credentials["max_bytes_billed"] == 1_000_000
+    sf = from_airflow(c("snowflake", NS(sqlalchemy_url=_Url("snowflake://u:p@acct/db")),
+                        extra_dejson={"dte_statement_timeout_seconds": 60}))
+    assert sf.credentials == {"url": "snowflake://u:p@acct/db", "statement_timeout_seconds": 60}
+    # Unmetered kinds ignore the keys.
+    pg = from_airflow(c("postgres", NS(sqlalchemy_url=_Url("postgresql://h/db")),
+                        extra_dejson={"dte_max_bytes_billed": 5}))
+    assert pg.credentials == {"url": "postgresql://h/db"}

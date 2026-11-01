@@ -14,10 +14,15 @@ import re
 from functools import lru_cache
 
 from dte.models.pipeline import Connection
+from dte.sources.metered import METERED
 
 _SQL = {"postgres": "postgres", "mysql": "mysql", "mssql": "mssql", "sqlite": "sqlite", "snowflake": "snowflake"}
 _STORAGE = {"aws": "s3", "google_cloud_platform": "gcs", "wasb": "azure", "adls": "azure",
             "azure_data_lake": "azure", "sftp": "sftp"}
+# Airflow connection extra -> credential key the opener reads (plan 093).
+# BigQuery enforces the bytes cap; Snowflake (no bytes cap) the timeout.
+_CAPS = {"dte_max_bytes_billed": "max_bytes_billed",
+         "dte_statement_timeout_seconds": "statement_timeout_seconds"}
 # The fsspec scheme each storage kind needs the provider to supply.
 STORAGE_SCHEME = {"s3": "s3", "gcs": "gs", "azure": "abfs", "sftp": "sftp"}
 # Per DTE kind: the Airflow conn_types that map to it, and what to install
@@ -76,6 +81,11 @@ def from_airflow(c) -> Connection:
         kind, creds = "local_fs", {}
     else:
         raise ValueError(f"airflow connection type {t!r} has no DTE mapping (conn_id={c.conn_id!r})")
+    if kind in METERED:
+        # Plan 093: per-connection caps, applied by the backend_registry openers.
+        for extra_key, cred_key in _CAPS.items():
+            if x.get(extra_key):
+                creds[cred_key] = int(x[extra_key])
     return Connection.model_construct(id=c.conn_id, name=c.conn_id, connection_type=kind,
                                       credentials=creds)
 

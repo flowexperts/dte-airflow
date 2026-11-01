@@ -12,7 +12,7 @@ from dte.engine.backend_registry import BackendRegistry
 from dte.engine.duckdb_engine import DuckDBEngine
 from dte.models.pipeline import SourceBase as Source
 from dte.security.permissions import requires
-from dte.sources.sample import load_interactive
+from dte.sources.sample import load_interactive, sample_info
 from dte.store.base import ConnectionStore
 
 router = APIRouter()
@@ -31,6 +31,9 @@ class SchemaFieldNode(BaseModel):
 
 class InferSchemaResponse(BaseModel):
     fields: list[SchemaFieldNode]
+    # Plan 093: a metered table's partition columns, for the builder's
+    # "no filter on the partition column" warning. Empty everywhere else.
+    partition_columns: list[str] = []
 
 
 def _walk(name: str, dtype: dt.DataType) -> SchemaFieldNode:
@@ -80,7 +83,8 @@ def source_fields(source: Source, conn, table: str | None) -> InferSchemaRespons
         raise HTTPException(status_code=422, detail=str(e))
 
     fields = [_walk(name, dtype) for name, dtype in result_table.schema().items()]
-    return InferSchemaResponse(fields=fields)
+    info = sample_info(source, conn, table)
+    return InferSchemaResponse(fields=fields, partition_columns=info["partition_columns"] if info else [])
 
 
 class AutomapField(BaseModel):

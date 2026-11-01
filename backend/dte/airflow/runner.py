@@ -23,6 +23,7 @@ from dte.engine.backend_registry import BackendRegistry
 from dte.engine.registry import get_engine
 from dte.models.pipeline import resolve_pipeline_engine
 from dte.sources.loader import load_source
+from dte.sources.metered import QueryCapExceeded, cap_message
 
 _STAGE_SEQ = itertools.count()
 
@@ -54,6 +55,10 @@ def _phase(log, emit, title: str, group: bool = True):
     try:
         yield
     except Exception as e:
+        # A connection's cap (plan 093) reads as a driver traceback otherwise.
+        if (msg := cap_message(e)) is not None:
+            emit(None, title, "failed", msg)
+            raise QueryCapExceeded(msg) from e
         emit(None, title, "failed", f"{type(e).__name__}: {e}")
         raise
     else:

@@ -180,10 +180,22 @@ def _open_bigquery(credentials: dict) -> ibis.BaseBackend:
         project = parsed.hostname
         dataset = (parsed.path or "").lstrip("/")  # ibis wants "" for none, not None
         extra = {"credentials": _gcp_credentials(credentials["conn_id"])} if credentials.get("conn_id") else {}
-        return ibis.bigquery.connect(project_id=project, dataset_id=dataset, **extra)
-    project = resolve_secret(credentials["project_id"])
-    dataset = resolve_secret(credentials.get("dataset_id")) if credentials.get("dataset_id") else ""
-    return ibis.bigquery.connect(project_id=project, dataset_id=dataset)
+    else:
+        project = resolve_secret(credentials["project_id"])
+        dataset = resolve_secret(credentials.get("dataset_id")) if credentials.get("dataset_id") else ""
+        extra = {}
+    if credentials.get("max_bytes_billed"):
+        # Plan 093: the cap rides on the client's default job config, so every
+        # query this backend runs (preview, run, introspection) carries it and
+        # BigQuery itself refuses past it — before billing anything.
+        from google.cloud import bigquery as bq
+
+        extra["client"] = bq.Client(
+            project=project, credentials=extra.get("credentials"),
+            default_query_job_config=bq.QueryJobConfig(
+                maximum_bytes_billed=int(credentials["max_bytes_billed"])),
+        )
+    return ibis.bigquery.connect(project_id=project, dataset_id=dataset, **extra)
 
 
 def _open_snowflake(credentials: dict) -> ibis.BaseBackend:
@@ -195,7 +207,14 @@ def _open_snowflake(credentials: dict) -> ibis.BaseBackend:
             "`uv pip install -e '.[snowflake-source]'`."
         ) from e
     url = resolve_secret(credentials["url"])
-    return ibis.snowflake.connect(url)
+    # `ibis.snowflake.connect(url)` put the URL into `create_object_udfs`;
+    # `ibis.connect` parses it. Snowflake has no bytes cap, so the plan 093
+    # cap is a statement timeout, enforced server-side per session.
+    extra = {}
+    if credentials.get("statement_timeout_seconds"):
+        extra["session_parameters"] = {
+            "STATEMENT_TIMEOUT_IN_SECONDS": int(credentials["statement_timeout_seconds"])}
+    return ibis.connect(url, **extra)
 
 
 _OPENERS = {
