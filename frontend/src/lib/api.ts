@@ -527,12 +527,6 @@ export const pipelineStepSchemas = (pipeline: Pipeline) =>
 export const listPipelineRuns = (id: string, limit = 50) =>
   apiFetch<Run[]>(`/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}`);
 
-/** Paged variant — carries the total so the pager can size itself. */
-export const listPipelineRunsPage = (id: string, limit: number, offset: number) =>
-  apiFetchPage<Run>(
-    `/api/pipelines/${encodeURIComponent(id)}/runs?limit=${limit}&offset=${offset}`,
-  );
-
 // ---------- Pipeline revisions (plan 037) ----------
 
 export interface PipelineRevision {

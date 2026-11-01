@@ -1,9 +1,9 @@
-import { useState } from "react";
 import useSWR from "swr";
-import { Pagination, Panel } from "@/components/ui";
+import { Panel } from "@/components/ui";
 import { HistoryPanel } from "@/components/builder/history/HistoryPanel";
 import { RunsTable } from "@/components/runs-table";
-import { listPipelineRuns, listPipelineRunsPage, type Run } from "@/lib/api";
+import { airflowDagHref } from "@/components/run/helpers";
+import { listPipelineRuns, type Run } from "@/lib/api";
 
 /**
  * Past-tense views of a pipeline, as page-level panes rather than a section.
@@ -21,40 +21,31 @@ import { listPipelineRuns, listPipelineRunsPage, type Run } from "@/lib/api";
  * present tense and re-runs as you type.
  */
 
-export const RUNS_PAGE_SIZE = 20;
+export const RECENT_RUNS = 20;
 
-/** Latest runs only — feeds the tab badge, not the table. */
-export function usePipelineRuns(pipelineId: string) {
-  const { data } = useSWR<Run[]>(
+function useRecentRuns(pipelineId: string) {
+  return useSWR<Run[]>(
     ["pipeline-runs", pipelineId],
-    () => listPipelineRuns(pipelineId, 20),
+    () => listPipelineRuns(pipelineId, RECENT_RUNS),
     {
       refreshInterval: (latest) =>
         latest?.some((r) => r.status === "running" || r.status === "pending") ? 3000 : 0,
     },
   );
-  return data ?? [];
 }
 
+/** Latest runs only — feeds the tab badge, not the table. */
+export function usePipelineRuns(pipelineId: string) {
+  return useRecentRuns(pipelineId).data ?? [];
+}
+
+/** The last few runs only. Full history, filtering and retries are Airflow's
+ *  grid (plan 087), one link away; a second pager here would only drift. */
 export function RunsPane({ pipelineId }: { pipelineId: string }) {
-  const [offset, setOffset] = useState(0);
+  const { data, isLoading } = useRecentRuns(pipelineId);
+  const runs = data ?? [];
 
-  const { data, isLoading } = useSWR(
-    ["pipeline-runs-page", pipelineId, offset],
-    () => listPipelineRunsPage(pipelineId, RUNS_PAGE_SIZE, offset),
-    {
-      // Hold the previous page while the next one loads, so paging doesn't
-      // collapse the table to an empty state and bounce the scroll position.
-      keepPreviousData: true,
-      refreshInterval: (latest) =>
-        latest?.items.some((r) => r.status === "running" || r.status === "pending") ? 3000 : 0,
-    },
-  );
-
-  const runs = data?.items ?? [];
-  const total = data?.total ?? 0;
-
-  if (!isLoading && total === 0) {
+  if (!isLoading && runs.length === 0) {
     return (
       <Panel>
         <div className="px-4 py-16 text-center text-sm text-subtle">
@@ -64,12 +55,20 @@ export function RunsPane({ pipelineId }: { pipelineId: string }) {
     );
   }
 
+  const dagId = runs[0]?.dag_id;
   return (
     <Panel>
       <div className="p-3">
         <RunsTable runs={runs} />
       </div>
-      <Pagination total={total} limit={RUNS_PAGE_SIZE} offset={offset} onChange={setOffset} />
+      {dagId && (
+        <div className="px-4 py-3 border-t border-border text-[12.5px] text-subtle">
+          Last {RECENT_RUNS} runs.{" "}
+          <a href={airflowDagHref(dagId)} className="text-accent hover:underline">
+            All runs in Airflow →
+          </a>
+        </div>
+      )}
     </Panel>
   );
 }

@@ -91,8 +91,12 @@ export function qualityTally(
 /** Airflow's own pages for a run. Relative on purpose: Airflow's `<base href>`
  *  resolves them under any configured base_url. Use a plain `<a>`, not nav's
  *  `Link`, which would mount them under `/plugin/<page>`. */
+export function airflowDagHref(dagId: string): string {
+  return `dags/${encodeURIComponent(dagId)}`;
+}
+
 export function airflowRunHref(dagId: string, runId: string): string {
-  return `dags/${encodeURIComponent(dagId)}/runs/${encodeURIComponent(runId)}`;
+  return `${airflowDagHref(dagId)}/runs/${encodeURIComponent(runId)}`;
 }
 
 /** The task instance page opens on its log. Every DTE DAG has one task, `run`
