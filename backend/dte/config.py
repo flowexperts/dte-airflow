@@ -9,6 +9,8 @@ Direct `os.getenv` reads are kept in a few places on purpose:
 """
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -34,11 +36,13 @@ class Settings(BaseSettings):
     preview_timeout_seconds: float = 30
     run_max_rows: int = 10_000_000
 
-    # DuckDB resource limits, applied to every connection (plan 086). Unset
-    # means DuckDB's own default: 80% of RAM and every core, per connection.
-    duckdb_memory_limit: str | None = None  # e.g. "4GB"
+    # DuckDB resource limits, applied to every connection (plan 086). DuckDB's
+    # own default is 80% of RAM per connection, and a worker runs several at
+    # once — so cap it and spill to disk instead. An empty value means DuckDB's
+    # default; unset threads means every core.
+    duckdb_memory_limit: str = "2GB"
     duckdb_threads: int | None = None
-    duckdb_temp_dir: str | None = None  # where DuckDB spills past memory_limit
+    duckdb_temp_dir: str = str(Path(tempfile.gettempdir()) / "dte-duckdb")
 
     # Hard stop on sweep size. Read via getattr by the sweep route since
     # plan 051, but never declared here — so `extra="ignore"` swallowed

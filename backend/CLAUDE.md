@@ -366,7 +366,9 @@ mapping exists. Two consequences worth keeping:
   DuckDB once so checks and write share it. `phase: "post"` reads the written
   file, as before.
 - **Every DuckDB connection goes through `dte/engine/connect.connect_duckdb`**,
-  which applies `DTE_DUCKDB_MEMORY_LIMIT` / `_THREADS` / `_TEMP_DIR`.
+  which applies `DTE_DUCKDB_MEMORY_LIMIT` (default `2GB`; empty = DuckDB's
+  80%-of-RAM default) / `_THREADS` / `_TEMP_DIR` (default `<tmp>/dte-duckdb`,
+  where queries past the limit spill instead of OOM-killing the worker).
 - `DuckDBEngine.execute` passes its connection to the writer only when the
   table lives in it; otherwise the writer's Arrow-staging path runs.
 - Interactive calls return 504 after `DTE_PREVIEW_TIMEOUT_SECONDS` (30); DAG

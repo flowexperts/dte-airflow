@@ -18,4 +18,4 @@ def connect_duckdb() -> ibis.BaseBackend:
         "threads": s.duckdb_threads,
         "temp_directory": s.duckdb_temp_dir,
     }
-    return ibis.duckdb.connect(**{k: v for k, v in config.items() if v is not None})
+    return ibis.duckdb.connect(**{k: v for k, v in config.items() if v not in (None, "")})
