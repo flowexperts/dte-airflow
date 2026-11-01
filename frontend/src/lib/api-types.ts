@@ -302,6 +302,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pipelines/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Estimate Pipeline
+         * @description What a run (or a live preview) of this unsaved body would scan on its
+         *     metered sources (plan 093). Free: BigQuery dry run, Snowflake EXPLAIN.
+         */
+        post: operations["estimate_pipeline_api_pipelines_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pipelines/{pipeline_id}/trigger": {
         parameters: {
             query?: never;
@@ -628,6 +649,27 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sources/{source_id}/sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Drop Source Sample
+         * @description Forget a metered source's cached sample (plan 093); the next preview
+         *     fetches a fresh one. Read permission: it is the preview's Refresh.
+         */
+        delete: operations["drop_source_sample_api_sources__source_id__sample_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1827,6 +1869,11 @@ export interface components {
         InferSchemaResponse: {
             /** Fields */
             fields: components["schemas"]["SchemaFieldNode"][];
+            /**
+             * Partition Columns
+             * @default []
+             */
+            partition_columns: string[];
         };
         /** JoinStep */
         JoinStep: {
@@ -1989,6 +2036,29 @@ export interface components {
             schedule?: components["schemas"]["PipelineSchedule"] | null;
             /** Notifications */
             notifications?: components["schemas"]["PipelineNotification"][];
+        };
+        /**
+         * PipelineEstimate
+         * @description What a run of this pipeline would scan on its warehouse sources.
+         */
+        PipelineEstimate: {
+            /** Metered */
+            metered: boolean;
+            /** Engine */
+            engine?: string | null;
+            /** Bytes */
+            bytes?: number | null;
+            /** Est Cost Usd */
+            est_cost_usd?: number | null;
+            /** Basis */
+            basis?: string | null;
+            /** Max Bytes Billed */
+            max_bytes_billed?: number | null;
+            /**
+             * Exceeds Cap
+             * @default false
+             */
+            exceeds_cap: boolean;
         };
         /**
          * PipelineNotification
@@ -2364,6 +2434,11 @@ export interface components {
             eval_set_id?: string | null;
             /** Sweep Id */
             sweep_id?: string | null;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -2844,6 +2919,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 params?: string | null;
+                live?: boolean;
             };
             header?: never;
             path?: never;
@@ -2880,6 +2956,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 params?: string | null;
+                live?: boolean;
             };
             header?: never;
             path: {
@@ -2896,6 +2973,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimate_pipeline_api_pipelines_estimate_post: {
+        parameters: {
+            query?: {
+                params?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineBase"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineEstimate"];
                 };
             };
             /** @description Validation Error */
@@ -3041,7 +3153,6 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                offset?: number;
             };
             header?: never;
             path: {
@@ -3483,6 +3594,39 @@ export interface operations {
     source_tables_api_sources__source_id__tables_get: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drop_source_sample_api_sources__source_id__sample_delete: {
+        parameters: {
+            query?: {
+                table?: string | null;
+            };
             header?: never;
             path: {
                 source_id: string;

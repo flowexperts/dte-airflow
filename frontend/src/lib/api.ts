@@ -326,7 +326,24 @@ export interface PreviewResponse {
   step_sqls?: Record<string, string>;
   final_sql?: string | null;
   error?: string | null;
+  /** Plan 093: sources this preview read from a cached sample (metered
+   *  warehouse tables). Empty on a live preview and for every other source. */
+  samples?: PreviewSample[];
 }
+
+export interface PreviewSample {
+  alias: string;
+  source_id: string;
+  table: string | null;
+  rows: number;
+  taken_at: string;
+}
+
+/** What a run would scan on its warehouse sources (plan 093). */
+export type PipelineEstimate = components["schemas"]["PipelineEstimate"];
+
+/** A metered pipeline's trigger answers with an estimate until confirmed. */
+export type TriggerResponse = { run_id: string } | { estimate: PipelineEstimate; enqueued: false };
 
 // The DTE API is mounted by the Airflow plugin at /dte, same origin as this
 // UI (/dte/ui), so Airflow's own session cookie authenticates every call.
@@ -462,14 +479,36 @@ export const bulkDeletePipelines = (ids: string[]) =>
     body: JSON.stringify({ ids }),
   });
 
-export const triggerPipeline = (id: string, params: Record<string, string> = {}) =>
-  apiFetch<{ run_id: string }>(`/api/pipelines/${encodeURIComponent(id)}/trigger`, {
+export const triggerPipeline = (id: string, params: Record<string, string> = {}, confirm = false) =>
+  apiFetch<TriggerResponse>(`/api/pipelines/${encodeURIComponent(id)}/trigger`, {
     method: "POST",
-    body: JSON.stringify({ params }),
+    body: JSON.stringify({ params, confirm }),
   });
 
-export const previewPipeline = (id: string, limit = 100, params?: Record<string, string>) => {
+export const estimatePipeline = (pipeline: Pipeline, params?: Record<string, string>) => {
+  const q = new URLSearchParams();
+  if (params && Object.keys(params).length > 0) q.set("params", JSON.stringify(params));
+  return apiFetch<PipelineEstimate>(`/api/pipelines/estimate?${q.toString()}`, {
+    method: "POST",
+    body: JSON.stringify(pipeline),
+  });
+};
+
+/** Forget a metered source's cached sample; the next preview refetches. */
+export const dropSourceSample = (sourceId: string, table?: string | null) =>
+  apiFetch<{ dropped: boolean }>(
+    `/api/sources/${encodeURIComponent(sourceId)}/sample${table ? `?table=${encodeURIComponent(table)}` : ""}`,
+    { method: "DELETE" },
+  );
+
+export const previewPipeline = (
+  id: string,
+  limit = 100,
+  params?: Record<string, string>,
+  live = false,
+) => {
   const q = new URLSearchParams({ limit: String(limit) });
+  if (live) q.set("live", "true");
   if (params && Object.keys(params).length > 0) {
     q.set("params", JSON.stringify(params));
   }
@@ -479,8 +518,14 @@ export const previewPipeline = (id: string, limit = 100, params?: Record<string,
 };
 
 /** Compile + sample an unsaved pipeline body (plan 038 item 6). */
-export const dryRunPipeline = (pipeline: Pipeline, limit = 20, params?: Record<string, string>) => {
+export const dryRunPipeline = (
+  pipeline: Pipeline,
+  limit = 20,
+  params?: Record<string, string>,
+  live = false,
+) => {
   const q = new URLSearchParams({ limit: String(limit) });
+  if (live) q.set("live", "true");
   if (params && Object.keys(params).length > 0) {
     q.set("params", JSON.stringify(params));
   }
@@ -599,7 +644,7 @@ export const bulkDeleteSources = (ids: string[]) =>
     body: JSON.stringify({ ids }),
   });
 export const getSourceSchema = (id: string, table?: string | null) =>
-  apiFetch<{ fields: SchemaField[] }>(
+  apiFetch<{ fields: SchemaField[]; partition_columns?: string[] }>(
     `/api/sources/${encodeURIComponent(id)}/schema${table ? `?table=${encodeURIComponent(table)}` : ""}`,
   );
 
@@ -724,7 +769,7 @@ export const getRunEvents = (id: string) =>
   apiFetch<{ events: RunEvent[]; count: number }>(`/api/runs/${encodeURIComponent(id)}/events`);
 
 export const inferSchema = (source: Source, table?: string | null) =>
-  apiFetch<{ fields: SchemaField[] }>(
+  apiFetch<{ fields: SchemaField[]; partition_columns?: string[] }>(
     `/api/schema/infer${table ? `?table=${encodeURIComponent(table)}` : ""}`,
     {
       method: "POST",

@@ -3,6 +3,7 @@ import { useRouter } from "@/lib/nav";
 import { ParamsModal } from "@/components/params-modal";
 import { Button } from "@/components/ui";
 import { triggerPipeline, type Pipeline } from "@/lib/api";
+import { estimateSentence } from "@/lib/metered";
 import { usePermissions } from "@/lib/use-permissions";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
@@ -60,7 +61,15 @@ export function TriggerRunButton({
         emptyMessage={`Run ${pipeline.name} now?`}
         onSubmit={async (values) => {
           try {
-            const { run_id } = await triggerPipeline(pipeline.id, values);
+            let res = await triggerPipeline(pipeline.id, values);
+            if ("estimate" in res) {
+              // Plan 093: a warehouse-backed pipeline answers with what it
+              // will scan and starts nothing until the user says so.
+              if (!window.confirm(`${estimateSentence(res.estimate)} Run?`)) return;
+              res = await triggerPipeline(pipeline.id, values, true);
+            }
+            if (!("run_id" in res)) return;
+            const { run_id } = res;
             // Close on success. Navigating used to hide the omission by
             // unmounting the modal, but that only happens on the `router.push`
             // branch — with an `onStarted` handler nothing navigates and the
