@@ -128,3 +128,20 @@ async def scenario_ids(client: AsyncClient):
         if cid == "local_fs":  # pre-seeded; keep
             continue
         await client.delete(f"/api/connections/{cid}")
+
+
+@pytest.fixture(autouse=True)
+def _pipelines_round_trip_through_files(fake_stores, tmp_path):
+    """Plan 090: `dte export` → `dte validate` round-trips every pipeline a
+    scenario saves — the latest revision of each, unchanged."""
+    yield
+    from dte.store.files import export_pipelines, read_revision
+
+    latest: dict[str, dict] = {}
+    revs = sorted(fake_stores["pipeline_revision"]._data.values(), key=lambda r: r.changed_at)
+    for r in revs:
+        latest[r.pipeline_id] = r.config
+    paths, errors = export_pipelines(latest.values(), tmp_path / "exported")
+    assert errors == []
+    for path in paths:
+        assert read_revision(path).config == latest[path.stem]

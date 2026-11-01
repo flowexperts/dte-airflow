@@ -50,6 +50,14 @@ async def trigger_dag_run(pipeline_id: str, conf: dict, wait: float = 0) -> str:
     saves its variants and triggers them straight away) and, when `conf`
     pins a revision, for the DAG version carrying it — so the run is filed
     under the DAG version it actually executes (plan 068)."""
+    from dte.config import get_settings
+
+    if get_settings().pipeline_store == "file":
+        # Plan 090: the DAG is tagged with the file's content hash, so the
+        # wait is for the dag-processor to parse the file just written.
+        from dte.store.files import file_revision_id
+
+        conf = {**conf, "revision_id": file_revision_id(pipeline_id)}
     run_id = str(uuid.uuid4())
     deadline = time.monotonic() + wait
     if rev := conf.get("revision_id"):

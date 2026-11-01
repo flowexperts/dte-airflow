@@ -9,6 +9,8 @@ Direct `os.getenv` reads are kept in a few places on purpose:
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -43,6 +45,15 @@ class Settings(BaseSettings):
     # DTE_EVAL_MAX_SWEEP_CELLS and the cap the error message told users to
     # raise was in fact a constant.
     eval_max_sweep_cells: int = 50
+
+    # Pipelines as files (plan 090). `file` makes `DTE_PIPELINES_DIR` the
+    # source of truth (one `<id>.yaml` each) for the API and the DAG factory;
+    # `postgres` is today's behaviour. The dir must be shared by the
+    # api-server and the dag-processor.
+    pipeline_store: Literal["postgres", "file"] = "postgres"
+    pipelines_dir: str = "pipelines"
+    # Opt-in: commit each save/delete when the dir is a git checkout.
+    pipelines_git_commit: bool = False
 
     # Logging
     log_level: str = "INFO"

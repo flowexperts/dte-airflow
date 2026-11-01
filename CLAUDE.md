@@ -44,6 +44,9 @@ uv run pytest                      # unit; scenarios excluded by default
 uv run pytest tests/scenarios -m scenario -v
 uv run pytest -m "not integration" # skip postgres tests
 dte db upgrade                     # migrate the `dte` schema (needs DTE_DATABASE_URL or Airflow config)
+dte validate pipelines/*.yaml      # pipeline files (plan 090), what CI runs
+dte run <file> [--sample N]        # run a pipeline file locally; no Postgres, conns from AIRFLOW_CONN_*
+dte export --out pipelines/        # DB -> files, once, before DTE_PIPELINE_STORE=file
 
 # Frontend (Airflow plugin bundle; rebuild the image to ship it)
 cd frontend && pnpm install && pnpm build

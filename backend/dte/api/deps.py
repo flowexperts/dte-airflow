@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from dte.airflow.auth import get_current_user  # noqa: F401 — re-exported for routes/tests
 from dte.airflow.connection_store import AirflowConnectionStore
 from dte.airflow.db import async_engine
+from dte.config import get_settings
+from dte.store.files import FilePipelineStore
 from dte.store.postgres import (
     PostgresDashboardStore,
     PostgresDestinationStore,
@@ -34,7 +36,11 @@ def _session_factory():
 
 
 def get_pipeline_store():
-    return PostgresPipelineStore(_session_factory())
+    store = PostgresPipelineStore(_session_factory())
+    s = get_settings()
+    if s.pipeline_store == "file":  # plan 090: files are the truth, the row an index
+        return FilePipelineStore(s.pipelines_dir, index=store, git_commit=s.pipelines_git_commit)
+    return store
 
 
 def get_pipeline_revision_store():

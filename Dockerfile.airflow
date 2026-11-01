@@ -11,7 +11,7 @@ FROM apache/airflow:3.3.2-python3.12 AS base
 ARG AIRFLOW_CONSTRAINTS=https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt
 USER root
 # Owned by airflow so fresh named volumes mounted here are writable.
-RUN mkdir -p /opt/airflow/state /var/lib/dte/artifacts && chown -R airflow:root /opt/airflow/state /var/lib/dte
+RUN mkdir -p /opt/airflow/state /var/lib/dte/artifacts /var/lib/dte/pipelines && chown -R airflow:root /opt/airflow/state /var/lib/dte
 # Microsoft ODBC Driver 18: the one driver SQL Server sources and destinations
 # share (pyodbc, via the `[mssql]` extra). No-op if the base image ships it.
 RUN if ! odbcinst -q -d -n "ODBC Driver 18 for SQL Server" >/dev/null 2>&1; then \

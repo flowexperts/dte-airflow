@@ -33,6 +33,9 @@ x-airflow: &airflow
     DTE_DATABASE_URL: postgresql+asyncpg://airflow:airflow@postgres/airflow
     DTE_AIRFLOW_URL: http://localhost:8080
     DTE_ARTIFACT_DIR: /var/lib/dte/artifacts
+    # Plan 090: where pipeline files live once DTE_PIPELINE_STORE=file.
+    # Shared by the api-server (writes) and the dag-processor (reads).
+    DTE_PIPELINES_DIR: /var/lib/dte/pipelines
     DTE_ADMIN_PASSWORD: ${DTE_ADMIN_PASSWORD:?run scripts/bootstrap.sh}
   volumes:
     - ./dags:/opt/airflow/dags
@@ -40,6 +43,7 @@ x-airflow: &airflow
     - ./backend/sample_data:/opt/dte/backend/sample_data:ro
     - /tmp/dte-samples:/tmp/dte-samples
     - artifacts:/var/lib/dte/artifacts
+    - pipelines:/var/lib/dte/pipelines
     - airflow_state:/opt/airflow/state
   depends_on:
     airflow-init:
@@ -143,3 +147,5 @@ volumes:
   demo_pgdata:
   # Content-addressed extract/structure cache.
   artifacts:
+  # Pipeline files (plan 090).
+  pipelines:
