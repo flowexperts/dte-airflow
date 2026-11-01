@@ -9,6 +9,7 @@ Output is JSON-serialisable so the API can return it directly.
 """
 from __future__ import annotations
 
+import difflib
 from typing import Any, TypedDict
 
 
@@ -94,6 +95,29 @@ def diff_pipeline(before: dict[str, Any], after: dict[str, Any]) -> PipelineDiff
         "output_id_after": output_after,
         "steps": steps,
     }
+
+
+def side_by_side(before: str, after: str, context: int = 3) -> list[list[dict]]:
+    """Two texts as hunks of paired rows for a split diff view.
+
+    Each row is `{kind, a_no, a, b_no, b}`, `kind` being difflib's opcode tag
+    (equal / replace / delete / insert). A side with no line is `None`.
+    Unchanged runs longer than `context` lines fall between hunks. Identical
+    texts give `[]`."""
+    a, b = before.splitlines(), after.splitlines()
+    hunks = []
+    for group in difflib.SequenceMatcher(None, a, b, autojunk=False).get_grouped_opcodes(context):
+        rows = []
+        for tag, i1, i2, j1, j2 in group:
+            for k in range(max(i2 - i1, j2 - j1)):
+                i, j = i1 + k, j1 + k
+                rows.append({
+                    "kind": tag,
+                    "a_no": i + 1 if i < i2 else None, "a": a[i] if i < i2 else None,
+                    "b_no": j + 1 if j < j2 else None, "b": b[j] if j < j2 else None,
+                })
+        hunks.append(rows)
+    return hunks
 
 
 def summarise_diff(d: PipelineDiff) -> str:

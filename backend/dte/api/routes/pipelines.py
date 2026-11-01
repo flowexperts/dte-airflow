@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import difflib
 import json
 
 import ibis
@@ -71,7 +70,7 @@ from dte.models.pipeline import (
     pipeline_requires_output,
 )
 from dte.models.user import User
-from dte.pipelines.diff import diff_pipeline, summarise_diff
+from dte.pipelines.diff import diff_pipeline, side_by_side, summarise_diff
 from dte.security.permissions import requires
 from dte.sources.sample import load_interactive
 from dte.store.base import (
@@ -646,11 +645,7 @@ async def diff_pipeline_revisions(
         "to": {"id": b.id, "changed_at": b.changed_at, "changed_by": b.changed_by},
         "diff": diff,
         "summary": summarise_diff(diff),
-        "yaml_diff": "".join(difflib.unified_diff(
-            dump_yaml(a.config).splitlines(keepends=True),
-            dump_yaml(b.config).splitlines(keepends=True),
-            f"{a.id[:8]}.yaml", f"{b.id[:8]}.yaml",
-        )),
+        "yaml_diff": side_by_side(dump_yaml(a.config), dump_yaml(b.config)),
     }
 
 

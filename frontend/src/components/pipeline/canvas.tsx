@@ -491,9 +491,13 @@ export function PipelineCanvas({
             className={cn(
               "px-14 py-8 grid grid-cols-1 gap-6 items-start",
               rail &&
-                (quality
-                  ? "xl:grid-cols-[1fr_420px] 2xl:grid-cols-[1fr_480px]"
-                  : "xl:grid-cols-[1fr_560px] 2xl:grid-cols-[1fr_680px]"),
+                (revision
+                  ? /* Read-only spec beside a two-column diff: the diff needs
+                       the width more than display-only editors do. */
+                    "xl:grid-cols-2"
+                  : quality
+                    ? "xl:grid-cols-[1fr_420px] 2xl:grid-cols-[1fr_480px]"
+                    : "xl:grid-cols-[1fr_560px] 2xl:grid-cols-[1fr_680px]"),
             )}
           >
             <div className="space-y-5 min-w-0">

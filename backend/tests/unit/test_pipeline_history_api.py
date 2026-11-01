@@ -125,13 +125,17 @@ def test_get_revision_returns_yaml_of_config(client):
     assert yaml.safe_load(body["yaml"]) == body["config"]
 
 
-def test_diff_endpoint_returns_yaml_diff(client):
+def test_diff_endpoint_pairs_yaml_lines_side_by_side(client):
     c, stores = client
     c.post("/api/pipelines", json=_pipeline(name="v0"))
-    c.put("/api/pipelines/p_hist", json=_pipeline(name="v1"))
+    c.put("/api/pipelines/p_hist", json=_pipeline(name="v1", steps=[{"op": "sort", "by": ["x"]}]))
     revs = _run(stores["pipeline_revision"].list_for_pipeline("p_hist"))
     body = c.get(f"/api/pipelines/p_hist/diff?from={revs[1].id}&to={revs[0].id}").json()
-    lines = body["yaml_diff"].splitlines()
-    assert "-name: v0" in lines and "+name: v1" in lines
+    rows = [r for hunk in body["yaml_diff"] for r in hunk]
+    renamed = next(r for r in rows if r["kind"] == "replace" and r["a"] == "name: v0")
+    assert renamed["b"] == "name: v1" and renamed["a_no"] == renamed["b_no"]
+    # an added line has nothing on the left
+    assert any(r["a"] is None and r["b"] and "sort" in r["b"] for r in rows)
+    assert all(r["kind"] == "equal" or r["a"] != r["b"] for r in rows)
     same = c.get(f"/api/pipelines/p_hist/diff?from={revs[0].id}&to={revs[0].id}").json()
-    assert same["yaml_diff"] == ""
+    assert same["yaml_diff"] == []
