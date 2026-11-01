@@ -15,6 +15,7 @@
 ## Mitigation
 
 - **Immediate**: cancel the offending run (`POST /api/runs/{run_id}/cancel`).
+- **Check the DuckDB cap.** Each connection is limited to `DTE_DUCKDB_MEMORY_LIMIT` (default `2GB`) and spills to `DTE_DUCKDB_TEMP_DIR` (default `<tmp>/dte-duckdb`). An OOM under the cap usually means the temp dir's disk is full or the worker runs more concurrent runs than (worker memory ÷ cap). An empty `DTE_DUCKDB_MEMORY_LIMIT` restores DuckDB's 80%-of-RAM default per connection, which is what OOM-kills workers.
 - **Lower `settings.run_max_rows`** for the pipeline so the guardrail trips before OOM.
 - **Add a `filter` step early** in the pipeline to shrink the intermediate.
 - **Bump the memory limit** in `docker-compose.yml` under `services.backend.deploy.resources.limits.memory` (last resort; also bumps every pipeline's peak).

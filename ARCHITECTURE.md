@@ -46,10 +46,13 @@ Source configs (Pipeline.sources: [id, id, ...])
 SourceStore.get(id)  -->  Source model
     |
     v
-loader.load_source(source, ibis_con)  -->  ibis.Table per source
-    |                                       (all bound to one shared DuckDB connection)
+loader.load_source(source, registry, connection, credentials)  -->  ibis.Table per source
+    |                                       (the run's DuckDB connection, or the source DB for pushdown)
     v
 compile_pipeline(pipeline, tables, output)  -->  ibis.Table (transformed)
+    |
+    v
+pre-phase quality contracts  -->  failed_quality, nothing written
     |
     v
 DuckDBEngine.execute(table, target)  -->  writer  -->  output file / DB
@@ -61,7 +64,7 @@ RunStore.update(status, rows_written, finished_at)
 Each hop has a single responsibility:
 
 1. **Resolve.** The API route looks up every source id in `SourceStore` and the destination id in `DestinationStore`. A missing id returns 422 naming what was missing before any execution starts.
-2. **Load.** `dte.sources.loader.load_source(source, ibis_con)` returns an `ibis.Table` bound to a shared DuckDB connection. Loaders never open a second connection; they always attach or create a view on the connection the engine will use.
+2. **Load.** `dte.sources.loader.load_source(source, registry, connection, credentials)` returns an `ibis.Table`. `BackendRegistry` hands out the run's one DuckDB connection, or one native ibis backend per SQL connection so the query can push down.
 3. **Compile.** `compile_pipeline` walks the ordered step list, dispatches on `op` (and `mode` for `map` steps), and returns a single `ibis.Table` representing the final projection. The compiler never executes — it only builds an expression tree.
 4. **Execute.** `DuckDBEngine.execute(table, target)` hands the expression to the appropriate writer under `dte/engine/writers/`. Writers own how bytes hit disk / the target database, including format-specific concerns like the DuckDB `excel` extension or the JSON `default=str` decimal coercion.
 5. **Record.** The API route persists the row count, terminal status, and (via a Postgres trigger) `finished_at`. Per-step events are captured through the compiler's `on_step` callback so the future `Timeline` UI has data to render.
@@ -91,11 +94,8 @@ DELETE /api/sources/{id}                  409 with {referenced_by: [...]} if any
 GET    /api/sources/{id}/schema           field tree for a saved source (id-only)
 POST   /api/destinations                  create destination
 GET    /api/destinations                  list / read / update / delete destinations
-POST   /api/connections                   create connection (409 on id collision; creds encrypted at rest)
-GET    /api/connections                   list connections (credentials masked)
-GET    /api/connections/{id}              read (?reveal=true for plaintext creds)
-PUT    /api/connections/{id}              update (empty credentials keeps existing)
-DELETE /api/connections/{id}              409 with {referenced_by: {sources, destinations}} if in use
+GET    /api/connections                   Airflow connections DTE can map (read-only; manage them in Airflow)
+GET    /api/connections/{id}              read (credentials masked)
 POST   /api/connections/{id}/test         connectivity probe -> {ok, elapsed_ms, detail}
 ```
 
@@ -107,7 +107,7 @@ Delete endpoints are protective: they return 409 with a `referenced_by` payload 
 
 A `Pipeline` is a Pydantic model with three top-level fields: `sources: list[str]` (source ids), `steps: list[dict]` (ordered transforms), and `output_id: str` (destination id). Pipelines carry no credentials and no file paths of their own — everything lives in the entities they reference.
 
-`steps` is intentionally `list[dict]` rather than a typed discriminated union. The `map` op branches on both `op` and `mode`, and Pydantic's discriminated union cannot express a sub-discriminator sharing the same key. The compiler is the single place that knows how to parse a step dict into the right op-specific model.
+Steps are a typed discriminated union, `Step` (plan 088), with a callable discriminator so `map`'s `mode` can split one `op` into two classes. Writes validate against it and against `ALLOWED_OPS` for the pipeline type; the stored value stays the dict that was sent, and reads are lenient (an unknown op loads as `UnknownStep`). Each step class compiles itself.
 
 ### Source
 
@@ -117,7 +117,7 @@ A `Source` describes _where_ data comes from and _which slice_ of it to read. Fi
 
 A `Destination` wraps an `OutputTarget` — a Pydantic discriminated union over `type` with six variants: `json_file`, `csv_file`, `excel_file`, `parquet_s3`, `postgres`, `sql_database`. File-shaped targets validate that the on-disk extension matches the target family (a `json_file` at `orders.csv` is rejected at save).
 
-### Connection (three-tier model)
+### Connection
 
 Credentials are separated from the entities that use them:
 
@@ -131,9 +131,7 @@ Source / Destination (references connection_id + carries the "where inside the t
 Pipeline (references source ids + destination id)
 ```
 
-Credentials never live inside a `Source.config` or `Destination.config`. They live in `Connection.credentials`, an opaque encrypted blob on the wire and at rest. Local file targets bind to a singleton `local_fs_default` connection so every source and destination has exactly one connection to point at.
-
-Connection credentials are validated at model-parse time by instantiating dlt's matching `@configspec` class (`AwsCredentials`, `ConnectionStringCredentials`, etc.). We do not inherit — that would drag in dlt's config-provider machinery — we call the class, extract public fields, and store the result as a plain dict. Compatibility maps (`SOURCE_CONNECTION_COMPAT`, `DESTINATION_CONNECTION_COMPAT`) reject impossible pairings such as an s3 source bound to a postgres connection with a 422.
+A Connection is an Airflow Connection: `connection_id` is an Airflow `conn_id`, and DTE stores no credentials (plan 091 removed the last of the encrypted-credential code). Local file targets use an Airflow `fs` connection. Compatibility maps (`SOURCE_CONNECTION_COMPAT`, `DESTINATION_CONNECTION_COMPAT`) reject impossible pairings such as an s3 source bound to a postgres connection with a 422.
 
 ### Run
 
@@ -193,7 +191,7 @@ The compiler accepts an optional `on_step(idx, op, status, message=None)` callba
 
 ## Source loading
 
-`dte.sources.loader.load_source(source, ibis_con)` dispatches on `source.source_type`. Not every source goes through dlt — the choice is deliberate:
+`dte.sources.loader.load_source(source, registry, connection, credentials)` dispatches on `source.source_type` through `LOADERS`. Not every source goes through dlt — the choice is deliberate:
 
 - **`filesystem`** — DuckDB TVFs. `read_json_auto` / `read_csv_auto` / `read_parquet` / `read_xlsx`, materialised via `CREATE OR REPLACE VIEW`. No dlt. Nested JSON comes through as native STRUCT columns. Format is detected by extension (`.json`, `.jsonl`, `.ndjson`, `.csv`, `.tsv`, `.parquet`, `.xlsx`); `config["format"]` overrides. `.xlsx` uses the `excel` extension (lazy `INSTALL excel; LOAD excel;`) and reads only the first sheet.
 - **`sql_database`** — DuckDB scanner extensions. `INSTALL sqlite|postgres|mysql; ATTACH ... (TYPE ..., READ_ONLY); CREATE VIEW`. Scheme detected from the SQLAlchemy-style credentials URL. No dlt.
@@ -284,7 +282,7 @@ DTE deliberately does not:
 - **Stream.** Everything is batch. Real-time / CDC / streaming ingestion is a P4 concern in the roadmap and would require a different execution model — likely a separate service, not a compiler variant.
 - **Distribute.** Single-node DuckDB is the runtime. Scaling to Spark / Trino / a warehouse is a P2 concern; the raw-SQL escape hatches in the compiler are where a distributed backend would eventually plug in.
 - **Ship a plugin marketplace.** New source and destination kinds are code changes: a `SourceKind` literal, a loader dispatch, a compatibility map entry, an editor in the builder. This is a conscious choice — every integration is code-reviewed and tested.
-- **Orchestrate.** DTE runs pipelines on trigger; it does not schedule them, chain them, or manage dependencies between them. That is an Airflow / Prefect / Dagster job.
+- **Orchestrate.** Airflow does: a schedule is the DAG's cron, or Airflow Assets ("after upstream", plan 089) for chaining pipelines.
 - **Version pipelines automatically.** Pipelines are Pydantic models stored in Postgres. Change history is a P1 / P2 concern; today, edits overwrite.
 
 ## Deployment
@@ -300,7 +298,7 @@ Settings are read from `DTE_*` environment variables (`dte/config.py`). Tracing 
 DTE is an Airflow 3.3 app; there is no standalone mode. Everything lives in `dte/airflow/`:
 
 - **Plugin** (`plugin.py`) mounts the FastAPI app at `/dte` in the Airflow api-server and registers the UI bundle (`/dte/ui/dte.umd.js`) as `react_apps` nav entries. Auth is Airflow's: `auth.py` resolves the caller from Airflow's token or session cookie and derives DTE permissions from Airflow DAG access.
-- **DAG factory** (`dag_factory.py`, loaded by `dags/dte_dags.py`) reads the `dte` schema at parse time: one DAG `dte__<pipeline>` per pipeline, built from its latest revision, with the pipeline's single schedule (if enabled) as a `CronTriggerTimetable`. The revision id is a DAG tag (`dte-revision:<id>`), so pipeline revision = DAG version (plan 068); the operator runs the revision the dag run pins (`conf.revision_id`, else the DAG's own), and the trigger waits for the DAG version carrying it.
+- **DAG factory** (`dag_factory.py`, loaded by `dags/dte_dags.py`) reads the `dte` schema at parse time: one DAG `dte__<pipeline>` per pipeline, built from its latest revision, with the pipeline's single schedule (if enabled) as a cron timetable or a list of upstream Assets. The run task declares its sources and destination as Asset inlets/outlets, and `max_active_runs=1` unless the schedule allows overlap. With `DTE_PIPELINE_STORE=file` (plan 090) it reads `DTE_PIPELINES_DIR/*.yaml` instead of the database. The revision id is a DAG tag (`dte-revision:<id>`), so pipeline revision = DAG version (plan 068); the operator runs the revision the dag run pins (`conf.revision_id`, else the DAG's own), and the trigger waits for the DAG version carrying it.
 - **Operator** (`operators.py`) loads the pipeline, resolves sources/destination through Airflow Connections (`connections.py` maps Airflow conn types onto DTE's), and calls `runner.run_pipeline`. A `fail` quality check fails the task. It writes one `run_results` row per dag run.
 - **Runs**: `POST /trigger` validates, then creates a dag run through Airflow's REST API with the caller's credentials. Run history is Airflow's `dag_run` joined to `run_results`.
 - **Storage**: DTE's tables sit in a `dte` schema inside Airflow's metadata DB, migrated by `dte db upgrade` with its own alembic version table.

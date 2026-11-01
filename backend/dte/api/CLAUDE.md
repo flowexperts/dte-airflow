@@ -15,7 +15,9 @@ GET    /api/notifiers                     installed provider notifiers + their c
 POST   /api/runs/{run_id}/cancel           mark the dag run failed
 GET    /api/me                            Airflow user + derived DTE permissions
 GET    /api/pipelines/{id}/preview?limit  compile + execute on sample rows
-GET    /api/pipelines/{id}/runs?limit     run history per pipeline
+GET    /api/pipelines/{id}/runs?limit     latest runs per pipeline (no offset; full history is Airflow's grid)
+GET    /api/allowed-ops                   ALLOWED_OPS: step ops each pipeline type may hold
+GET    /api/assets                        each transform pipeline's output Asset URI, for "after upstream" schedules
 GET    /api/runs/{run_id}                 poll run status
 GET    /api/runs/{run_id}/output?limit    peek at the run's output file
 POST   /api/schema/infer?table=           field tree from an in-flight Source body (table required for sql_database)

@@ -9,23 +9,25 @@ DTE is a batch data transformation engine. A **Pipeline** (Pydantic model) descr
 ### Full data flow
 
 ```
-DltSource config(s)
+Source + Airflow connection per SourceTableRef
     ↓
-dlt_loader.load_source() → ibis.Table per source (loaded into shared DuckDB connection)
-    ↓
+loader.load_source(source, registry, connection, credentials) → ibis.Table per source
+    ↓  (BackendRegistry: the run's DuckDB connection, or the source's own DB for pushdown)
 compile_pipeline(pipeline, tables) → ibis.Table (transformed)
     ↓
-DuckDBEngine.execute_to_json() → output file + row count
+pre-phase quality_contracts → DuckDBEngine.execute(table, target) → writer → post contracts
 ```
+
+`dte/airflow/runner.py::run_pipeline` drives this for both a DAG task and `dte run`.
 
 ### Key modules
 
 **`dte/models/pipeline.py`** — the pipeline spec. Steps are one discriminated union, `Step` (plan 088). `map`'s two classes share an `op`, so the discriminator is a callable (`_step_tag`: `op`, or `map:lookup` / `map:expression`) — a nested `Field(discriminator="mode")` validates but FastAPI's OpenAPI model rejects its inline mapping. `PipelineBase.steps: list[WriteStep]` validates every step strictly on write and the OpenAPI schema gets a `oneOf`, but the **stored value is the dict that was sent**: the parsed model would add every default to the JSONB and make each re-save read as a revision diff. So everything downstream still reads dicts; the compiler turns each into a model with `parse_step`, which returns `UnknownStep(raw)` for an op this build doesn't know (lenient read) and raises for a bad config on a known one. `ALLOWED_OPS` (next to the union) says which ops each `pipeline_type` may hold — the builder's old menus: quality only check/profile/filter/rename/select/join, eval no check/profile/aggregate/pivot, transform no check/profile. The validator enforces it on save and `GET /api/allowed-ops` feeds the builder's Add-step menu. Read paths must not re-validate through `PipelineBase` (that is why `GET .../schedule` reads the row directly): a row saved before a rule tightened still has to load.
 
-**`dte/sources/dlt_loader.py`** — universal source loading. `load_source(DltSource, ibis_con)` returns an `ibis.Table` bound to the shared DuckDB connection. The dispatch splits by source_type:
+**`dte/sources/loader.py`** — universal source loading. `load_source(source, registry, connection, credentials, table=None, sample=None)` returns an `ibis.Table`; `LOADERS` dispatches by source_type (`dlt_loader.py` is a re-export shim). `connection` is the Airflow connection mapped by `airflow/connections.to_dte`:
 
 - **`filesystem`**: `read_json_auto` / `read_csv_auto` / `read_parquet` / `read_xlsx` via `CREATE OR REPLACE VIEW`. No dlt. Nested JSON comes through as STRUCT columns; format is detected by extension (`.json`, `.jsonl`, `.ndjson`, `.csv`, `.tsv`, `.parquet`, `.xlsx`) and `config["format"]` overrides. `.xlsx` uses DuckDB's `excel` extension (lazy `INSTALL excel; LOAD excel;`) and reads only the first sheet.
-- **`sql_database`**: DuckDB scanner extensions (`INSTALL sqlite|postgres|mysql; ATTACH … (TYPE …, READ_ONLY); CREATE VIEW`). Scheme detected from the SQLAlchemy-style `credentials` URL. No dlt.
+- **`sql_database`**: a native ibis backend for the connection (`registry.for_connection`, cached per connection id), so later steps push down into the source database. The table comes from `SourceTableRef.table`, not the source config. No dlt.
 - **`s3`, `gcs`, `azure`, `sftp`**: read through the connection's **Airflow provider filesystem** (plan 074). `dte/sources/object_store.register` asks `ObjectStoragePath(url, conn_id=…)` for the provider's fsspec filesystem, registers it on the DuckDB connection under a per-connection protocol (`dte_<scheme>_<conn_id>`, so two S3 connections can sit in one pipeline), and the usual `read_*` view goes over the rewritten URL. Writers `COPY … TO` the same way (`writers/_copy.py`). Auth is entirely the provider's: IAM roles, service principals, service accounts all work; DTE builds no DuckDB SECRETs. `gcs://`/`az://` are aliased to the providers' `gs://`/`abfs://`.
 - **`mongodb`, `rest_api`**: dlt (`@dlt.resource` + `dlt.sources.rest_api.rest_api_source`). Kept because dlt's pagination / normalisation earn their keep for real APIs. Their columns still come through with `__` flattening — refs to them are single-token identifiers, not path expressions.
 
@@ -44,11 +46,11 @@ DuckDBEngine.execute_to_json() → output file + row count
   engines with no SQL-string seam at all (Trino).
 - Pivot uses `con.con.execute("CREATE OR REPLACE TEMP TABLE ... AS PIVOT ...")` — dynamic PIVOT cannot be a view in DuckDB, and `con.sql()` fails because sqlglot can't subquery a PIVOT node.
 
-**`dte/engine/duckdb_engine.py`** — wraps `ibis.duckdb.connect()`. Exposes `con` property (the ibis backend) for use by `dlt_loader`. Only responsible for execution and output — does not load sources.
+**`dte/engine/duckdb_engine.py`** — holds a `connect_duckdb()` connection (see _Write safety_). Exposes `con` (the ibis backend) for the loader's `BackendRegistry`. Only responsible for execution and output — does not load sources.
 
-**`dte/store/`** — Protocols in `base.py`, one per persisted entity: `PipelineStore`, `SourceStore`, `DestinationStore`, `ConnectionStore`, `RunStore`. `postgres.py` is the sole production backend (SQLAlchemy async, requires `DTE_DATABASE_URL`). Tests use `tests/fakes.py` — there is no in-memory store shipped in the package. The active backend is wired in `dte/api/deps.py` and injected into routes via FastAPI `Depends()`. All four Pydantic-modelled stores speak typed SQLModel instances end-to-end (see the **Model + store pattern** subsection below); `PostgresRunStore` still hand-writes SQL because `Run` isn't a Pydantic model yet.
+**`dte/store/`** — Protocols in `base.py`, one per persisted entity (`PipelineStore`, `SourceStore`, `DestinationStore`, `RunStore`, …). `postgres.py` is the production backend (SQLAlchemy async, requires `DTE_DATABASE_URL`); `files.py` replaces the pipeline store when `DTE_PIPELINE_STORE=file` (plan 090). Connections are Airflow's (`airflow/connection_store.py`, read-only). Tests use `tests/fakes.py` — there is no in-memory store shipped in the package. The active backend is wired in `dte/api/deps.py` and injected into routes via FastAPI `Depends()`. All four Pydantic-modelled stores speak typed SQLModel instances end-to-end (see _Model + store pattern_ in `dte/store/CLAUDE.md`); `PostgresRunStore` still hand-writes SQL because `Run` isn't a Pydantic model yet.
 
-**`dte/api/`** — FastAPI app. Routes use `Depends(get_pipeline_store)` and `Depends(get_run_store)`. Tests override these with `app.dependency_overrides`. `_execute_pipeline` runs as an `asyncio.create_task` — trigger returns `run_id` immediately, caller polls `GET /api/runs/{run_id}`.
+**`dte/api/`** — FastAPI app, mounted at `/dte` by the Airflow plugin. Routes use `Depends(get_pipeline_store)` and `Depends(get_run_store)`. Tests override these with `app.dependency_overrides`. Trigger creates an Airflow dag run and returns its `run_id`; the caller polls `GET /api/runs/{run_id}`. Preview and schema calls go through `api/interactive.run_interactive` (thread pool + 504 timeout).
 
 ### Step dispatch
 
@@ -373,6 +375,19 @@ mapping exists. Two consequences worth keeping:
   table lives in it; otherwise the writer's Arrow-staging path runs.
 - Interactive calls return 504 after `DTE_PREVIEW_TIMEOUT_SECONDS` (30); DAG
   tasks default `execution_timeout` to `DTE_RUN_TIMEOUT_SECONDS`.
+
+### DAGs, Assets and task logs (plans 087, 089)
+
+- `dag_factory._dag_for` gives the `run` task `inlets`/`outlets` from
+  `airflow/assets.lineage()` (URI rules in its docstring), sets
+  `max_active_runs=1` unless `schedule.overlap == "allow"`, and turns
+  `schedule.mode == "assets"` into `schedule=[Asset(u), …]` (all must update).
+  `GET /api/assets` lists the URIs for the schedule picker.
+- File mode builds DAGs without lineage: no Asset, so an assets-mode schedule
+  never fires there (plan 092 fixes it).
+- `runner.run_pipeline(log=)` writes `::group::` per source load and per step,
+  plus timed phases; each phase also lands in `run_results.events` with
+  `step_index: null`, which the run page's timeline reads.
 
 ### Field references and nested columns
 
