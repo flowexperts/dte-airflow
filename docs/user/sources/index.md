@@ -13,7 +13,7 @@ A source is where inside a system your data lives: a [connection](../connections
 | **Google Cloud Storage** | Objects in a GCS bucket | Bucket URL (`gs://bucket/path/`), file pattern, optional format |
 | **Azure Blob Storage** | Blobs in an Azure container | Bucket URL (`az://container/path/` or `abfs://container/path/`), file pattern, optional format |
 | **SFTP** | Files on an SFTP server | Folder URL (`sftp:///path/on/server/`, the host comes from the connection), file pattern, optional format |
-| **SQL database** | A table (or a custom query) in Postgres, MySQL, SQL Server, SQLite, Snowflake, or BigQuery | Either **Table** name or a **Query**, not both |
+| **SQL database** | A table (or a custom query) in Postgres, MySQL, SQL Server, SQLite, Snowflake, or BigQuery ([BigQuery guide](bigquery.md): setup and cost) | Either **Table** name or a **Query**, not both |
 | **MongoDB** | A collection | Database name, collection name |
 | **REST API** | Data from a JSON API | Endpoint path, pagination shape, resource details |
 

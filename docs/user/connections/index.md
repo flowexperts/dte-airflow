@@ -17,7 +17,7 @@ dte offers a type only when its provider is installed. Others show in the source
 | `fs` | `apache-airflow-providers-standard` | Files on the machines Airflow runs on |
 | `aws` | `apache-airflow-providers-amazon[s3fs]` | Reading and writing S3 (and S3-compatible stores: set `endpoint_url` in the extra) |
 | `google_cloud_platform` | `apache-airflow-providers-google` | Reading and writing GCS. Set extra `dte_type: bigquery` to use it for BigQuery instead |
-| `gcpbigquery` | `apache-airflow-providers-google` | Reading and writing BigQuery |
+| `gcpbigquery` | `apache-airflow-providers-google` | Reading and writing BigQuery. See the [BigQuery guide](../sources/bigquery.md) for credentials and the `dte_max_bytes_billed` spending cap |
 | `wasb`, `adls`, `azure_data_lake` | `apache-airflow-providers-microsoft-azure` | Reading and writing Azure Blob / ADLS |
 | `sftp` | `apache-airflow-providers-sftp` + `sshfs` | Reading and writing files over SFTP |
 | `postgres` | `apache-airflow-providers-postgres` | Reading and writing tables |
