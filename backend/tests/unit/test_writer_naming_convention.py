@@ -125,3 +125,23 @@ def test_mysql_url_keeps_the_scheme_the_user_saved(table, captured, monkeypatch)
         credentials={"url": "mysql://u:p@h/db"},
     )
     assert seen_url["url"] == "mysql+pymysql://u:p@h/db"
+
+
+def test_snowflake_credentials_come_from_the_hook(monkeypatch):
+    """The hook's DER key goes to dlt base64-encoded; the URL never carried it."""
+    import base64
+    from types import SimpleNamespace as NS
+
+    from dte.engine import backend_registry
+    from dte.engine.writers.sql_database import _snowflake_credentials
+
+    params = {"account": "acct", "user": "svc", "password": "", "database": "DB",
+              "warehouse": "WH", "role": "R", "authenticator": "snowflake",
+              "private_key": b"der-bytes", "schema": "PUBLIC", "application": "AIRFLOW"}
+    monkeypatch.setattr(backend_registry, "_snowflake_hook",
+                        lambda conn_id: NS(_get_conn_params=lambda: params))
+    assert _snowflake_credentials({"url": "snowflake://svc:@acct/DB", "conn_id": "sf"}) == {
+        "host": "acct", "username": "svc", "password": None, "database": "DB",
+        "warehouse": "WH", "role": "R", "authenticator": "snowflake", "token": None,
+        "private_key": base64.b64encode(b"der-bytes").decode()}
+    assert _snowflake_credentials({"url": "snowflake://u:p@a/d"}) == "snowflake://u:p@a/d"

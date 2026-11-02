@@ -198,6 +198,14 @@ def _open_bigquery(credentials: dict) -> ibis.BaseBackend:
     return ibis.bigquery.connect(project_id=project, dataset_id=dataset, **extra)
 
 
+def _snowflake_hook(conn_id: str):
+    """The provider's hook for an Airflow connection: password, key pair or
+    OAuth — whatever its extras configure."""
+    from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+
+    return SnowflakeHook(snowflake_conn_id=conn_id)
+
+
 def _open_snowflake(credentials: dict) -> ibis.BaseBackend:
     try:
         import snowflake.connector  # noqa: F401
@@ -206,6 +214,14 @@ def _open_snowflake(credentials: dict) -> ibis.BaseBackend:
             "Snowflake source support requires the `snowflake-source` extra: "
             "`uv pip install -e '.[snowflake-source]'`."
         ) from e
+    if credentials.get("conn_id"):
+        raw = _snowflake_hook(credentials["conn_id"]).get_conn()
+        if credentials.get("statement_timeout_seconds"):
+            raw.cursor().execute("ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = "
+                                 f"{int(credentials['statement_timeout_seconds'])}")
+        # Without the flag ibis tries to create a database for its UDFs on
+        # every connect, which a least-privilege role can't.
+        return ibis.snowflake.from_connection(raw, create_object_udfs=False)
     url = resolve_secret(credentials["url"])
     # `ibis.snowflake.connect(url)` put the URL into `create_object_udfs`;
     # `ibis.connect` parses it. Snowflake has no bytes cap, so the plan 093

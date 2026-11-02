@@ -20,6 +20,27 @@ def _bigquery_credentials(creds: dict):
     return creds["url"]
 
 
+def _snowflake_credentials(creds: dict):
+    """dlt credentials from the provider's hook, so key-pair and OAuth auth
+    reach the writer; the URL alone carries neither."""
+    if not creds.get("conn_id"):
+        return creds["url"]
+    import base64
+
+    from dte.engine.backend_registry import _snowflake_hook
+
+    p = _snowflake_hook(creds["conn_id"])._get_conn_params()
+    key = p.get("private_key")
+    return {
+        "host": p["account"], "username": p.get("user"), "password": p.get("password") or None,
+        "database": p["database"], "warehouse": p.get("warehouse") or None,
+        "role": p.get("role") or None, "authenticator": p.get("authenticator"),
+        "token": p.get("token"),
+        # dlt decodes base64 DER; the hook hands over raw DER bytes.
+        "private_key": base64.b64encode(key).decode() if key else None,
+    }
+
+
 def write(
     table: ibis.Table,
     target: SqlDatabaseTarget,
@@ -66,7 +87,7 @@ def write(
             credentials=url, naming_convention="direct"
         ),
         "snowflake": lambda: dlt.destinations.snowflake(
-            credentials=url, naming_convention="direct"
+            credentials=_snowflake_credentials(creds), naming_convention="direct"
         ),
         "bigquery": lambda: dlt.destinations.bigquery(
             credentials=_bigquery_credentials(creds), naming_convention="direct"

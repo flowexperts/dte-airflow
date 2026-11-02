@@ -64,6 +64,10 @@ def from_airflow(c) -> Connection:
     x, t = c.extra_dejson, c.conn_type
     if t in _SQL:
         kind, creds = _SQL[t], {"url": _hook_url(c.get_hook())}
+        if t == "snowflake":
+            # The provider keeps key-pair and OAuth auth out of the URL; the
+            # opener and writer build their clients from the hook instead.
+            creds["conn_id"] = c.conn_id
     elif t == "mongo":
         kind, creds = "mongodb", {"url": c.get_hook().uri}
     elif t == "gcpbigquery" or (t == "google_cloud_platform" and x.get("dte_type") == "bigquery"):

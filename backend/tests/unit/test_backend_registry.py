@@ -191,3 +191,25 @@ def test_snowflake_statement_timeout_is_a_session_parameter(monkeypatch):
     seen.clear()
     br._open_snowflake({"url": "snowflake://u:p@acct/db"})
     assert seen == {"url": "snowflake://u:p@acct/db"}
+
+
+def test_snowflake_with_conn_id_connects_through_the_hook(monkeypatch):
+    """Key-pair auth never survives the URL; the hook's connector does."""
+    import sys
+    from types import ModuleType
+    from types import SimpleNamespace as NS
+
+    from dte.engine import backend_registry as br
+
+    for m in ("snowflake", "snowflake.connector"):
+        monkeypatch.setitem(sys.modules, m, sys.modules.get(m) or ModuleType(m))
+    ran = []
+    raw = NS(cursor=lambda: NS(execute=ran.append))
+    monkeypatch.setattr(br, "_snowflake_hook", lambda conn_id: NS(get_conn=lambda: raw))
+    seen = {}
+    monkeypatch.setattr(br, "ibis", NS(snowflake=NS(
+        from_connection=lambda con, **kw: seen.update(con=con, **kw) or "con")))
+    assert br._open_snowflake({"url": "snowflake://u:@acct", "conn_id": "sf",
+                               "statement_timeout_seconds": 30}) == "con"
+    assert seen == {"con": raw, "create_object_udfs": False}
+    assert ran == ["ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = 30"]

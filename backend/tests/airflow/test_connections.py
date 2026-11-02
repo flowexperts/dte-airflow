@@ -30,7 +30,6 @@ SQL = [
     ("mssql", NS(get_uri=lambda: "mssql+pymssql://sa:p@h:1433/db?TrustServerCertificate=yes"),
      "mssql://sa:p@h:1433/db?TrustServerCertificate=yes"),
     ("sqlite", NS(get_uri=lambda: "sqlite:////x.db"), "sqlite:////x.db"),
-    ("snowflake", NS(get_uri=lambda: "snowflake://u:p@acc/s?warehouse=w"), "snowflake://u:p@acc/s?warehouse=w"),
 ]
 
 
@@ -38,6 +37,14 @@ SQL = [
 def test_sql_url_comes_from_the_provider_hook(conn_type, hook, url):
     out = from_airflow(c(conn_type, hook))
     assert (out.connection_type, out.credentials) == (conn_type, {"url": url})
+
+
+def test_snowflake_carries_the_conn_id():
+    """The provider leaves key-pair and OAuth auth out of the URL, so the
+    opener and writer build their clients from the hook by conn_id."""
+    out = from_airflow(c("snowflake", NS(get_uri=lambda: "snowflake://u:@acc/s?warehouse=w")))
+    assert (out.connection_type, out.credentials) == (
+        "snowflake", {"url": "snowflake://u:@acc/s?warehouse=w", "conn_id": "c"})
 
 
 def test_sqlalchemy_url_falls_back_to_get_uri():
@@ -106,7 +113,8 @@ def test_metered_connections_carry_their_caps_from_extras():
     assert bq.credentials["max_bytes_billed"] == 1_000_000
     sf = from_airflow(c("snowflake", NS(sqlalchemy_url=_Url("snowflake://u:p@acct/db")),
                         extra_dejson={"dte_statement_timeout_seconds": 60}))
-    assert sf.credentials == {"url": "snowflake://u:p@acct/db", "statement_timeout_seconds": 60}
+    assert sf.credentials == {"url": "snowflake://u:p@acct/db", "conn_id": "c",
+                              "statement_timeout_seconds": 60}
     # Unmetered kinds ignore the keys.
     pg = from_airflow(c("postgres", NS(sqlalchemy_url=_Url("postgresql://h/db")),
                         extra_dejson={"dte_max_bytes_billed": 5}))

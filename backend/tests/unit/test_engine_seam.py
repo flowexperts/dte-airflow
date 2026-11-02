@@ -309,3 +309,17 @@ def test_pivot_trino_not_supported():
     ], output_id="o", engine="trino")
     # This is expected to fail because the mock doesn't have DuckDB internals.
     compile_pipeline(pipeline, {"src": t})
+
+
+@pytest.mark.parametrize("apply", [
+    lambda e, t: e.apply_filter_sql(t, "age >= 18"),
+    lambda e, t: e.apply_expression_sql(t, "adult", "age >= 18"),
+])
+def test_raw_sql_alias_is_quoted_where_it_is_referenced(duck_engine, sample_table, apply):
+    """ibis quotes the CTE name it defines; an unquoted reference folds to
+    upper case on Snowflake and names a table that doesn't exist."""
+    import re
+
+    sql = ibis.to_sql(apply(duck_engine, sample_table), dialect="snowflake")
+    refs = re.findall(r'FROM ("?)(_(?:filter|expr)_input_\d+)', sql)
+    assert refs and all(q == '"' for q, _ in refs), sql

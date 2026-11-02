@@ -52,17 +52,19 @@ class DuckDBEngine(BaseEngine):
     # created in self._con. Two things follow, and both were bugs before:
     # the fragment is transpiled from DuckDB dialect by sqlglot, so a filter
     # or map/expression step runs unchanged against Postgres/MySQL/etc; and
-    # nothing is written to the user's database to make it work.
+    # nothing is written to the user's database to make it work. The name is
+    # quoted because ibis quotes the CTE it defines, and Snowflake folds an
+    # unquoted reference to upper case.
     def apply_filter_sql(self, table: ibis.Table, expr: str) -> ibis.Table:
         name = f"_filter_input_{next(self._view_seq)}"
         return table.alias(name).sql(
-            f"SELECT * FROM {name} WHERE {expr}", dialect=self.dialect,
+            f'SELECT * FROM "{name}" WHERE {expr}', dialect=self.dialect,
         )
 
     def apply_expression_sql(self, table: ibis.Table, output_field: str, expr: str) -> ibis.Table:
         name = f"_expr_input_{next(self._view_seq)}"
         return table.alias(name).sql(
-            f'SELECT *, ({expr}) AS "{output_field}" FROM {name}', dialect=self.dialect,
+            f'SELECT *, ({expr}) AS "{output_field}" FROM "{name}"', dialect=self.dialect,
         )
 
     def apply_enrichment(
