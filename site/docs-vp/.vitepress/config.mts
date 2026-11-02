@@ -89,7 +89,7 @@ export default defineConfig({
     sidebar: [
       { text: "Start", items: [page("Overview", "/"), page("Install into your own Airflow", "/self-hosting/install-plugin"), page("Try it with Docker Compose", "/self-hosting/install"), page("Your first pipeline", "/getting-started/02-first-pipeline"), page("Core ideas", "/getting-started/03-concepts")] },
       { text: "Build", items: [page("Building a pipeline", "/pipelines/building"), page("Pipeline types", "/pipelines/types"), page("Steps", "/steps/"), page("Field names", "/pipelines/field-refs"), page("Preview & run", "/pipelines/preview-and-run"), page("Scheduling", "/pipelines/scheduling"), page("Notifications", "/pipelines/notifications"), page("Lookup tables", "/pipelines/lookup-tables"), page("Pipelines in git", "/pipelines/in-git")] },
-      { text: "Connect", items: [page("Connections", "/connections/"), page("Sources", "/sources/"), page("Destinations", "/destinations/")] },
+      { text: "Connect", items: [page("Connections", "/connections/"), page("Sources", "/sources/"), page("Destinations", "/destinations/"), page("Snowflake", "/connections/snowflake"), page("BigQuery", "/sources/bigquery")] },
       { text: "Operate", items: [page("Secrets & environment", "/self-hosting/secrets"), page("Scaling and execution", "/self-hosting/scaling"), page("Upgrading", "/self-hosting/upgrading")] },
       { text: "Under the hood", items: [page("Architecture overview", "/architecture/overview"), page("Data flow", "/architecture/data-flow")] },
       { text: "Help", items: [page("Troubleshooting", "/troubleshooting"), page("FAQ", "/faq")] },

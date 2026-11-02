@@ -69,13 +69,19 @@ dte guards against this four ways.
 
 Building a pipeline, editing steps and inferring the schema never query the live table. The first time a BigQuery table is used, dte copies a 1,000-row sample with BigQuery's free row-listing API and caches it for a day. Every preview after that runs on the sample, locally and for free. The preview says so: *Preview on 1,000-row sample · taken 2h ago · Refresh*.
 
-Because it's a sample, a selective filter can show 0 rows even when the real table has matches. **Preview on live data** runs the pipeline against BigQuery. It shows the estimated scan and cost first and runs only after you confirm. The next edit goes back to the sample.
+Because it's a sample, a selective filter can show 0 rows even when the real table has matches. **Preview on live data** runs the pipeline against BigQuery. If the query would cost more than the confirmation threshold (below), it shows the cost first and runs only after you confirm. The next edit goes back to the sample.
 
 Sample size and freshness: `DTE_SAMPLE_ROWS` (default `1000`) and `DTE_SAMPLE_TTL_SECONDS` (default `86400`).
 
-### Runs show an estimate first
+### Big runs ask first
 
-**Run** on a pipeline with a BigQuery source first does a free dry run of the compiled query and asks: *This run scans ~2.9 TB (~$18, on-demand estimate) on bigquery. Run?* Filters count, so a date filter shows up in the number.
+**Run** on a pipeline with a BigQuery source does a free dry run of the compiled query. Filters count, so a date filter shows up in the number.
+
+- **Under about $1** (160 GiB at list price), the run just starts. Asking on every run teaches people to click through the question.
+- **Over that**, the Run dialog says what it will cost: *This run will cost about $18.75 on BigQuery.* One click on **Run** starts it.
+- **Over the connection's cap**, the dialog says the run would read more than the connection allows and to add a filter or ask an admin to raise the limit. **Run** stays off, since BigQuery would refuse it.
+
+Change the threshold per connection with `dte_confirm_above_bytes` in its extras (`0` asks on every run).
 
 The estimate is a dry run of the query dte will send. If the pipeline has a step that runs inside dte rather than BigQuery (extract, structure, pivot), or joins BigQuery with another source, dte prices each BigQuery table in full instead, so the estimate errs high.
 
@@ -99,7 +105,7 @@ Selecting only the columns you need also cuts the bill: BigQuery charges per col
 
 ### Through the API
 
-The API enforces the same confirmation, so a script can't skip it:
+The API enforces the same rule, so a script can't skip it. Below the threshold these calls just run; above it:
 
 - `GET /dte/api/pipelines/{id}/preview?live=true` returns only `{"estimate": …}` and runs nothing. Add `&confirm=true` to run it.
 - `POST /dte/api/pipelines/{id}/trigger` returns `{"estimate": …, "enqueued": false}`. Send `{"confirm": true}` to start the run.
@@ -109,4 +115,4 @@ For a hard monthly ceiling beyond dte, set [custom quotas](https://cloud.google.
 
 ## Snowflake
 
-Snowflake sources get the same sampling, estimate and confirmation. Snowflake bills warehouse time rather than bytes, so the estimate shows bytes from `EXPLAIN` with no price, and the cap is `dte_statement_timeout_seconds` (a statement timeout) on the connection.
+Snowflake sources get the same sampling, estimate and confirmation. Snowflake bills warehouse time rather than bytes, so dte shows no price and the cap is a statement timeout. See [Snowflake](../connections/snowflake.md#cost).

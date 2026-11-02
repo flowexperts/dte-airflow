@@ -80,8 +80,8 @@ Snowflake bills **warehouse time**, not bytes. A warehouse that's running costs 
 
 What dte does about it:
 
-- **Previews use a sample.** The builder reads a ~1% block sample of each table (`TABLESAMPLE SYSTEM (1)`), caches it, and previews against that. Live preview needs an explicit confirm.
-- **Runs need a confirm.** Triggering a pipeline with a Snowflake source first returns an estimate of the bytes it will scan (from `EXPLAIN`) and starts nothing. Run it again with confirm to enqueue. dte shows bytes but no dollar figure, because Snowflake's price depends on warehouse size and run time, not bytes.
+- **Preview runs when you click it.** A pipeline with a Snowflake source doesn't preview as you edit. **Preview** reads a ~1% block sample of each table (`TABLESAMPLE SYSTEM (1)`), caches it, and previews against that. **Preview on live data** queries the real tables.
+- **Only large runs ask.** Before a run or live preview, dte checks the query plan (`EXPLAIN`, free) for how much it reads. Under 10 GiB it just runs. Over that, the Run dialog says *This is a large query: it reads about 20 GiB. Snowflake bills for every minute the DTE_WH warehouse runs, and this connection stops a query after 5 minutes.* dte names the warehouse and the time limit rather than a price, because those are what Snowflake bills for. Change the threshold with `dte_confirm_above_bytes` in the connection extras (`0` asks every time).
 - **Statement timeout.** Set `dte_statement_timeout_seconds` in the connection extras. dte sets `STATEMENT_TIMEOUT_IN_SECONDS` on every session it opens (preview, run, schema lookup), so Snowflake kills a runaway query.
 - **`--sample N` / `DTE_RUN_MAX_ROWS` cap output rows, not the scan.** A pipeline that aggregates still reads the whole input.
 
