@@ -22,7 +22,8 @@ _STORAGE = {"aws": "s3", "google_cloud_platform": "gcs", "wasb": "azure", "adls"
 # Airflow connection extra -> credential key the opener reads (plan 093).
 # BigQuery enforces the bytes cap; Snowflake (no bytes cap) the timeout.
 _CAPS = {"dte_max_bytes_billed": "max_bytes_billed",
-         "dte_statement_timeout_seconds": "statement_timeout_seconds"}
+         "dte_statement_timeout_seconds": "statement_timeout_seconds",
+         "dte_confirm_above_bytes": "confirm_above_bytes"}
 # The fsspec scheme each storage kind needs the provider to supply.
 STORAGE_SCHEME = {"s3": "s3", "gcs": "gs", "azure": "abfs", "sftp": "sftp"}
 # Per DTE kind: the Airflow conn_types that map to it, and what to install
@@ -68,6 +69,8 @@ def from_airflow(c) -> Connection:
             # The provider keeps key-pair and OAuth auth out of the URL; the
             # opener and writer build their clients from the hook instead.
             creds["conn_id"] = c.conn_id
+            if x.get("warehouse"):
+                creds["warehouse"] = x["warehouse"]  # named in the run estimate
     elif t == "mongo":
         kind, creds = "mongodb", {"url": c.get_hook().uri}
     elif t == "gcpbigquery" or (t == "google_cloud_platform" and x.get("dte_type") == "bigquery"):

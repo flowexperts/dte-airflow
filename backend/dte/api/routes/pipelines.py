@@ -39,6 +39,9 @@ class PipelineEstimate(BaseModel):
     basis: str | None = None
     max_bytes_billed: int | None = None
     exceeds_cap: bool = False
+    # Small runs start without asking; these say when and what to tell people.
+    needs_confirm: bool = False
+    message: str = ""
 
 from dte.api.deps import (
     get_connection_store,
@@ -776,8 +779,10 @@ def _load_compile(
     it, not the UI: any API caller has to see the price first.
     """
     if live and not confirm and any(metered.is_metered(s, c) for _, s, c, _ in sources):
-        return {"rows": [], "final_sql": None, "error": None, "samples": [],
-                "estimate": _estimate(pipeline, sources, destination, lookups).model_dump()}
+        estimate = _estimate(pipeline, sources, destination, lookups)
+        if estimate.needs_confirm:
+            return {"rows": [], "final_sql": None, "error": None, "samples": [],
+                    "estimate": estimate.model_dump()}
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     tables = {
@@ -870,9 +875,17 @@ def _estimate(pipeline, sources, destination, lookups) -> PipelineEstimate:
             usd = (usd or 0) + c
     caps = [conn.credentials.get("max_bytes_billed") for _, _, conn, _ in meters]
     cap = min((int(c) for c in caps if c), default=None)
+    first = meters[0][2]
+    verdict = metered.judge(
+        first.connection_type, total, usd, cap=cap,
+        confirm_above=first.credentials.get("confirm_above_bytes"),
+        warehouse=first.credentials.get("warehouse"),
+        timeout_seconds=first.credentials.get("statement_timeout_seconds"),
+    )
     return PipelineEstimate(
-        metered=True, engine=meters[0][2].connection_type, bytes=total, est_cost_usd=usd,
-        basis=basis, max_bytes_billed=cap, exceeds_cap=cap is not None and total > cap,
+        metered=True, engine=first.connection_type, bytes=total, est_cost_usd=usd,
+        basis=basis, max_bytes_billed=cap, exceeds_cap=verdict.blocked,
+        needs_confirm=verdict.needs_confirm, message=verdict.message,
     )
 
 
@@ -1293,14 +1306,16 @@ async def trigger_pipeline(
     except InterpolationError as e:
         raise HTTPException(status_code=422, detail=str(e))
     if not (body and body.confirm) and any(metered.is_metered(s, c) for _, s, c, _ in sources):
-        # Nothing starts until the caller has seen what it will scan.
+        # A big or capped run starts nothing until the caller has seen it;
+        # a small one just runs.
         try:
             estimate = await run_interactive(_estimate, resolved, sources, destination, lookups)
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"could not estimate this run: {e}") from e
-        return {"estimate": estimate.model_dump(), "enqueued": False}
+        if estimate.needs_confirm:
+            return {"estimate": estimate.model_dump(), "enqueued": False}
     latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
 
     conf = {"params": user_params, "context": run_context}

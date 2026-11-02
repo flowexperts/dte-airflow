@@ -119,6 +119,8 @@ async def test_trigger_estimates_then_runs_live_on_confirm(client, scenario_ids,
     assert est["est_cost_usd"] == pytest.approx(18.75)
     assert est["engine"] == "bigquery"
     assert est["max_bytes_billed"] == 2**50 and est["exceeds_cap"] is False
+    assert est["needs_confirm"] is True
+    assert est["message"] == "This run will cost about $18.75 on BigQuery."
     # The compiled query (with its filter) is what got priced.
     assert len(warehouse["estimate"]) == 1 and "WHERE" in warehouse["estimate"][0].upper()
 
@@ -126,6 +128,15 @@ async def test_trigger_estimates_then_runs_live_on_confirm(client, scenario_ids,
     assert run["status"] == "completed", run
     assert sorted(r["n"] for r in read_output_file(out)) == [2, 3, 4]
     assert warehouse["fetch"] == 0  # runs never touch the sample
+
+
+async def test_a_small_run_starts_without_a_confirm(client, scenario_ids, out_dir, warehouse, monkeypatch):
+    """Asking on every run trains people to click through; only big ones ask."""
+    monkeypatch.setattr(metered, "estimate_bytes", lambda *a: 2**20)
+    _, pid, _ = await _seed(client, scenario_ids, out_dir)
+    assert (await trigger_and_wait(client, pid))["status"] == "completed"
+    body = (await client.get(f"/api/pipelines/{pid}/preview?limit=20&live=true")).json()
+    assert body.get("estimate") is None and body["rows"]
 
 
 async def test_estimate_endpoint_prices_an_unsaved_body(client, scenario_ids, out_dir, warehouse):

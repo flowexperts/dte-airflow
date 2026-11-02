@@ -115,6 +115,9 @@ def test_metered_connections_carry_their_caps_from_extras():
                         extra_dejson={"dte_statement_timeout_seconds": 60}))
     assert sf.credentials == {"url": "snowflake://u:p@acct/db", "conn_id": "c",
                               "statement_timeout_seconds": 60}
+    sf2 = from_airflow(c("snowflake", NS(sqlalchemy_url=_Url("snowflake://u@acct/db")),
+                         extra_dejson={"warehouse": "DTE_WH", "dte_confirm_above_bytes": "1024"}))
+    assert sf2.credentials["warehouse"] == "DTE_WH" and sf2.credentials["confirm_above_bytes"] == 1024
     # Unmetered kinds ignore the keys.
     pg = from_airflow(c("postgres", NS(sqlalchemy_url=_Url("postgresql://h/db")),
                         extra_dejson={"dte_max_bytes_billed": 5}))

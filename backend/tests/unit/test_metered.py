@@ -190,3 +190,41 @@ def test_unmetered_sql_sources_still_push_down(warehouse, monkeypatch):
     assert sample_mod.load_interactive(_bq_source(), reg, pg, {}, table="t", sample=10) == "live"
     assert warehouse == []
     assert sample_mod.sample_info(_bq_source(), pg, "t") is None
+
+
+def test_small_runs_need_no_confirmation():
+    assert metered.judge("bigquery", 2**30, 2**30 / 2**40 * 6.25).needs_confirm is False
+    small = metered.judge("snowflake", 50 * 2**20, None, warehouse="DTE_WH")
+    assert small.needs_confirm is False
+    assert small.message == "A small query: it reads about 50.0 MiB on the DTE_WH warehouse."
+    # Unknown size: nothing to say, so nothing to ask.
+    assert metered.judge("snowflake", None, None).needs_confirm is False
+
+
+def test_bigquery_speaks_money():
+    v = metered.judge("bigquery", 3 * 2**40, 18.75)
+    assert v.needs_confirm and v.message == "This run will cost about $18.75 on BigQuery."
+
+
+def test_snowflake_names_the_warehouse_and_the_time_limit():
+    """Snowflake bills warehouse time, so bytes alone would mislead."""
+    v = metered.judge("snowflake", 20 * 2**30, None, warehouse="DTE_WH", timeout_seconds=300)
+    assert v.needs_confirm
+    assert v.message == ("This is a large query: it reads about 20.0 GiB. Snowflake bills for every "
+                         "minute the DTE_WH warehouse runs, and this connection stops a query after "
+                         "5 minutes.")
+    assert metered.judge("snowflake", 20 * 2**30, None).message.endswith(
+        "and this connection sets no time limit.")
+
+
+def test_the_threshold_comes_from_the_connection():
+    assert metered.judge("snowflake", 50 * 2**20, None, confirm_above=2**20).needs_confirm
+    assert not metered.judge("bigquery", 3 * 2**40, 18.75, confirm_above=4 * 2**40).needs_confirm
+
+
+def test_a_run_over_the_cap_is_blocked_with_what_to_do():
+    v = metered.judge("bigquery", 3 * 2**40, 18.75, cap=2**40)
+    assert v.blocked and v.needs_confirm
+    assert v.message == ("This run would read about 3.0 TiB, more than the 1.0 TiB this connection "
+                         "allows, so BigQuery will refuse it. Add a filter so it reads less, or ask "
+                         "an admin to raise the limit.")

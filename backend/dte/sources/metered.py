@@ -16,12 +16,20 @@ from __future__ import annotations
 
 import json
 import re
+from typing import NamedTuple
 
 METERED = frozenset({"bigquery", "snowflake"})
 
 # BigQuery on-demand list price per TiB scanned. An estimate, not a bill:
 # editions/flat-rate customers pay nothing per query.
 USD_PER_TIB = {"bigquery": 6.25}
+
+# Below these a run starts without asking: a prompt on every run trains people
+# to click through it. BigQuery: ~$1 at list price. Snowflake bills warehouse
+# time, so bytes only stand in for "big enough to run a while". An Airflow
+# connection overrides both with `dte_confirm_above_bytes`.
+CONFIRM_ABOVE_BYTES = {"bigquery": 160 * 2**30, "snowflake": 10 * 2**30}
+_NAMES = {"bigquery": "BigQuery", "snowflake": "Snowflake"}
 
 # ponytail: fixed 1% block sample; size it from row count if big tables come
 # back sparse or small ones keep hitting the LIMIT fallback.
@@ -93,6 +101,51 @@ def estimate_bytes(backend, kind: str, sql: str) -> int | None:
 def est_cost_usd(kind: str, nbytes: int | None) -> float | None:
     rate = USD_PER_TIB.get(kind)
     return None if rate is None or nbytes is None else nbytes / 2**40 * rate
+
+
+class Verdict(NamedTuple):
+    needs_confirm: bool
+    blocked: bool
+    message: str
+
+
+def _duration(seconds: int) -> str:
+    if seconds % 3600 == 0:
+        n, unit = seconds // 3600, "hour"
+    elif seconds % 60 == 0:
+        n, unit = seconds // 60, "minute"
+    else:
+        n, unit = seconds, "second"
+    return f"{n} {unit}{'' if n == 1 else 's'}"
+
+
+def judge(kind: str, nbytes: int | None, usd: float | None, *, cap: int | None = None,
+          confirm_above: int | None = None, warehouse: str | None = None,
+          timeout_seconds: int | None = None) -> Verdict:
+    """Whether a run should ask first, and what to tell a person who doesn't
+    think in bytes: money on BigQuery, warehouse time on Snowflake."""
+    name = _NAMES.get(kind, kind)
+    if nbytes is None:
+        return Verdict(False, False, "")
+    if cap is not None and nbytes > cap:
+        return Verdict(True, True, (
+            f"This run would read about {fmt_bytes(nbytes)}, more than the {fmt_bytes(cap)} this "
+            f"connection allows, so {name} will refuse it. Add a filter so it reads less, or ask an "
+            "admin to raise the limit."))
+    threshold = confirm_above if confirm_above is not None else CONFIRM_ABOVE_BYTES.get(kind, 0)
+    big = nbytes > threshold
+    wh = warehouse or "its"
+    if usd is not None:
+        price = "less than a cent" if usd < 0.01 else f"${usd:,.2f}"
+        message = f"This run will cost about {price} on {name}."
+    elif big:
+        limit = (f"stops a query after {_duration(timeout_seconds)}" if timeout_seconds
+                 else "sets no time limit")
+        message = (f"This is a large query: it reads about {fmt_bytes(nbytes)}. {name} bills for "
+                   f"every minute the {wh} warehouse runs, and this connection {limit}.")
+    else:
+        message = f"A small query: it reads about {fmt_bytes(nbytes)} on the {wh} warehouse."
+    return Verdict(big, False, message)
 
 
 def fmt_bytes(n: float) -> str:

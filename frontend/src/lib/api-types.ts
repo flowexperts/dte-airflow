@@ -2059,6 +2059,16 @@ export interface components {
              * @default false
              */
             exceeds_cap: boolean;
+            /**
+             * Needs Confirm
+             * @default false
+             */
+            needs_confirm: boolean;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
         };
         /**
          * PipelineNotification

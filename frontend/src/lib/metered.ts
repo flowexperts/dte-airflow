@@ -1,28 +1,29 @@
-/** Helpers for metered warehouse sources (plan 093): what a query will scan,
- *  how old a cached sample is, and which partition filters are missing. */
-import type { PipelineEstimate } from "./api";
+/** Helpers for metered warehouse sources (plan 093): which pipelines read
+ *  one, how old a cached sample is, and which partition filters are missing. */
+import useSWR from "swr";
+import type { Connection, Source } from "./api";
 
-/** "3.0 TiB" — binary units, matching how BigQuery prices (per TiB). */
-export const formatBytes = (n: number): string => {
-  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return i === 0 ? `${n} B` : `${n.toFixed(1)} ${units[i]}`;
+/** Connection kinds that bill per query (backend `METERED`). */
+const METERED_KINDS = new Set(["bigquery", "snowflake"]);
+
+/** Whether any of `refs` reads a metered warehouse; `null` until both lists
+ *  have loaded, so callers hold billable work rather than guess. */
+export const readsMetered = (
+  refs: Array<{ source_id: string }>,
+  sources: Array<Pick<Source, "id" | "connection_id">> | undefined,
+  connections: Array<{ id: string; connection_type: string }> | undefined,
+): boolean | null => {
+  if (!sources || !connections) return null;
+  const kind = new Map(connections.map((c) => [c.id, c.connection_type]));
+  const conn = new Map(sources.map((s) => [s.id, s.connection_id]));
+  return refs.some((r) => METERED_KINDS.has(kind.get(conn.get(r.source_id) ?? "") ?? ""));
 };
 
-/** The one sentence shown before anything billable runs. */
-export const estimateSentence = (e: PipelineEstimate, verb = "This run scans"): string => {
-  const size = e.bytes != null ? `~${formatBytes(e.bytes)}` : "an unknown amount";
-  const cost =
-    e.est_cost_usd != null ? ` (~$${e.est_cost_usd.toFixed(2)}, on-demand estimate)` : "";
-  const cap =
-    e.exceeds_cap && e.max_bytes_billed != null
-      ? ` That is above this connection's cap of ${formatBytes(e.max_bytes_billed)}, so ${e.engine} will refuse it.`
-      : "";
-  return `${verb} ${size}${cost} on ${e.engine}.${cap}`;
+/** `readsMetered` over the shared SWR source and connection lists. */
+export const useReadsMetered = (refs: Array<{ source_id: string }> | undefined): boolean | null => {
+  const { data: sources } = useSWR<Source[]>("/api/sources");
+  const { data: connections } = useSWR<Connection[]>("/api/connections");
+  return readsMetered(refs ?? [], sources, connections);
 };
 
 export const sampleAge = (iso: string, now = Date.now()): string => {

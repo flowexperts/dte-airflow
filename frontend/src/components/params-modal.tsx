@@ -73,6 +73,8 @@ export function ParamsModal({
   onClose,
   onSubmit,
   emptyMessage,
+  notice,
+  submitDisabled,
 }: {
   title: string;
   submitLabel: string;
@@ -82,6 +84,10 @@ export function ParamsModal({
   onClose: () => void;
   onSubmit: (values: Record<string, string>) => Promise<void> | void;
   emptyMessage?: string;
+  /** Shown above the buttons, e.g. what a run will scan. */
+  notice?: React.ReactNode;
+  /** Keep Submit off, e.g. a run its connection's cap will refuse. */
+  submitDisabled?: boolean;
 }) {
   const declared = params ?? [];
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -246,6 +252,7 @@ export function ParamsModal({
             })}
           </div>
         )}
+        {notice && <div className="mt-3 text-xs text-text">{notice}</div>}
         {err && (
           <div className="mt-3 rounded border border-red/40 bg-red/10 p-2 font-mono text-[11px] text-red">
             {err}
@@ -255,7 +262,7 @@ export function ParamsModal({
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" size="sm" disabled={busy || !submittable} onClick={submit}>
+          <Button variant="primary" size="sm" disabled={busy || !submittable || submitDisabled} onClick={submit}>
             {busy ? "Working…" : submitLabel}
           </Button>
         </div>

@@ -19,7 +19,8 @@ import {
   type PipelineParam,
   type PreviewResponse,
 } from "@/lib/api";
-import { estimateSentence, sampleAge } from "@/lib/metered";
+import { sampleAge, useReadsMetered } from "@/lib/metered";
+import type { PipelineEstimate } from "@/lib/api";
 import { humanizeCompilerError, humanizeError } from "@/lib/errors";
 import { ParamsModal } from "@/components/params-modal";
 import { InspectRowButton } from "@/components/document-inspector/InspectRowButton";
@@ -91,6 +92,13 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
   const data = liveNotReady ? null : rawData;
   const err = liveNotReady ? null : rawErr;
   const busy = isLive && (liveNotReady || needsPrompt) ? false : rawBusy;
+  // Plan 093: a warehouse bills every query, so its preview waits for a click
+  // instead of firing on each edit. Unknown (lists loading) counts as metered.
+  const metered = useReadsMetered(livePipeline?.sources) !== false;
+  // Bumped by the Preview button; the effect runs once per click when metered.
+  const [previewSeq, setPreviewSeq] = useState(0);
+  // A priced live preview awaiting the user's go-ahead.
+  const [liveEstimate, setLiveEstimate] = useState<PipelineEstimate | null>(null);
 
   const runSaved = async (overrideValues?: Record<string, string>) => {
     if (isLive) return;
@@ -117,6 +125,7 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
     const pipeline = pipelineId as Pipeline;
     // Not ready / awaiting inputs: nothing to fetch (see derived state above).
     if (liveNotReady || needsPrompt) return;
+    if (metered && previewSeq === 0) return;
     const seq = ++reqSeq.current;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag for the async request this effect starts
     setBusy(true);
@@ -134,9 +143,12 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
       } finally {
         if (reqSeq.current === seq) setBusy(false);
       }
-    }, 500);
+    }, metered ? 0 : 500);
     return () => window.clearTimeout(t);
-  }, [isLive, liveKey, pipelineId, needsPrompt, paramValues, liveNotReady, refreshSeq]);
+    // `liveKey` stands in for the pipeline; when metered, edits must not
+    // refetch, so the pipeline only reaches the effect through a click.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLive, metered ? previewSeq : liveKey, needsPrompt, paramValues, liveNotReady, refreshSeq, metered]);
 
   // System columns ride on every extracted row and cannot be projected
   // away, so this is where they are kept out of sight. The rows still carry
@@ -167,16 +179,35 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
     else await runSaved();
   };
 
-  // A live preview is a billed query: price it, ask, then run it once. The
-  // next edit goes back to the sample.
-  const previewLive = async () => {
+  // A live preview is a billed query. A small one just runs; a big one says
+  // what it costs inline and runs on the user's go-ahead. The next edit goes
+  // back to the sample.
+  const priceLive = async () => {
     if (!pipelineObj) return;
     setBusy(true);
     setErr(null);
+    let est: PipelineEstimate;
     try {
-      const est = await estimatePipeline(pipelineObj, paramValues);
-      if (!window.confirm(`${estimateSentence(est, "Previewing on live data scans")} Run it?`))
-        return;
+      est = await estimatePipeline(pipelineObj, paramValues);
+    } catch (e) {
+      setErr(e);
+      setBusy(false);
+      return;
+    }
+    if (est.needs_confirm) {
+      setLiveEstimate(est);
+      setBusy(false);
+    } else {
+      await previewLive();
+    }
+  };
+
+  const previewLive = async () => {
+    if (!pipelineObj) return;
+    setLiveEstimate(null);
+    setBusy(true);
+    setErr(null);
+    try {
       const res = isLive
         ? await dryRunPipeline(pipelineObj, 20, paramValues, true)
         : await previewPipeline(pipelineId as string, 20, paramValues, true);
@@ -198,7 +229,9 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
           data
             ? `· ${data.count} row${data.count === 1 ? "" : "s"} (limit 20)`
             : isLive
-              ? "· updates as you edit"
+              ? metered
+                ? "· on demand: warehouse queries are billed"
+                : "· updates as you edit"
               : "· compile + sample without writing output"
         }
         actions={
@@ -214,6 +247,16 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
             {declaredParams.length > 0 && (
               <Button variant="ghost" size="sm" onClick={() => setModalOpen(true)}>
                 Inputs · {Object.keys(paramValues).length}/{declaredParams.length}
+              </Button>
+            )}
+            {isLive && metered && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setPreviewSeq((n) => n + 1)}
+                disabled={busy || liveNotReady || needsPrompt}
+              >
+                {busy ? "Running…" : data ? "Re-run" : "Preview"}
               </Button>
             )}
             {isLive ? null : (
@@ -254,9 +297,28 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
               <Button variant="ghost" size="sm" onClick={refreshSamples} disabled={busy}>
                 Refresh
               </Button>
-              <Button variant="ghost" size="sm" onClick={previewLive} disabled={busy}>
-                Preview on live data
-              </Button>
+              {liveEstimate ? (
+                <>
+                  <span className="text-text">
+                    {liveEstimate.message}
+                  </span>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={previewLive}
+                    disabled={busy || liveEstimate.exceeds_cap}
+                  >
+                    Run live preview
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setLiveEstimate(null)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button variant="ghost" size="sm" onClick={priceLive} disabled={busy}>
+                  Preview on live data
+                </Button>
+              )}
             </>
           )}
         </div>
@@ -285,7 +347,11 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
 
       {isLive && !busy && !data && !displayErr && (
         <div className="p-6 text-center text-subtle text-sm">
-          Pick at least one source and a destination to preview.
+          {liveNotReady
+            ? "Pick at least one source and a destination to preview."
+            : metered
+              ? "This pipeline reads a billed warehouse. Click Preview to run it on a sample."
+              : null}
         </div>
       )}
 

@@ -1,34 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { estimateSentence, formatBytes, sampleAge, unfilteredPartitions } from "./metered";
+import {
+  readsMetered,
+  sampleAge,
+  unfilteredPartitions,
+} from "./metered";
 
-describe("formatBytes", () => {
-  it("uses binary units, as BigQuery prices per TiB", () => {
-    expect(formatBytes(1000)).toBe("1000 B");
-    expect(formatBytes(10 * 2 ** 20)).toBe("10.0 MiB");
-    expect(formatBytes(3 * 2 ** 40)).toBe("3.0 TiB");
+describe("sampleAge", () => {
+  it("reads coarse", () => {
+    const now = Date.parse("2026-11-02T12:00:00Z");
+    expect(sampleAge("2026-11-02T11:59:30Z", now)).toBe("just now");
+    expect(sampleAge("2026-11-02T11:15:00Z", now)).toBe("45m ago");
+    expect(sampleAge("2026-11-02T09:00:00Z", now)).toBe("3h ago");
+    expect(sampleAge("2026-10-30T12:00:00Z", now)).toBe("3d ago");
   });
 });
 
-describe("estimateSentence", () => {
-  const base = { metered: true, engine: "bigquery", exceeds_cap: false } as const;
-  it("names size and price", () => {
-    expect(estimateSentence({ ...base, bytes: 3 * 2 ** 40, est_cost_usd: 18.75 })).toBe(
-      "This run scans ~3.0 TiB (~$18.75, on-demand estimate) on bigquery.",
-    );
+describe("readsMetered", () => {
+  const sources = [
+    { id: "sf", connection_id: "snow" },
+    { id: "csv", connection_id: "local" },
+  ];
+  const connections = [
+    { id: "snow", connection_type: "snowflake" },
+    { id: "local", connection_type: "local_fs" },
+  ];
+  it("is true when any source sits on a warehouse connection", () => {
+    expect(readsMetered([{ source_id: "csv" }, { source_id: "sf" }], sources, connections)).toBe(true);
+    expect(readsMetered([{ source_id: "csv" }], sources, connections)).toBe(false);
   });
-  it("omits price where the engine bills time and warns past the cap", () => {
-    expect(
-      estimateSentence({
-        ...base,
-        engine: "snowflake",
-        bytes: 2048,
-        est_cost_usd: null,
-        exceeds_cap: true,
-        max_bytes_billed: 1024,
-      }),
-    ).toBe(
-      "This run scans ~2.0 KiB on snowflake. That is above this connection's cap of 1.0 KiB, so snowflake will refuse it.",
-    );
+  it("is unknown until both lists load, so nothing billable fires early", () => {
+    expect(readsMetered([{ source_id: "csv" }], undefined, connections)).toBeNull();
+    expect(readsMetered([{ source_id: "csv" }], sources, undefined)).toBeNull();
   });
 });
 
@@ -47,12 +49,3 @@ describe("unfilteredPartitions", () => {
   });
 });
 
-describe("sampleAge", () => {
-  it("reads coarse", () => {
-    const now = Date.parse("2026-11-02T12:00:00Z");
-    expect(sampleAge("2026-11-02T11:59:30Z", now)).toBe("just now");
-    expect(sampleAge("2026-11-02T11:15:00Z", now)).toBe("45m ago");
-    expect(sampleAge("2026-11-02T09:00:00Z", now)).toBe("3h ago");
-    expect(sampleAge("2026-10-30T12:00:00Z", now)).toBe("3d ago");
-  });
-});

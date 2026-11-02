@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useRouter } from "@/lib/nav";
 import { ParamsModal } from "@/components/params-modal";
 import { Button } from "@/components/ui";
-import { triggerPipeline, type Pipeline } from "@/lib/api";
-import { estimateSentence } from "@/lib/metered";
+import useSWR from "swr";
+import { estimatePipeline, triggerPipeline, type Pipeline, type PipelineEstimate } from "@/lib/api";
+import { useReadsMetered } from "@/lib/metered";
 import { usePermissions } from "@/lib/use-permissions";
 import { useToast } from "@/components/toaster";
 import { humanizeError } from "@/lib/errors";
@@ -29,6 +30,17 @@ export function TriggerRunButton({
   const router = useRouter();
   const toast = useToast();
   const { can } = usePermissions();
+  // Plan 093: judge a warehouse run when the modal opens. A small run says
+  // nothing and starts on the one Run click; a big one says what it costs in
+  // words people use; one over the connection's cap can't be started. A
+  // trigger that still answers with an estimate (inputs changed what it
+  // reads, or Run beat the estimate) lands in `answered` and asks once more.
+  const metered = useReadsMetered(pipeline.sources) === true;
+  const { data: opened } = useSWR(open && metered ? ["estimate", pipeline.id] : null, () =>
+    estimatePipeline(pipeline).catch(() => null),
+  );
+  const [answered, setAnswered] = useState<PipelineEstimate | null>(null);
+  const estimate = answered ?? opened ?? null;
 
   if (!can("pipeline:trigger")) return null;
 
@@ -57,16 +69,19 @@ export function TriggerRunButton({
         submitLabel="Run"
         params={pipeline.params}
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          setOpen(false);
+          setAnswered(null);
+        }}
         emptyMessage={`Run ${pipeline.name} now?`}
+        notice={estimate?.needs_confirm ? estimate.message : null}
+        submitDisabled={!!estimate?.exceeds_cap}
         onSubmit={async (values) => {
           try {
-            let res = await triggerPipeline(pipeline.id, values);
+            const res = await triggerPipeline(pipeline.id, values, !!estimate?.needs_confirm);
             if ("estimate" in res) {
-              // Plan 093: a warehouse-backed pipeline answers with what it
-              // will scan and starts nothing until the user says so.
-              if (!window.confirm(`${estimateSentence(res.estimate)} Run?`)) return;
-              res = await triggerPipeline(pipeline.id, values, true);
+              setAnswered(res.estimate);
+              return;
             }
             if (!("run_id" in res)) return;
             const { run_id } = res;
@@ -75,6 +90,7 @@ export function TriggerRunButton({
             // branch — with an `onStarted` handler nothing navigates and the
             // modal sat open over a run that had already started.
             setOpen(false);
+            setAnswered(null);
             if (onStarted) {
               onStarted(run_id);
             } else {
