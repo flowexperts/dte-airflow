@@ -8,13 +8,14 @@ GET    /api/pipelines                     list pipelines
 GET    /api/pipelines/{id}                get pipeline
 PUT    /api/pipelines/{id}                update pipeline
 DELETE /api/pipelines/{id}                delete pipeline
-POST   /api/pipelines/{id}/trigger        validate, then start an Airflow dag run of the latest revision → {run_id}
+POST   /api/pipelines/{id}/trigger        validate, then start an Airflow dag run of the latest revision → {run_id}; metered sources → {estimate, enqueued:false} until confirm=true
+POST   /api/pipelines/estimate            bytes/$ a run of an unsaved body would scan on metered sources (dry run / EXPLAIN)
 GET/PUT/DELETE /api/pipelines/{id}/schedule  the pipeline's one schedule; each change is a revision
 GET/PUT /api/pipelines/{id}/notifications    Airflow provider notifiers on run events (manual + scheduled); each change is a revision
 GET    /api/notifiers                     installed provider notifiers + their constructor params
 POST   /api/runs/{run_id}/cancel           mark the dag run failed
 GET    /api/me                            Airflow user + derived DTE permissions
-GET    /api/pipelines/{id}/preview?limit  compile + execute on sample rows
+GET    /api/pipelines/{id}/preview?limit&live  compile + execute on sample rows (live=true: read metered sources live; without confirm=true it returns only {estimate}, no rows — same on dry-run)
 GET    /api/pipelines/{id}/runs?limit     latest runs per pipeline (no offset; full history is Airflow's grid)
 GET    /api/allowed-ops                   ALLOWED_OPS: step ops each pipeline type may hold
 GET    /api/assets                        each transform pipeline's output Asset URI, for "after upstream" schedules
@@ -28,6 +29,7 @@ PUT    /api/sources/{id}                  update source
 DELETE /api/sources/{id}                  409 with {referenced_by: [...]} if any pipeline uses it
 GET    /api/sources/{id}/schema?table=    field tree for a saved source (table required for sql_database)
 GET    /api/sources/{id}/tables           tables in a sql_database source's schema (422 for other kinds)
+DELETE /api/sources/{id}/sample?table=    drop a metered source's cached sample (preview Refresh)
 POST   /api/destinations                  create destination
 GET    /api/destinations                  list destinations
 GET    /api/destinations/{id}             get destination

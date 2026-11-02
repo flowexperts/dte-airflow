@@ -10,13 +10,16 @@ import {
   Segmented,
 } from "@/components/ui";
 import {
+  dropSourceSample,
   dryRunPipeline,
+  estimatePipeline,
   getPipeline,
   previewPipeline,
   type Pipeline,
   type PipelineParam,
   type PreviewResponse,
 } from "@/lib/api";
+import { estimateSentence, sampleAge } from "@/lib/metered";
 import { humanizeCompilerError, humanizeError } from "@/lib/errors";
 import { ParamsModal } from "@/components/params-modal";
 import { InspectRowButton } from "@/components/document-inspector/InspectRowButton";
@@ -44,6 +47,10 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
   const [rawErr, setErr] = useState<unknown>(null);
   const [rawBusy, setBusy] = useState(false);
   const [view, setView] = useState<"data" | "sql">("data");
+  // Bumped by Refresh so live mode refetches after the samples are dropped.
+  const [refreshSeq, setRefreshSeq] = useState(0);
+  // Whether the rows on screen came from the warehouse rather than a sample.
+  const [shownLive, setShownLive] = useState(false);
 
   const isLive = typeof pipelineId !== "string";
   // Serialise the pipeline for a stable useEffect dep. Fires on any content
@@ -96,6 +103,7 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
     try {
       const res = await previewPipeline(pipelineId as string, 20, overrideValues ?? paramValues);
       setData(res);
+      setShownLive(false);
     } catch (e) {
       setErr(e);
       setData(null);
@@ -117,6 +125,7 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
         const res = await dryRunPipeline(pipeline, 20, paramValues);
         if (reqSeq.current !== seq) return; // superseded
         setData(res);
+        setShownLive(false);
         setErr(null);
       } catch (e) {
         if (reqSeq.current !== seq) return;
@@ -127,7 +136,7 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
       }
     }, 500);
     return () => window.clearTimeout(t);
-  }, [isLive, liveKey, pipelineId, needsPrompt, paramValues, liveNotReady]);
+  }, [isLive, liveKey, pipelineId, needsPrompt, paramValues, liveNotReady, refreshSeq]);
 
   // System columns ride on every extracted row and cannot be projected
   // away, so this is where they are kept out of sight. The rows still carry
@@ -143,6 +152,43 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
       : humanizeCompilerError(compileErr);
   const displayErr = humanized;
   const pipelineObj = isLive ? (pipelineId as Pipeline) : (savedPipeline ?? null);
+  const samples = data?.samples ?? [];
+
+  // Plan 093: warehouse sources preview from a cached sample. Refresh drops
+  // the samples and re-runs; the next preview fetches new ones.
+  const refreshSamples = async () => {
+    try {
+      await Promise.all(samples.map((s) => dropSourceSample(s.source_id, s.table)));
+    } catch (e) {
+      setErr(e);
+      return;
+    }
+    if (isLive) setRefreshSeq((n) => n + 1);
+    else await runSaved();
+  };
+
+  // A live preview is a billed query: price it, ask, then run it once. The
+  // next edit goes back to the sample.
+  const previewLive = async () => {
+    if (!pipelineObj) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const est = await estimatePipeline(pipelineObj, paramValues);
+      if (!window.confirm(`${estimateSentence(est, "Previewing on live data scans")} Run it?`))
+        return;
+      const res = isLive
+        ? await dryRunPipeline(pipelineObj, 20, paramValues, true)
+        : await previewPipeline(pipelineId as string, 20, paramValues, true);
+      reqSeq.current++; // a debounced sample preview must not overwrite this
+      setData(res);
+      setShownLive(true);
+    } catch (e) {
+      setErr(e);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <section>
@@ -194,6 +240,27 @@ export function PipelinePreview({ pipelineId }: { pipelineId: string | Pipeline 
           // Live mode auto-re-runs via the useEffect dep on paramValues.
         }}
       />
+
+      {(samples.length > 0 || shownLive) && (
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-subtle">
+          {shownLive ? (
+            <span>Preview on live data · the next edit or re-run goes back to the sample</span>
+          ) : (
+            <>
+              <span>
+                Preview on {Math.max(...samples.map((s) => s.rows)).toLocaleString()}-row sample ·
+                taken {sampleAge(samples.map((s) => s.taken_at).sort()[0]!)}
+              </span>
+              <Button variant="ghost" size="sm" onClick={refreshSamples} disabled={busy}>
+                Refresh
+              </Button>
+              <Button variant="ghost" size="sm" onClick={previewLive} disabled={busy}>
+                Preview on live data
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       {isLive && needsPrompt && !modalOpen && (
         <div className="p-4 border border-dashed border-border rounded bg-code-bg text-subtle text-[12.5px] flex items-center justify-between">

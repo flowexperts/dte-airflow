@@ -210,3 +210,21 @@ async def source_tables(
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"{type(e).__name__}: {e}")
     return {"tables": tables}
+
+
+@router.delete("/sources/{source_id}/sample", dependencies=[Depends(requires("source:read"))])
+async def drop_source_sample(
+    source_id: str,
+    table: str | None = None,
+    store: SourceStore = Depends(get_source_store),
+    c_store: ConnectionStore = Depends(get_connection_store),
+):
+    """Forget a metered source's cached sample (plan 093); the next preview
+    fetches a fresh one. Read permission: it is the preview's Refresh."""
+    from dte.sources.sample import drop_sample
+
+    source = await store.get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    conn = await c_store.get(source.connection_id)
+    return {"dropped": drop_sample(source, conn, table)}

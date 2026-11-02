@@ -1,5 +1,6 @@
 import type { RevisionDiffResponse } from "@/lib/api";
 import { useEffect, useRef, useState } from "react";
+import { PartitionHint } from "@/components/builder/partition-hint";
 import { AddStep, Panel, PanelHead } from "@/components/ui";
 import { StepEditor } from "@/components/builder/steps/editors";
 import { StepIndexProvider, JoinOperandsProvider } from "@/components/builder/schema-context";
@@ -183,6 +184,7 @@ export function StepsColumn({
         }
       />
 
+      <PartitionHint steps={steps} />
       {steps.length === 0 && (
         <div className="px-4 py-6 text-center text-sm text-subtle">
           {readOnly ? `No ${label.toLowerCase()} defined.` : `No ${label.toLowerCase()} yet.`}

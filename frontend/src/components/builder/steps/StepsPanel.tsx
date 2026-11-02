@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PartitionHint } from "../partition-hint";
 import { Panel, PanelHead } from "@/components/ui";
 import type { PipelineTypeFilter } from "@/lib/pipeline-type";
 import { emptyStep, labelFor, useAllowedStepOps, type StepShape } from "./types";
@@ -70,6 +71,7 @@ export function StepsPanel({
           </span>
         }
       />
+      <PartitionHint steps={steps} />
       {steps.length === 0 && (
         <div className="p-6 text-center text-sm text-subtle">No steps yet. Add one below.</div>
       )}

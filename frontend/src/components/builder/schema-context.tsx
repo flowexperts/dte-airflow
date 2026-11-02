@@ -7,6 +7,8 @@ interface SchemaEntry {
   fields: SchemaField[];
   loading: boolean;
   error: string | null;
+  /** Plan 093: a metered warehouse table's partition columns. */
+  partitionColumns?: string[];
 }
 
 interface SchemaState {
@@ -79,29 +81,37 @@ export function SchemaProvider({ children }: { children: ReactNode }) {
   const [dialectFeedback, setDialectFeedback] = useState<DialectFeedback>(EMPTY_DIALECT_FEEDBACK);
   const [perStepSchemas, setPerStepSchemas] = useState<Record<number, string[]>>({});
 
-  const _apply = useCallback((id: string, fn: () => Promise<{ fields: SchemaField[] }>) => {
-    setSchemas((prev) => ({
-      ...prev,
-      [id]: { fields: prev[id]?.fields ?? [], loading: true, error: null },
-    }));
-    return fn()
-      .then(({ fields }) => {
-        setSchemas((prev) => ({
-          ...prev,
-          [id]: { fields, loading: false, error: null },
-        }));
-      })
-      .catch((e: unknown) => {
-        setSchemas((prev) => ({
-          ...prev,
-          [id]: {
-            fields: prev[id]?.fields ?? [],
-            loading: false,
-            error: e instanceof Error ? e.message : String(e),
-          },
-        }));
-      });
-  }, []);
+  const _apply = useCallback(
+    (id: string, fn: () => Promise<{ fields: SchemaField[]; partition_columns?: string[] }>) => {
+      setSchemas((prev) => ({
+        ...prev,
+        [id]: { fields: prev[id]?.fields ?? [], loading: true, error: null },
+      }));
+      return fn()
+        .then(({ fields, partition_columns }) => {
+          setSchemas((prev) => ({
+            ...prev,
+            [id]: {
+              fields,
+              loading: false,
+              error: null,
+              partitionColumns: partition_columns ?? [],
+            },
+          }));
+        })
+        .catch((e: unknown) => {
+          setSchemas((prev) => ({
+            ...prev,
+            [id]: {
+              fields: prev[id]?.fields ?? [],
+              loading: false,
+              error: e instanceof Error ? e.message : String(e),
+            },
+          }));
+        });
+    },
+    [],
+  );
 
   const refresh = useCallback(
     async (source: Source, key: string, table?: string | null) => {

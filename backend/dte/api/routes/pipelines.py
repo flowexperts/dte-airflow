@@ -23,6 +23,22 @@ class TriggerRequest(BaseModel):
     eval_set_id: str | None = None
     # Set by the sweep launcher so N runs of one matrix share an id.
     sweep_id: str | None = None
+    # Plan 093, the sweep's shape: a pipeline reading a metered source
+    # (BigQuery, Snowflake) returns an estimate and starts nothing until the
+    # caller sends confirm=true.
+    confirm: bool = False
+
+
+class PipelineEstimate(BaseModel):
+    """What a run of this pipeline would scan on its warehouse sources."""
+    metered: bool
+    engine: str | None = None
+    bytes: int | None = None
+    # BigQuery on-demand list price; None where the engine bills time.
+    est_cost_usd: float | None = None
+    basis: str | None = None
+    max_bytes_billed: int | None = None
+    exceeds_cap: bool = False
 
 from dte.api.deps import (
     get_connection_store,
@@ -72,7 +88,9 @@ from dte.models.pipeline import (
 from dte.models.user import User
 from dte.pipelines.diff import diff_pipeline, side_by_side, step_marks, summarise_diff
 from dte.security.permissions import requires
-from dte.sources.sample import load_interactive
+from dte.sources import metered
+from dte.sources.loader import load_source
+from dte.sources.sample import load_interactive, sample_info
 from dte.store.base import (
     ConnectionStore,
     DestinationStore,
@@ -741,6 +759,8 @@ def _load_compile(
     *,
     sample: int | None = None,
     on_tables=None,
+    live: bool = False,
+    confirm: bool = False,
     **callbacks,
 ) -> dict | None:
     """Load sources, compile, and with `sample` execute that many rows.
@@ -749,11 +769,20 @@ def _load_compile(
     through `run_interactive` (plan 084), never inline in a route. A load or
     compile failure raises; an execution failure is the returned `error`,
     matching what the preview body has always reported.
+
+    `live` skips the cached samples and reads every source the way a run
+    does — on a metered source that is a billed query (plan 093), so without
+    `confirm` it returns only the estimate and runs nothing. The server gates
+    it, not the UI: any API caller has to see the price first.
     """
+    if live and not confirm and any(metered.is_metered(s, c) for _, s, c, _ in sources):
+        return {"rows": [], "final_sql": None, "error": None, "samples": [],
+                "estimate": _estimate(pipeline, sources, destination, lookups).model_dump()}
     engine = DuckDBEngine()
     registry = BackendRegistry(duckdb_con=engine.con)
     tables = {
-        ref.alias: load_interactive(s, registry, conn, creds, table=ref.table, sample=SAMPLE_ROWS)
+        ref.alias: (load_source(s, registry, conn, creds, table=ref.table) if live else
+                    load_interactive(s, registry, conn, creds, table=ref.table, sample=SAMPLE_ROWS))
         for ref, s, conn, creds in sources
     }
     # Fired before compilation, so a caller still learns which backend
@@ -768,7 +797,7 @@ def _load_compile(
     )
     if sample is None:
         return None
-    out: dict = {"rows": [], "final_sql": None, "error": None}
+    out: dict = {"rows": [], "final_sql": None, "error": None, "samples": [] if live else _samples(sources)}
     try:
         out["final_sql"] = str(ibis.to_sql(compiled.limit(sample), dialect=getattr(engine, "dialect", "duckdb")))
     except Exception:
@@ -777,8 +806,74 @@ def _load_compile(
         df = compiled.limit(sample).execute()
         out["rows"] = json.loads(df.to_json(orient="records", date_format="iso"))
     except Exception as e:
-        out["error"] = str(e)
+        out["error"] = metered.cap_message(e) or str(e)
     return out
+
+
+def _samples(sources) -> list[dict]:
+    """Which sources this preview read from a cached sample, and how old it is."""
+    out = []
+    for ref, s, conn, _ in sources:
+        info = sample_info(s, conn, ref.table)
+        if info:
+            out.append({"alias": ref.alias, "source_id": s.id, "table": ref.table,
+                        "rows": info["rows"], "taken_at": info["taken_at"]})
+    return out
+
+
+# Ops that execute while compiling. Pricing a pipeline with one would run it.
+_EAGER_OPS = frozenset({"extract", "structure", "pivot", "check", "profile"})
+
+
+def _estimate(pipeline, sources, destination, lookups) -> PipelineEstimate:
+    """What a run would scan on its metered sources, without running anything
+    billable. Sync — call through `run_interactive`.
+
+    Compiles against the live backends (metadata calls only) and prices the
+    compiled query when it runs on the warehouse, so filters and projections
+    count. Otherwise (mixed sources, an eager step) each metered table is
+    priced in full: the run would pull all of it.
+    """
+    meters = [(ref, s, conn, creds) for ref, s, conn, creds in sources if metered.is_metered(s, conn)]
+    if not meters:
+        return PipelineEstimate(metered=False)
+    engine = DuckDBEngine()
+    registry = BackendRegistry(duckdb_con=engine.con)
+    tables = {
+        ref.alias: (load_source(s, registry, conn, creds, table=ref.table) if metered.is_metered(s, conn)
+                    else load_interactive(s, registry, conn, creds, table=ref.table, sample=SAMPLE_ROWS))
+        for ref, s, conn, creds in sources
+    }
+    conn_of = {id(registry.for_connection(conn, creds)): conn for _, _, conn, creds in meters}
+    targets, basis = [], "compiled query (dry run)"
+    if not any((st or {}).get("op") in _EAGER_OPS for st in pipeline.steps or []):
+        compiled = compile_pipeline(pipeline, tables, output=destination.config if destination else None,
+                                    lookup_tables=lookups, engine=engine)
+        try:
+            backend = compiled._find_backend()
+        except Exception:  # spans backends: priced per table below
+            backend = None
+        if id(backend) in conn_of:
+            targets = [(backend, conn_of[id(backend)], compiled)]
+    if not targets:
+        basis = "full scan of each warehouse table"
+        targets = [(registry.for_connection(conn, creds), conn, tables[ref.alias])
+                   for ref, _, conn, creds in meters]
+    total, usd = 0, None
+    for backend, conn, expr in targets:
+        kind = conn.connection_type
+        n = metered.estimate_bytes(backend, kind, str(ibis.to_sql(expr)))
+        if n is None:
+            continue
+        total += n
+        if (c := metered.est_cost_usd(kind, n)) is not None:
+            usd = (usd or 0) + c
+    caps = [conn.credentials.get("max_bytes_billed") for _, _, conn, _ in meters]
+    cap = min((int(c) for c in caps if c), default=None)
+    return PipelineEstimate(
+        metered=True, engine=meters[0][2].connection_type, bytes=total, est_cost_usd=usd,
+        basis=basis, max_bytes_billed=cap, exceeds_cap=cap is not None and total > cap,
+    )
 
 
 async def _compile_body_pipeline(
@@ -794,6 +889,8 @@ async def _compile_body_pipeline(
     on_tables=None,
     params: dict[str, str] | None = None,
     sample: int | None = None,
+    live: bool = False,
+    confirm: bool = False,
 ) -> dict | None:
     """Shared plumbing for endpoints that compile an unsaved pipeline body.
 
@@ -824,7 +921,7 @@ async def _compile_body_pipeline(
         return await run_interactive(
             _load_compile, pipeline, sources, destination, lookups,
             sample=sample, on_tables=on_tables, on_step_schema=on_step_schema,
-            on_step_sql=on_step_sql, on_step=on_step,
+            on_step_sql=on_step_sql, on_step=on_step, live=live, confirm=confirm,
         )
     except HTTPException:
         raise
@@ -911,6 +1008,8 @@ async def dry_run_pipeline(
     body: PipelineBase,
     limit: int = 20,
     params: str | None = None,
+    live: bool = False,
+    confirm: bool = False,
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
     c_store: ConnectionStore = Depends(get_connection_store),
@@ -947,6 +1046,8 @@ async def dry_run_pipeline(
                 on_step_sql=_capture_sql,
                 params=parsed_params,
                 sample=limit,
+                live=live,
+                confirm=confirm,
             )
             error = sampled["error"]
         except HTTPException as e:
@@ -961,6 +1062,8 @@ async def dry_run_pipeline(
         "step_sqls": {str(k): v for k, v in step_sqls.items()},
         "final_sql": final_sql,
         "error": error,
+        "samples": sampled.get("samples", []),
+        "estimate": sampled.get("estimate"),
     }
 
 
@@ -969,6 +1072,8 @@ async def preview_pipeline(
     pipeline_id: str,
     limit: int = 100,
     params: str | None = None,
+    live: bool = False,
+    confirm: bool = False,
     store: PipelineStore = Depends(get_pipeline_store),
     s_store: SourceStore = Depends(get_source_store),
     d_store: DestinationStore = Depends(get_destination_store),
@@ -1006,7 +1111,7 @@ async def preview_pipeline(
         # execution locus is picked by BackendRegistry.
         sampled = await run_interactive(
             _load_compile, pipeline, sources, destination, lookups,
-            sample=limit, on_step_sql=_capture_sql,
+            sample=limit, on_step_sql=_capture_sql, live=live, confirm=confirm,
         )
         error = sampled["error"]
     except HTTPException:
@@ -1023,6 +1128,8 @@ async def preview_pipeline(
         "step_sqls": {str(k): v for k, v in step_sqls.items()},
         "final_sql": final_sql,
         "error": error,
+        "samples": sampled.get("samples", []),
+        "estimate": sampled.get("estimate"),
     }
 
 
@@ -1105,6 +1212,32 @@ async def materialise_pipeline_rows(
     return sampled["rows"]
 
 
+@router.post("/pipelines/estimate", response_model=PipelineEstimate, dependencies=[Depends(requires("pipeline:read"))])
+async def estimate_pipeline(
+    body: PipelineBase,
+    params: str | None = None,
+    s_store: SourceStore = Depends(get_source_store),
+    d_store: DestinationStore = Depends(get_destination_store),
+    c_store: ConnectionStore = Depends(get_connection_store),
+    lt_store: LookupTableStore = Depends(get_lookup_table_store),
+):
+    """What a run (or a live preview) of this unsaved body would scan on its
+    metered sources (plan 093). Free: BigQuery dry run, Snowflake EXPLAIN."""
+    pipeline = Pipeline(**body.model_dump())
+    try:
+        pipeline = interpolate_pipeline(pipeline, resolve_context(pipeline, _parse_params_query(params)))
+        if pipeline_requires_output(pipeline):
+            sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
+        else:
+            sources, destination = await _resolve_sources(pipeline, s_store, c_store), None
+        lookups = await _resolve_lookups(pipeline, lt_store)
+        return await run_interactive(_estimate, pipeline, sources, destination, lookups)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
 @router.post("/pipelines/{pipeline_id}/trigger", dependencies=[Depends(requires("pipeline:trigger"))])
 async def trigger_pipeline(
     pipeline_id: str,
@@ -1126,10 +1259,11 @@ async def trigger_pipeline(
     # Fail fast on missing refs before creating a run.
     decrypt_context_var.set("pipeline_run")
     _ptype = getattr(pipeline, "pipeline_type", "transform") or "transform"
+    destination = None
     if _ptype in ("quality", "eval"):
-        await _resolve_sources(pipeline, s_store, c_store)
+        sources = await _resolve_sources(pipeline, s_store, c_store)
     else:
-        await _resolve(pipeline, s_store, d_store, c_store)
+        sources, (destination, _) = await _resolve(pipeline, s_store, d_store, c_store)
 
     # An eval run with no corpus would score nothing — reject at trigger.
     eval_set_id = body.eval_set_id if body else None
@@ -1146,18 +1280,27 @@ async def trigger_pipeline(
         )
     if eval_set_id:
         await validate_eval_corpus_match(pipeline, eval_set_id, es_store)
-    await _resolve_lookups(pipeline, lt_store)
+    lookups = await _resolve_lookups(pipeline, lt_store)
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
     user_params = (body.params if body else {}) or {}
     # Resolve the context up-front so `now`/`today` snapshot at trigger time
     # and bad params / unknown vars fail here instead of inside the task.
     try:
         run_context = resolve_context(pipeline, user_params)
-        interpolate_pipeline(pipeline, run_context)
+        resolved = interpolate_pipeline(pipeline, run_context)
     except ParamValidationError as e:
         raise HTTPException(status_code=422, detail=e.payload())
     except InterpolationError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    if not (body and body.confirm) and any(metered.is_metered(s, c) for _, s, c, _ in sources):
+        # Nothing starts until the caller has seen what it will scan.
+        try:
+            estimate = await run_interactive(_estimate, resolved, sources, destination, lookups)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"could not estimate this run: {e}") from e
+        return {"estimate": estimate.model_dump(), "enqueued": False}
     latest_rev = await rev_store.latest_for_pipeline(pipeline_id)
 
     conf = {"params": user_params, "context": run_context}
