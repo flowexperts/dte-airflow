@@ -10,7 +10,7 @@ dte is a visual pipeline builder that runs inside Apache Airflow 3.3+. Pick a so
 
 ## Reference
 
-- [Connections](connections/index.md)
+- [Connections](connections/index.md): [Snowflake](connections/snowflake.md)
 - [Sources](sources/index.md)
 - [Destinations](destinations/index.md)
 - [Steps](steps/index.md)

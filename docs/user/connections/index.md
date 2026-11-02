@@ -23,12 +23,12 @@ dte offers a type only when its provider is installed. Others show in the source
 | `postgres` | `apache-airflow-providers-postgres` | Reading and writing tables |
 | `mysql` | `apache-airflow-providers-mysql` | Reading and writing tables |
 | `mssql` | `apache-airflow-providers-microsoft-mssql` | Reading and writing tables (needs Microsoft ODBC Driver 18) |
-| `snowflake` | `apache-airflow-providers-snowflake` | Reading and writing tables |
+| `snowflake` | `apache-airflow-providers-snowflake` | Reading and writing tables ([setup and cost](snowflake.md)) |
 | `sqlite` | `apache-airflow-providers-sqlite` | Reading local `.db` files |
 | `mongo` | `apache-airflow-providers-mongo` | Reading collections |
 | `http` | `apache-airflow-providers-http` | Pulling data from a JSON API (login/password become basic or bearer auth) |
 
-Fill each in as the provider documents it. dte reads SQL connections through the hook's SQLAlchemy URL and opens files through the provider's filesystem.
+Fill each in as the provider documents it. dte reads SQL connections through the hook's SQLAlchemy URL (Snowflake through the hook itself, so key-pair and OAuth auth work) and opens files through the provider's filesystem.
 
 ## Which connections dte lists
 
