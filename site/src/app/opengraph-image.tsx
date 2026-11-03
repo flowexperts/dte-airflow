@@ -32,7 +32,7 @@ export default function Image() {
             letterSpacing: -2,
           }}
         >
-          dt<span style={{ color: "#e8441a" }}>e</span>
+          DT<span style={{ color: "#e8441a" }}>E</span>
         </div>
         <div
           style={{
@@ -54,7 +54,7 @@ export default function Image() {
             maxWidth: 900,
           }}
         >
-          Open source. Runs as an Apache Airflow 3 plugin — every pipeline is a DAG.
+          Open-Source Visual Data Pipeline Builder, Powered by Apache Airflow®
         </div>
       </div>
     ),

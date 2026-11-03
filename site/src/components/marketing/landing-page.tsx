@@ -42,9 +42,9 @@ export function LandingPage() {
           <div className="glyph" aria-hidden="true" />
           <div className="in">
             <div>
-              <p className="kicker">Data transformation engine</p>
-              <h1>Visual Builder <span className="hi">for Data &amp; AI pipelines</span></h1>
-              <p className="powered">Apache Airflow<sup>®</sup> plugin · 100% Open-Source</p>
+              <p className="kicker">DTE</p>
+              <h1>Data Transformation <span className="hi">Engine</span></h1>
+              <p className="powered">Open-Source Visual Data Pipeline Builder, Powered by Apache Airflow<sup>®</sup></p>
               <div className="ctas">
                 <a className="btn go" href={INSTALL_URL}>Install DTE in your Airflow</a>
                 <a className="btn ghost" href="#demo">Watch the demo</a>

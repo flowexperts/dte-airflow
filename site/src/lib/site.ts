@@ -13,9 +13,10 @@ export const DOCS_URL = "/docs/";
 export const INSTALL_URL = `${DOCS_URL}self-hosting/install-plugin`;
 
 export const SITE_NAME = "DTE";
-export const SITE_TITLE = "DTE — Data Transformation Engine for Apache Airflow";
+export const SITE_TAGLINE = "Open-Source Visual Data Pipeline Builder, Powered by Apache Airflow®";
+export const SITE_TITLE = `DTE — Data Transformation Engine · ${SITE_TAGLINE}`;
 export const SITE_DESCRIPTION =
-  "DTE is an open-source (Apache-2.0) data transformation engine that installs with pip into Apache Airflow 3.3+ as a plugin. Map fields once in a visual pipeline builder — filter, rename, retype, lookup, aggregate, join, pivot — and every pipeline becomes an Airflow DAG. Reads files, S3, GCS, Azure Blob, SFTP, Postgres, MySQL, SQL Server, Snowflake, BigQuery, MongoDB and REST APIs; writes to SQL databases and Parquet/JSON/CSV/Excel files locally or in object storage. Uses your Airflow connections, through whatever providers are installed. Built on DuckDB, ibis and dlt.";
+  "DTE (Data Transformation Engine) is an open-source (Apache-2.0) visual data pipeline builder, powered by Apache Airflow®. It installs with pip into Airflow 3.3+ as a plugin. Map fields once in a visual pipeline builder — filter, rename, retype, lookup, aggregate, join, pivot — and every pipeline becomes an Airflow DAG. Reads files, S3, GCS, Azure Blob, SFTP, Postgres, MySQL, SQL Server, Snowflake, BigQuery, MongoDB and REST APIs; writes to SQL databases and Parquet/JSON/CSV/Excel files locally or in object storage. Uses your Airflow connections, through whatever providers are installed. Built on DuckDB, ibis and dlt.";
 
 /** Per-page metadata. Next replaces (not merges) a parent's openGraph/twitter,
  *  so every page sets its own or it previews as the homepage. */

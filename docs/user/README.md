@@ -1,4 +1,7 @@
-# dte user guide
+# DTE
+
+**Data Transformation Engine**  
+Open-Source Visual Data Pipeline Builder, Powered by Apache Airflow®
 
 dte is a visual pipeline builder that runs inside Apache Airflow 3.3+. Pick a source, add steps, pick a destination. Every pipeline becomes an Airflow DAG, so it runs on demand or on a schedule, with Airflow's auth, connections and run history. No SQL required, though you can drop into it.
 

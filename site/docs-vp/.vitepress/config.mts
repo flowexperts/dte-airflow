@@ -36,7 +36,7 @@ const pageUrl = (relativePath: string) =>
 
 export default defineConfig({
   title: "DTE Docs",
-  description: "User guide for DTE, the visual pipeline builder for Apache Airflow.",
+  description: "DTE, the Data Transformation Engine. Open-Source Visual Data Pipeline Builder, Powered by Apache Airflow®.",
   base: "/docs/",
   srcDir: "../../docs/user",
   srcExclude: ["scripts/**"],

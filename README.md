@@ -1,4 +1,8 @@
-# dte — map it once, run it forever
+# DTE
+
+**Data Transformation Engine**
+
+Open-Source Visual Data Pipeline Builder, Powered by Apache Airflow®
 
 > **Beta.** Interfaces and the `dte` schema may change between releases. Don't run it on production data without backups. Issues welcome; PRs from approved collaborators only (see [CONTRIBUTING](./CONTRIBUTING.md)).
 
