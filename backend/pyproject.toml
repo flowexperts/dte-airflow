@@ -6,6 +6,21 @@ build-backend = "hatchling.build"
 # `dte` is taken on PyPI. The import package and the CLI are still `dte`.
 name = "dte-airflow"
 version = "0.1.0"
+description = "Batch data transformation engine that runs as an Airflow 3 app: a visual pipeline builder over DuckDB, ibis and dlt"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Bhavani Ravi" }]
+keywords = ["airflow", "etl", "duckdb", "ibis", "dlt", "data-pipelines"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Apache Airflow",
+    "Framework :: Apache Airflow :: Provider",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+]
 requires-python = ">=3.12"
 dependencies = [
     # `mysql` intentionally omitted from core — pulls mysqlclient which needs
@@ -46,6 +61,11 @@ dependencies = [
     "pyyaml",
 ]
 
+[project.urls]
+Homepage = "https://github.com/flowexperts/dte-airflow"
+Source = "https://github.com/flowexperts/dte-airflow"
+Issues = "https://github.com/flowexperts/dte-airflow/issues"
+
 [project.scripts]
 dte = "dte.cli:main"
 
@@ -69,7 +89,7 @@ airflow = [
 # Document extraction (plan 050). Kept out of core so a deployment that never
 # touches PDFs doesn't carry the dependency; dte.providers imports lazily and
 # reports a message naming this extra when it's absent.
-# Install with: pip install "dte[unstructured]"
+# Install with: pip install "dte-airflow[unstructured]"
 unstructured = [
     "pypdf>=5.0,<7.0",
     "pdfplumber>=0.11,<1.0",
@@ -77,7 +97,7 @@ unstructured = [
 # Model-backed `structure` providers (plan 050). Separate from `unstructured`
 # on purpose: the regex provider needs neither SDK, and a deployment that only
 # uses it should not carry them.
-# Install with: pip install "dte[models]"
+# Install with: pip install "dte-airflow[models]"
 models = [
     # The providers own the model-key connections (plan 072) and bring the SDKs.
     "apache-airflow-providers-anthropic>=1.1",
@@ -119,7 +139,7 @@ mysql-writer = ["dlt[sqlalchemy]>=1.4,<2.0", "pymysql>=1.1,<2.0"]
 snowflake-writer = ["dlt[snowflake]>=1.4,<2.0"]
 bigquery-writer = ["dlt[bigquery]>=1.4,<2.0"]
 # Trino engine — plan-034 distributed execution seam.
-# Install with: pip install "dte[trino]"
+# Install with: pip install "dte-airflow[trino]"
 trino = ["ibis-framework[trino]>=12.0,<13.0", "trino>=0.329,<1.0"]
 # Native ibis backends kept optional to avoid heavy or system-level build
 # deps (mysqlclient, google-cloud-bigquery, snowflake-connector-python).
@@ -134,6 +154,8 @@ snowflake-source = ["ibis-framework[snowflake]>=12.0,<13.0"]
 packages = ["dte"]
 # The Vite UI bundle (gitignored; the release workflow copies frontend/dist
 # here). `artifacts` so a dev build without it still works.
+# Wheel only, no sdist: README/LICENSE/NOTICE are symlinks to the repo root
+# (they dangle inside a tarball), and an sdist can't rebuild the UI anyway.
 artifacts = ["dte/ui/**"]
 
 # `dte db upgrade` runs these from inside the installed package (plan 073).

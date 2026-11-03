@@ -1,0 +1,54 @@
+name: Release
+
+# Push a tag `vX.Y.Z` matching backend/pyproject.toml's version to publish
+# dte-airflow to PyPI. Trusted publishing: no token stored here; PyPI trusts
+# this workflow + the `pypi` environment (configure once on pypi.org).
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build UI bundle into the package
+        run: |
+          cd frontend && pnpm install --frozen-lockfile && pnpm build
+          cp -r dist ../backend/dte/ui
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Tag matches version
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' backend/pyproject.toml)
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != version $v"; exit 1; }
+      # Wheel only: see the comment in backend/pyproject.toml.
+      - run: cd backend && uv build --wheel
+      - name: Wheel carries the UI
+        run: unzip -l dist/*.whl | grep -q dte/ui/dte.umd.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
