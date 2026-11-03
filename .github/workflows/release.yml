@@ -31,6 +31,8 @@ jobs:
         run: |
           v=$(sed -n 's/^version = "\(.*\)"/\1/p' backend/pyproject.toml)
           test "v$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != version $v"; exit 1; }
+      - name: Release notes exist
+        run: grep -q "^## $GITHUB_REF_NAME " docs/user/releases.md || { echo "add a '## $GITHUB_REF_NAME' section to docs/user/releases.md"; exit 1; }
       # Wheel only: see the comment in backend/pyproject.toml.
       - run: cd backend && uv build --wheel
       - name: Wheel carries the UI

@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.26.1",
   "scripts": {
     "dev": "sh -c 'vitepress dev docs-vp --port 3101 & trap \"kill $!\" EXIT INT TERM; next dev \"$@\"' sh",
-    "build": "next build && vitepress build docs-vp",
+    "build": "next build && vitepress build docs-vp && sh scripts/build-versioned-docs.sh",
     "typecheck": "tsc --noEmit",
     "lint": "eslint",
     "format": "prettier --write .",

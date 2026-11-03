@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -12,8 +13,20 @@ const vueDir = path.dirname(createRequire(import.meta.url).resolve("vue/package.
 // file's `# heading`.
 const page = (text: string, link: string) => ({ text, link });
 
-const DOCS_URL = "https://dte.flowexperts.ai/docs/";
-const SRC_DIR = path.resolve(__dirname, "../../../docs/user");
+// scripts/build-versioned-docs.sh sets DOCS_VERSION/DOCS_SRC to render docs/user
+// as it was at a release tag into /docs/<tag>/; unset, this is "latest" (plan 106).
+const VERSION = process.env.DOCS_VERSION;
+const SITE_DOCS = "https://dte.flowexperts.ai/docs/";
+const DOCS_URL = VERSION ? `${SITE_DOCS}${VERSION}/` : SITE_DOCS;
+const SRC_DIR = process.env.DOCS_SRC ?? path.resolve(__dirname, "../../../docs/user");
+
+function releaseTags(): string[] {
+  try {
+    return execSync("git tag -l 'v*' --sort=-v:refname", { encoding: "utf8" }).split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
 // No page carries a `description:` frontmatter, so derive one from the first
 // prose paragraph; otherwise every page ships the same meta description.
@@ -37,12 +50,13 @@ const pageUrl = (relativePath: string) =>
 export default defineConfig({
   title: "DTE Docs",
   description: "DTE, the Data Transformation Engine. Open-Source Visual Data Pipeline Builder, Powered by Apache Airflow®.",
-  base: "/docs/",
-  srcDir: "../../docs/user",
+  base: VERSION ? `/docs/${VERSION}/` : "/docs/",
+  srcDir: SRC_DIR,
   srcExclude: ["scripts/**"],
-  outDir: "../out/docs",
+  outDir: VERSION ? `../out/docs/${VERSION}` : "../out/docs",
   cleanUrls: true,
-  ignoreDeadLinks: "localhostLinks",
+  // Old pages may link to ones the current sidebar no longer has.
+  ignoreDeadLinks: VERSION ? true : "localhostLinks",
   rewrites: { "README.md": "index.md" },
   sitemap: { hostname: DOCS_URL },
   transformPageData(pageData) {
@@ -80,6 +94,15 @@ export default defineConfig({
     nav: [
       { text: "Use cases", link: "https://dte.flowexperts.ai/use-cases/", target: "_self" },
       { text: "Integrations", link: "https://dte.flowexperts.ai/integrations/", target: "_self" },
+      {
+        text: VERSION ?? "latest",
+        items: [
+          { text: "latest", link: SITE_DOCS, target: "_self" },
+          ...releaseTags().map((t) => ({ text: t, link: `${SITE_DOCS}${t}/`, target: "_self" })),
+          // Absolute: tags cut before plan 106 have no releases page.
+          { text: "Release notes", link: `${SITE_DOCS}releases`, target: "_self" },
+        ],
+      },
     ],
     socialLinks: [{ icon: "github", link: "https://github.com/flowexperts/dte-airflow" }],
     search: { provider: "local" },
@@ -92,7 +115,7 @@ export default defineConfig({
       { text: "Connect", items: [page("Connections", "/connections/"), page("Sources", "/sources/"), page("Destinations", "/destinations/"), page("Snowflake", "/connections/snowflake"), page("BigQuery", "/sources/bigquery")] },
       { text: "Operate", items: [page("Secrets & environment", "/self-hosting/secrets"), page("Scaling and execution", "/self-hosting/scaling"), page("Upgrading", "/self-hosting/upgrading")] },
       { text: "Under the hood", items: [page("Architecture overview", "/architecture/overview"), page("Data flow", "/architecture/data-flow")] },
-      { text: "Help", items: [page("Troubleshooting", "/troubleshooting"), page("FAQ", "/faq")] },
+      { text: "Help", items: [page("Troubleshooting", "/troubleshooting"), page("FAQ", "/faq"), { text: "Release notes", link: `${SITE_DOCS}releases`, target: "_self" }] },
     ],
   },
 });

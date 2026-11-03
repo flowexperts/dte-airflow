@@ -1,6 +1,6 @@
 # Upgrading
 
-dte is in beta. Read the release notes before every upgrade.
+dte is in beta. Read the [release notes](../releases.md) before every upgrade.
 
 ## Before upgrading in production
 
