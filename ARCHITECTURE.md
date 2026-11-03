@@ -18,9 +18,9 @@ The UI is a React app, rendered natively inside Airflow as a plugin, that lets u
 
 DTE has no server of its own. It ships as one Airflow plugin (`pip install`, one entry point) and runs on the components an Airflow 3 deployment already has:
 
-1. **api-server.** The plugin mounts the React UI as a native `react_apps` page and the FastAPI app at `/dte`. Airflow's auth manager answers DTE's permission checks. Live preview and schema inference run here, in-process, on a `LIMIT 20` sample, and never create a run.
-2. **Save.** Every save writes a new revision to the `dte` schema of Airflow's metadata Postgres (own Alembic history).
-3. **dag-processor.** `build_dags()` (`dte/airflow/dag_factory.py`) reads the latest revision of every pipeline and builds one `dte__<id>` DAG each. The revision id is a DAG tag, so every save is a new DagVersion; an enabled schedule becomes the DAG's cron.
+1. **api-server.** The plugin mounts the React UI as a native `react_apps` page and the FastAPI app at `/dte`. Airflow's auth manager answers DTE's permission checks. Live preview and schema inference run here, never create a run, and go through `run_interactive` (`dte/api/interactive.py`): a dedicated thread pool (`DTE_INTERACTIVE_CONCURRENCY`, 4) so a slow source can't stall Airflow's own routes, and a 504 after `DTE_PREVIEW_TIMEOUT_SECONDS` (30).
+2. **Save.** Every save writes a new revision to the `dte` schema of the Postgres `DTE_DATABASE_URL` names: its own database, or Airflow's metadata database (own Alembic history). With `DTE_PIPELINE_STORE=file` pipelines are `DTE_PIPELINES_DIR/*.yaml` files instead.
+3. **dag-processor.** `build_dags()` (`dte/airflow/dag_factory.py`) reads the latest revision of every pipeline and builds one `dte__<id>` DAG each. The revision id is a DAG tag, so every save is a new DagVersion; an enabled schedule becomes the DAG's cron, or an after-upstream schedule waits on other pipelines' output Assets.
 4. **scheduler + executor.** Each DAG has one task, `run`, a `DtePipelineOperator` (`dte/airflow/operators.py`). It resolves the pinned revision, sources and destination, and takes credentials from Airflow Connections through the `to_dte()` adapter.
 5. **Record.** The task writes a `run_results` row (rows written, SQL, quality results); status, timings and logs are Airflow's own.
 
@@ -28,12 +28,14 @@ DTE has no server of its own. It ships as one Airflow plugin (`pip install`, one
 
 ![How DTE runs a pipeline](docs/architecture-execution.svg)
 
-Preview and a run share one path; only the caller and the row cap differ. `runner.run_pipeline()` (`dte/airflow/runner.py`) resolves the revision and its sources, loads each source through `BackendRegistry` (one ibis backend per connection), compiles the steps to one ibis expression, then executes and writes. `engine: auto` (`resolve_pipeline_engine`) decides where the work runs from the sources' connection types:
+Preview and a run share the compiler and engines; they differ in what they read. `runner.run_pipeline()` (`dte/airflow/runner.py`) resolves the revision and its sources, loads each source live through `BackendRegistry` (one ibis backend per connection), compiles the steps to one ibis expression, runs `pre` quality contracts (a failing one writes nothing), then executes, writes and runs `post` contracts.
+
+The builder's preview (`POST /pipelines/dry-run`, debounced on each edit, `LIMIT 20`) loads through `sample.load_interactive` instead: lazy sources (files, object stores, other databases) pass straight through, while eager sources (REST, MongoDB) and metered ones (BigQuery, Snowflake tables) are read from a cached parquet sample (`DTE_SAMPLE_ROWS`, 1,000) under `$DTE_ARTIFACT_DIR/samples`, so steps on a warehouse sample run in DuckDB for free. A metered preview fires on click, not on every edit. Preview on live data, and a run of a metered pipeline, are priced first (BigQuery dry run, Snowflake `EXPLAIN`); above the connection's threshold the API returns the estimate and runs nothing until `confirm=true`, and a byte cap or statement timeout on the connection refuses what's too big. `engine: auto` (`resolve_pipeline_engine`) decides where the work runs from the sources' connection types:
 
 - **DuckDB, in-process** for files, object stores and APIs, or any mix DuckDB can read. One node, no cluster. The default.
 - **Pushdown** when every source sits on one SQL connection: ibis compiles to that database's dialect, joins run in the database, raw SQL steps are transpiled by sqlglot.
 - **Trino**, opt-in with `DTE_TRINO_ENABLED=true`, for large cross-source work. Rejects raw SQL steps and pivot.
-- **Enrichment** (extract, structure) is the one per-row Python seam: it materialises, maps each row through a model call, retries per row and caches in the artifact store. DuckDB engine only.
+- **Enrichment** (extract, structure, http_lookup) is the one per-row Python seam: it materialises, maps each row through a model or HTTP call and caches results in the artifact store. DuckDB engine only.
 
 ## Data flow
 

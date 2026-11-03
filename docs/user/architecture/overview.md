@@ -35,14 +35,16 @@ In Airflow: the metadata DB, `AIRFLOW_CONN_*` variables or a secrets backend. dt
 
 ## How a run happens
 
-![How DTE runs a pipeline: preview in the api-server on a sample; a run is an Airflow task that loads, compiles to ibis and executes](../assets/architecture/execution.svg)
+![How DTE runs a pipeline: preview in the api-server on cached samples; a run is an Airflow task that loads live, compiles to ibis, checks and writes](../assets/architecture/execution.svg)
+
+Preview runs in the api-server and creates no run. It reads REST, MongoDB, BigQuery and Snowflake sources from a cached 1,000-row sample, so editing steps costs nothing; other sources are read directly under a `LIMIT 20`. A preview that hasn't finished in 30 seconds fails with a timeout. **Preview on live data** and a run of a BigQuery or Snowflake pipeline are priced first, and a big one waits for you to confirm.
 
 1. A user clicks **▶ Run**, or the schedule fires.
-2. For a manual run, dte's API asks Airflow's REST API to trigger `dte__<pipeline id>`, forwarding the user's credentials so Airflow's permissions apply.
+2. For a manual run, dte's API prices any BigQuery or Snowflake reads first (a big run waits for a confirm), then asks Airflow's REST API to trigger `dte__<pipeline id>`, forwarding the user's credentials so Airflow's permissions apply.
 3. The scheduler queues the dag run and an executor runs `DtePipelineOperator`, which:
    - Loads the revision the run started against, with its sources and destination
    - Resolves their connections through Airflow
-   - Loads each source into the run's DuckDB connection
+   - Loads each source live, into the run's DuckDB connection or as a pushdown to its database
    - Compiles the steps into one ibis expression
    - Runs `pre` quality contracts on the result, and stops there if one fails
    - Executes it and writes to the destination, then runs any `post` contracts

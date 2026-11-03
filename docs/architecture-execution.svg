@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" class="exe-svg" role="img" aria-label="How DTE runs a pipeline: preview runs in the api-server on a sample; a run is an Airflow task that resolves, loads, compiles to ibis and executes. engine auto picks DuckDB in-process, pushdown to the source database, or Trino.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" class="exe-svg" role="img" aria-label="How DTE runs a pipeline: preview runs in the api-server, in a bounded thread pool with a 30 second timeout, reading cached samples of REST, MongoDB, BigQuery and Snowflake sources; a run is an Airflow task that resolves, loads live, compiles to ibis, gates on pre-write quality contracts and writes. BigQuery and Snowflake are priced before a run or live preview; big ones need a confirm. engine auto picks DuckDB in-process, pushdown to the source database, or Trino.">
 <style>
 .exe-svg text { font-family: Outfit, "Helvetica Neue", Arial, sans-serif; }
 .exe-b { font-size: 17px; fill: #c8c0b8; }
@@ -14,14 +14,16 @@
 <rect x="40" y="40" width="740" height="130" rx="10" fill="#141210" stroke="#c9963e" stroke-width="1.5"/>
 <text x="60" y="68" class="exe-kg" text-anchor="start">SMALL · PREVIEW</text>
 <text x="60" y="100" class="exe-h" text-anchor="start">Builder preview + schema infer</text>
-<text x="60" y="124" class="exe-b" text-anchor="start">api-server, in-process · LIMIT 20 · no run recorded</text>
+<text x="60" y="124" class="exe-b" text-anchor="start">api-server thread pool · 30 s, then 504 · LIMIT 20 · no run</text>
+<text x="60" y="150" class="exe-b" text-anchor="start">REST · MongoDB · BigQuery · Snowflake: cached 1,000-row sample</text>
 <rect x="820" y="40" width="740" height="130" rx="10" fill="#141210" stroke="#e8441a" stroke-width="1.5"/>
 <text x="840" y="68" class="exe-ka" text-anchor="start">LARGE · THE RUN</text>
 <text x="840" y="100" class="exe-h" text-anchor="start">Airflow task: DtePipelineOperator</text>
 <text x="840" y="124" class="exe-b" text-anchor="start">runner.run_pipeline() · pinned revision · run_max_rows cap</text>
+<text x="840" y="150" class="exe-b" text-anchor="start">reads live · BigQuery, Snowflake priced first; big runs confirm</text>
 <polyline points="410,170 410,208" fill="none" stroke="#c9963e" stroke-width="2" marker-end="url(#exe-head-go)"/>
 <polyline points="1190,170 1190,208" fill="none" stroke="#e8441a" stroke-width="2" marker-end="url(#exe-head-ac)"/>
-<text x="800" y="196" class="exe-lab" text-anchor="middle">same loader, same compiler, same engines</text>
+<text x="800" y="196" class="exe-lab" text-anchor="middle">same compiler, same engines · preview reads samples, the run reads live</text>
 <rect x="40" y="210" width="210" height="180" rx="10" fill="#141210" stroke="#2a2720" stroke-width="1.5"/>
 <text x="56" y="236" class="exe-k" text-anchor="start">SOURCES</text>
 <text x="56" y="268" class="exe-b" text-anchor="start">Files · S3 · GCS</text>
@@ -40,7 +42,8 @@
 <text x="561" y="246" class="exe-h" text-anchor="start">2  Load</text>
 <text x="561" y="274" class="exe-b" text-anchor="start">BackendRegistry:</text>
 <text x="561" y="302" class="exe-b" text-anchor="start">one ibis backend</text>
-<text x="561" y="330" class="exe-b" text-anchor="start">per connection</text>
+<text x="561" y="330" class="exe-b" text-anchor="start">per connection;</text>
+<text x="561" y="358" class="exe-b" text-anchor="start">preview: the sample</text>
 <polyline points="780,300 798,300" fill="none" stroke="#c8c0b8" stroke-width="2" marker-end="url(#exe-head-mu)"/>
 <rect x="800" y="210" width="235" height="180" rx="8" fill="#1e1b16" stroke="#2a2720" stroke-width="1.5"/>
 <text x="816" y="246" class="exe-h" text-anchor="start">3  Compile</text>
@@ -50,9 +53,10 @@
 <polyline points="1035,300 1053,300" fill="none" stroke="#c8c0b8" stroke-width="2" marker-end="url(#exe-head-mu)"/>
 <rect x="1055" y="210" width="235" height="180" rx="8" fill="#1e1b16" stroke="#2a2720" stroke-width="1.5"/>
 <text x="1071" y="246" class="exe-h" text-anchor="start">4  Execute + write</text>
-<text x="1071" y="274" class="exe-b" text-anchor="start">writer → destination</text>
-<text x="1071" y="302" class="exe-b" text-anchor="start">quality checks</text>
-<text x="1071" y="330" class="exe-b" text-anchor="start">run_results row</text>
+<text x="1071" y="274" class="exe-b" text-anchor="start">pre contracts gate</text>
+<text x="1071" y="302" class="exe-b" text-anchor="start">writer → destination</text>
+<text x="1071" y="330" class="exe-b" text-anchor="start">post contracts</text>
+<text x="1071" y="358" class="exe-b" text-anchor="start">run_results row</text>
 <rect x="1350" y="210" width="210" height="180" rx="10" fill="#141210" stroke="#2a2720" stroke-width="1.5"/>
 <text x="1366" y="236" class="exe-k" text-anchor="start">DESTINATIONS</text>
 <text x="1366" y="268" class="exe-b" text-anchor="start">JSON · CSV · Excel</text>
@@ -78,12 +82,12 @@
 <rect x="425" y="470" width="365" height="390" rx="10" fill="#141210" stroke="#c9963e" stroke-width="1.5"/>
 <text x="445" y="502" class="exe-kg" text-anchor="start">LARGE</text>
 <text x="445" y="542" class="exe-h" text-anchor="start">Pushdown</text>
-<text x="445" y="580" class="exe-b" text-anchor="start">all sources on one</text>
-<text x="445" y="618" class="exe-b" text-anchor="start">SQL connection</text>
-<text x="445" y="656" class="exe-b" text-anchor="start">ibis compiles to its dialect</text>
-<text x="445" y="694" class="exe-b" text-anchor="start">joins run in the database</text>
-<text x="445" y="732" class="exe-b" text-anchor="start">raw SQL steps transpiled</text>
-<text x="445" y="770" class="exe-b" text-anchor="start">by sqlglot</text>
+<text x="445" y="580" class="exe-b" text-anchor="start">all sources on one SQL conn</text>
+<text x="445" y="618" class="exe-b" text-anchor="start">ibis compiles to its dialect</text>
+<text x="445" y="656" class="exe-b" text-anchor="start">joins run in the database</text>
+<text x="445" y="694" class="exe-b" text-anchor="start">raw SQL transpiled by sqlglot</text>
+<text x="445" y="732" class="exe-b" text-anchor="start">BigQuery · Snowflake: priced</text>
+<text x="445" y="770" class="exe-b" text-anchor="start">first, capped by the conn</text>
 <text x="445" y="808" class="exe-h" text-anchor="start">data stays in the warehouse</text>
 <rect x="810" y="470" width="365" height="390" rx="10" fill="#141210" stroke="#e8441a" stroke-width="1.5"/>
 <text x="830" y="502" class="exe-ka" text-anchor="start">LARGE · CROSS-SOURCE</text>
@@ -96,13 +100,13 @@
 <text x="830" y="770" class="exe-b" text-anchor="start"></text>
 <text x="830" y="808" class="exe-h" text-anchor="start">when one node won&#x27;t do</text>
 <rect x="1195" y="470" width="365" height="390" rx="10" fill="#141210" stroke="#2a2720" stroke-width="1.5"/>
-<text x="1215" y="502" class="exe-k" text-anchor="start">PER-ROW · LLM</text>
+<text x="1215" y="502" class="exe-k" text-anchor="start">PER-ROW · LLM · HTTP</text>
 <text x="1215" y="542" class="exe-h" text-anchor="start">Enrichment</text>
-<text x="1215" y="580" class="exe-b" text-anchor="start">extract · structure steps</text>
+<text x="1215" y="580" class="exe-b" text-anchor="start">extract · structure · http_lookup</text>
 <text x="1215" y="618" class="exe-b" text-anchor="start">materialise, map each row</text>
 <text x="1215" y="656" class="exe-b" text-anchor="start">in Python</text>
-<text x="1215" y="694" class="exe-b" text-anchor="start">model calls retried per row</text>
-<text x="1215" y="732" class="exe-b" text-anchor="start">cached in the artifact store</text>
+<text x="1215" y="694" class="exe-b" text-anchor="start">model calls retried per row,</text>
+<text x="1215" y="732" class="exe-b" text-anchor="start">results cached as artifacts</text>
 <text x="1215" y="770" class="exe-b" text-anchor="start">DuckDB engine only</text>
 <text x="1215" y="808" class="exe-h" text-anchor="start">models: Claude, OpenAI</text>
 </svg>
