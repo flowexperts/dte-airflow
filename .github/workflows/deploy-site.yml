@@ -34,5 +34,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: site
-          # main is the Pages production branch; dte-airflow ships there too.
-          command: pages deploy out --project-name=dte-site --branch=main
+          # Deploys under the pushed branch; the Pages production branch decides which one is live.
+          command: pages deploy out --project-name=dte-site --branch=${{ github.ref_name }}
