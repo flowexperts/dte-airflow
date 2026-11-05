@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import itertools
+import logging
 import os
 import tempfile
 from collections.abc import Callable
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import dlt
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
     from dte.engine.backend_registry import BackendRegistry
     from dte.models.pipeline import Connection
 
+
+_log = logging.getLogger(__name__)
 
 _JSONL_EXTS = (".jsonl", ".ndjson")
 _JSON_EXTS = (".json",)
@@ -343,8 +346,129 @@ def _merge_rest_credentials(config: dict, credentials: dict) -> dict:
     return resolved
 
 
+class NoNewMessages(Exception):
+    """A Kafka source has nothing past its committed offsets. The runner ends
+    the run as completed with 0 rows (a skipped task under Airflow) instead
+    of compiling steps against a table with no data columns."""
+
+
+def _load_kafka(
+    source: Source,
+    registry: BackendRegistry,
+    connection: Connection,
+    credentials: dict,
+    sample: int | None = None,
+) -> ibis.Table:
+    """One bounded slice of a topic (plan 107): from the group's committed
+    offsets up to the high watermark seen at start, capped by `max_messages`
+    and `max_seconds`. Partitions are assigned, not subscribed, so no group
+    membership: a preview can't rebalance a run, and the commit below may
+    come from a fresh consumer. The commit is registered on
+    `registry.after_write`, so a failed run re-reads the slice next time.
+
+    A sample (preview) ignores the commits and reads each partition's newest
+    messages, so a caught-up topic still has something to build steps on.
+    """
+    import json
+    import time
+
+    import pyarrow as pa
+    from confluent_kafka import Consumer, KafkaException, TopicPartition
+
+    cfg = source.config
+    topic = cfg["topic"]
+    group = cfg.get("group_id") or f"dte__{source.id}"
+    conf = {**(credentials.get("config") or {}), "group.id": group, "enable.auto.commit": False}
+    limit = int(cfg.get("max_messages", 10_000))
+    seconds = float(cfg.get("max_seconds", 30))
+    if sample:
+        limit, seconds = min(limit, sample), min(seconds, SAMPLE_MAX_SECONDS)
+    deadline = time.monotonic() + seconds
+    skip_invalid = cfg.get("invalid_messages", "fail") == "skip"
+
+    rows: list[dict] = []
+    next_offset: dict[int, int] = {}
+    consumer = Consumer(conf)
+    try:
+        md = consumer.list_topics(topic, timeout=10).topics[topic]
+        if md.error:
+            raise KafkaException(md.error)
+        end: dict[int, int] = {}
+        start = []
+        for tp in consumer.committed([TopicPartition(topic, p) for p in md.partitions], timeout=10):
+            if tp.error:
+                # The offset is INVALID here too; reading from earliest would replay the partition.
+                raise KafkaException(tp.error)
+            lo, hi = consumer.get_watermark_offsets(tp, timeout=10)
+            # No commit yet (negative) or past retention → earliest.
+            off = max(hi - limit, lo) if sample else max(tp.offset, lo)
+            if off < hi:
+                start.append(TopicPartition(topic, tp.partition, off))
+                end[tp.partition] = hi
+        consumer.assign(start)
+        # ponytail: a transactional topic's control records can keep a partition
+        # short of `hi`; the slice then ends at `max_seconds` instead.
+        while end and len(rows) < limit and (left := deadline - time.monotonic()) > 0:
+            msg = consumer.poll(min(1.0, left))
+            if msg is None:
+                continue
+            if msg.error():
+                raise KafkaException(msg.error())
+            try:
+                value = json.loads(msg.value()) if msg.value() is not None else None
+            except ValueError:
+                value = None
+            where = f"kafka {topic}[{msg.partition()}]@{msg.offset()}"
+            if isinstance(value, dict):
+                _, ts = msg.timestamp()
+                # Topic + partition + offset is the message's identity: the merge key
+                # for an idempotent replay. Offsets alone repeat across topics.
+                rows.append({**value, "_kafka_topic": topic, "_kafka_partition": msg.partition(),
+                             "_kafka_offset": msg.offset(),
+                             "_kafka_timestamp": datetime.fromtimestamp(ts / 1000, tz=UTC)})
+            elif skip_invalid:
+                # Still in Kafka at this offset; nothing is lost but this run's copy.
+                _log.warning("%s: value is not a JSON object, skipped (invalid_messages=skip)", where)
+            else:
+                raise ValueError(f"{where}: value is not a JSON object; fix or skip it "
+                                 f"(source config invalid_messages: skip)")
+            next_offset[msg.partition()] = msg.offset() + 1
+            if next_offset[msg.partition()] >= end[msg.partition()]:
+                del end[msg.partition()]
+    finally:
+        consumer.close()
+
+    if next_offset and not sample:
+        def _commit():
+            c = Consumer(conf)
+            try:
+                c.commit(offsets=[TopicPartition(topic, p, o) for p, o in next_offset.items()],
+                         asynchronous=False)
+            finally:
+                c.close()
+        if not rows:
+            _commit()  # only skipped messages: nothing to write, so move past them now
+        else:
+            registry.after_write.append(_commit)
+
+    if not rows:
+        raise NoNewMessages(f"kafka {topic}: " + ("topic is empty" if sample else
+                            f"no new messages since the last commit (group {group})"))
+
+    # Union of keys, not `from_pylist` (which takes the first row's keys only).
+    cols = dict.fromkeys(k for r in rows for k in r)
+    data = pa.Table.from_pydict({k: [r.get(k) for r in rows] for k in cols})
+    con = registry.duckdb()
+    con.con.register(f"__kafka_{source.table}", data)
+    con.con.execute(
+        f"CREATE OR REPLACE VIEW {_sql_ident(source.table)} AS "  # quoted identifier  # nosec B608
+        f"SELECT * FROM {_sql_ident(f'__kafka_{source.table}')}"
+    )
+    return con.table(source.table)
+
+
 # Loaders that copy the whole source into DuckDB before it can be read.
-EAGER = frozenset({"rest_api", "mongodb"})
+EAGER = frozenset({"rest_api", "mongodb", "kafka"})
 SAMPLE_MAX_SECONDS = float(os.environ.get("DTE_SAMPLE_MAX_SECONDS", "30"))
 
 LoaderFn = Callable[[Source, "BackendRegistry", "Connection", dict], ibis.Table]
@@ -440,6 +564,7 @@ LOADERS: dict[str, LoaderFn] = {
     "sql_database": _load_sql_database,
     "mongodb": _load_mongodb,
     "rest_api": _load_rest_api,
+    "kafka": _load_kafka,
 }
 
 

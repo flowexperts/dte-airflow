@@ -132,6 +132,8 @@ google = ["apache-airflow-providers-google"]
 azure = ["apache-airflow-providers-microsoft-azure"]
 sftp = ["apache-airflow-providers-sftp", "sshfs"]
 mongo = ["apache-airflow-providers-mongo"]
+# Kafka source (plan 107); the provider brings confluent-kafka.
+kafka = ["apache-airflow-providers-apache-kafka"]
 postgres-writer = ["dlt[postgres]>=1.4,<2.0", "psycopg[binary]>=3.1,<4.0"]
 # dlt ships no `mysql` extra (`dlt[mysql]` silently resolved to plain dlt).
 # pymysql, not mysqlclient: pure Python, so the image needs no C toolchain.

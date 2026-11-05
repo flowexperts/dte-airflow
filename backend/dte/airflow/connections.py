@@ -38,6 +38,7 @@ KINDS: dict[str, tuple[set[str], str]] = {
     "bigquery": ({"google_cloud_platform", "gcpbigquery"}, "apache-airflow-providers-google"),
     "mongodb": ({"mongo"}, "apache-airflow-providers-mongo"),
     "rest_api": ({"http"}, "apache-airflow-providers-http"),
+    "kafka": ({"kafka"}, "apache-airflow-providers-apache-kafka"),
     "s3": ({"aws"}, "apache-airflow-providers-amazon[s3fs]"),
     "gcs": ({"google_cloud_platform"}, "apache-airflow-providers-google"),
     "azure": ({"wasb", "adls", "azure_data_lake"}, "apache-airflow-providers-microsoft-azure"),
@@ -84,6 +85,9 @@ def from_airflow(c) -> Connection:
         auth = ({"type": "http_basic", "username": c.login, "password": c.password} if c.login
                 else {"type": "bearer", "token": c.password} if c.password else {})
         creds = {"auth": auth, "headers": x.get("headers") or {}}
+    elif t == "kafka":
+        # The provider keeps the librdkafka config (bootstrap.servers, SASL, ...) in the extra.
+        kind, creds = "kafka", {"config": dict(x)}
     elif t == "fs":
         kind, creds = "local_fs", {}
     else:

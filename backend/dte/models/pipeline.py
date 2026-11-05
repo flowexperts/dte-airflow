@@ -33,6 +33,7 @@ ConnectionType = Literal[
     "postgres", "mysql", "sqlite", "mssql",
     "mongodb", "rest_api",
     "snowflake", "bigquery",
+    "kafka",
 ]
 
 
@@ -84,7 +85,7 @@ class Connection(SQLModel):
 
 SourceKind = Literal[
     "filesystem", "s3", "gcs", "azure", "sftp", "sql_database", "mongodb", "rest_api",
-    "documents",
+    "documents", "kafka",
 ]
 _FileFormat = Literal["json", "jsonl", "ndjson", "csv", "parquet", "excel"]
 
@@ -152,6 +153,19 @@ class MongoDBSourceConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class KafkaSourceConfig(BaseModel):
+    """A bounded slice per run (plan 107): stop at `max_messages`,
+    `max_seconds`, or when the topic has nothing new. Offsets are the
+    consumer group's, committed only after the write succeeds."""
+    topic: str
+    group_id: str | None = None  # default `dte__<source id>`
+    max_messages: int = Field(10_000, gt=0)
+    max_seconds: float = Field(30, gt=0)
+    # `skip` logs a non-JSON-object value's offset and moves past it.
+    invalid_messages: Literal["fail", "skip"] = "fail"
+    model_config = {"extra": "forbid"}
+
+
 class RestApiSourceConfig(BaseModel):
     """dlt's rest_api source config surface is large; kept loose so users
     can pass the full dict. Auth + headers should live in the Connection,
@@ -169,6 +183,7 @@ _SOURCE_CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "mongodb": MongoDBSourceConfig,
     "rest_api": RestApiSourceConfig,
     "documents": DocumentSourceConfig,
+    "kafka": KafkaSourceConfig,
 }
 
 
@@ -1109,7 +1124,18 @@ class PostgresTarget(BaseModel):
     schema_: str = Field(alias="schema")
     table: str
     write_disposition: Literal["replace", "append", "merge"] = "replace"
+    # The upsert key for `merge` (plan 107). Without one dlt's merge appends,
+    # so a replayed slice duplicates. Kafka: `_kafka_topic, _kafka_partition,
+    # _kafka_offset` (all three: offsets repeat across topics, and a key that
+    # collides makes merge delete the other topic's rows).
+    primary_key: list[str] = []
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def _key_needs_merge(self):
+        if self.primary_key and self.write_disposition != "merge":
+            raise ValueError("primary_key only applies to write_disposition: merge")
+        return self
 
 
 class SqlDatabaseTarget(BaseModel):
@@ -1777,6 +1803,7 @@ SOURCE_CONNECTION_COMPAT: dict[str, set[ConnectionType]] = {
     "sql_database": {"postgres", "mysql", "mssql", "sqlite", "snowflake", "bigquery"},
     "mongodb": {"mongodb"},
     "rest_api": {"rest_api"},
+    "kafka": {"kafka"},
     # Documents live wherever files live. Only local_fs has a loader today;
     # the object-store kinds are listed so a saved source doesn't have to be
     # re-pointed when the remote listing lands.
@@ -1820,7 +1847,7 @@ EngineName = Literal[
 ]
 
 ENGINE_READ_SUPPORT: dict[EngineName, set[ConnectionType]] = {
-    "duckdb":    {"local_fs", "s3", "gcs", "azure", "sftp", "mongodb", "rest_api"},
+    "duckdb":    {"local_fs", "s3", "gcs", "azure", "sftp", "mongodb", "rest_api", "kafka"},
     "postgres":  {"postgres"},
     "mysql":     {"mysql"},
     "mssql":     {"mssql"},

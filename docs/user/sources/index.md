@@ -16,6 +16,7 @@ A source is where inside a system your data lives: a [connection](../connections
 | **SQL database** | A table (or a custom query) in Postgres, MySQL, SQL Server, SQLite, Snowflake, or BigQuery ([BigQuery guide](bigquery.md): setup and cost) | Either **Table** name or a **Query**, not both |
 | **MongoDB** | A collection | Database name, collection name |
 | **REST API** | Data from a JSON API | Endpoint path, pagination shape, resource details |
+| **Kafka** | New messages on a topic, each run ([Kafka guide](kafka.md)) | Topic. No form yet: create it through the API or a pipeline file |
 
 ## Folders and patterns
 

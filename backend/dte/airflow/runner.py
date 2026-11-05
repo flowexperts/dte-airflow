@@ -22,7 +22,7 @@ from dte.config import get_settings
 from dte.engine.backend_registry import BackendRegistry
 from dte.engine.registry import get_engine
 from dte.models.pipeline import resolve_pipeline_engine
-from dte.sources.loader import load_source
+from dte.sources.loader import NoNewMessages, load_source
 from dte.sources.metered import QueryCapExceeded, cap_message
 
 _STAGE_SEQ = itertools.count()
@@ -42,6 +42,7 @@ class RunResult:
     sql_query: dict | None = None
     labels_version: int | None = None
     config_digest: str | None = None
+    skip_reason: str | None = None  # nothing to do (plan 107); the operator skips the task
 
 
 @contextmanager
@@ -124,9 +125,18 @@ def run_pipeline(
     tables = {}
     for ref, s, conn, creds in sources:
         with phase(f"load source {ref.alias}"):
-            tables[ref.alias] = t = load_source(s, registry, conn, creds, table=ref.table)
-            log.info("source %s: %s table=%s, %d cols %s", ref.alias, conn.connection_type,
-                     ref.table or getattr(s, "table", None), len(t.columns), list(t.columns))
+            try:
+                tables[ref.alias] = t = load_source(s, registry, conn, creds, table=ref.table)
+            except NoNewMessages as e:
+                # Caught inside the phase so it reads as completed, not failed.
+                skip = str(e)
+                log.info("nothing to do: %s", skip)
+            else:
+                skip = None
+                log.info("source %s: %s table=%s, %d cols %s", ref.alias, conn.connection_type,
+                         ref.table or getattr(s, "table", None), len(t.columns), list(t.columns))
+        if skip:
+            return RunResult(status="completed", skip_reason=skip)
 
     step_sqls: dict[int, str] = {}
     ops = {i: st.get("op") for i, st in enumerate(pipeline.steps or [])}
@@ -224,6 +234,9 @@ def run_pipeline(
     with phase(f"execute + write to {getattr(dest.config, 'type', dest.dest_type)}", group=False):
         result = engine.execute(compiled, dest.config, credentials=dest_creds, run_id=run_id)
         log.info("rows written: %s -> %s", result["rows_written"], result["location"])
+    # Only now is it safe to advance a source past what was read (plan 107).
+    for commit in registry.after_write:
+        commit()
 
     if post:
         from dte.quality.evaluator import evaluate_contracts

@@ -22,7 +22,8 @@ def write(
 
     arrow_table = table.to_pyarrow()
 
-    @dlt.resource(name=target.table, write_disposition=target.write_disposition)
+    @dlt.resource(name=target.table, write_disposition=target.write_disposition,
+                  primary_key=target.primary_key or None)
     def _resource():
         yield arrow_table
 

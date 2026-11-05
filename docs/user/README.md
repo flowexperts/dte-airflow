@@ -14,7 +14,7 @@ dte is a visual pipeline builder that runs inside Apache Airflow 3.3+. Pick a so
 ## Reference
 
 - [Connections](connections/index.md): [Snowflake](connections/snowflake.md)
-- [Sources](sources/index.md) · [BigQuery](sources/bigquery.md) (setup and cost)
+- [Sources](sources/index.md) · [BigQuery](sources/bigquery.md) (setup and cost) · [Kafka](sources/kafka.md) (micro-batch)
 - [Destinations](destinations/index.md)
 - [Steps](steps/index.md)
 - [Pipelines](pipelines/building.md): [types](pipelines/types.md), [field names](pipelines/field-refs.md), [preview & run](pipelines/preview-and-run.md), [scheduling](pipelines/scheduling.md), [lookup tables](pipelines/lookup-tables.md), [in git](pipelines/in-git.md)

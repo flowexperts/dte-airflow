@@ -46,6 +46,9 @@ class BackendRegistry:
     def __init__(self, duckdb_con: ibis.BaseBackend | None = None):
         self._duckdb: ibis.BaseBackend | None = duckdb_con
         self._by_conn_id: dict[str, ibis.BaseBackend] = {}
+        # Run only after the destination write succeeds (plan 107: Kafka
+        # offset commits). Previews never call them.
+        self.after_write: list = []
 
     def duckdb(self) -> ibis.BaseBackend:
         """Shared in-process DuckDB backend.
