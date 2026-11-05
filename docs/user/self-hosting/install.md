@@ -36,6 +36,12 @@ All bind to `127.0.0.1`. This is for local use, not a server deployment.
 | 8080 | Airflow UI + REST API; DTE UI at `/plugin/dte`, API at `/dte/api` |
 | 5432 | Postgres: Airflow metadata, with DTE's tables in the `dte` schema |
 | 5433 | Demo warehouse |
+| 9094 | Kafka broker (`kafka` profile only) |
+| 8090 | Kafka UI (`kafka` profile only) |
+
+## Kafka (optional)
+
+`docker compose --profile kafka up -d` adds a Kafka broker and [Kafka UI](https://github.com/kafbat/kafka-ui), for trying the [Kafka source](../sources/kafka.md). Airflow reaches the broker as `kafka:9092`, your machine as `127.0.0.1:9094`. The broker keeps no volume: recreating it empties the topics.
 
 ## Where data lives
 

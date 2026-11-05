@@ -73,6 +73,8 @@ The position moves **only after the write succeeds**. A run that fails before th
 
 The group is stored in Kafka, so you can inspect or reset it with the usual Kafka tools. A new group starts at the oldest message the topic still keeps.
 
+Right after a broker starts, it can answer "not coordinator" while it loads its offsets. A run retries that for about 7 seconds before failing; if it still fails, the broker isn't ready yet and the next run will work. Previews don't ask for the group's position, so they aren't affected.
+
 ## Messages and columns
 
 Each message value must be a JSON object. Its keys become columns; nested objects become nested fields (`customer.country`, see [Field names](../pipelines/field-refs.md)). A key missing from some messages is null in those rows.
