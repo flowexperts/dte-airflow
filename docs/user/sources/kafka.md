@@ -4,7 +4,7 @@ Read a Kafka topic as a source. Each run reads the messages that arrived since t
 
 This isn't a long-running consumer. Latency is your schedule interval plus the run time (a few seconds for 100k messages).
 
-To try it locally, the [Docker Compose](../self-hosting/install.md) stack has a broker and [Kafka UI](https://github.com/kafbat/kafka-ui) behind a profile: `docker compose --profile kafka up -d`. Airflow reaches the broker as `kafka:9092`, your machine as `localhost:9094`, and Kafka UI is at http://localhost:8090.
+To try it locally, the [Docker Compose](../self-hosting/install.md) stack has a broker and [Kafka UI](https://github.com/kafbat/kafka-ui) behind a profile: `docker compose --profile kafka up -d`. Airflow reaches the broker as `kafka:9092`, your machine as `127.0.0.1:9094`, and Kafka UI is at http://localhost:8090.
 
 ## 1. Create the connection
 
