@@ -352,6 +352,36 @@ class NoNewMessages(Exception):
     of compiling steps against a table with no data columns."""
 
 
+# Errors that mean "ask again shortly": a broker that just started (or a group
+# whose coordinator moved) answers these while its offsets topic loads.
+_KAFKA_COORDINATOR_BUSY = ("COORDINATOR_LOAD_IN_PROGRESS", "COORDINATOR_NOT_AVAILABLE", "NOT_COORDINATOR")
+_KAFKA_RETRY_BASE_SECONDS = 0.5
+
+
+def _kafka_committed(consumer, parts, attempts: int = 5):
+    """The group's committed offsets, retrying while the coordinator is busy.
+
+    An error on any partition fails the load rather than reading on: its
+    offset comes back INVALID, which would replay the partition from earliest.
+    """
+    import time
+
+    from confluent_kafka import KafkaError, KafkaException
+
+    busy = {getattr(KafkaError, name) for name in _KAFKA_COORDINATOR_BUSY}
+    for attempt in range(attempts):
+        try:
+            got = consumer.committed(parts, timeout=10)
+            err = next((tp.error for tp in got if tp.error), None)
+        except KafkaException as e:
+            err = e.args[0]
+        if err is None:
+            return got
+        if err.code() not in busy or attempt == attempts - 1:
+            raise KafkaException(err)
+        time.sleep(_KAFKA_RETRY_BASE_SECONDS * 2 ** attempt)  # 0.5s .. 4s
+
+
 def _load_kafka(
     source: Source,
     registry: BackendRegistry,
@@ -395,10 +425,10 @@ def _load_kafka(
             raise KafkaException(md.error)
         end: dict[int, int] = {}
         start = []
-        for tp in consumer.committed([TopicPartition(topic, p) for p in md.partitions], timeout=10):
-            if tp.error:
-                # The offset is INVALID here too; reading from earliest would replay the partition.
-                raise KafkaException(tp.error)
+        parts = [TopicPartition(topic, p) for p in md.partitions]
+        # A preview reads the newest messages, so it never needs the group's
+        # offsets (and can't fail on a coordinator that's still loading).
+        for tp in parts if sample else _kafka_committed(consumer, parts):
             lo, hi = consumer.get_watermark_offsets(tp, timeout=10)
             # No commit yet (negative) or past retention → earliest.
             off = max(hi - limit, lo) if sample else max(tp.offset, lo)
