@@ -67,3 +67,50 @@ def test_doc_md_is_the_pipeline_yaml_with_a_link_back():
     assert "plugin/dte/pipelines/detail?id=p1" in doc
     body = doc.split("```yaml\n", 1)[1].rsplit("```", 1)[0]
     assert yaml.safe_load(body) == rev.config
+
+
+def test_messages_mode_watches_each_kafka_source():
+    """Plan 108: the DAG runs when any Kafka source's group has lag."""
+    from airflow.sdk.definitions.timetables.assets import AssetTriggeredTimetable
+
+    from dte.airflow.kafka_trigger import KafkaLagTrigger
+
+    watch = [{"uri": "dte://kafka_orders/kafka/orders", "conn_id": "kafka_orders", "topic": "orders",
+              "group_id": "dte__orders_stream"},
+             {"uri": "dte://kafka_orders/kafka/refunds", "conn_id": "kafka_orders", "topic": "refunds",
+              "group_id": "dte__refunds"}]
+    dag = _dag_for(_rev({"mode": "messages"}), kafka=watch)
+    assert isinstance(dag.timetable, AssetTriggeredTimetable)
+    assets = list(dag.timetable.asset_condition.objects)
+    assert [a.uri for a in assets] == [w["uri"] for w in watch]
+    assert type(dag.timetable.asset_condition).__name__ == "AssetAny"  # any topic, not all
+    trig = assets[0].watchers[0].trigger
+    assert isinstance(trig, KafkaLagTrigger)
+    assert trig.serialize()[1] == {"kafka_config_id": "kafka_orders", "topic": "orders",
+                                   "group_id": "dte__orders_stream", "poll_interval": 5.0}
+    assert dag.max_active_runs == 1
+
+
+def test_kafka_watches_from_sources():
+    from types import SimpleNamespace as NS
+
+    from dte.airflow.assets import kafka_watches
+
+    sources = {"k": NS(id="k", connection_id="kc", source_type="kafka", table="t",
+                       config={"topic": "orders", "group_id": None}),
+               "f": NS(id="f", connection_id="fs", source_type="filesystem", table="t",
+                       config={"bucket_url": "/d", "file_glob": "*.json"})}
+    cfg = {"sources": [{"source_id": "k", "alias": "a"}, {"source_id": "f", "alias": "b"}]}
+    assert kafka_watches(cfg, sources) == [{"uri": "dte://kc/kafka/orders", "conn_id": "kc",
+                                            "topic": "orders", "group_id": "dte__k"}]
+
+
+def test_kafka_inlet_keeps_the_watcher():
+    """Airflow collects a DAG's assets as {(name, uri): asset} over schedule
+    then inlets, so a watcher-less inlet with the same URI silently replaced
+    the watched asset and no trigger was ever registered."""
+    w = {"uri": "dte://kafka_orders/kafka/orders", "conn_id": "kafka_orders", "topic": "orders",
+         "group_id": "g"}
+    dag = _dag_for(_rev({"mode": "messages"}), inlets=[w["uri"]], kafka=[w])
+    (inlet,) = dag.get_task("run").inlets
+    assert inlet.uri == w["uri"] and len(inlet.watchers) == 1

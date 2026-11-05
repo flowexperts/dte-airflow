@@ -100,6 +100,12 @@ services:
     <<: *airflow
     command: dag-processor
 
+  # Runs deferred tasks and Asset watchers, including the Kafka lag trigger
+  # behind "On new messages" schedules (plan 108).
+  airflow-triggerer:
+    <<: *airflow
+    command: triggerer
+
   # Demo warehouse — the database the recorded demos read from and write to.
   # Deliberately NOT a schema inside the `postgres` service above: that one
   # holds the control plane (pipelines, runs, alembic_version), and those

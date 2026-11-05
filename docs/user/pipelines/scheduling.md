@@ -1,6 +1,6 @@
 # Scheduling
 
-Airflow does the scheduling. A pipeline is one DAG, `dte__<pipeline id>`, and has at most one schedule: that DAG's cron, or the outputs of the pipelines it waits on. Manual and scheduled runs share the DAG, run history and logs.
+Airflow does the scheduling. A pipeline is one DAG, `dte__<pipeline id>`, and has at most one schedule: that DAG's cron, the outputs of the pipelines it waits on, or new messages on its Kafka sources. Manual and scheduled runs share the DAG, run history and logs.
 
 The schedule is part of the pipeline, so changing it is a new revision (and a new Airflow DAG version). Each run records the revision it started against.
 
@@ -17,7 +17,7 @@ Open a pipeline, find the **Schedule** panel, choose **Set schedule**.
 | **Weekly** | Once a week, on the day and time you choose |
 | **Custom** | A standard 5-field cron expression, e.g. `0 2 * * 1-5` |
 
-These are the **On a timer** trigger. The other trigger is **After upstream**: see [Chaining](#chaining).
+These are the **On a timer** trigger. The others are **After upstream** (see [Chaining](#chaining)) and **On new messages** (see [On new messages](#on-new-messages)).
 
 The DAG picks up the cron on the next dag-processor parse.
 
@@ -58,7 +58,7 @@ PUT    /dte/api/pipelines/{id}/schedule    set or replace
 DELETE /dte/api/pipelines/{id}/schedule    remove
 ```
 
-Body: `mode` (`cron` | `assets`, default `cron`), `cron_expr` (cron mode), `assets` (assets mode: upstream URIs from `GET /dte/api/assets`), `timezone`, `params`, `enabled`, `overlap` (`skip` | `allow`), `retries` (0–10), `retry_delay_s`, `timeout_s`, and `eval_set_id` for eval pipelines. The schedule is also the `schedule` field of the pipeline; a pipeline `PUT` that omits it keeps the current one. A bad cron, unknown timezone, missing required parameter or retries on an append destination returns 422 with the reason.
+Body: `mode` (`cron` | `assets` | `messages`, default `cron`), `cron_expr` (cron mode), `assets` (assets mode: upstream URIs from `GET /dte/api/assets`), `timezone`, `params`, `enabled`, `overlap` (`skip` | `allow`), `retries` (0–10), `retry_delay_s`, `timeout_s`, and `eval_set_id` for eval pipelines. The schedule is also the `schedule` field of the pipeline; a pipeline `PUT` that omits it keeps the current one. A bad cron, unknown timezone, missing required parameter, retries on an append destination, or a `messages` schedule with no Kafka source or with `overlap: allow` returns 422 with the reason.
 
 ## Chaining
 
@@ -70,9 +70,16 @@ This is Airflow's data-aware scheduling. Every pipeline's `run` task declares it
 | --- | --- |
 | Database table (destination or `sql_database` source) | `dte://<conn_id>/<schema>/<table>` |
 | MongoDB collection | `dte://<conn_id>/<database>/<collection>` |
+| Kafka topic | `dte://<conn_id>/kafka/<topic>` |
 | Local file | `file:///<path>` |
 | Object storage | the configured URL, e.g. `s3://bucket/key` |
 
 A table read and written through the same connection id gets the same URI, which is what links the two pipelines. URIs carry the connection id, never credentials. REST API sources have no Asset.
 
-With [pipelines in git](in-git.md) (`DTE_PIPELINE_STORE=file`), pipelines don't declare Assets yet, so an **After upstream** schedule never fires. Use cron there for now.
+With [pipelines in git](in-git.md) (`DTE_PIPELINE_STORE=file`), pipelines don't declare Assets yet, so an **After upstream** or **On new messages** schedule never fires. Use cron there for now.
+
+## On new messages
+
+For a pipeline that reads a [Kafka source](../sources/kafka.md): it runs whenever any of its Kafka sources has messages it hasn't read yet. No messages, no runs. See [Kafka: run on new messages](../sources/kafka.md#run-on-new-messages) for how it works and what it costs.
+
+Needs an Airflow **triggerer** running (the Compose stack has one). Overlap is always *Skip*.

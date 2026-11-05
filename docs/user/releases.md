@@ -12,6 +12,10 @@ specific release live at `/docs/<version>/`, e.g. [/docs/v0.1.0/](https://dte.fl
   `dte-airflow[kafka]`.
 - **PostgreSQL Merge takes a key**: `primary_key` on a PostgreSQL destination.
   Merge used to behave like Append, since there was no way to name the key.
+- **Run on new messages**: a Kafka pipeline can run whenever its topic has
+  unread messages, instead of on a timer
+  ([guide](./sources/kafka.md#run-on-new-messages)). Needs an Airflow
+  triggerer; the Compose stack now runs one.
 - **Docker Compose builds again.** At v0.1.0, `docker compose up --build`
   failed with `Readme file does not exist: README.md`: the image copied
   `backend/`, whose README, LICENSE and NOTICE link to files outside it. The

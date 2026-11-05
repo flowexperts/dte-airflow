@@ -2128,6 +2128,9 @@ export interface components {
          *     `mode="assets"` (plan 089) fires after upstream pipelines write: the DAG
          *     schedules on `assets`, their output URIs (`dte.airflow.assets`). A saved
          *     schedule with no mode is a cron one.
+         *
+         *     `mode="messages"` (plan 108) fires when any of the pipeline's Kafka
+         *     sources has unread messages (`dte.airflow.kafka_trigger`).
          */
         PipelineSchedule: {
             /**
@@ -2135,7 +2138,7 @@ export interface components {
              * @default cron
              * @enum {string}
              */
-            mode: "cron" | "assets";
+            mode: "cron" | "assets" | "messages";
             /** Cron Expr */
             cron_expr?: string | null;
             /** Assets */

@@ -38,6 +38,7 @@ const MODE_OPTIONS: { value: ScheduleMode; label: string }[] = [
 const TRIGGER_OPTIONS: { value: ScheduleTrigger; label: string }[] = [
   { value: "cron", label: "On a timer" },
   { value: "assets", label: "After upstream" },
+  { value: "messages", label: "On new messages" },
 ];
 
 const OVERLAP_OPTIONS: { value: OverlapPolicy; label: string }[] = [
@@ -170,7 +171,11 @@ export function ScheduleForm({
   );
   const isEval = pipelineType === "eval";
   const submittable =
-    (trigger === "cron" ? cronExpr.trim() !== "" : assets.length > 0) &&
+    (trigger === "cron"
+      ? cronExpr.trim() !== ""
+      : trigger === "assets"
+        ? assets.length > 0
+        : true) &&
     missingRequired.length === 0 &&
     (!isEval || evalSetId !== "");
 
@@ -190,7 +195,8 @@ export function ScheduleForm({
       timezone,
       params,
       enabled,
-      overlap,
+      // Two runs at once would read the same messages; the backend refuses it.
+      overlap: trigger === "messages" ? "skip" : overlap,
       retries,
       retry_delay_s: retryDelayS,
       timeout_s: timeoutMin.trim() === "" ? null : Math.round(Number(timeoutMin) * 60),
@@ -226,6 +232,14 @@ export function ScheduleForm({
           <Field label="Trigger">
             <Segmented value={trigger} onChange={setTrigger} options={TRIGGER_OPTIONS} />
           </Field>
+
+          {trigger === "messages" && (
+            <div className="text-[12px] text-subtle">
+              Runs when any Kafka source in this pipeline has messages it hasn&apos;t read yet,
+              checked every 5 seconds. One run at a time; messages that arrive during a run
+              start one more.
+            </div>
+          )}
 
           {trigger === "assets" && (
             <Field
@@ -451,9 +465,11 @@ export function ScheduleForm({
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="On overlap" hint="If the previous run is still going.">
-              <Segmented value={overlap} onChange={setOverlap} options={OVERLAP_OPTIONS} />
-            </Field>
+            {trigger !== "messages" && (
+              <Field label="On overlap" hint="If the previous run is still going.">
+                <Segmented value={overlap} onChange={setOverlap} options={OVERLAP_OPTIONS} />
+              </Field>
+            )}
             <Field label="Status">
               <Segmented
                 value={enabled ? "enabled" : "disabled"}

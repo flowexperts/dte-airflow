@@ -26,6 +26,7 @@ from dte.api.deps import (
     get_eval_set_store,
     get_pipeline_revision_store,
     get_pipeline_store,
+    get_source_store,
 )
 from dte.compiler.interpolate import ParamValidationError, resolve_context
 from dte.models.pipeline import Pipeline, PipelineBase, PipelineSchedule
@@ -38,7 +39,7 @@ router = APIRouter()
 
 
 def _next_run_at(sc: PipelineSchedule) -> datetime | None:
-    if not sc.enabled or sc.mode == "assets":
+    if not sc.enabled or sc.mode != "cron":
         return None
     try:
         return next_fire_after(sc.cron_expr, sc.timezone, datetime.now(UTC))
@@ -48,12 +49,22 @@ def _next_run_at(sc: PipelineSchedule) -> datetime | None:
         raise HTTPException(status_code=422, detail={"code": "invalid_timezone", "message": str(e)}) from e
 
 
-async def validate_schedule(pipeline: PipelineBase, es_store, d_store) -> None:
+async def validate_schedule(pipeline: PipelineBase, es_store, d_store, s_store) -> None:
     """422 unless `pipeline.schedule` (if any) can actually fire."""
     sc = pipeline.schedule
     if sc is None:
         return
     _next_run_at(sc)
+    if sc.mode == "messages":
+        # Two runs at once would read the same slice of the topic.
+        if sc.overlap == "allow":
+            raise HTTPException(status_code=422, detail="a 'messages' schedule can't allow overlapping runs: "
+                                                        "two runs would read the same messages")
+        from dte.models.pipeline import coerce_source_refs
+        kinds = [getattr(await s_store.get(r.source_id), "source_type", None)
+                 for r in coerce_source_refs(pipeline.sources or [])]
+        if "kafka" not in kinds:
+            raise HTTPException(status_code=422, detail="a 'messages' schedule needs at least one Kafka source")
     try:
         resolve_context(pipeline, sc.params)
     except ParamValidationError as e:
@@ -121,11 +132,12 @@ async def put_schedule(
     rev_store: PipelineRevisionStore = Depends(get_pipeline_revision_store),
     es_store=Depends(get_eval_set_store),
     d_store=Depends(get_destination_store),
+    s_store=Depends(get_source_store),
     user: User = Depends(get_current_user),
 ):
     pipeline = await _load(pipeline_id, p_store)
     pipeline.schedule = body
-    await validate_schedule(pipeline, es_store, d_store)
+    await validate_schedule(pipeline, es_store, d_store, s_store)
     await _save(pipeline, p_store, rev_store, user)
     return _out(body)
 
