@@ -27,7 +27,7 @@ COPY --chown=airflow:root backend /opt/dte/backend
 # connection kind is available here (plan 074).
 RUN curl -fsSLo /tmp/constraints.txt ${AIRFLOW_CONSTRAINTS} && \
     pip install --no-cache-dir --constraint /tmp/constraints.txt \
-    -e "/opt/dte/backend[airflow,unstructured,models,mysql-writer,mssql,amazon,mongo]"
+    -e "/opt/dte/backend[airflow,unstructured,models,mysql-writer,mssql,amazon,mongo,kafka]"
 
 # UI plugin bundle (plan 066); served at /dte/ui, loaded by Airflow as a react_app.
 FROM base AS final

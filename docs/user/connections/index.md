@@ -27,6 +27,7 @@ dte offers a type only when its provider is installed. Others show in the source
 | `sqlite` | `apache-airflow-providers-sqlite` | Reading local `.db` files |
 | `mongo` | `apache-airflow-providers-mongo` | Reading collections |
 | `http` | `apache-airflow-providers-http` | Pulling data from a JSON API (login/password become basic or bearer auth) |
+| `kafka` | `apache-airflow-providers-apache-kafka` | Reading topics. The extra is the Kafka client config (`bootstrap.servers`, SASL…), see the [Kafka guide](../sources/kafka.md) |
 
 Fill each in as the provider documents it. dte reads SQL connections through the hook's SQLAlchemy URL (Snowflake through the hook itself, so key-pair and OAuth auth work) and opens files through the provider's filesystem.
 
@@ -49,3 +50,4 @@ dte rejects mismatched pairs at save.
 - `sqlite` → SQL database sources (read only)
 - `mongo` → MongoDB sources
 - `http` → REST API sources
+- `kafka` → Kafka sources

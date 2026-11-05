@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from functools import partial
 
-from airflow.exceptions import AirflowFailException
+from airflow.exceptions import AirflowFailException, AirflowSkipException
 from airflow.sdk import BaseOperator
 from sqlmodel import Session, select
 
@@ -155,4 +155,7 @@ class DtePipelineOperator(BaseOperator):
             summary["scores"] = {k: v for k, v in res.scores.items() if isinstance(v, (int, float))}
         if res.status == "failed_quality":
             raise AirflowFailException(f"quality checks failed: {summary['quality']}")
+        if res.skip_reason:
+            # Skipped, not succeeded: no alert, and no Asset event wakes downstream pipelines.
+            raise AirflowSkipException(res.skip_reason)
         return summary

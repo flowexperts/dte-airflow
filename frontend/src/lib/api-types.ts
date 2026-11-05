@@ -2341,7 +2341,7 @@ export interface components {
              * Source Type
              * @enum {string}
              */
-            source_type: "filesystem" | "s3" | "gcs" | "azure" | "sftp" | "sql_database" | "mongodb" | "rest_api" | "documents";
+            source_type: "filesystem" | "s3" | "gcs" | "azure" | "sftp" | "sql_database" | "mongodb" | "rest_api" | "documents" | "kafka";
             /** Config */
             config?: {
                 [key: string]: unknown;

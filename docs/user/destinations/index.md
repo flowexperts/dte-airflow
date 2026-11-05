@@ -37,7 +37,20 @@ Nested paths work, see [Field names](../pipelines/field-refs.md). For SQL destin
 | ---- | ------------ |
 | **Replace** | Empties the table and inserts. Default. |
 | **Append** | Adds rows to what's there. |
-| **Merge** | Updates rows matching the primary key, inserts the rest. Pipeline output must include the key column. |
+| **Merge** | Updates rows matching the key, inserts the rest. Pipeline output must include the key columns. |
+
+For **PostgreSQL**, set the key with `primary_key` (a list of columns) through the API or the [pipeline file](../pipelines/in-git.md); the form doesn't have it yet. Without one, Merge only adds rows, like Append. `primary_key` is refused with any other mode.
+
+```yaml
+config:
+  type: postgres
+  schema: public
+  table: orders
+  write_disposition: merge
+  primary_key: [order_id]
+```
+
+For a [Kafka](../sources/kafka.md#duplicates) source, use `[_kafka_topic, _kafka_partition, _kafka_offset]`.
 
 ## Builder editing
 
