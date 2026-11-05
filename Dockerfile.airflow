@@ -22,6 +22,9 @@ RUN if ! odbcinst -q -d -n "ODBC Driver 18 for SQL Server" >/dev/null 2>&1; then
     fi
 USER airflow
 COPY --chown=airflow:root backend /opt/dte/backend
+# backend/README.md, LICENSE and NOTICE link to ../ (the wheel's metadata); put
+# the targets where those links point, or the editable install can't build.
+COPY --chown=airflow:root README.md LICENSE NOTICE /opt/dte/
 # Airflow's constraints, unmodified: DTE follows Airflow's pins (plan 073).
 # amazon/mongo/mssql add the providers the stock image lacks, so every DTE
 # connection kind is available here (plan 074).
