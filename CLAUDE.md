@@ -30,13 +30,13 @@ All Python paths below are relative to `backend/`.
 
 ```bash
 # Whole stack: postgres :5432 + Airflow 3.3 (api-server :8080, scheduler,
-# dag-processor). scripts/bootstrap.sh writes .env (secrets + admin password);
+# dag-processor, triggerer). scripts/bootstrap.sh writes .env (secrets + admin password);
 # compose refuses to start without it. DTE UI at /plugin/dte, API at /dte/api.
 scripts/bootstrap.sh
 docker compose up -d --build
 docker compose logs -f airflow-apiserver
 # ./backend/dte is bind-mounted; restart to pick up Python changes:
-docker compose restart airflow-apiserver airflow-scheduler airflow-dag-processor
+docker compose restart airflow-apiserver airflow-scheduler airflow-dag-processor airflow-triggerer
 
 # Backend
 cd backend && uv sync --frozen --extra dev --extra airflow --extra trino

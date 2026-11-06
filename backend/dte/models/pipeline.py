@@ -1373,8 +1373,11 @@ class PipelineSchedule(BaseModel):
     `mode="assets"` (plan 089) fires after upstream pipelines write: the DAG
     schedules on `assets`, their output URIs (`dte.airflow.assets`). A saved
     schedule with no mode is a cron one.
+
+    `mode="messages"` (plan 108) fires when any of the pipeline's Kafka
+    sources has unread messages (`dte.airflow.kafka_trigger`).
     """
-    mode: Literal["cron", "assets"] = "cron"
+    mode: Literal["cron", "assets", "messages"] = "cron"
     cron_expr: str | None = None
     assets: list[str] = Field(default_factory=list)
     timezone: str = "UTC"

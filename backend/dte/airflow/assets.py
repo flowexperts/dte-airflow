@@ -34,6 +34,8 @@ def asset_uri(obj, table: str | None = None) -> str | None:
         return f"dte://{obj.connection_id}/{cfg.get('schema') or 'default'}/{table or cfg.get('table') or obj.table}"
     if kind == "mongodb":
         return f"dte://{obj.connection_id}/{cfg['database']}/{cfg['collection']}"
+    if kind == "kafka":
+        return f"dte://{obj.connection_id}/kafka/{cfg['topic']}"
     if cfg.get("path"):
         return _location(cfg["path"])
     if cfg.get("bucket_url"):
@@ -55,3 +57,19 @@ def lineage(config: dict, sources: dict, destinations: dict) -> tuple[list[str],
         if d and (u := asset_uri(d)):
             outlets.append(u)
     return inlets, outlets
+
+
+def kafka_watches(config: dict, sources: dict) -> list[dict]:
+    """What a `messages` schedule watches (plan 108): per Kafka source, its
+    Asset URI and the consumer group the run commits to."""
+    from dte.models.pipeline import coerce_source_refs
+
+    out = []
+    for ref in coerce_source_refs(config.get("sources") or []):
+        s = sources.get(ref.source_id)
+        if s is None or s.source_type != "kafka":
+            continue
+        out.append({"uri": asset_uri(s), "conn_id": s.connection_id, "topic": s.config["topic"],
+                    # Same default as the loader: the group the run commits to.
+                    "group_id": s.config.get("group_id") or f"dte__{s.id}"})
+    return out

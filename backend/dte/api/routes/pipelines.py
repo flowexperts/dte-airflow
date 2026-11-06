@@ -330,7 +330,7 @@ async def create_pipeline(
 
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
-    await validate_schedule(pipeline, es_store, d_store)
+    await validate_schedule(pipeline, es_store, d_store, s_store)
     await validate_notifications(pipeline.notifications)
     try:
         await store.save(Pipeline(**pipeline.model_dump()))
@@ -381,7 +381,7 @@ async def update_pipeline(
         pipeline.notifications = [PipelineNotification.model_validate(n) for n in existing.notifications or []]
     await _validate_pipeline_refs(pipeline, s_store, d_store)
     await _validate_engine_compat(pipeline, s_store, d_store, c_store)
-    await validate_schedule(pipeline, es_store, d_store)
+    await validate_schedule(pipeline, es_store, d_store, s_store)
     await validate_notifications(pipeline.notifications)
     row = Pipeline(**pipeline.model_dump())
     try:

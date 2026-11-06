@@ -410,6 +410,18 @@ sources on those connections are "metered" (`dte/sources/metered.py`).
   `GET /api/assets` lists the URIs for the schedule picker.
 - File mode builds DAGs without lineage: no Asset, so an assets-mode schedule
   never fires there (plan 092 fixes it).
+- `schedule.mode == "messages"` (plan 108): one `Asset(dte://<conn>/kafka/<topic>)`
+  per Kafka source with an `AssetWatcher` running `KafkaLagTrigger`
+  (`airflow/kafka_trigger.py`), schedule = `AssetAny` of them. The trigger
+  only compares the pipeline group's committed offsets with high watermarks
+  (never consumes, never joins the group), sleeps *before* each check so a
+  re-armed trigger doesn't fire on the lag of the run it just started, and
+  events during a run collapse into one queued run (`max_active_runs=1`).
+  **The task inlet must be that same watched `Asset` object**: Airflow
+  collects a DAG's assets as `{(name, uri): asset}` over schedule *then*
+  inlets, so a watcher-less inlet with the same URI silently drops the
+  watcher and no trigger row is ever created. Needs a triggerer (compose runs
+  one).
 - `runner.run_pipeline(log=)` writes `::group::` per source load and per step,
   plus timed phases; each phase also lands in `run_results.events` with
   `step_index: null`, which the run page's timeline reads.

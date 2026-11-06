@@ -30,8 +30,11 @@ def build_dags() -> dict:
     settings = get_settings()
     if settings.pipeline_store == "file":
         return _dags_from_files(Path(settings.pipelines_dir))
+    from dte.airflow.assets import kafka_watches
+
     latest, sources, dests = _latest_revisions()
-    dags = (_dag_for(rev, *lineage(rev.config, sources, dests)) for rev in latest if _SAFE.match(rev.pipeline_id))
+    dags = (_dag_for(rev, *lineage(rev.config, sources, dests), kafka=kafka_watches(rev.config, sources))
+            for rev in latest if _SAFE.match(rev.pipeline_id))
     return {d.dag_id: d for d in dags}
 
 
@@ -67,8 +70,8 @@ def _dags_from_files(root: Path) -> dict:
     return dags
 
 
-def _dag_for(rev, inlets=(), outlets=()):
-    from airflow.sdk import DAG, Asset
+def _dag_for(rev, inlets=(), outlets=(), kafka=()):
+    from airflow.sdk import DAG, Asset, AssetAny, AssetWatcher
     from airflow.timetables.trigger import CronTriggerTimetable
 
     from dte.airflow.notify import callbacks
@@ -80,9 +83,20 @@ def _dag_for(rev, inlets=(), outlets=()):
     p, pid = rev.config, rev.pipeline_id
     sc = p.get("schedule") or {}
     cron = None
+    watched: dict = {}  # uri -> the Asset carrying the watcher
     if sc and sc.get("enabled", True):
         if sc.get("mode") == "assets":
             cron = [Asset(u) for u in sc["assets"]]
+        elif sc.get("mode") == "messages":
+            from dte.airflow.kafka_trigger import KafkaLagTrigger
+
+            # ponytail: file mode passes no `kafka` (no source rows at parse), so
+            # the DAG gets no schedule there, like `assets` mode before plan 092.
+            watched = {w["uri"]: Asset(w["uri"], watchers=[AssetWatcher(
+                name=f"dte-lag-{w['group_id']}",
+                trigger=KafkaLagTrigger(kafka_config_id=w["conn_id"], topic=w["topic"], group_id=w["group_id"]))])
+                for w in kafka}
+            cron = AssetAny(*watched.values()) if watched else None
         else:
             cron = CronTriggerTimetable(sc["cron_expr"], timezone=sc.get("timezone", "UTC"))
     ptype = p.get("pipeline_type") or "transform"
@@ -106,7 +120,10 @@ def _dag_for(rev, inlets=(), outlets=()):
             task_id="run", pipeline_id=pid, revision_id=rev.id, eval_set_id=sc.get("eval_set_id"),
             retries=sc.get("retries", 0), retry_delay=timedelta(seconds=sc.get("retry_delay_s", 300)),
             execution_timeout=timedelta(seconds=sc.get("timeout_s") or get_settings().run_timeout_seconds),
-            inlets=[Asset(u) for u in inlets], outlets=[Asset(u) for u in outlets],
+            # The watched Asset itself, not a copy: Airflow keys a DAG's assets by
+            # (name, uri), inlets after schedule, so a watcher-less copy here
+            # replaced it and no trigger was ever registered.
+            inlets=[watched.get(u) or Asset(u) for u in inlets], outlets=[Asset(u) for u in outlets],
             **callbacks(p.get("notifications") or []),
         )
     return dag

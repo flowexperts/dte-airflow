@@ -61,9 +61,12 @@ curl -X POST "$AIRFLOW/dte/api/sources" -H "Authorization: Bearer $TOKEN" -H 'co
 
 ## 3. Build, schedule, run
 
-Build the pipeline as usual. Give it a [schedule](../pipelines/scheduling.md) such as every 5 minutes (`*/5 * * * *`) to keep up with the topic.
+Build the pipeline as usual, then give it a schedule:
 
-Keep **overlapping runs** off (the default). Two runs at once read the same messages.
+- **On new messages** (recommended): runs as soon as the topic has messages the pipeline hasn't read, and never when it hasn't. See [Run on new messages](#run-on-new-messages).
+- **On a timer**, such as every minute (`* * * * *`): simpler, but a run every minute whether or not anything arrived (those runs are skipped).
+
+Keep **overlapping runs** off (the default; *On new messages* enforces it). Two runs at once read the same messages.
 
 ## What each run reads
 
@@ -74,6 +77,19 @@ The position moves **only after the write succeeds**. A run that fails before th
 The group is stored in Kafka, so you can inspect or reset it with the usual Kafka tools. A new group starts at the oldest message the topic still keeps.
 
 Right after a broker starts, it can answer "not coordinator" while it loads its offsets. A run retries that for about 7 seconds before failing; if it still fails, the broker isn't ready yet and the next run will work. Previews don't ask for the group's position, so they aren't affected.
+
+## Run on new messages
+
+With the **On new messages** schedule, Airflow's triggerer watches the pipeline's consumer group. Every 5 seconds it compares the group's position with the newest message on each partition, and when the pipeline is behind, it starts a run. It doesn't read or commit any messages itself: the run does that, as above, so there is one record of what's been processed.
+
+- **Latency**: up to 5 seconds to notice, plus a few seconds for Airflow to start the run.
+- **Bursts**: one run at a time. Messages that arrive during a run start one more run when it finishes, not one per message.
+- **Quiet topics**: nothing runs.
+- **Cost**: one Airflow asset event per check that finds new messages (at most one per 5 seconds). Prune old ones with `airflow db clean`.
+
+It needs an Airflow **triggerer**. The Compose stack runs one; in your own Airflow, run `airflow triggerer`. The DAG shows the topic as an Asset, `dte://<conn_id>/kafka/<topic>`.
+
+Over the API: `PUT /dte/api/pipelines/{id}/schedule` with `{"mode": "messages"}`.
 
 ## Messages and columns
 

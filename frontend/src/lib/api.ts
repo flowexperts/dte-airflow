@@ -833,8 +833,9 @@ export const putNotifications = (pipelineId: string, body: PipelineNotification[
 export type OverlapPolicy = "skip" | "allow";
 
 /** `assets` (plan 089) fires after the chosen upstream pipelines write their
- *  outputs; a schedule saved before modes existed reads as `cron`. */
-export type ScheduleTrigger = "cron" | "assets";
+ *  outputs; `messages` (plan 108) when a Kafka source has unread messages.
+ *  A schedule saved before modes existed reads as `cron`. */
+export type ScheduleTrigger = "cron" | "assets" | "messages";
 
 export interface Schedule {
   mode: ScheduleTrigger;

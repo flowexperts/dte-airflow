@@ -6,7 +6,7 @@ dte is an Airflow 3.3+ plugin. You need the package, its migrations, one DAG fil
 
 - Airflow 3.3+ on Python 3.12.
 - A **Postgres** database for dte's tables (a `dte` schema). Its own database is recommended; Airflow's metadata database also works.
-- The package on every component: api-server, scheduler, dag-processor and workers.
+- The package on every component: api-server, scheduler, dag-processor and workers, plus the triggerer if you use **On new messages** schedules ([Kafka](../sources/kafka.md#run-on-new-messages)).
 
 ## 1. Install the package
 
@@ -84,7 +84,7 @@ Every pipeline becomes a `dte__<pipeline id>` DAG. They're created unpaused, wha
 
 ## 5. Restart Airflow
 
-Restart the api-server, scheduler and dag-processor. dte appears under **Plugins ▸ DTE Pipelines**, with sources, destinations and lookup tables under **Admin**.
+Restart the api-server, scheduler and dag-processor (and triggerer, if you run one). dte appears under **Plugins ▸ DTE Pipelines**, with sources, destinations and lookup tables under **Admin**.
 
 ## Connections
 

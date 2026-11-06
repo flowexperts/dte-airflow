@@ -59,7 +59,12 @@ export function SchedulePanel({
       s.retries > 0 || s.timeout_s != null
         ? "\n\nThis also turns off retries and the timeout, for manual runs too."
         : "";
-    const what = s.mode === "assets" ? "after upstream" : `${s.cron_expr} (${s.timezone})`;
+    const what =
+      s.mode === "assets"
+        ? "after upstream"
+        : s.mode === "messages"
+          ? "on new messages"
+          : `${s.cron_expr} (${s.timezone})`;
     if (!window.confirm(`Remove schedule ${what}?${alsoLost}`)) return;
     act(async () => {
       await deleteSchedule(pipelineId);
@@ -85,6 +90,8 @@ export function SchedulePanel({
             <div className="flex items-center gap-2">
               {schedule.mode === "assets" ? (
                 <span className="text-[13px] text-text">After upstream pipelines</span>
+              ) : schedule.mode === "messages" ? (
+                <span className="text-[13px] text-text">On new Kafka messages</span>
               ) : (
                 <>
                   <span className="font-mono text-[13px] text-text">{schedule.cron_expr}</span>
@@ -103,7 +110,9 @@ export function SchedulePanel({
             <div className="mt-1 font-mono text-[11px] text-subtle">
               {schedule.mode === "assets"
                 ? `Runs after ${schedule.assets.join(" and ")} update`
-                : `Next run: ${formatNextRun(schedule.next_run_at)}`}
+                : schedule.mode === "messages"
+                  ? "Runs when its Kafka sources have unread messages"
+                  : `Next run: ${formatNextRun(schedule.next_run_at)}`}
             </div>
             <div className="mt-0.5 font-mono text-[11px] text-subtle">
               On failure: {failureSummary(schedule)}

@@ -227,3 +227,34 @@ def test_assets_lists_pipeline_outputs(client):
     r = c.get("/api/assets")
     assert r.status_code == 200, r.text
     assert r.json() == [{"pipeline_id": "tx_pipe", "pipeline_name": "tx_pipe", "uri": "file:///tmp/ev_out.json"}]
+
+
+def _kafka_pipe(stores, pid="kf_pipe"):
+    """A pipeline reading one Kafka source (plan 108)."""
+    from dte.models.pipeline import Pipeline
+    _run(stores["source"].save(SourceCreate(
+        id="kf_src", connection_id="kafka_orders", source_type="kafka",
+        config={"topic": "orders"}, table="orders",
+    )))
+    _run(stores["pipeline"].save(Pipeline(**{**TX, "id": pid, "name": pid, "sources": ["kf_src"]})))
+    return pid
+
+
+def test_messages_mode_runs_on_kafka_sources(client):
+    c, stores = client
+    r = c.put(f"/api/pipelines/{_kafka_pipe(stores)}/schedule", json={"mode": "messages"})
+    assert r.status_code == 200, r.text
+    assert r.json()["mode"] == "messages" and r.json()["next_run_at"] is None
+
+
+def test_messages_mode_needs_a_kafka_source(client):
+    c, _ = client
+    r = c.put("/api/pipelines/tx_pipe/schedule", json={"mode": "messages"})
+    assert r.status_code == 422 and "Kafka source" in r.text
+
+
+def test_messages_mode_refuses_overlap(client):
+    """Two runs at once would read the same slice of the topic."""
+    c, stores = client
+    r = c.put(f"/api/pipelines/{_kafka_pipe(stores)}/schedule", json={"mode": "messages", "overlap": "allow"})
+    assert r.status_code == 422 and "overlap" in r.text
